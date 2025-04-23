@@ -29,6 +29,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "atpblog-cli"
+version = "0.1.0"
+dependencies = [
+ "atpblog-common",
+ "atpblog-workspace-hack",
+ "tokio",
+]
+
+[[package]]
+name = "atpblog-common"
+version = "0.1.0"
+dependencies = [
+ "atpblog-workspace-hack",
+ "tokio",
+]
+
+[[package]]
+name = "atpblog-renderer"
+version = "0.1.0"
+
+[[package]]
+name = "atpblog-server"
+version = "0.1.0"
+dependencies = [
+ "atpblog-common",
+ "atpblog-workspace-hack",
+ "axum",
+ "tokio",
+]
+
+[[package]]
+name = "atpblog-workspace-hack"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "smallvec",
+ "syn",
+ "tokio",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -321,44 +363,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys",
-]
-
-[[package]]
-name = "my-cli"
-version = "0.1.0"
-dependencies = [
- "my-common",
- "my-workspace-hack",
- "tokio",
-]
-
-[[package]]
-name = "my-common"
-version = "0.1.0"
-dependencies = [
- "my-workspace-hack",
- "tokio",
-]
-
-[[package]]
-name = "my-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "my-common",
- "my-workspace-hack",
- "tokio",
-]
-
-[[package]]
-name = "my-workspace-hack"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "smallvec",
- "syn",
- "tokio",
 ]
 
 [[package]]

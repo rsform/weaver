@@ -71,8 +71,8 @@
           fileset = lib.fileset.unions [
             ./Cargo.toml
             ./Cargo.lock
-            (craneLib.fileset.commonCargoSources ./crates/my-common)
-            (craneLib.fileset.commonCargoSources ./crates/my-workspace-hack)
+            (craneLib.fileset.commonCargoSources ./crates/atpblog-common)
+            (craneLib.fileset.commonCargoSources ./crates/atpblog-workspace-hack)
             (craneLib.fileset.commonCargoSources crate)
           ];
         };
@@ -86,20 +86,25 @@
         # otherwise, omitting a crate (like we do below) will result in errors since
         # cargo won't be able to find the sources for all members.
         atpblog-cli = craneLib.buildPackage (individualCrateArgs // {
-          pname = "my-cli";
-          cargoExtraArgs = "-p my-cli";
-          src = fileSetForCrate ./crates/my-cli;
+          pname = "atpblog-cli";
+          cargoExtraArgs = "-p atpblog-cli";
+          src = fileSetForCrate ./crates/atpblog-cli;
         });
         atpblog-server = craneLib.buildPackage (individualCrateArgs // {
-          pname = "my-server";
-          cargoExtraArgs = "-p my-server";
-          src = fileSetForCrate ./crates/my-server;
+          pname = "atpblog-server";
+          cargoExtraArgs = "-p atpblog-server";
+          src = fileSetForCrate ./crates/atpblog-server;
+        });
+        atpblog-renderer = craneLib.buildPackage (individualCrateArgs // {
+          pname = "atpblog-renderer";
+          cargoExtraArgs = "-p atpblog-renderer";
+          src = fileSetForCrate ./crates/atpblog-renderer;
         });
       in
       {
         checks = {
           # Build the crates as part of `nix flake check` for convenience
-          inherit atpblog-cli atpblog-server;
+          inherit atpblog-cli atpblog-server atpblog-renderer;
 
           # Run clippy (and deny all warnings) on the workspace source,
           # again, reusing the dependency artifacts from above.
@@ -191,8 +196,9 @@
           # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
 
           # Extra inputs can be added here; cargo and rustc are provided by default.
-          packages = [
-            pkgs.cargo-hakari
+          packages = with pkgs; [
+            cargo-hakari
+            nixd
           ];
         };
       });

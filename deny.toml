@@ -2,5 +2,5 @@
 multiple-versions = 'allow'
 
 [licenses]
+allow = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-3.0", "MPL-2.0"]
 private = { ignore = true }
-allow = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-3.0"]

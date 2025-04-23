@@ -21,7 +21,7 @@ async fn handler() -> Html<&'static str> {
 }
 
 async fn ping(Query(params): Query<HashMap<String, String>>) -> Html<String> {
-    let (tx, mut rx, fut) = my_common::echo_task(10, "ping".into());
+    let (tx, mut rx, fut) = atpblog_common::echo_task(10, "ping".into());
     tokio::spawn(fut);
     tokio::spawn(async move {
         for (k, v) in params {

@@ -2,7 +2,7 @@
 
 #[tokio::main]
 async fn main() {
-    let (tx, mut rx, fut) = my_common::echo_task(10, "echo".into());
+    let (tx, mut rx, fut) = atpblog_common::echo_task(10, "echo".into());
     let args = std::env::args().skip(1).collect::<Vec<_>>();
 
     tokio::spawn(fut);
