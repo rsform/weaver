@@ -1,0 +1,6 @@
+[package]
+name = "atpblog-renderer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

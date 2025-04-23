@@ -1,0 +1,10 @@
+[package]
+name = "atpblog-cli"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+atpblog-common = { path = "../atpblog-common" }
+atpblog-workspace-hack = { version = "0.1", path = "../atpblog-workspace-hack" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

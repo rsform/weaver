@@ -1,0 +1,12 @@
+[package]
+name = "atpblog-common"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+atpblog-workspace-hack = { version = "0.1", path = "../atpblog-workspace-hack" }
+tokio = { version = "1", features = ["sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
