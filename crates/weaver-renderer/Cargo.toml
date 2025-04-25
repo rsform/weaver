@@ -1,0 +1,12 @@
+[package]
+name = "weaver-renderer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+n0-future = { workspace = true }
+
+weaver-common = { path = "../weaver-common" }
+weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }

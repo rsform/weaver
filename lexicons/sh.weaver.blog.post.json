@@ -1,0 +1,57 @@
+{
+    "lexicon": 1,
+    "id": "sh.weaver.blog.post",
+    "defs": {
+        "main": {
+            "type": "record",
+            "description": "A blog entry",
+            "key": "tid",
+            "record": {
+                "type": "object",
+                "required": [
+                    "content", "title", "createdAt"
+                ],
+                "properties": {
+                    "title": { "type": "ref", "ref": "#title" },
+                    "tags": { "type": "ref", "ref": "#tags" },
+
+                    "content": {
+                        "type": "string",
+                        "maxLength": 200000,
+                        "description": "The content of the blog post. This should be some flavor of Markdown."
+                    },
+
+                    "createdAt": {
+                        "type": "ref",
+                        "ref": "#createdAt"
+                    },
+                    "images": {
+                        "type": "ref",
+                        "ref": "sh.weaver.blog.embed.images",
+                        "description": "The set of images, if any, embedded in the blog post."
+                    },
+                }
+            }
+        },
+
+        "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "The date and time when the blog post was created. This is used for sorting and displaying the post's creation date."
+        },
+        "title": {
+            "type": "string",
+            "maxLength": 420,
+            "description": "The title of the blog post."
+        },
+        "tags": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "maxLength": 64
+            },
+            "maxLength": 10,
+            "description": "An array of tags associated with the blog post. Tags can help categorize and organize posts."
+        }
+    }
+}

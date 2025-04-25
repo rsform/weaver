@@ -1,0 +1,30 @@
+{
+    "lexicon": 1,
+    "id": "sh.weaver.embed.defs",
+    "defs": {
+      "percentSize": {
+        "type": "object",
+        "required": ["width", "height"],
+        "properties": {
+          "width": { "type": "integer" },
+          "height": { "type": "integer" },
+        },
+        "description": "Proportional size of the embed relative to the viewport in larger windows. The dimensions are percentage out of 100. Could we use more granularity? Maybe, but come on."
+      },
+      "pixelSize": {
+        "type": "object",
+        "required": ["width", "height"],
+        "properties": {
+          "width": { "type": "integer" },
+          "height": { "type": "integer" },
+        },
+        "description": "Pixel-exact embed size. The dimensions are logical pixels, subject to scaling, so 200px at X2 scale is 400px."
+      },
+      "record": {
+
+      },
+      "externa": {
+
+      }
+    }
+  }

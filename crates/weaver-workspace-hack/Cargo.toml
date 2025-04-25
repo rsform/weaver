@@ -3,10 +3,11 @@
 #     cargo hakari generate
 
 [package]
-name = "atpblog-workspace-hack"
+name = "weaver-workspace-hack"
 version = "0.1.0"
 description = "workspace-hack package, managed by hakari"
 license.workspace = true
+edition.workspace = true
 # You can choose to publish this crate: see https://docs.rs/cargo-hakari/latest/cargo_hakari/publishing.
 publish = false
 
@@ -15,8 +16,11 @@ publish = false
 
 ### BEGIN HAKARI SECTION
 [dependencies]
+markdown = { version = "1", features = ["json", "log"] }
+memchr = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
 smallvec = { version = "1", default-features = false, features = ["const_new"] }
-tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]
 proc-macro2 = { version = "1" }

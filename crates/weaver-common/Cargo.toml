@@ -1,13 +1,13 @@
 [package]
-name = "atpblog-common"
+name = "weaver-common"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
 
 [dependencies]
-atpblog-workspace-hack = { version = "0.1", path = "../atpblog-workspace-hack" }
-tokio = { version = "1", features = ["sync"] }
+n0-future = { workspace = true }
+weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

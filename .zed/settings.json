@@ -2,4 +2,15 @@
 //
 // For a full list of overridable settings, and general information on folder-specific settings,
 // see the documentation: https://zed.dev/docs/configuring-zed#settings-files
-{}
+{
+  "lsp": {
+    "nil": {
+      // or "nixd":
+      "initialization_options": {
+        "formatting": {
+          "command": ["alejandra", "--quiet", "--"] // or ["nixfmt"]
+        }
+      }
+    }
+  }
+}

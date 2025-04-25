@@ -1,5 +1,6 @@
 /target
 result*
+/node_modules
 
 .direnv
 .env
