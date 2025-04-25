@@ -40,7 +40,7 @@
         p.rust-bin.stable.latest.default.override {
           # Set the build targets supported by the toolchain,
           # wasm32-unknown-unknown is required for trunk.
-          targets = ["wasm32-wasi"];
+          targets = ["wasm32-unknown-unknown"];
           extensions = ["llvm-tools"];
         };
       craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchainFor;
@@ -88,7 +88,7 @@
         // {
           pname = "trunk-workspace-wasm";
           cargoExtraArgs = "--package=client";
-          CARGO_BUILD_TARGET = "wasm32-wasi";
+          CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
         };
 
       cargoArtifactsWasm = craneLib.buildDepsOnly (wasmArgs

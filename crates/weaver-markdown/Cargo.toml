@@ -11,9 +11,9 @@ serde_debug = ["markdown/json"]
 
 
 [dependencies]
-atpblog-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 markdown = { version = "1.0", features = ["log"] }
 miette = { workspace = true, features = ["fancy", "syntect-highlighter"] }
 owo-colors = { workspace = true, features = ["alloc"] }
 syntect.workspace = true
 thiserror.workspace = true
+weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }

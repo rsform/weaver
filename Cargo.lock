@@ -88,59 +88,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atpblog-cli"
-version = "0.1.0"
-dependencies = [
- "atpblog-common",
- "atpblog-workspace-hack",
- "clap",
- "n0-future",
-]
-
-[[package]]
-name = "atpblog-common"
-version = "0.1.0"
-dependencies = [
- "atpblog-workspace-hack",
- "n0-future",
- "tokio",
-]
-
-[[package]]
-name = "atpblog-renderer"
-version = "0.1.0"
-dependencies = [
- "atpblog-common",
- "atpblog-workspace-hack",
- "n0-future",
-]
-
-[[package]]
-name = "atpblog-server"
-version = "0.1.0"
-dependencies = [
- "atpblog-common",
- "atpblog-workspace-hack",
- "axum",
- "clap",
- "tokio",
-]
-
-[[package]]
-name = "atpblog-workspace-hack"
-version = "0.1.0"
-dependencies = [
- "markdown",
- "memchr",
- "proc-macro2",
- "quote",
- "serde",
- "serde_json",
- "smallvec",
- "syn",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -885,18 +832,6 @@ checksum = "7b829e3d7e9cc74c7e315ee8edb185bf4190da5acde74afd7fc59c35b1f086e7"
 dependencies = [
  "cc",
  "pkg-config",
-]
-
-[[package]]
-name = "orual-markdown"
-version = "0.1.0"
-dependencies = [
- "atpblog-workspace-hack",
- "markdown",
- "miette",
- "owo-colors",
- "syntect",
- "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -1690,6 +1625,71 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a05d73b933a847d6cccdda8f838a22ff101ad9bf93e33684f39c1f5f0eece3d"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "weaver-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "n0-future",
+ "weaver-common",
+ "weaver-workspace-hack",
+]
+
+[[package]]
+name = "weaver-common"
+version = "0.1.0"
+dependencies = [
+ "n0-future",
+ "tokio",
+ "weaver-workspace-hack",
+]
+
+[[package]]
+name = "weaver-markdown"
+version = "0.1.0"
+dependencies = [
+ "markdown",
+ "miette",
+ "owo-colors",
+ "syntect",
+ "thiserror 2.0.12",
+ "weaver-workspace-hack",
+]
+
+[[package]]
+name = "weaver-renderer"
+version = "0.1.0"
+dependencies = [
+ "n0-future",
+ "weaver-common",
+ "weaver-workspace-hack",
+]
+
+[[package]]
+name = "weaver-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "clap",
+ "tokio",
+ "weaver-common",
+ "weaver-workspace-hack",
+]
+
+[[package]]
+name = "weaver-workspace-hack"
+version = "0.1.0"
+dependencies = [
+ "markdown",
+ "memchr",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "syn",
 ]
 
 [[package]]
