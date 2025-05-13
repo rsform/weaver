@@ -4,32 +4,107 @@
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct MainData {
-    pub records: Vec<External>,
+    pub records: Vec<crate::com::atproto::repo::strong_ref::Main>,
 }
 pub type Main = atrium_api::types::Object<MainData>;
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct ExternalData {
-    pub description: String,
-    #[serde(skip_serializing_if = "core::option::Option::is_none")]
-    pub thumb: core::option::Option<atrium_api::types::BlobRef>,
-    pub title: String,
-    pub uri: String,
-}
-pub type External = atrium_api::types::Object<ExternalData>;
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct ViewData {
-    pub external: ViewExternal,
+    pub record: atrium_api::types::Union<ViewRecordRefs>,
 }
 pub type View = atrium_api::types::Object<ViewData>;
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct ViewExternalData {
-    pub description: String,
-    #[serde(skip_serializing_if = "core::option::Option::is_none")]
-    pub thumb: core::option::Option<String>,
-    pub title: String,
+pub struct ViewBlockedData {
+    pub author: crate::app::bsky::feed::defs::BlockedAuthor,
+    pub blocked: bool,
     pub uri: String,
 }
-pub type ViewExternal = atrium_api::types::Object<ViewExternalData>;
+pub type ViewBlocked = atrium_api::types::Object<ViewBlockedData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewDetachedData {
+    pub detached: bool,
+    pub uri: String,
+}
+pub type ViewDetached = atrium_api::types::Object<ViewDetachedData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewNotFoundData {
+    pub not_found: bool,
+    pub uri: String,
+}
+pub type ViewNotFound = atrium_api::types::Object<ViewNotFoundData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewRecordData {
+    pub author: atrium_api::types::Union<ViewRecordAuthorRefs>,
+    pub cid: atrium_api::types::string::Cid,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub embeds: core::option::Option<
+        Vec<atrium_api::types::Union<ViewRecordEmbedsItem>>,
+    >,
+    pub indexed_at: atrium_api::types::string::Datetime,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub labels: core::option::Option<Vec<crate::com::atproto::label::defs::Label>>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub like_count: core::option::Option<i64>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub quote_count: core::option::Option<i64>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub reply_count: core::option::Option<i64>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub repost_count: core::option::Option<i64>,
+    pub uri: String,
+    ///The record data itself.
+    pub value: atrium_api::types::Unknown,
+}
+pub type ViewRecord = atrium_api::types::Object<ViewRecordData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "$type")]
+pub enum ViewRecordAuthorRefs {
+    #[serde(rename = "app.bsky.actor.defs#profileViewBasic")]
+    AppBskyActorDefsProfileViewBasic(
+        Box<crate::app::bsky::actor::defs::ProfileViewBasic>,
+    ),
+}
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "$type")]
+pub enum ViewRecordEmbedsItem {
+    #[serde(rename = "app.bsky.embed.images#view")]
+    AppBskyEmbedImagesView(Box<crate::app::bsky::embed::images::View>),
+    #[serde(rename = "app.bsky.embed.video#view")]
+    AppBskyEmbedVideoView(Box<crate::app::bsky::embed::video::View>),
+    #[serde(rename = "app.bsky.embed.external#view")]
+    AppBskyEmbedExternalView(Box<crate::app::bsky::embed::external::View>),
+    #[serde(rename = "app.bsky.embed.record#view")]
+    AppBskyEmbedRecordView(Box<crate::app::bsky::embed::record::View>),
+    #[serde(rename = "app.bsky.embed.recordWithMedia#view")]
+    AppBskyEmbedRecordWithMediaView(
+        Box<crate::app::bsky::embed::record_with_media::View>,
+    ),
+    #[serde(rename = "sh.weaver.embed.records#view")]
+    ShWeaverEmbedRecordsView(Box<crate::sh::weaver::embed::records::View>),
+}
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "$type")]
+pub enum ViewRecordRefs {
+    #[serde(rename = "sh.weaver.embed.records#viewRecord")]
+    ViewRecord(Box<ViewRecord>),
+    #[serde(rename = "sh.weaver.embed.records#viewNotFound")]
+    ViewNotFound(Box<ViewNotFound>),
+    #[serde(rename = "sh.weaver.embed.records#viewBlocked")]
+    ViewBlocked(Box<ViewBlocked>),
+    #[serde(rename = "sh.weaver.embed.records#viewDetached")]
+    ViewDetached(Box<ViewDetached>),
+    #[serde(rename = "app.bsky.feed.defs#generatorView")]
+    AppBskyFeedDefsGeneratorView(Box<crate::app::bsky::feed::defs::GeneratorView>),
+    #[serde(rename = "app.bsky.graph.defs#listView")]
+    AppBskyGraphDefsListView(Box<crate::app::bsky::graph::defs::ListView>),
+    #[serde(rename = "app.bsky.labeler.defs#labelerView")]
+    AppBskyLabelerDefsLabelerView(Box<crate::app::bsky::labeler::defs::LabelerView>),
+    #[serde(rename = "app.bsky.graph.defs#starterPackViewBasic")]
+    AppBskyGraphDefsStarterPackViewBasic(
+        Box<crate::app::bsky::graph::defs::StarterPackViewBasic>,
+    ),
+}

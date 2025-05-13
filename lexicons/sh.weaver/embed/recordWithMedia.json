@@ -9,7 +9,7 @@
       "properties": {
         "record": {
           "type": "union",
-          "refs": ["app.bsky.embed.record", "sh.weaver.embed.record"]
+          "refs": ["app.bsky.embed.record", "sh.weaver.embed.records"]
         },
         "media": {
           "type": "union",
@@ -23,12 +23,12 @@
       "properties": {
         "record": {
           "type": "union",
-          "refs": ["sh.weaver.embed.record#view", "app.bsky.embed.record#view"]
+          "refs": ["sh.weaver.embed.records#view", "app.bsky.embed.record#view"]
         },
         "media": {
           "type": "union",
           "refs": [
-            "sh.weaver.embed.images#view",
+            "sh.weaver.embed.images",
             "sh.weaver.embed.external#view",
             "app.bsky.embed.images#view",
             "app.bsky.embed.video#view",

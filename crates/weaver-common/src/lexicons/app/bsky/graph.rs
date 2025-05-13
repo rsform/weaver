@@ -29,3 +29,45 @@ pub mod unmute_actor;
 pub mod unmute_actor_list;
 pub mod unmute_thread;
 pub mod verification;
+#[derive(Debug)]
+pub struct Block;
+impl atrium_api::types::Collection for Block {
+    const NSID: &'static str = "app.bsky.graph.block";
+    type Record = block::Record;
+}
+#[derive(Debug)]
+pub struct Follow;
+impl atrium_api::types::Collection for Follow {
+    const NSID: &'static str = "app.bsky.graph.follow";
+    type Record = follow::Record;
+}
+#[derive(Debug)]
+pub struct List;
+impl atrium_api::types::Collection for List {
+    const NSID: &'static str = "app.bsky.graph.list";
+    type Record = list::Record;
+}
+#[derive(Debug)]
+pub struct Listblock;
+impl atrium_api::types::Collection for Listblock {
+    const NSID: &'static str = "app.bsky.graph.listblock";
+    type Record = listblock::Record;
+}
+#[derive(Debug)]
+pub struct Listitem;
+impl atrium_api::types::Collection for Listitem {
+    const NSID: &'static str = "app.bsky.graph.listitem";
+    type Record = listitem::Record;
+}
+#[derive(Debug)]
+pub struct Starterpack;
+impl atrium_api::types::Collection for Starterpack {
+    const NSID: &'static str = "app.bsky.graph.starterpack";
+    type Record = starterpack::Record;
+}
+#[derive(Debug)]
+pub struct Verification;
+impl atrium_api::types::Collection for Verification {
+    const NSID: &'static str = "app.bsky.graph.verification";
+    type Record = verification::Record;
+}

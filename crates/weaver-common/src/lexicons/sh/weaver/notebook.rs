@@ -3,3 +3,15 @@
 pub mod authors;
 pub mod defs;
 pub mod entry;
+#[derive(Debug)]
+pub struct Authors;
+impl atrium_api::types::Collection for Authors {
+    const NSID: &'static str = "sh.weaver.notebook.authors";
+    type Record = authors::Record;
+}
+#[derive(Debug)]
+pub struct Entry;
+impl atrium_api::types::Collection for Entry {
+    const NSID: &'static str = "sh.weaver.notebook.entry";
+    type Record = entry::Record;
+}

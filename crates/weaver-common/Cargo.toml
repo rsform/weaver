@@ -43,6 +43,8 @@ tracing = { workspace = true }
 
 http = "1.3.1"
 serde_html_form = "0.2.7"
+serde_bytes = "0.11.17"
+atrium-xrpc = "0.12.3"
 
 
 [dev-dependencies]

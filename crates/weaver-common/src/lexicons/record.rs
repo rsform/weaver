@@ -3,10 +3,278 @@
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "$type")]
 pub enum KnownRecord {
+    #[serde(rename = "app.bsky.actor.profile")]
+    LexiconsAppBskyActorProfile(Box<crate::lexicons::app::bsky::actor::profile::Record>),
+    #[serde(rename = "app.bsky.actor.status")]
+    LexiconsAppBskyActorStatus(Box<crate::lexicons::app::bsky::actor::status::Record>),
+    #[serde(rename = "app.bsky.feed.generator")]
+    LexiconsAppBskyFeedGenerator(
+        Box<crate::lexicons::app::bsky::feed::generator::Record>,
+    ),
+    #[serde(rename = "app.bsky.feed.like")]
+    LexiconsAppBskyFeedLike(Box<crate::lexicons::app::bsky::feed::like::Record>),
+    #[serde(rename = "app.bsky.feed.post")]
+    LexiconsAppBskyFeedPost(Box<crate::lexicons::app::bsky::feed::post::Record>),
+    #[serde(rename = "app.bsky.feed.postgate")]
+    LexiconsAppBskyFeedPostgate(Box<crate::lexicons::app::bsky::feed::postgate::Record>),
+    #[serde(rename = "app.bsky.feed.repost")]
+    LexiconsAppBskyFeedRepost(Box<crate::lexicons::app::bsky::feed::repost::Record>),
+    #[serde(rename = "app.bsky.feed.threadgate")]
+    LexiconsAppBskyFeedThreadgate(
+        Box<crate::lexicons::app::bsky::feed::threadgate::Record>,
+    ),
+    #[serde(rename = "app.bsky.graph.block")]
+    LexiconsAppBskyGraphBlock(Box<crate::lexicons::app::bsky::graph::block::Record>),
+    #[serde(rename = "app.bsky.graph.follow")]
+    LexiconsAppBskyGraphFollow(Box<crate::lexicons::app::bsky::graph::follow::Record>),
+    #[serde(rename = "app.bsky.graph.list")]
+    LexiconsAppBskyGraphList(Box<crate::lexicons::app::bsky::graph::list::Record>),
+    #[serde(rename = "app.bsky.graph.listblock")]
+    LexiconsAppBskyGraphListblock(
+        Box<crate::lexicons::app::bsky::graph::listblock::Record>,
+    ),
+    #[serde(rename = "app.bsky.graph.listitem")]
+    LexiconsAppBskyGraphListitem(
+        Box<crate::lexicons::app::bsky::graph::listitem::Record>,
+    ),
+    #[serde(rename = "app.bsky.graph.starterpack")]
+    LexiconsAppBskyGraphStarterpack(
+        Box<crate::lexicons::app::bsky::graph::starterpack::Record>,
+    ),
+    #[serde(rename = "app.bsky.graph.verification")]
+    LexiconsAppBskyGraphVerification(
+        Box<crate::lexicons::app::bsky::graph::verification::Record>,
+    ),
+    #[serde(rename = "app.bsky.labeler.service")]
+    LexiconsAppBskyLabelerService(
+        Box<crate::lexicons::app::bsky::labeler::service::Record>,
+    ),
+    #[serde(rename = "chat.bsky.actor.declaration")]
+    LexiconsChatBskyActorDeclaration(
+        Box<crate::lexicons::chat::bsky::actor::declaration::Record>,
+    ),
+    #[serde(rename = "com.atproto.lexicon.schema")]
+    LexiconsComAtprotoLexiconSchema(
+        Box<crate::lexicons::com::atproto::lexicon::schema::Record>,
+    ),
     #[serde(rename = "sh.tangled.actor.profile")]
     LexiconsShTangledActorProfile(
         Box<crate::lexicons::sh::tangled::actor::profile::Record>,
     ),
+    #[serde(rename = "sh.weaver.actor.profile")]
+    LexiconsShWeaverActorProfile(
+        Box<crate::lexicons::sh::weaver::actor::profile::Record>,
+    ),
+    #[serde(rename = "sh.weaver.notebook.authors")]
+    LexiconsShWeaverNotebookAuthors(
+        Box<crate::lexicons::sh::weaver::notebook::authors::Record>,
+    ),
+    #[serde(rename = "sh.weaver.notebook.entry")]
+    LexiconsShWeaverNotebookEntry(
+        Box<crate::lexicons::sh::weaver::notebook::entry::Record>,
+    ),
+}
+impl From<crate::lexicons::app::bsky::actor::profile::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::actor::profile::Record) -> Self {
+        KnownRecord::LexiconsAppBskyActorProfile(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::actor::profile::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::actor::profile::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyActorProfile(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::actor::status::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::actor::status::Record) -> Self {
+        KnownRecord::LexiconsAppBskyActorStatus(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::actor::status::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::app::bsky::actor::status::RecordData) -> Self {
+        KnownRecord::LexiconsAppBskyActorStatus(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::generator::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::feed::generator::Record) -> Self {
+        KnownRecord::LexiconsAppBskyFeedGenerator(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::generator::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::feed::generator::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyFeedGenerator(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::like::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::feed::like::Record) -> Self {
+        KnownRecord::LexiconsAppBskyFeedLike(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::like::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::app::bsky::feed::like::RecordData) -> Self {
+        KnownRecord::LexiconsAppBskyFeedLike(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::post::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::feed::post::Record) -> Self {
+        KnownRecord::LexiconsAppBskyFeedPost(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::post::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::app::bsky::feed::post::RecordData) -> Self {
+        KnownRecord::LexiconsAppBskyFeedPost(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::postgate::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::feed::postgate::Record) -> Self {
+        KnownRecord::LexiconsAppBskyFeedPostgate(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::postgate::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::feed::postgate::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyFeedPostgate(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::repost::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::feed::repost::Record) -> Self {
+        KnownRecord::LexiconsAppBskyFeedRepost(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::repost::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::app::bsky::feed::repost::RecordData) -> Self {
+        KnownRecord::LexiconsAppBskyFeedRepost(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::threadgate::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::feed::threadgate::Record) -> Self {
+        KnownRecord::LexiconsAppBskyFeedThreadgate(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::feed::threadgate::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::feed::threadgate::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyFeedThreadgate(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::block::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::graph::block::Record) -> Self {
+        KnownRecord::LexiconsAppBskyGraphBlock(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::block::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::app::bsky::graph::block::RecordData) -> Self {
+        KnownRecord::LexiconsAppBskyGraphBlock(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::follow::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::graph::follow::Record) -> Self {
+        KnownRecord::LexiconsAppBskyGraphFollow(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::follow::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::app::bsky::graph::follow::RecordData) -> Self {
+        KnownRecord::LexiconsAppBskyGraphFollow(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::list::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::graph::list::Record) -> Self {
+        KnownRecord::LexiconsAppBskyGraphList(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::list::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::app::bsky::graph::list::RecordData) -> Self {
+        KnownRecord::LexiconsAppBskyGraphList(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::listblock::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::graph::listblock::Record) -> Self {
+        KnownRecord::LexiconsAppBskyGraphListblock(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::listblock::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::graph::listblock::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyGraphListblock(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::listitem::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::graph::listitem::Record) -> Self {
+        KnownRecord::LexiconsAppBskyGraphListitem(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::listitem::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::graph::listitem::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyGraphListitem(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::starterpack::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::graph::starterpack::Record) -> Self {
+        KnownRecord::LexiconsAppBskyGraphStarterpack(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::starterpack::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::graph::starterpack::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyGraphStarterpack(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::verification::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::graph::verification::Record) -> Self {
+        KnownRecord::LexiconsAppBskyGraphVerification(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::graph::verification::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::graph::verification::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyGraphVerification(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::app::bsky::labeler::service::Record> for KnownRecord {
+    fn from(record: crate::lexicons::app::bsky::labeler::service::Record) -> Self {
+        KnownRecord::LexiconsAppBskyLabelerService(Box::new(record))
+    }
+}
+impl From<crate::lexicons::app::bsky::labeler::service::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::app::bsky::labeler::service::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsAppBskyLabelerService(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::chat::bsky::actor::declaration::Record> for KnownRecord {
+    fn from(record: crate::lexicons::chat::bsky::actor::declaration::Record) -> Self {
+        KnownRecord::LexiconsChatBskyActorDeclaration(Box::new(record))
+    }
+}
+impl From<crate::lexicons::chat::bsky::actor::declaration::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::chat::bsky::actor::declaration::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsChatBskyActorDeclaration(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::com::atproto::lexicon::schema::Record> for KnownRecord {
+    fn from(record: crate::lexicons::com::atproto::lexicon::schema::Record) -> Self {
+        KnownRecord::LexiconsComAtprotoLexiconSchema(Box::new(record))
+    }
+}
+impl From<crate::lexicons::com::atproto::lexicon::schema::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::com::atproto::lexicon::schema::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsComAtprotoLexiconSchema(Box::new(record_data.into()))
+    }
 }
 impl From<crate::lexicons::sh::tangled::actor::profile::Record> for KnownRecord {
     fn from(record: crate::lexicons::sh::tangled::actor::profile::Record) -> Self {
@@ -18,6 +286,42 @@ impl From<crate::lexicons::sh::tangled::actor::profile::RecordData> for KnownRec
         record_data: crate::lexicons::sh::tangled::actor::profile::RecordData,
     ) -> Self {
         KnownRecord::LexiconsShTangledActorProfile(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::sh::weaver::actor::profile::Record> for KnownRecord {
+    fn from(record: crate::lexicons::sh::weaver::actor::profile::Record) -> Self {
+        KnownRecord::LexiconsShWeaverActorProfile(Box::new(record))
+    }
+}
+impl From<crate::lexicons::sh::weaver::actor::profile::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::sh::weaver::actor::profile::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsShWeaverActorProfile(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::sh::weaver::notebook::authors::Record> for KnownRecord {
+    fn from(record: crate::lexicons::sh::weaver::notebook::authors::Record) -> Self {
+        KnownRecord::LexiconsShWeaverNotebookAuthors(Box::new(record))
+    }
+}
+impl From<crate::lexicons::sh::weaver::notebook::authors::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::sh::weaver::notebook::authors::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsShWeaverNotebookAuthors(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::sh::weaver::notebook::entry::Record> for KnownRecord {
+    fn from(record: crate::lexicons::sh::weaver::notebook::entry::Record) -> Self {
+        KnownRecord::LexiconsShWeaverNotebookEntry(Box::new(record))
+    }
+}
+impl From<crate::lexicons::sh::weaver::notebook::entry::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::sh::weaver::notebook::entry::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsShWeaverNotebookEntry(Box::new(record_data.into()))
     }
 }
 impl Into<atrium_api::types::Unknown> for KnownRecord {

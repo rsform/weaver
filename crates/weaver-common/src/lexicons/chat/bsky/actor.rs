@@ -4,3 +4,9 @@ pub mod declaration;
 pub mod defs;
 pub mod delete_account;
 pub mod export_account_data;
+#[derive(Debug)]
+pub struct Declaration;
+impl atrium_api::types::Collection for Declaration {
+    const NSID: &'static str = "chat.bsky.actor.declaration";
+    type Record = declaration::Record;
+}

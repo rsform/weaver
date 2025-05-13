@@ -34,14 +34,14 @@ pub enum MainMediaRefs {
 pub enum MainRecordRefs {
     #[serde(rename = "app.bsky.embed.record")]
     AppBskyEmbedRecordMain(Box<crate::app::bsky::embed::record::Main>),
-    #[serde(rename = "sh.weaver.embed.record")]
-    ShWeaverEmbedRecordMain(Box<crate::sh::weaver::embed::record::Main>),
+    #[serde(rename = "sh.weaver.embed.records")]
+    ShWeaverEmbedRecordsMain(Box<crate::sh::weaver::embed::records::Main>),
 }
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "$type")]
 pub enum ViewMediaRefs {
-    #[serde(rename = "sh.weaver.embed.images#view")]
-    ShWeaverEmbedImagesView(Box<crate::sh::weaver::embed::images::View>),
+    #[serde(rename = "sh.weaver.embed.images")]
+    ShWeaverEmbedImagesMain(Box<crate::sh::weaver::embed::images::Main>),
     #[serde(rename = "sh.weaver.embed.external#view")]
     ShWeaverEmbedExternalView(Box<crate::sh::weaver::embed::external::View>),
     #[serde(rename = "app.bsky.embed.images#view")]
@@ -54,8 +54,8 @@ pub enum ViewMediaRefs {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "$type")]
 pub enum ViewRecordRefs {
-    #[serde(rename = "sh.weaver.embed.record#view")]
-    ShWeaverEmbedRecordView(Box<crate::sh::weaver::embed::record::View>),
+    #[serde(rename = "sh.weaver.embed.records#view")]
+    ShWeaverEmbedRecordsView(Box<crate::sh::weaver::embed::records::View>),
     #[serde(rename = "app.bsky.embed.record#view")]
     AppBskyEmbedRecordView(Box<crate::app::bsky::embed::record::View>),
 }

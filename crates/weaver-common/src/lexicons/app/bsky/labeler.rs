@@ -3,3 +3,9 @@
 pub mod defs;
 pub mod get_services;
 pub mod service;
+#[derive(Debug)]
+pub struct Service;
+impl atrium_api::types::Collection for Service {
+    const NSID: &'static str = "app.bsky.labeler.service";
+    type Record = service::Record;
+}

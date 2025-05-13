@@ -2,3 +2,9 @@
 //!Definitions for the `sh.weaver.actor` namespace.
 pub mod defs;
 pub mod profile;
+#[derive(Debug)]
+pub struct Profile;
+impl atrium_api::types::Collection for Profile {
+    const NSID: &'static str = "sh.weaver.actor.profile";
+    type Record = profile::Record;
+}

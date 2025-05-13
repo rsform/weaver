@@ -26,11 +26,6 @@
         "labels": {
           "type": "array",
           "items": { "type": "ref", "ref": "com.atproto.label.defs#label" }
-        },
-
-        "status": {
-          "type": "ref",
-          "ref": "#statusView"
         }
       }
     }

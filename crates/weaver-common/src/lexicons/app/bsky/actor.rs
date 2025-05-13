@@ -10,3 +10,15 @@ pub mod put_preferences;
 pub mod search_actors;
 pub mod search_actors_typeahead;
 pub mod status;
+#[derive(Debug)]
+pub struct Profile;
+impl atrium_api::types::Collection for Profile {
+    const NSID: &'static str = "app.bsky.actor.profile";
+    type Record = profile::Record;
+}
+#[derive(Debug)]
+pub struct Status;
+impl atrium_api::types::Collection for Status {
+    const NSID: &'static str = "app.bsky.actor.status";
+    type Record = status::Record;
+}
