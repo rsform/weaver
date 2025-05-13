@@ -223,8 +223,11 @@
             cargo hakari verify
           '';
 
-          nativeBuildInputs = [
-            pkgs.cargo-hakari
+          nativeBuildInputs = with pkgs; [
+            cargo-hakari
+            sqlite
+            pkg-config
+            openssl
           ];
         };
       };
@@ -240,11 +243,11 @@
         };
 
       apps = {
-        "${name}-cli" = flake-utils.lib.mkApp {
-          drv = "${name}-cli";
+        weaver-cli = flake-utils.lib.mkApp {
+          drv = weaver-cli;
         };
-        "${name}-server" = flake-utils.lib.mkApp {
-          drv = "${name}-server";
+        weaver-server = flake-utils.lib.mkApp {
+          drv = weaver-server;
         };
       };
 

@@ -10,3 +10,13 @@ clap = { version = "4.5", features = ["derive", "env", "cargo", "unicode"] }
 n0-future = { workspace = true }
 weaver-common = { path = "../weaver-common" }
 weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
+
+hickory-resolver = "0.24.1"
+esquema-codegen.workspace = true
+
+atrium-api = "0.25.2"
+atrium-common = "0.1.1"
+atrium-identity = "0.1.3"
+atrium-oauth = "0.1.1"
+atrium-xrpc-client = "0.5.13"
+atrium-lex = { workspace = true }

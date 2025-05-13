@@ -16,15 +16,12 @@ publish = false
 
 ### BEGIN HAKARI SECTION
 [dependencies]
-markdown = { version = "1", features = ["json", "log"] }
-memchr = { version = "2" }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["raw_value"] }
 smallvec = { version = "1", default-features = false, features = ["const_new"] }
+tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]
 proc-macro2 = { version = "1" }
 quote = { version = "1" }
-syn = { version = "2", features = ["full", "visit-mut"] }
+syn = { version = "2", features = ["extra-traits", "full", "visit-mut"] }
 
 ### END HAKARI SECTION

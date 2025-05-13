@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+	</head>
+	<body>
+<h1>Main Title &amp; &quot;Special Chars&quot;</h1>
+<p>This is a paragraph with <em>emphasis</em>, <strong>strong emphasis</strong>, <del>strikethrough</del>, and <code>inline code</code>.
+Also, here&#39;s some escaped HTML: &lt; &amp; &gt; &quot; &#39;</p>
+<blockquote>
+<p>A blockquote with
+multiple lines.</p>
+<blockquote>
+<p>And a nested blockquote.</p>
+</blockquote>
+</blockquote>
+<hr />
+<h2>Lists and Links</h2>
+<ul>
+<li><p>Unordered item 1</p>
+</li>
+<li><p>Unordered item 2</p>
+<ul>
+<li><p>Nested unordered item</p>
+<ul>
+<li><p>Deeply nested</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<ol>
+<li><p>Ordered item 1</p>
+</li>
+<li><p>Ordered item 2 (with a line break)
+Still item 2.</p>
+</li>
+<li><p>Ordered item 3</p>
+</li>
+</ol>
+<h3>GFM Task List</h3>
+<ul>
+<li><input type="checkbox" disabled /> <p>Unchecked task</p>
+</li>
+<li><input type="checkbox" disabled checked /> <p>Checked task</p>
+</li>
+</ul>
+<p>Visit our site: <a href="http://example.com">http://example.com</a> or contact <a href="mailto:test@example.com">test@example.com</a>.
+For more info, check <a href="http://www.example.org">www.example.org</a>.
+A standard link: <a href="https://example.net" title="Link Title">Example Site</a>.
+An angle link: <a href="https://angled.example.org">https://angled.example.org</a></p>
+<h2>Media and Code</h2>
+<p><img src="image.jpg" alt="Alt text for image" title="Image Title" /></p>
+<pre><code class="language-rust">fn main() {
+    println!(&quot;Hello, Rust!&quot;);
+}</code></pre>
+<pre><code>Generic code block
+with no language.</code></pre>
+<h2>Table Time</h2>
+<table>
+<thead>
+<tr>
+<th style=\"text-align: left;\">Header 1</th>
+<th style=\"text-align: center;\">Header 2 (Center)</th>
+<th style=\"text-align: right;\">Header 3 (Right)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style=\"text-align: left;\">Cell 1-1</td>
+<td style=\"text-align: center;\">Cell 1-2</td>
+<td style=\"text-align: right;\">Cell 1-3</td>
+</tr>
+<tr>
+<td style=\"text-align: left;\">Cell 2-1 with <code>inline</code></td>
+<td style=\"text-align: center;\">Cell 2-2</td>
+<td style=\"text-align: right;\"><em>Cell 2-3</em></td>
+</tr>
+</tbody>
+</table>
+<h2>Other Features</h2>
+<p>This is a footnote reference.<sup class="footnote-reference"><a href="#fn:1">1</a></sup></p>
+<p>Raw HTML:</p>
+<div><p>Passthrough</p></div><p>Math: block</p>
+<pre><code class="language-math math-display">\sum_{i=0}^n i = \frac{n(n+1)}{2}</code></pre>
+<p>and inline <code class="language-math math-inline">E=mc^2</code>.</p>
+	</body>
+</html>

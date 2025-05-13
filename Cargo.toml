@@ -2,9 +2,12 @@
 resolver = "2"
 # Note that we define member crates with a wildcard here and NOT with explicit
 # paths because the flake.nix is written in a way such that top-level members
-# (`atpblog-cli` and `atpblog-server`) are built as different derivations which avoid being
+# (`weaver-cli` and `weaver-server`) are built as different derivations which avoid being
 # rebuilt if the other package's sources change.
 members = ["crates/*"]
+
+default-members = ["crates/weaver-cli"]
+
 
 [workspace.package]
 version = "0.1.0"
@@ -12,8 +15,9 @@ edition = "2024"
 license = "MPL-2.0"
 authors = ["orual"]
 
+
 [workspace.metadata.crane]
-name = "atpblog-workspace"
+name = "weaver-workspace"
 
 
 [workspace.dependencies]
@@ -31,3 +35,8 @@ syntect = "5.2.0"
 jane-eyre = "0.6.12"
 n0-future = "=0.1.2"
 tracing = { version = "0.1.41", default-features = false, features = ["std"] }
+lexicon_cid = { package = "cid", version = "0.10.1", features = ["serde-codec"] }
+markdown-weaver = { git = "https://github.com/rsform/markdown-weaver"}
+
+esquema-codegen = { git = "https://github.com/fatfingers23/esquema.git", branch = "main" }
+atrium-lex = { git = "https://github.com/sugyan/atrium.git", rev = "f162f815a04b5ecb0421b390d521c883c41d5f75" }
