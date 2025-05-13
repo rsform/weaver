@@ -1,0 +1,41 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.embed.recordWithMedia",
+  "description": "A representation of a record embedded in a Weaver record (eg, a notebook entry), alongside other compatible embeds. For example, a quote post and image, or a quote post and external URL card.",
+  "defs": {
+    "main": {
+      "type": "object",
+      "required": ["record", "media"],
+      "properties": {
+        "record": {
+          "type": "union",
+          "refs": ["app.bsky.embed.record", "sh.weaver.embed.record"]
+        },
+        "media": {
+          "type": "union",
+          "refs": ["sh.weaver.embed.images", "sh.weaver.embed.external", "app.bsky.embed.images", "app.bsky.embed.video", "app.bsky.embed.external"]
+        }
+      }
+    },
+    "view": {
+      "type": "object",
+      "required": ["record", "media"],
+      "properties": {
+        "record": {
+          "type": "union",
+          "refs": ["sh.weaver.embed.record#view", "app.bsky.embed.record#view"]
+        },
+        "media": {
+          "type": "union",
+          "refs": [
+            "sh.weaver.embed.images#view",
+            "sh.weaver.embed.external#view",
+            "app.bsky.embed.images#view",
+            "app.bsky.embed.video#view",
+            "app.bsky.embed.external#view"
+          ]
+        }
+      }
+    }
+  }
+}

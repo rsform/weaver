@@ -21,10 +21,19 @@ atrium-lex = { workspace = true }
 merde = { workspace = true, features = ["yaml"] }
 serde = { workspace = true }
 serde_json = { version = "1.0.140", features = ["preserve_order", "raw_value"] }
-serde_ipld_dagcbor = {  version = "0.6.1" ,features = ["codec"]}
+serde_ipld_dagcbor = { version = "0.6.1", features = ["codec"] }
 serde_cbor = "0.11.2"
 
-minijinja = { workspace = true, features = ["builtins", "debug", "deserialization", "macros", "multi_template", "adjacent_loop_items", "std_collections", "serde"]}
+minijinja = { workspace = true, features = [
+  "builtins",
+  "debug",
+  "deserialization",
+  "macros",
+  "multi_template",
+  "adjacent_loop_items",
+  "std_collections",
+  "serde",
+] }
 
 
 miette = { workspace = true, features = ["fancy"] }

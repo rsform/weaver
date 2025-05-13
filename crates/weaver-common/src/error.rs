@@ -127,7 +127,7 @@ impl ParseError {
             let (line, col) = offset_to_line_col(self.err_location.offset(), &self.src);
             let len = self.err_location.len();
             let location =
-                SourceSpan::new(SourceOffset::from_location(&src.inner(), line, col), len);
+                SourceSpan::new(SourceOffset::from_location(src.inner(), line, col), len);
             Self {
                 kind: self.kind,
                 src,
@@ -173,7 +173,7 @@ impl From<serde_json::Error> for ParseError {
     fn from(err: serde_json::Error) -> Self {
         let line = err.line();
         let column = err.column();
-        let location = SourceSpan::new(SourceOffset::from_location(&"", line, column), 0);
+        let location = SourceSpan::new(SourceOffset::from_location("", line, column), 0);
         Self {
             kind: ParseErrorKind::SerdeError(SerDeError::SDJson(err)),
             src: NamedSource::new(Cow::Borrowed("json"), Cow::Borrowed("")),

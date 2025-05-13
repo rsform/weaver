@@ -1,0 +1,101 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.embed.records",
+  "description": "A set of records embedded in a blog post.",
+  "defs": {
+    "main": {
+      "type": "object",
+      "required": ["records"],
+      "properties": {
+        "records": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+          "maxLength": 48
+        }
+      }
+    },
+    "view": {
+      "type": "object",
+      "required": ["record"],
+      "properties": {
+        "record": {
+          "type": "union",
+          "refs": [
+            "#viewRecord",
+            "#viewNotFound",
+            "#viewBlocked",
+            "#viewDetached",
+            "app.bsky.feed.defs#generatorView",
+            "app.bsky.graph.defs#listView",
+            "app.bsky.labeler.defs#labelerView",
+            "app.bsky.graph.defs#starterPackViewBasic"
+          ]
+        }
+      }
+    },
+    "viewRecord": {
+      "type": "object",
+      "required": ["uri", "cid", "author", "value", "indexedAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "author": {
+          "type": "union",
+          "refs": ["app.bsky.actor.defs#profileViewBasic"]
+        },
+        "value": {
+          "type": "unknown",
+          "description": "The record data itself."
+        },
+        "labels": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "com.atproto.label.defs#label" }
+        },
+        "replyCount": { "type": "integer" },
+        "repostCount": { "type": "integer" },
+        "likeCount": { "type": "integer" },
+        "quoteCount": { "type": "integer" },
+        "embeds": {
+          "type": "array",
+          "items": {
+            "type": "union",
+            "refs": [
+              "app.bsky.embed.images#view",
+              "app.bsky.embed.video#view",
+              "app.bsky.embed.external#view",
+              "app.bsky.embed.record#view",
+              "app.bsky.embed.recordWithMedia#view",
+              "sh.weaver.embed.records#view"
+            ]
+          }
+        },
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "viewNotFound": {
+      "type": "object",
+      "required": ["uri", "notFound"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "notFound": { "type": "boolean", "const": true }
+      }
+    },
+    "viewBlocked": {
+      "type": "object",
+      "required": ["uri", "blocked", "author"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "blocked": { "type": "boolean", "const": true },
+        "author": { "type": "ref", "ref": "app.bsky.feed.defs#blockedAuthor" }
+      }
+    },
+    "viewDetached": {
+      "type": "object",
+      "required": ["uri", "detached"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "detached": { "type": "boolean", "const": true }
+      }
+    }
+  }
+}

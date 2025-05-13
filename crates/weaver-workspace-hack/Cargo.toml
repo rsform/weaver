@@ -16,12 +16,24 @@ publish = false
 
 ### BEGIN HAKARI SECTION
 [dependencies]
-smallvec = { version = "1", default-features = false, features = ["const_new"] }
-tokio = { version = "1", features = ["full"] }
-
-[build-dependencies]
+data-encoding = { version = "2" }
+futures-channel = { version = "0.3" }
+futures-core = { version = "0.3" }
+idna = { version = "1" }
+memchr = { version = "2" }
+percent-encoding = { version = "2" }
 proc-macro2 = { version = "1" }
 quote = { version = "1" }
-syn = { version = "2", features = ["extra-traits", "full", "visit-mut"] }
+scopeguard = { version = "1" }
+smallvec = { version = "1", default-features = false, features = ["const_new"] }
+syn = { version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
+tokio = { version = "1", features = ["full"] }
+tracing = { version = "0.1", features = ["log"] }
+
+[build-dependencies]
+data-encoding = { version = "2" }
+proc-macro2 = { version = "1" }
+quote = { version = "1" }
+syn = { version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 
 ### END HAKARI SECTION

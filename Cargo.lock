@@ -3440,11 +3440,19 @@ dependencies = [
 name = "weaver-workspace-hack"
 version = "0.1.0"
 dependencies = [
+ "data-encoding",
+ "futures-channel",
+ "futures-core",
+ "idna",
+ "memchr",
+ "percent-encoding",
  "proc-macro2",
  "quote",
+ "scopeguard",
  "smallvec",
  "syn",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

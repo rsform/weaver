@@ -6,7 +6,7 @@ resolver = "2"
 # rebuilt if the other package's sources change.
 members = ["crates/*"]
 
-default-members = ["crates/weaver-cli"]
+#default-members = ["crates/weaver-cli"]
 
 
 [workspace.package]
@@ -35,8 +35,10 @@ syntect = "5.2.0"
 jane-eyre = "0.6.12"
 n0-future = "=0.1.2"
 tracing = { version = "0.1.41", default-features = false, features = ["std"] }
-lexicon_cid = { package = "cid", version = "0.10.1", features = ["serde-codec"] }
-markdown-weaver = { git = "https://github.com/rsform/markdown-weaver"}
+lexicon_cid = { package = "cid", version = "0.10.1", features = [
+  "serde-codec",
+] }
+markdown-weaver = { git = "https://github.com/rsform/markdown-weaver" }
 
 esquema-codegen = { git = "https://github.com/fatfingers23/esquema.git", branch = "main" }
 atrium-lex = { git = "https://github.com/sugyan/atrium.git", rev = "f162f815a04b5ecb0421b390d521c883c41d5f75" }

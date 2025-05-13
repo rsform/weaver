@@ -67,14 +67,21 @@
         strictDeps = true;
 
         buildInputs =
-          [
+          with pkgs; [
             # Add additional build inputs here
+            sqlite
+            pkg-config
+            openssl
           ]
           ++ lib.optionals pkgs.stdenv.isDarwin [
             # Additional darwin specific inputs can be set here
             pkgs.libiconv
           ];
-
+        nativeBuildInputs = with pkgs; [
+          sqlite
+          pkg-config
+          openssl
+        ];
         # Additional environment variables can be set directly
         # MY_CUSTOM_VAR = "some value";
       };
@@ -183,11 +190,11 @@
           inherit src;
         };
 
-        "${name}-workspace-toml-fmt" = craneLib.taploFmt {
-          src = pkgs.lib.sources.sourceFilesBySuffices src [".toml"];
-          # taplo arguments can be further customized below as needed
-          # taploExtraArgs = "--config ./taplo.toml";
-        };
+        # "${name}-workspace-toml-fmt" = craneLib.taploFmt {
+        #   src = pkgs.lib.sources.sourceFilesBySuffices src [".toml"];
+        #   # taplo arguments can be further customized below as needed
+        #   taploExtraArgs = "--config ./taplo.toml";
+        # };
 
         # Audit dependencies
         "${name}-workspace-audit" = craneLib.cargoAudit {

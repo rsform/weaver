@@ -1,0 +1,6 @@
+[submodule "atproto"]
+	path = atproto
+	url = https://github.com/bluesky-social/atproto
+[submodule "tangled/core"]
+	path = tangled/core
+	url = https://tangled.sh/@tangled.sh/core

@@ -1,0 +1,42 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.embed.images",
+  "description": "A set of images embedded in a blog post.",
+  "defs": {
+    "main": {
+      "type": "object",
+      "required": ["images"],
+      "properties": {
+        "images": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#image" },
+          "maxLength": 48
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["image", "alt"],
+      "properties": {
+        "image": {
+          "type": "blob",
+          "accept": ["image/*"],
+          "maxSize": 3000000
+        },
+        "alt": {
+          "type": "string",
+          "description": "alt text description of the image"
+        },
+        "blurhash": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Blurhash string for the image, used for low-resolution placeholders. This must be a valid Blurhash string."
+        },
+        "dimensions": {
+          "type": "union",
+          "refs": ["app.bsky.embed.defs#aspectRatio", "sh.weaver.embed.defs#percentSize", "sh.weaver.embed.defs#pixelSize"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.entry",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A notebook entry",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["content", "title", "createdAt"],
+        "properties": {
+          "title": { "type": "ref", "ref": "#title" },
+          "tags": { "type": "ref", "ref": "#tags" },
+
+          "content": {
+            "type": "string",
+            "maxLength": 200000,
+            "description": "The content of the notebook entry. This should be some flavor of Markdown."
+          },
+
+          "createdAt": {
+            "type": "ref",
+            "ref": "#createdAt"
+          },
+          "images": {
+            "type": "ref",
+            "ref": "sh.weaver.embed.images",
+            "description": "The set of images, if any, embedded in the notebook entry."
+          }
+        }
+      }
+    },
+
+    "createdAt": {
+      "type": "string",
+      "format": "datetime",
+      "description": "The date and time when the notebook entry was created. This is used for sorting and displaying the entry's creation date."
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 420,
+      "description": "The title of the notebook entry."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 64
+      },
+      "maxLength": 10,
+      "description": "An array of tags associated with the notebook entry. Tags can help categorize and organize entries."
+    }
+  }
+}
