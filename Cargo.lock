@@ -3398,6 +3398,7 @@ dependencies = [
  "atrium-xrpc",
  "atrium-xrpc-client",
  "esquema-codegen",
+ "hickory-resolver",
  "http",
  "libsqlite3-sys",
  "markdown-weaver",
