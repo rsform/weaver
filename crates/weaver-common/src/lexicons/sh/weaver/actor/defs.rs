@@ -17,5 +17,10 @@ pub struct ProfileViewData {
     pub indexed_at: core::option::Option<atrium_api::types::string::Datetime>,
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub labels: core::option::Option<Vec<crate::com::atproto::label::defs::Label>>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub links: core::option::Option<Vec<String>>,
+    ///Free-form location text.
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub location: core::option::Option<String>,
 }
 pub type ProfileView = atrium_api::types::Object<ProfileViewData>;

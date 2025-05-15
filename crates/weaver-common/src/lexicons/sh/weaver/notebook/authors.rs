@@ -21,14 +21,18 @@ pub struct AuthorListItemData {
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub index: core::option::Option<i64>,
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
-    pub profile: core::option::Option<atrium_api::types::Union<AuthorListItemProfileRefs>>,
+    pub profile: core::option::Option<
+        atrium_api::types::Union<AuthorListItemProfileRefs>,
+    >,
 }
 pub type AuthorListItem = atrium_api::types::Object<AuthorListItemData>;
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "$type")]
 pub enum AuthorListItemProfileRefs {
     #[serde(rename = "app.bsky.actor.defs#profileViewBasic")]
-    AppBskyActorDefsProfileViewBasic(Box<crate::app::bsky::actor::defs::ProfileViewBasic>),
-    #[serde(rename = "sh.weaver.actor.profile")]
-    ShWeaverActorProfileMain(Box<crate::sh::weaver::actor::profile::Record>),
+    AppBskyActorDefsProfileViewBasic(
+        Box<crate::app::bsky::actor::defs::ProfileViewBasic>,
+    ),
+    #[serde(rename = "sh.weaver.actor.defs#profileView")]
+    ShWeaverActorDefsProfileView(Box<crate::sh::weaver::actor::defs::ProfileView>),
 }

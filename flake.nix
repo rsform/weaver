@@ -256,6 +256,7 @@
         weaver-server = flake-utils.lib.mkApp {
           drv = weaver-server;
         };
+
       };
 
       devShells.default = craneLib.devShell {

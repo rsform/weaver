@@ -1,0 +1,31 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.book",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Authors of a Weaver notebook.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["cid", "uri", "authors", "entryList"],
+        "properties": {
+          "uri": { "type": "string", "format": "at-uri" },
+          "cid": { "type": "string", "format": "cid" },
+          "authors": {
+            "type": "ref",
+            "ref": "sh.weaver.notebook.defs#authorListView"
+          },
+          "entryList": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "sh.weaver.notebook.defs#bookEntryView"
+            }
+          },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

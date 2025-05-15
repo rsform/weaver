@@ -2,8 +2,44 @@
 //!Definitions for the `sh.weaver.notebook.defs` namespace.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AuthorListViewData {
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub cid: core::option::Option<atrium_api::types::string::Cid>,
+    pub index: i64,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub record: core::option::Option<atrium_api::types::Unknown>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub uri: core::option::Option<String>,
+}
+pub type AuthorListView = atrium_api::types::Object<AuthorListViewData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BookEntryRefData {
+    pub entry: EntryView,
+}
+pub type BookEntryRef = atrium_api::types::Object<BookEntryRefData>;
+///An ordered entry in a Weaver notebook.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BookEntryViewData {
+    pub entry: EntryView,
+    pub index: i64,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub next: core::option::Option<BookEntryRef>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub prev: core::option::Option<BookEntryRef>,
+}
+pub type BookEntryView = atrium_api::types::Object<BookEntryViewData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct EntryViewData {
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub authors: core::option::Option<AuthorListView>,
     pub cid: atrium_api::types::string::Cid,
+    pub indexed_at: atrium_api::types::string::Datetime,
+    pub record: atrium_api::types::Unknown,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub rendered_view: core::option::Option<RenderedView>,
     pub uri: String,
 }
 pub type EntryView = atrium_api::types::Object<EntryViewData>;

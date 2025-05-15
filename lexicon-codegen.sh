@@ -2,7 +2,9 @@
 
 
 #cargo install esquema-cli --locked --git https://github.com/fatfingers23/esquema.git
+rm -rf ./target/lexicons
 mkdir -p ./target/lexicons
+
 cp -r ./lexicons ./target/lexicons
 cp -r ./atproto/lexicons ./target/lexicons
 

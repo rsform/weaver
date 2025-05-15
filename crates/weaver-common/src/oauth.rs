@@ -15,7 +15,7 @@ use atrium_oauth::{
 
 use std::sync::Arc;
 
-use crate::HickoryDnsTxtResolver;
+use crate::resolver::HickoryDnsTxtResolver;
 
 pub fn default_oauth_client(
     url: impl AsRef<str>,

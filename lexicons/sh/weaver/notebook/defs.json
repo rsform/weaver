@@ -1,0 +1,84 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.defs",
+  "defs": {
+    "entryView": {
+      "type": "object",
+      "required": ["uri", "cid", "author", "record", "indexedAt"],
+
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "authors": {
+          "type": "ref",
+          "ref": "#authorListView"
+        },
+        "record": { "type": "unknown" },
+        "renderedView": {
+          "type": "ref",
+          "ref": "#renderedView"
+        },
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+
+    "renderedView": {
+      "type": "object",
+      "required": ["html"],
+      "properties": {
+        "html": {
+          "type": "blob",
+          "accept": ["text/html"],
+          "maxSize": 1000000
+        },
+        "css": {
+          "type": "blob",
+          "accept": ["text/css"],
+          "maxSize": 1000000
+        }
+      },
+      "description": "View of a rendered and cached notebook entry"
+    },
+    "authorListView": {
+      "type": "object",
+      "required": ["profile", "index"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "record": { "type": "unknown" },
+        "index": { "type": "integer" }
+      }
+    },
+
+    "bookEntryView": {
+      "type": "object",
+      "description": "An ordered entry in a Weaver notebook.",
+      "required": ["entry", "index"],
+      "properties": {
+        "entry": {
+          "type": "ref",
+          "ref": "#entryView"
+        },
+        "index": { "type": "integer" },
+        "next": {
+          "type": "ref",
+          "ref": "#bookEntryRef"
+        },
+        "prev": {
+          "type": "ref",
+          "ref": "#bookEntryRef"
+        }
+      }
+    },
+    "bookEntryRef": {
+      "type": "object",
+      "required": ["entry"],
+      "properties": {
+        "entry": {
+          "type": "ref",
+          "ref": "#entryView"
+        }
+      }
+    }
+  }
+}

@@ -41,11 +41,12 @@ minijinja = { workspace = true, features = [
 ] }
 
 
-miette = { workspace = true, features = ["fancy"] }
+miette = { workspace = true }
 owo-colors = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 hickory-resolver = "0.24.1"
+toml = "0.8.22"
 
 
 

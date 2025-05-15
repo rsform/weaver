@@ -69,6 +69,10 @@ pub enum KnownRecord {
     LexiconsShWeaverNotebookAuthors(
         Box<crate::lexicons::sh::weaver::notebook::authors::Record>,
     ),
+    #[serde(rename = "sh.weaver.notebook.book")]
+    LexiconsShWeaverNotebookBook(
+        Box<crate::lexicons::sh::weaver::notebook::book::Record>,
+    ),
     #[serde(rename = "sh.weaver.notebook.entry")]
     LexiconsShWeaverNotebookEntry(
         Box<crate::lexicons::sh::weaver::notebook::entry::Record>,
@@ -310,6 +314,18 @@ impl From<crate::lexicons::sh::weaver::notebook::authors::RecordData> for KnownR
         record_data: crate::lexicons::sh::weaver::notebook::authors::RecordData,
     ) -> Self {
         KnownRecord::LexiconsShWeaverNotebookAuthors(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::sh::weaver::notebook::book::Record> for KnownRecord {
+    fn from(record: crate::lexicons::sh::weaver::notebook::book::Record) -> Self {
+        KnownRecord::LexiconsShWeaverNotebookBook(Box::new(record))
+    }
+}
+impl From<crate::lexicons::sh::weaver::notebook::book::RecordData> for KnownRecord {
+    fn from(
+        record_data: crate::lexicons::sh::weaver::notebook::book::RecordData,
+    ) -> Self {
+        KnownRecord::LexiconsShWeaverNotebookBook(Box::new(record_data.into()))
     }
 }
 impl From<crate::lexicons::sh::weaver::notebook::entry::Record> for KnownRecord {
