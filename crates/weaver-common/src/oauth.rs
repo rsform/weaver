@@ -4,9 +4,12 @@ use atrium_identity::{
     did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL},
     handle::{AtprotoHandleResolver, AtprotoHandleResolverConfig},
 };
+#[cfg(not(feature = "dev"))]
+use atrium_oauth::AtprotoClientMetadata;
+#[cfg(feature = "dev")]
+use atrium_oauth::AtprotoLocalhostClientMetadata;
 use atrium_oauth::{
-    AtprotoLocalhostClientMetadata, DefaultHttpClient, KnownScope, OAuthClient, OAuthClientConfig,
-    OAuthResolverConfig, Scope,
+    DefaultHttpClient, KnownScope, OAuthClient, OAuthClientConfig, OAuthResolverConfig, Scope,
     store::{
         session::{MemorySessionStore, Session},
         state::{InternalStateData, MemoryStateStore},
@@ -30,15 +33,10 @@ pub fn default_oauth_client(
     atrium_oauth::Error,
 > {
     let http_client = Arc::new(atrium_oauth::DefaultHttpClient::default());
+    let keys = if cfg!(feature = "dev") { None } else { todo!() };
     let config = OAuthClientConfig {
-        client_metadata: AtprotoLocalhostClientMetadata {
-            redirect_uris: Some(vec![url.as_ref().to_string()]),
-            scopes: Some(vec![
-                Scope::Known(KnownScope::Atproto),
-                Scope::Known(KnownScope::TransitionGeneric),
-            ]),
-        },
-        keys: None,
+        client_metadata: default_client_metadata(url.as_ref()),
+        keys,
         resolver: OAuthResolverConfig {
             did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
                 plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
@@ -56,4 +54,37 @@ pub fn default_oauth_client(
     };
     let client = OAuthClient::new(config)?;
     Ok(client)
+}
+
+#[cfg(feature = "dev")]
+pub fn default_client_metadata(_host: &str) -> AtprotoLocalhostClientMetadata {
+    AtprotoLocalhostClientMetadata {
+        redirect_uris: make_redirect_uris("http://127.0.0.1:4000"),
+        scopes: make_scopes(),
+    }
+}
+
+#[cfg(not(feature = "dev"))]
+pub fn default_client_metadata(host: &str) -> AtprotoClientMetadata {
+    AtprotoClientMetadata {
+        client_id: host.to_string(),
+        redirect_uris: make_redirect_uris(host),
+        scopes: make_scopes(),
+        token_endpoint_auth_method: AuthMethod::PrivateKeyJwt,
+        grant_types: vec![GrantType::AuthorizationCode, GrantType::RefreshToken],
+        token_endpoint_auth_signing_alg: Some(String::from("ES256")),
+    }
+}
+
+#[inline]
+fn make_redirect_uris(url: &str) -> Option<Vec<String>> {
+    Some(vec![format!("{}/oauth/callback", url)])
+}
+
+#[inline]
+fn make_scopes() -> Option<Vec<Scope>> {
+    Some(vec![
+        Scope::Known(KnownScope::Atproto),
+        Scope::Known(KnownScope::TransitionGeneric),
+    ])
 }

@@ -5,11 +5,15 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = ["dev"]
+dev = []
+
 [dependencies]
 n0-future = { workspace = true }
 weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 markdown-weaver = { workspace = true }
-libsqlite3-sys = { version = "0.33.0", features = ["bundled"] }
+libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }
 
 http = "1.3.1"
 

@@ -5,3 +5,6 @@ result*
 .direnv
 .env
 .devenv
+
+.db/
+**/.db/

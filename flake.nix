@@ -272,6 +272,7 @@
         NIX_LD = lib.fileContents "${pkgs.stdenv.cc}/nix-support/dynamic-linker";
 
         LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:$NIX_LD_LIBRARY_PATH";
+        DATABASE_URL = "./.db/weaver.db";
 
         # Additional dev-shell environment variables can be set directly
         # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
@@ -281,6 +282,7 @@
           cargo-hakari
           nixd
           alejandra
+          diesel-cli
         ];
       };
     });
