@@ -1,19 +1,20 @@
+use atrium_api::xrpc::Error as XrpcError;
 use miette::{Diagnostic, NamedSource, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 use std::fmt;
 
 #[derive(thiserror::Error, Debug, Diagnostic)]
 #[error("error(s) in weaver")]
-pub struct Error<E: fmt::Debug> {
+pub struct Error {
     #[related]
-    errors: Vec<WeaverErrorKind<E>>,
+    errors: Vec<WeaverErrorKind>,
 
     #[help]
     advice: Option<String>,
 }
 
 #[derive(thiserror::Error, Debug, Diagnostic)]
-pub enum WeaverErrorKind<E: fmt::Debug> {
+pub enum WeaverErrorKind {
     #[error(transparent)]
     #[diagnostic_source]
     ParseError(ParseError),
@@ -25,7 +26,7 @@ pub enum WeaverErrorKind<E: fmt::Debug> {
     TaskError(#[from] n0_future::task::JoinError),
     #[error(transparent)]
     #[diagnostic_source]
-    AtprotoError(#[from] AtprotoError<E>),
+    AtprotoError(#[from] AtprotoError),
     #[error(transparent)]
     #[diagnostic_source]
     NetworkError(#[from] NetworkError),
@@ -36,9 +37,9 @@ pub enum WeaverErrorKind<E: fmt::Debug> {
 
 #[derive(thiserror::Error, Debug, Diagnostic)]
 #[error("io error")]
-pub struct AtprotoError<E: fmt::Debug> {
+pub struct AtprotoError {
     #[diagnostic_source]
-    kind: AtprotoErrorKind<E>,
+    kind: AtprotoErrorKind,
 }
 
 #[derive(thiserror::Error, Debug, Diagnostic)]
@@ -52,15 +53,79 @@ pub enum NetworkError {
     HttpClient(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
+/// Generic error type for XRPC errors.
+#[derive(thiserror::Error, Debug, Diagnostic)]
+pub enum GenericXrpcError {
+    Response {
+        status: http::StatusCode,
+        error: Option<String>,
+    },
+    Other(String),
+}
+
+impl std::fmt::Display for GenericXrpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Response { status, error } => {
+                write!(f, "{}", status.as_str())?;
+                let Some(error) = &error else {
+                    return Ok(());
+                };
+                if !error.is_empty() {
+                    write!(f, " {error}")?;
+                }
+            }
+            Self::Other(s) => {
+                write!(f, "{s}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<E> From<XrpcError<E>> for Error
+where
+    E: fmt::Debug,
+{
+    fn from(err: XrpcError<E>) -> Self {
+        if let XrpcError::XrpcResponse(e) = err {
+            Self {
+                errors: vec![WeaverErrorKind::AtprotoError(AtprotoError {
+                    kind: AtprotoErrorKind::AtriumXrpc(GenericXrpcError::Response {
+                        status: e.status,
+                        error: e.error.map(|e| match e {
+                            atrium_xrpc::error::XrpcErrorKind::Custom(_) => {
+                                String::from("custom error")
+                            }
+                            atrium_xrpc::error::XrpcErrorKind::Undefined(res) => res.to_string(),
+                        }),
+                    }),
+                })],
+                advice: None,
+            }
+        } else {
+            Self {
+                errors: vec![WeaverErrorKind::AtprotoError(AtprotoError {
+                    kind: AtprotoErrorKind::AtriumCatchall(GenericXrpcError::Other(format!(
+                        "{:?}",
+                        err
+                    ))),
+                })],
+                advice: None,
+            }
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug, Diagnostic)]
 #[non_exhaustive]
-pub enum AtprotoErrorKind<E: fmt::Debug> {
+pub enum AtprotoErrorKind {
     #[error(transparent)]
     #[diagnostic_source]
     AtriumApi(#[from] atrium_api::error::Error),
     #[error("XRPC error: {:?}", .0)]
     #[diagnostic_source]
-    AtriumXrpc(atrium_api::xrpc::error::XrpcError<E>),
+    AtriumXrpc(GenericXrpcError),
     #[error("Authentication error: {:?}", .0)]
     #[diagnostic_source]
     Auth(http::HeaderValue),
@@ -69,7 +134,7 @@ pub enum AtprotoErrorKind<E: fmt::Debug> {
     UnexpectedResponseType,
     #[error("Atrium error: {:?}", .0)]
     #[diagnostic_source]
-    AtriumCatchall(atrium_api::xrpc::Error<E>),
+    AtriumCatchall(GenericXrpcError),
 }
 
 #[derive(thiserror::Error, Debug, Diagnostic)]
@@ -191,37 +256,6 @@ impl<E: fmt::Debug> TryFrom<atrium_api::xrpc::error::Error<E>> for SerDeError {
             atrium_api::xrpc::error::Error::SerdeJson(e) => Ok(Self::from(e)),
             atrium_api::xrpc::error::Error::SerdeHtmlForm(e) => Ok(Self::from(e)),
             _ => Err(err),
-        }
-    }
-}
-
-impl<E> From<atrium_api::xrpc::error::Error<E>> for WeaverErrorKind<E>
-where
-    E: fmt::Debug,
-{
-    fn from(err: atrium_api::xrpc::error::Error<E>) -> Self {
-        use atrium_api::xrpc::error::Error::*;
-
-        match err {
-            Authentication(e) => {
-                let atp_err = AtprotoError {
-                    kind: AtprotoErrorKind::Auth(e),
-                };
-                Self::AtprotoError(atp_err)
-            }
-            UnexpectedResponseType => {
-                let atp_err = AtprotoError {
-                    kind: AtprotoErrorKind::UnexpectedResponseType,
-                };
-                Self::AtprotoError(atp_err)
-            }
-            XrpcResponse(e) => Self::AtprotoError(AtprotoError {
-                kind: AtprotoErrorKind::AtriumXrpc(e),
-            }),
-            HttpRequest(e) => Self::NetworkError(NetworkError::HttpRequest(e)),
-            HttpClient(e) => Self::NetworkError(NetworkError::HttpClient(e)),
-            SerdeJson(e) => Self::SerdeError(SerDeError::SDJson(e)),
-            SerdeHtmlForm(e) => Self::SerdeError(SerDeError::SerHtmlForm(e)),
         }
     }
 }

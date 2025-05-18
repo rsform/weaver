@@ -1,4 +1,5 @@
 pub mod client;
+pub mod compat;
 pub mod config;
 pub mod error;
 pub mod lexicons;
@@ -8,9 +9,7 @@ pub use lexicons::*;
 
 pub use crate::error::{Error, IoError, ParseError, SerDeError};
 
-/// Canonical Cow for us, thanks Amos
 pub use merde::CowStr;
-
 /// too many cows, so we have conversions
 pub fn mcow_to_cow(cow: CowStr<'_>) -> std::borrow::Cow<'_, str> {
     match cow {

@@ -5,16 +5,43 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+embedded-db = ["diesel/sqlite", "diesel-async/sync-connection-wrapper"]
+
 [dependencies]
-weaver-common = { path = "../weaver-common" }
+weaver-common = { path = "../weaver-common", default-features = false }
 weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 clap = { version = "4.5", features = ["derive", "env", "cargo", "unicode"] }
+dotenvy = "0.15"
+
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
+tracing-appender = { version = "0.2.3", features = ["parking_lot"] }
+
+chrono = "0.4.41"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.128"
+uuid = { version = "1.8.0", features = ["v7", "serde"] }
+merde.workspace = true
 
 axum = "0.8"
-tower = "0.5"
-tower-http = { version = "0.6", features = ["fs"] }
+hyper = "1.4.1"
+tower = { version = "0.5", features = [] }
 tower-cookies = "0.11"
+tower-http = { version = "0.6", features = [
+"fs",
+    "trace",
+    "timeout",
+    "request-id",
+    "cors",
+    "normalize-path",
+] }
 
+reqwest = { version = "0.12.7", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
 
 tokio = { version = "1.44", features = ["full"] }
 atrium-oauth = "0.1.1"
@@ -23,9 +50,19 @@ atrium-api =  "0.25.3"
 atrium-common = "0.1.1"
 atrium-identity = "0.1.3"
 
+miette = { workspace = true, features = ["fancy", "syntect-highlighter"] }
+thiserror = { workspace = true }
 
-diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
-# build libsqlite3 as part of the build process
-# uncomment this line if you run into setup issues
-# libsqlite3-sys = { version = "0.30", features = ["bundled"] }
-dotenvy = "0.15"
+diesel =  { version = "2.2.0", features = ["postgres", "serde_json","chrono"] }
+diesel-async = { version = "0.5.2", features = ["postgres", "deadpool"] }
+diesel_migrations = "2.2.0"
+facet = { workspace = true }
+
+kdl = "6.3.4"
+toml = { version = "0.8.22", features = ["preserve_order"] }
+jose = { version = "0.0.2", features = ["crypto-rustcrypto"] }
+jose-jwk = "0.1.2"
+
+minijinja = { version = "2.9.0" }
+minijinja-contrib = { version = "2.9.0" }
+dashmap = "6.1.0"

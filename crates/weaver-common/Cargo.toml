@@ -25,7 +25,7 @@ atrium-oauth = "0.1.1"
 atrium-xrpc-client = "0.5.13"
 atrium-lex = { workspace = true }
 
-merde = { workspace = true, features = ["yaml"] }
+merde = { workspace = true, features = ["yaml", "serde"] }
 serde = { workspace = true }
 serde_json = { version = "1.0.140", features = ["preserve_order", "raw_value"] }
 serde_ipld_dagcbor = { version = "0.6.1", features = ["codec"] }
@@ -51,6 +51,10 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 hickory-resolver = "0.24.1"
 toml = "0.8.22"
+compact_string = "0.1.0"
+jose = { version = "0.0.2", features = ["crypto-rustcrypto"] }
+jose-jwk = "0.1.2"
+reqwest = "0.12.15"
 
 
 

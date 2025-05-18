@@ -28,7 +28,7 @@ facet = { version = "0.9.6", features = ["camino"] }
 
 minijinja = { version = "2.9.0", default-features = false }
 minijinja-contrib = { version = "2.9.0", default-features = false }
-miette = { version = "7.5.0" }
+miette = { version = "7.6" }
 owo-colors = { version = "4.2.0" }
 thiserror = "2.0"
 syntect = "5.2.0"

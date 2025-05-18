@@ -1,18 +1,23 @@
 use atrium_api::agent::Agent;
-use atrium_api::xrpc::http::Uri;
 use atrium_oauth::AuthorizeOptions;
+use atrium_oauth::CallbackParams;
 use atrium_oauth::KnownScope;
 use atrium_oauth::Scope;
-use std::{
-    error,
-    io::{BufRead, Write, stdin, stdout},
-};
+use rouille::Server;
+use std::error;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn error::Error>> {
-    let client = weaver_common::oauth::default_oauth_client("https://appview.weaver.sh")?;
+    let (tx, mut rx) = mpsc::channel(5);
+    let server = Server::new("0.0.0.0:4000", move |request| {
+        create_callback_router(request, tx.clone())
+    })
+    .expect("Could not start server");
+    let (server_handle, server_stop) = server.stoppable();
+    let client = weaver_common::oauth::default_native_oauth_client()?;
     println!(
-        "Authorization url: {}",
+        "To authenticate with your PDS, visit:\r\n\t {}",
         client
             .authorize(
                 std::env::var("HANDLE").unwrap_or(String::from("https://atproto.systems")),
@@ -27,14 +32,9 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
             .await?
     );
 
-    print!("Redirected url: ");
-    stdout().lock().flush()?;
-    let mut url = String::new();
-    stdin().lock().read_line(&mut url)?;
-
-    let uri = url.trim().parse::<Uri>()?;
-    let params = serde_html_form::from_str(uri.query().unwrap())?;
+    let params = rx.recv().await.unwrap();
     let (session, _) = client.callback(params).await?;
+    server_stop.send(()).expect("Failed to stop callbackserver");
     let agent = Agent::new(session);
     let output = agent
         .api
@@ -53,5 +53,27 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     for feed in &output.feed {
         println!("{feed:?}");
     }
+    server_handle.join().unwrap();
     Ok(())
+}
+
+pub fn create_callback_router(
+    request: &rouille::Request,
+    tx: mpsc::Sender<CallbackParams>,
+) -> rouille::Response {
+    rouille::router!(request,
+            (GET) (/oauth/callback) => {
+                let state = request.get_param("state").unwrap();
+                let code = request.get_param("code").unwrap();
+                let iss = request.get_param("iss").unwrap();
+                let callback_params = CallbackParams {
+                    state: Some(state),
+                    code,
+                    iss: Some(iss),
+                };
+                tx.try_send(callback_params).unwrap();
+                rouille::Response::text("Logged in!")
+            },
+            _ => rouille::Response::empty_404()
+    )
 }

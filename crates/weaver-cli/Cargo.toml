@@ -26,3 +26,4 @@ serde_html_form = "0.2.7"
 
 # temp for testing
 tokio = { version = "1.45.0", features = ["full"] }
+rouille = { version = "3.6.2", features = ["rustls"] }
