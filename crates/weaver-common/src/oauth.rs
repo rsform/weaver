@@ -21,7 +21,7 @@ use atrium_oauth::{
 
 use std::sync::Arc;
 
-use crate::{client::WeaverHttpClient, resolver::HickoryDnsTxtResolver};
+use crate::{agent::WeaverHttpClient, resolver::HickoryDnsTxtResolver};
 
 pub struct NativeOAuthClient {
     oauth: NativeBasicOAuthClient,

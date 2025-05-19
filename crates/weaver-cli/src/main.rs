@@ -6,6 +6,7 @@ use atrium_oauth::Scope;
 use rouille::Server;
 use std::error;
 use tokio::sync::mpsc;
+use weaver_common::agent::WeaverAgent;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn error::Error>> {
@@ -34,25 +35,33 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
 
     let params = rx.recv().await.unwrap();
     let (session, _) = client.callback(params).await?;
-    server_stop.send(()).expect("Failed to stop callbackserver");
-    let agent = Agent::new(session);
+    server_stop
+        .send(())
+        .expect("Failed to stop callback server");
+    let agent = WeaverAgent::new(session);
     let output = agent
-        .api
-        .app
-        .bsky
-        .feed
-        .get_timeline(
-            atrium_api::app::bsky::feed::get_timeline::ParametersData {
-                algorithm: None,
-                cursor: None,
-                limit: 3.try_into().ok(),
-            }
-            .into(),
-        )
+        .get_profile_pds(agent.did().await.unwrap().into())
         .await?;
-    for feed in &output.feed {
-        println!("{feed:?}");
-    }
+    println!("{output:?}");
+
+    // let agent = Agent::new(session);
+    // let output = agent
+    //     .api
+    //     .app
+    //     .bsky
+    //     .feed
+    //     .get_timeline(
+    //         weaver_common::app::bsky::feed::get_timeline::ParametersData {
+    //             algorithm: None,
+    //             cursor: None,
+    //             limit: 3.try_into().ok(),
+    //         }
+    //         .into(),
+    //     )
+    //     .await?;
+    // for feed in &output.feed {
+    //     println!("{feed:?}");
+    // }
     server_handle.join().unwrap();
     Ok(())
 }

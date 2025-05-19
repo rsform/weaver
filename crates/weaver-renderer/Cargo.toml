@@ -7,6 +7,9 @@ publish = false
 
 [dependencies]
 n0-future = { workspace = true }
+atrium-api = { version = "0.25.3", default-features = false }
 
 weaver-common = { path = "../weaver-common" }
+
 weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
+compact_string = "0.1.0"

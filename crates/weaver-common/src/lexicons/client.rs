@@ -24,6 +24,7 @@ where
     pub app: app::Service<T>,
     pub chat: chat::Service<T>,
     pub com: com::Service<T>,
+    pub sh: sh::Service<T>,
     pub tools: tools::Service<T>,
     pub(crate) _phantom: core::marker::PhantomData<T>,
 }
@@ -258,6 +259,33 @@ pub mod com {
         }
     }
 }
+pub mod sh {
+    pub struct Service<T>
+    where
+        T: atrium_xrpc::XrpcClient + Send + Sync,
+    {
+        pub weaver: weaver::Service<T>,
+        pub(crate) _phantom: core::marker::PhantomData<T>,
+    }
+    pub mod weaver {
+        pub struct Service<T>
+        where
+            T: atrium_xrpc::XrpcClient + Send + Sync,
+        {
+            pub actor: actor::Service<T>,
+            pub(crate) _phantom: core::marker::PhantomData<T>,
+        }
+        pub mod actor {
+            pub struct Service<T>
+            where
+                T: atrium_xrpc::XrpcClient + Send + Sync,
+            {
+                pub(crate) xrpc: std::sync::Arc<T>,
+                pub(crate) _phantom: core::marker::PhantomData<T>,
+            }
+        }
+    }
+}
 pub mod tools {
     pub struct Service<T>
     where
@@ -375,6 +403,7 @@ where
             app: app::Service::new(std::sync::Arc::clone(&xrpc)),
             chat: chat::Service::new(std::sync::Arc::clone(&xrpc)),
             com: com::Service::new(std::sync::Arc::clone(&xrpc)),
+            sh: sh::Service::new(std::sync::Arc::clone(&xrpc)),
             tools: tools::Service::new(std::sync::Arc::clone(&xrpc)),
             _phantom: core::marker::PhantomData,
         }
@@ -5790,6 +5819,72 @@ where
             .await?;
         match response {
             atrium_xrpc::OutputDataOrBytes::Bytes(_) => Ok(()),
+            _ => Err(atrium_xrpc::Error::UnexpectedResponseType),
+        }
+    }
+}
+impl<T> sh::Service<T>
+where
+    T: atrium_xrpc::XrpcClient + Send + Sync,
+{
+    #[allow(unused_variables)]
+    pub(crate) fn new(xrpc: std::sync::Arc<T>) -> Self {
+        Self {
+            weaver: sh::weaver::Service::new(std::sync::Arc::clone(&xrpc)),
+            _phantom: core::marker::PhantomData,
+        }
+    }
+}
+impl<T> sh::weaver::Service<T>
+where
+    T: atrium_xrpc::XrpcClient + Send + Sync,
+{
+    #[allow(unused_variables)]
+    pub(crate) fn new(xrpc: std::sync::Arc<T>) -> Self {
+        Self {
+            actor: sh::weaver::actor::Service::new(std::sync::Arc::clone(&xrpc)),
+            _phantom: core::marker::PhantomData,
+        }
+    }
+}
+impl<T> sh::weaver::actor::Service<T>
+where
+    T: atrium_xrpc::XrpcClient + Send + Sync,
+{
+    #[allow(unused_variables)]
+    pub(crate) fn new(xrpc: std::sync::Arc<T>) -> Self {
+        Self {
+            xrpc,
+            _phantom: core::marker::PhantomData,
+        }
+    }
+    ///Get detailed profile view of an actor. Does not require auth, but contains relevant metadata with auth.
+    pub async fn get_profile(
+        &self,
+        params: crate::sh::weaver::actor::get_profile::Parameters,
+    ) -> atrium_xrpc::Result<
+        crate::sh::weaver::actor::get_profile::Output,
+        crate::sh::weaver::actor::get_profile::Error,
+    > {
+        let response = self
+            .xrpc
+            .send_xrpc::<
+                _,
+                (),
+                _,
+                _,
+            >(
+                &atrium_xrpc::XrpcRequest {
+                    method: http::Method::GET,
+                    nsid: crate::sh::weaver::actor::get_profile::NSID.into(),
+                    parameters: Some(params),
+                    input: None,
+                    encoding: None,
+                },
+            )
+            .await?;
+        match response {
+            atrium_xrpc::OutputDataOrBytes::Data(data) => Ok(data),
             _ => Err(atrium_xrpc::Error::UnexpectedResponseType),
         }
     }

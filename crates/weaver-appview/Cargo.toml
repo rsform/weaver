@@ -56,9 +56,7 @@ thiserror = { workspace = true }
 diesel =  { version = "2.2.0", features = ["postgres", "serde_json","chrono"] }
 diesel-async = { version = "0.5.2", features = ["postgres", "deadpool"] }
 diesel_migrations = "2.2.0"
-facet = { workspace = true }
 
-kdl = "6.3.4"
 toml = { version = "0.8.22", features = ["preserve_order"] }
 jose = { version = "0.0.2", features = ["crypto-rustcrypto"] }
 jose-jwk = "0.1.2"

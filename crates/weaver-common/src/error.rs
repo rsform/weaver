@@ -13,6 +13,30 @@ pub struct Error {
     advice: Option<String>,
 }
 
+impl Error {
+    pub fn new(errors: Vec<WeaverErrorKind>) -> Self {
+        Self {
+            errors,
+            advice: None,
+        }
+    }
+
+    pub fn with_advice(mut self, advice: String) -> Self {
+        self.advice = Some(advice);
+        self
+    }
+
+    pub fn with_error(mut self, error: WeaverErrorKind) -> Self {
+        self.errors.push(error);
+        self
+    }
+
+    pub fn with_errors(mut self, errors: Error) -> Self {
+        self.errors.extend(errors.errors);
+        self
+    }
+}
+
 #[derive(thiserror::Error, Debug, Diagnostic)]
 pub enum WeaverErrorKind {
     #[error(transparent)]
@@ -61,6 +85,17 @@ pub enum GenericXrpcError {
         error: Option<String>,
     },
     Other(String),
+}
+
+impl From<GenericXrpcError> for Error {
+    fn from(err: GenericXrpcError) -> Self {
+        Self {
+            errors: vec![WeaverErrorKind::AtprotoError(AtprotoError {
+                kind: AtprotoErrorKind::AtriumCatchall(err),
+            })],
+            advice: None,
+        }
+    }
 }
 
 impl std::fmt::Display for GenericXrpcError {

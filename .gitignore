@@ -1,5 +1,7 @@
 /target
-result*
+/result
+/result-lib
+/dist
 /node_modules
 
 .direnv

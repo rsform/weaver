@@ -2,6 +2,12 @@
 //!Definitions for the `sh.weaver.actor.defs` namespace.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ProfileDataViewData {
+    pub inner: atrium_api::types::Union<ProfileDataViewInnerRefs>,
+}
+pub type ProfileDataView = atrium_api::types::Object<ProfileDataViewData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ProfileViewData {
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub avatar: core::option::Option<String>,
@@ -22,5 +28,40 @@ pub struct ProfileViewData {
     ///Free-form location text.
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub location: core::option::Option<String>,
+    ///Pronouns to use in user-generated content.
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub pronouns: core::option::Option<crate::sh::weaver::actor::profile::PronounsList>,
 }
 pub type ProfileView = atrium_api::types::Object<ProfileViewData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TangledProfileViewData {
+    ///Include link to this account on Bluesky.
+    pub bluesky: bool,
+    ///Free-form profile description text.
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub description: core::option::Option<String>,
+    pub did: atrium_api::types::string::Did,
+    pub handle: atrium_api::types::string::Handle,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub links: core::option::Option<Vec<String>>,
+    ///Free-form location text.
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub location: core::option::Option<String>,
+    ///Any ATURI, it is up to appviews to validate these fields.
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub pinned_repositories: core::option::Option<Vec<String>>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub stats: core::option::Option<Vec<String>>,
+}
+pub type TangledProfileView = atrium_api::types::Object<TangledProfileViewData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "$type")]
+pub enum ProfileDataViewInnerRefs {
+    #[serde(rename = "sh.weaver.actor.defs#profileView")]
+    ShWeaverActorDefsProfileView(Box<crate::sh::weaver::actor::defs::ProfileView>),
+    #[serde(rename = "app.bsky.actor.defs#profileViewDetailed")]
+    AppBskyActorDefsProfileViewDetailed(
+        Box<crate::app::bsky::actor::defs::ProfileViewDetailed>,
+    ),
+}

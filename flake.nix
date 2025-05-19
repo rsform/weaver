@@ -3,20 +3,17 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-
-    crane.url = "github:ipetkov/crane";
-
     flake-utils.url = "github:numtide/flake-utils";
 
     advisory-db = {
       url = "github:rustsec/advisory-db";
       flake = false;
     };
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    crane.url = "github:ipetkov/crane";
   };
+
 
   outputs = {
     self,
@@ -37,29 +34,19 @@
       inherit (pkgs) lib;
 
       rustToolchainFor = p:
-        p.rust-bin.stable.latest.default.override {
+        p.rust-bin.selectLatestNightlyWith(toolchain: toolchain.default.override {
           # Set the build targets supported by the toolchain,
           # wasm32-unknown-unknown is required for trunk.
-          targets = ["wasm32-unknown-unknown"];
-          extensions = ["llvm-tools"];
-        };
+          #targets = ["wasm32-unknown-unknown"];
+          extensions = [
+            "llvm-tools"
+            "rust-src"
+            "rust-analyzer"
+            "clippy"
+          ];
+        });
       craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchainFor;
-      # When filtering sources, we want to allow assets other than .rs files
-      unfilteredRoot = ./.; # The original, unfiltered source
-      src = lib.fileset.toSource {
-        root = unfilteredRoot;
-        fileset = lib.fileset.unions [
-          # Default files from crane (Rust and cargo files)
-          (craneLib.fileset.commonCargoSources unfilteredRoot)
-          (
-            lib.fileset.fileFilter
-            (file: lib.any file.hasExt ["html" "scss"])
-            unfilteredRoot
-          )
-          # Example of a folder for images, icons, etc
-          (lib.fileset.maybeMissing ./assets)
-        ];
-      };
+      src = craneLib.cleanCargoSource ./.;
 
       # Common arguments can be set here to avoid repeating them later
       commonArgs = {
@@ -85,30 +72,6 @@
         # Additional environment variables can be set directly
         # MY_CUSTOM_VAR = "some value";
       };
-
-      # Wasm packages
-
-      # it's not possible to build the server on the
-      # wasm32 target, so we only build the client.
-      wasmArgs =
-        commonArgs
-        // {
-          pname = "trunk-workspace-wasm";
-          cargoExtraArgs = "--package=client";
-          CARGO_BUILD_TARGET = "wasm32-unknown-unknown";
-        };
-
-      cargoArtifactsWasm = craneLib.buildDepsOnly (wasmArgs
-        // {
-          doCheck = false;
-        });
-
-      # craneLibLLvmTools = craneLib.overrideToolchain
-      #   (fenix.packages.${system}.complete.withComponents [
-      #     "cargo"
-      #     "llvm-tools"
-      #     "rustc"
-      #   ]);
 
       # Build *just* the cargo dependencies (of the entire workspace),
       # so we can reuse all of that work (e.g. via cachix) when running in CI
@@ -232,9 +195,6 @@
 
           nativeBuildInputs = with pkgs; [
             cargo-hakari
-            sqlite
-            pkg-config
-            openssl
           ];
         };
       };
@@ -284,7 +244,6 @@
           alejandra
           diesel-cli
           postgresql
-          cargo-watch
           jq
         ];
       };

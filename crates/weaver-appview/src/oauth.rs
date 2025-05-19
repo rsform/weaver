@@ -10,7 +10,7 @@ use jose_jwk::Key;
 use miette::IntoDiagnostic;
 use miette::Result;
 use miette::miette;
-use weaver_common::client::WeaverHttpClient;
+use weaver_common::agent::WeaverHttpClient;
 use weaver_common::oauth::WeaverOAuthClient;
 use weaver_common::resolver::HickoryDnsTxtResolver;
 
