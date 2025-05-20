@@ -8,10 +8,10 @@
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["cid", "uri", "authors", "entryList"],
+        "required": ["authors", "entryList"],
         "properties": {
-          "uri": { "type": "string", "format": "at-uri" },
-          "cid": { "type": "string", "format": "cid" },
+          "title": { "type": "ref", "ref": "sh.weaver.notebook.defs#title" },
+          "tags": { "type": "ref", "ref": "sh.weaver.notebook.defs#tags" },
           "authors": {
             "type": "ref",
             "ref": "sh.weaver.notebook.defs#authorListView"
@@ -23,7 +23,11 @@
               "ref": "sh.weaver.notebook.defs#bookEntryView"
             }
           },
-          "createdAt": { "type": "string", "format": "datetime" }
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared timestamp when this was originally created."
+          }
         }
       }
     }

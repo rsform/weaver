@@ -33,7 +33,6 @@ generic-array = { version = "0.14", default-features = false, features = ["more_
 group = { version = "0.13", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.15", features = ["serde"] }
 idna = { version = "1" }
-libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 log = { version = "0.4", default-features = false, features = ["std"] }
 memchr = { version = "2", features = ["use_std"] }
 miette = { version = "7", features = ["fancy", "syntect-highlighter"] }
@@ -43,7 +42,7 @@ num-traits = { version = "0.2", default-features = false, features = ["i128", "l
 p384 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 percent-encoding = { version = "2" }
 pkcs8 = { version = "0.10", default-features = false, features = ["pem"] }
-proc-macro2 = { version = "1", features = ["span-locations"] }
+proc-macro2 = { version = "1" }
 quote = { version = "1" }
 rand_core = { version = "0.6", default-features = false, features = ["std"] }
 reqwest = { version = "0.12", features = ["gzip", "json", "rustls-tls"] }
@@ -69,7 +68,7 @@ data-encoding = { version = "2" }
 diesel_derives = { version = "2", features = ["32-column-tables", "chrono", "postgres", "sqlite", "with-deprecated"] }
 either = { version = "1", features = ["use_std"] }
 hashbrown = { version = "0.15", features = ["serde"] }
-proc-macro2 = { version = "1", features = ["span-locations"] }
+proc-macro2 = { version = "1" }
 quote = { version = "1" }
 serde = { version = "1", features = ["alloc", "derive"] }
 syn = { version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }

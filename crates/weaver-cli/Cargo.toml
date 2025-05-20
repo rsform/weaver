@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env", "cargo", "unicode"] }
 n0-future = { workspace = true }
-weaver-common = { path = "../weaver-common" }
+weaver-common = { path = "../weaver-common", features = ["native"] }
 weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 miette = { workspace = true, features = ["fancy"] }
 
@@ -27,3 +27,4 @@ serde_html_form = "0.2.7"
 # temp for testing
 tokio = { version = "1.45.0", features = ["full"] }
 rouille = { version = "3.6.2", features = ["rustls"] }
+dirs = "6.0.0"

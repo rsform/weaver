@@ -1,0 +1,30 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.edit.diff",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "An edit record for a notebook.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["snapshot", "root", "doc"],
+        "properties": {
+          "snapshot": {
+            "type": "blob",
+            "accept": ["*/*"],
+            "maxSize": 3000000
+          },
+          "root": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "doc": {
+            "type": "ref",
+            "ref": "sh.weaver.edit.defs#docRef"
+          }
+        }
+      }
+    }
+  }
+}

@@ -40,9 +40,28 @@ pub struct EntryViewData {
     pub record: atrium_api::types::Unknown,
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub rendered_view: core::option::Option<RenderedView>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub tags: core::option::Option<Tags>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub title: core::option::Option<Title>,
     pub uri: String,
 }
 pub type EntryView = atrium_api::types::Object<EntryViewData>;
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookViewData {
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub authors: core::option::Option<AuthorListView>,
+    pub cid: atrium_api::types::string::Cid,
+    pub indexed_at: atrium_api::types::string::Datetime,
+    pub record: atrium_api::types::Unknown,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub tags: core::option::Option<Tags>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub title: core::option::Option<Title>,
+    pub uri: String,
+}
+pub type NotebookView = atrium_api::types::Object<NotebookViewData>;
 ///View of a rendered and cached notebook entry
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -52,3 +71,7 @@ pub struct RenderedViewData {
     pub html: atrium_api::types::BlobRef,
 }
 pub type RenderedView = atrium_api::types::Object<RenderedViewData>;
+///An array of tags associated with the notebook entry. Tags can help categorize and organize entries.
+pub type Tags = Vec<String>;
+///The title of the notebook entry.
+pub type Title = String;

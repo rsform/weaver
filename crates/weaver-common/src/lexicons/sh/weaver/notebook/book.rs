@@ -5,11 +5,14 @@ use atrium_api::types::TryFromUnknown;
 #[serde(rename_all = "camelCase")]
 pub struct RecordData {
     pub authors: crate::sh::weaver::notebook::defs::AuthorListView,
-    pub cid: atrium_api::types::string::Cid,
+    ///Client-declared timestamp when this was originally created.
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub created_at: core::option::Option<atrium_api::types::string::Datetime>,
     pub entry_list: Vec<crate::sh::weaver::notebook::defs::BookEntryView>,
-    pub uri: String,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub tags: core::option::Option<crate::sh::weaver::notebook::defs::Tags>,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub title: core::option::Option<crate::sh::weaver::notebook::defs::Title>,
 }
 pub type Record = atrium_api::types::Object<RecordData>;
 impl From<atrium_api::types::Unknown> for RecordData {

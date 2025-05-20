@@ -18,11 +18,12 @@ impl DnsTxtResolver for HickoryDnsTxtResolver {
     async fn resolve(
         &self,
         query: &str,
-    ) -> core::result::Result<Vec<String>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    ) -> core::result::Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
         Ok(self
             .resolver
             .txt_lookup(query)
-            .await?
+            .await
+            .map_err(crate::error::NetworkError::from)?
             .iter()
             .map(|txt| txt.to_string())
             .collect())

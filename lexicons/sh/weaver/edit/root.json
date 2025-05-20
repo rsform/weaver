@@ -1,0 +1,28 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.edit.root",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "The starting point for edit history on a notebook.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["cid", "uri", "doc", "snapshot"],
+        "properties": {
+          "uri": { "type": "string", "format": "at-uri" },
+          "cid": { "type": "string", "format": "cid" },
+          "snapshot": {
+            "type": "blob",
+            "accept": ["*/*"],
+            "maxSize": 30000000
+          },
+          "doc": {
+            "type": "ref",
+            "ref": "sh.weaver.edit.defs#docRef"
+          }
+        }
+      }
+    }
+  }
+}

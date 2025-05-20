@@ -65,6 +65,12 @@ pub enum KnownRecord {
     LexiconsShWeaverActorProfile(
         Box<crate::lexicons::sh::weaver::actor::profile::Record>,
     ),
+    #[serde(rename = "sh.weaver.edit.cursor")]
+    LexiconsShWeaverEditCursor(Box<crate::lexicons::sh::weaver::edit::cursor::Record>),
+    #[serde(rename = "sh.weaver.edit.diff")]
+    LexiconsShWeaverEditDiff(Box<crate::lexicons::sh::weaver::edit::diff::Record>),
+    #[serde(rename = "sh.weaver.edit.root")]
+    LexiconsShWeaverEditRoot(Box<crate::lexicons::sh::weaver::edit::root::Record>),
     #[serde(rename = "sh.weaver.notebook.authors")]
     LexiconsShWeaverNotebookAuthors(
         Box<crate::lexicons::sh::weaver::notebook::authors::Record>,
@@ -302,6 +308,36 @@ impl From<crate::lexicons::sh::weaver::actor::profile::RecordData> for KnownReco
         record_data: crate::lexicons::sh::weaver::actor::profile::RecordData,
     ) -> Self {
         KnownRecord::LexiconsShWeaverActorProfile(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::sh::weaver::edit::cursor::Record> for KnownRecord {
+    fn from(record: crate::lexicons::sh::weaver::edit::cursor::Record) -> Self {
+        KnownRecord::LexiconsShWeaverEditCursor(Box::new(record))
+    }
+}
+impl From<crate::lexicons::sh::weaver::edit::cursor::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::sh::weaver::edit::cursor::RecordData) -> Self {
+        KnownRecord::LexiconsShWeaverEditCursor(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::sh::weaver::edit::diff::Record> for KnownRecord {
+    fn from(record: crate::lexicons::sh::weaver::edit::diff::Record) -> Self {
+        KnownRecord::LexiconsShWeaverEditDiff(Box::new(record))
+    }
+}
+impl From<crate::lexicons::sh::weaver::edit::diff::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::sh::weaver::edit::diff::RecordData) -> Self {
+        KnownRecord::LexiconsShWeaverEditDiff(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::sh::weaver::edit::root::Record> for KnownRecord {
+    fn from(record: crate::lexicons::sh::weaver::edit::root::Record) -> Self {
+        KnownRecord::LexiconsShWeaverEditRoot(Box::new(record))
+    }
+}
+impl From<crate::lexicons::sh::weaver::edit::root::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::sh::weaver::edit::root::RecordData) -> Self {
+        KnownRecord::LexiconsShWeaverEditRoot(Box::new(record_data.into()))
     }
 }
 impl From<crate::lexicons::sh::weaver::notebook::authors::Record> for KnownRecord {

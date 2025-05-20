@@ -75,6 +75,9 @@ pub enum NetworkError {
     #[error("HTTP client error: {0}")]
     #[diagnostic_source]
     HttpClient(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("DNS TXT resolver error: {0}")]
+    #[diagnostic_source]
+    DnsTxtResolver(#[from] hickory_resolver::error::ResolveError),
 }
 
 /// Generic error type for XRPC errors.

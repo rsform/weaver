@@ -6,13 +6,14 @@ use atrium_api::types::TryFromUnknown;
 pub struct RecordData {
     ///The content of the notebook entry. This should be some flavor of Markdown.
     pub content: String,
-    pub created_at: CreatedAt,
+    ///Client-declared timestamp when this was originally created.
+    pub created_at: atrium_api::types::string::Datetime,
     ///The set of images, if any, embedded in the notebook entry.
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub images: core::option::Option<crate::sh::weaver::embed::images::Main>,
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
-    pub tags: core::option::Option<Tags>,
-    pub title: Title,
+    pub tags: core::option::Option<crate::sh::weaver::notebook::defs::Tags>,
+    pub title: crate::sh::weaver::notebook::defs::Title,
 }
 pub type Record = atrium_api::types::Object<RecordData>;
 impl From<atrium_api::types::Unknown> for RecordData {
@@ -20,9 +21,3 @@ impl From<atrium_api::types::Unknown> for RecordData {
         Self::try_from_unknown(value).unwrap()
     }
 }
-///The date and time when the notebook entry was created. This is used for sorting and displaying the entry's creation date.
-pub type CreatedAt = String;
-///An array of tags associated with the notebook entry. Tags can help categorize and organize entries.
-pub type Tags = Vec<String>;
-///The title of the notebook entry.
-pub type Title = String;

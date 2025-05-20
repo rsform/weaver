@@ -10,8 +10,8 @@
         "type": "object",
         "required": ["content", "title", "createdAt"],
         "properties": {
-          "title": { "type": "ref", "ref": "#title" },
-          "tags": { "type": "ref", "ref": "#tags" },
+          "title": { "type": "ref", "ref": "sh.weaver.notebook.defs#title" },
+          "tags": { "type": "ref", "ref": "sh.weaver.notebook.defs#tags" },
 
           "content": {
             "type": "string",
@@ -20,8 +20,9 @@
           },
 
           "createdAt": {
-            "type": "ref",
-            "ref": "#createdAt"
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared timestamp when this was originally created."
           },
           "images": {
             "type": "ref",
@@ -30,26 +31,6 @@
           }
         }
       }
-    },
-
-    "createdAt": {
-      "type": "string",
-      "format": "datetime",
-      "description": "The date and time when the notebook entry was created. This is used for sorting and displaying the entry's creation date."
-    },
-    "title": {
-      "type": "string",
-      "maxLength": 420,
-      "description": "The title of the notebook entry."
-    },
-    "tags": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "maxLength": 64
-      },
-      "maxLength": 10,
-      "description": "An array of tags associated with the notebook entry. Tags can help categorize and organize entries."
     }
   }
 }

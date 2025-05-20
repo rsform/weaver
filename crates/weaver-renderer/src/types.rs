@@ -1,5 +1,11 @@
 use atrium_api::types::string::{Cid, Did};
 use compact_string::CompactString;
+use http::Uri;
+
+pub struct Link {
+    pub uri: Uri,
+    pub blob: BlobLink,
+}
 
 pub type MimeType = CompactString;
 
@@ -24,14 +30,30 @@ pub enum CdnLink {
 
 impl std::fmt::Display for BlobLink {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}/{}@{}",
-            self.url_prefix(),
-            self.did().as_str(),
-            self.cid().as_ref(),
-            self.mime_type().rsplit('/').next().unwrap()
-        )
+        match self {
+            BlobLink::PDS {
+                pds_host,
+                did,
+                cid,
+                mime_type: _,
+            } => {
+                write!(
+                    f,
+                    "{}/xrpc/com.atproto.sync.getBlob?did={}&cid={}",
+                    pds_host,
+                    did.as_str(),
+                    cid.as_ref()
+                )
+            }
+            _ => write!(
+                f,
+                "{}{}/{}@{}",
+                self.url_prefix(),
+                self.did().as_str(),
+                self.cid().as_ref(),
+                self.mime_type().rsplit('/').next().unwrap()
+            ),
+        }
     }
 }
 

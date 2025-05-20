@@ -28,6 +28,23 @@ pub struct NativeOAuthClient {
     pub http_client: Arc<WeaverHttpClient>,
 }
 
+pub type NativeBasicOAuthSession = OAuthSession<
+    DefaultHttpClient,
+    CommonDidResolver<WeaverHttpClient>,
+    AtprotoHandleResolver<HickoryDnsTxtResolver, WeaverHttpClient>,
+    MemoryStore<Did, Session>,
+>;
+
+pub struct NativeWeaverOAuthClient<STATE, SESS>
+where
+    STATE: StateStore + Send + Sync + 'static,
+    SESS: SessionStore + Send + Sync + 'static,
+    STATE::Error: std::error::Error + Send + Sync + 'static,
+    SESS::Error: std::error::Error + Send + Sync + 'static,
+{
+    oauth: WeaverOAuthClient<STATE, SESS>,
+    pub http_client: Arc<WeaverHttpClient>,
+}
 impl NativeOAuthClient {
     pub async fn authorize(
         &self,
@@ -45,11 +62,39 @@ impl NativeOAuthClient {
     }
 }
 
-pub type NativeBasicOAuthSession = OAuthSession<
+#[cfg(all(feature = "native", feature = "dev"))]
+impl
+    NativeWeaverOAuthClient<
+        crate::filestore::SimpleJsonFileSessionStore<std::path::PathBuf>,
+        crate::filestore::SimpleJsonFileSessionStore<std::path::PathBuf>,
+    >
+{
+    pub async fn authorize(
+        &self,
+        input: impl AsRef<str>,
+        options: AuthorizeOptions,
+    ) -> Result<String, atrium_oauth::Error> {
+        self.oauth.authorize(input, options).await
+    }
+
+    pub async fn callback(
+        &self,
+        params: CallbackParams,
+    ) -> Result<(WeaverOAuthSession, Option<String>), atrium_oauth::Error> {
+        self.oauth.callback(params).await
+    }
+
+    pub async fn restore(&self, did: &Did) -> Result<WeaverOAuthSession, atrium_oauth::Error> {
+        self.oauth.restore(did).await
+    }
+}
+
+#[cfg(all(feature = "native", feature = "dev"))]
+pub type WeaverOAuthSession = OAuthSession<
     DefaultHttpClient,
     CommonDidResolver<WeaverHttpClient>,
     AtprotoHandleResolver<HickoryDnsTxtResolver, WeaverHttpClient>,
-    MemoryStore<Did, Session>,
+    crate::filestore::SimpleJsonFileSessionStore<std::path::PathBuf>,
 >;
 
 pub type NativeBasicOAuthClient = atrium_oauth::OAuthClient<
@@ -135,6 +180,42 @@ pub fn default_oauth_client(
         session_store: MemorySessionStore::default(),
     };
     let client = OAuthClient::new(config)?;
+    Ok(client)
+}
+
+#[cfg(all(feature = "native", feature = "dev"))]
+pub fn test_native_oauth_client() -> Result<
+    NativeWeaverOAuthClient<
+        crate::filestore::SimpleJsonFileSessionStore<std::path::PathBuf>,
+        crate::filestore::SimpleJsonFileSessionStore<std::path::PathBuf>,
+    >,
+    atrium_oauth::Error,
+> {
+    use crate::filestore::SimpleJsonFileSessionStore;
+
+    let http_client = Arc::new(WeaverHttpClient::default());
+    let config = OAuthClientConfig {
+        client_metadata: default_native_client_metadata(),
+        keys: None,
+        resolver: OAuthResolverConfig {
+            did_resolver: CommonDidResolver::new(CommonDidResolverConfig {
+                plc_directory_url: DEFAULT_PLC_DIRECTORY_URL.to_string(),
+                http_client: Arc::clone(&http_client),
+            }),
+            handle_resolver: AtprotoHandleResolver::new(AtprotoHandleResolverConfig {
+                dns_txt_resolver: HickoryDnsTxtResolver::default(),
+                http_client: Arc::clone(&http_client),
+            }),
+            authorization_server_metadata: Default::default(),
+            protected_resource_metadata: Default::default(),
+        },
+        state_store: SimpleJsonFileSessionStore::default(),
+        session_store: SimpleJsonFileSessionStore::default(),
+    };
+    let client = NativeWeaverOAuthClient {
+        oauth: OAuthClient::new(config)?,
+        http_client: Arc::clone(&http_client),
+    };
     Ok(client)
 }
 

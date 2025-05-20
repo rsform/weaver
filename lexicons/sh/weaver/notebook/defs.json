@@ -2,11 +2,30 @@
   "lexicon": 1,
   "id": "sh.weaver.notebook.defs",
   "defs": {
+    "notebookView": {
+      "type": "object",
+      "required": ["uri", "cid", "author", "record", "indexedAt"],
+
+      "properties": {
+        "title": { "type": "ref", "ref": "#title" },
+        "tags": { "type": "ref", "ref": "#tags" },
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "authors": {
+          "type": "ref",
+          "ref": "#authorListView"
+        },
+        "record": { "type": "unknown" },
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
     "entryView": {
       "type": "object",
       "required": ["uri", "cid", "author", "record", "indexedAt"],
 
       "properties": {
+        "title": { "type": "ref", "ref": "#title" },
+        "tags": { "type": "ref", "ref": "#tags" },
         "uri": { "type": "string", "format": "at-uri" },
         "cid": { "type": "string", "format": "cid" },
         "authors": {
@@ -79,6 +98,20 @@
           "ref": "#entryView"
         }
       }
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 420,
+      "description": "The title of the notebook entry."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 64
+      },
+      "maxLength": 10,
+      "description": "An array of tags associated with the notebook entry. Tags can help categorize and organize entries."
     }
   }
 }

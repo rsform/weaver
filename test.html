@@ -3,6 +3,13 @@
     <head>
         <meta charset="utf-8">
 	</head>
+	<script>
+	console.log( window.location.href );  // whatever your current location href is
+window.history.replaceState( {} , 'foo', './LICENSE' );
+console.log( window.location.href );  // oh, hey, it replaced the path with /foo
+
+
+</script>
 	<body>
 <h1>Main Title &amp; &quot;Special Chars&quot;</h1>
 <p>This is a paragraph with <em>emphasis</em>, <strong>strong emphasis</strong>, <del>strikethrough</del>, and <code>inline code</code>.
@@ -15,6 +22,7 @@ multiple lines.</p>
 </blockquote>
 </blockquote>
 <hr />
+
 <h2>Lists and Links</h2>
 <ul>
 <li><p>Unordered item 1</p>

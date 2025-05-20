@@ -1,6 +1,9 @@
 pub mod agent;
 pub mod config;
 pub mod error;
+/// This filestore is very much not production ready
+#[cfg(all(feature = "native", feature = "dev"))]
+pub mod filestore;
 pub mod lexicons;
 pub mod oauth;
 pub mod resolver;
