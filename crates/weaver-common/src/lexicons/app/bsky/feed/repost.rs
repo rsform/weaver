@@ -6,6 +6,8 @@ use atrium_api::types::TryFromUnknown;
 pub struct RecordData {
     pub created_at: atrium_api::types::string::Datetime,
     pub subject: crate::com::atproto::repo::strong_ref::Main,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub via: core::option::Option<crate::com::atproto::repo::strong_ref::Main>,
 }
 pub type Record = atrium_api::types::Object<RecordData>;
 impl From<atrium_api::types::Unknown> for RecordData {

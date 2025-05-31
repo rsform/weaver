@@ -5,7 +5,7 @@
     "main": {
       "type": "record",
       "description": "Authors of a Weaver notebook.",
-      "key": "literal:self",
+      "key": "tid",
       "record": {
         "type": "object",
         "required": ["authorList"],

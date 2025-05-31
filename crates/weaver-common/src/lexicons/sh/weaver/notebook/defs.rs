@@ -30,6 +30,15 @@ pub struct BookEntryViewData {
     pub prev: core::option::Option<BookEntryRef>,
 }
 pub type BookEntryView = atrium_api::types::Object<BookEntryViewData>;
+///The format of the content. This is used to determine how to render the content.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentFormatData {
+    ///The format of the content. This is used to determine how to render the content.
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub markdown: core::option::Option<String>,
+}
+pub type ContentFormat = atrium_api::types::Object<ContentFormatData>;
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct EntryViewData {

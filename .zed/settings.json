@@ -11,6 +11,16 @@
           "command": ["alejandra", "--quiet", "--"] // or ["nixfmt"]
         }
       }
+    },
+    "rust-analyzer": {
+      "binary": {
+        "path": "/nix/store/qs17clvcja2b5wy5wmcqd5mqly6wypax-rust-default-1.89.0-nightly-2025-05-21/bin/rust-analyzer"
+      },
+      "initialization_options": {
+        "cargo": {
+          "allFeatures": true
+        }
+      }
     }
   }
 }

@@ -59,6 +59,20 @@
         }
       }
     },
+    "author": {
+      "type": "object",
+      "description": "A single author in a Weaver notebook.",
+      "required": ["did"],
+      "properties": {
+        "did": { "type": "string", "format": "did" },
+        "handle": { "type": "string", "format": "handle" },
+        "displayName": {
+          "type": "string",
+          "maxGraphemes": 64,
+          "maxLength": 640
+        }
+      }
+    },
     "tangledProfileView": {
       "type": "object",
       "required": ["bluesky", "did", "handle"],

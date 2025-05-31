@@ -1,23 +1,21 @@
 {
   "lexicon": 1,
-  "id": "sh.weaver.notebook.book",
+  "id": "sh.weaver.notebook.chapter",
   "defs": {
     "main": {
       "type": "record",
-      "description": "Authors of a Weaver notebook.",
+      "description": "A grouping of entries in a notebook, intended to be displayed as a single page.",
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["authors", "entryList"],
+        "required": ["notebook", "authors", "entryList"],
         "properties": {
           "title": { "type": "ref", "ref": "sh.weaver.notebook.defs#title" },
           "tags": { "type": "ref", "ref": "sh.weaver.notebook.defs#tags" },
-          "authors": {
-            "type": "array",
-            "items": {
-              "type": "ref",
-              "ref": "sh.weaver.actor.defs#author"
-            }
+          "notebook": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "The notebook this page belongs to."
           },
           "entryList": {
             "type": "array",

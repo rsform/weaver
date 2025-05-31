@@ -39,6 +39,9 @@ pub struct FeedViewPostData {
     pub reason: core::option::Option<atrium_api::types::Union<FeedViewPostReasonRefs>>,
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub reply: core::option::Option<ReplyRef>,
+    ///Unique identifier per request that may be passed back alongside interactions.
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub req_id: core::option::Option<String>,
 }
 pub type FeedViewPost = atrium_api::types::Object<FeedViewPostData>;
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -87,6 +90,9 @@ pub struct InteractionData {
     pub feed_context: core::option::Option<String>,
     #[serde(skip_serializing_if = "core::option::Option::is_none")]
     pub item: core::option::Option<String>,
+    ///Unique identifier per request that may be passed back alongside interactions.
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub req_id: core::option::Option<String>,
 }
 pub type Interaction = atrium_api::types::Object<InteractionData>;
 ///User liked the feed item
@@ -142,7 +148,11 @@ pub type ReasonPin = atrium_api::types::Object<ReasonPinData>;
 #[serde(rename_all = "camelCase")]
 pub struct ReasonRepostData {
     pub by: crate::app::bsky::actor::defs::ProfileViewBasic,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub cid: core::option::Option<atrium_api::types::string::Cid>,
     pub indexed_at: atrium_api::types::string::Datetime,
+    #[serde(skip_serializing_if = "core::option::Option::is_none")]
+    pub uri: core::option::Option<String>,
 }
 pub type ReasonRepost = atrium_api::types::Object<ReasonRepostData>;
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]

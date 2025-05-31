@@ -5,6 +5,14 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[[bin]]
+name = "weaver-server"
+path = "src/main.rs"
+
+[lib]
+name = "weaver_server"
+path = "src/lib.rs"
+
 [dependencies]
 weaver-common = { path = "../weaver-common" }
 weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }

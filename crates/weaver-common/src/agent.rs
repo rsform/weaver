@@ -3,8 +3,8 @@ use crate::error::GenericXrpcError;
 use crate::resolver::HickoryDnsTxtResolver;
 use crate::sh::weaver::actor::defs::ProfileDataViewInnerRefs;
 use atrium_api::agent::{CloneWithProxy, Configure};
-use atrium_api::types::string::{Cid, Did, Handle, Nsid, RecordKey};
-use atrium_api::types::{Collection, Union, Unknown};
+use atrium_api::types::string::{Cid, Did, Handle, Nsid, RecordKey, Tid};
+use atrium_api::types::{BlobRef, Collection, LimitedU32, TryIntoUnknown, Union, Unknown};
 use atrium_api::{agent::SessionManager, types::string::AtIdentifier};
 use atrium_common::resolver::Resolver;
 use atrium_identity::did::{CommonDidResolver, CommonDidResolverConfig, DEFAULT_PLC_DIRECTORY_URL};
@@ -60,6 +60,7 @@ where
             AtprotoHandleResolver<HickoryDnsTxtResolver, WeaverHttpClient>,
         >,
     >,
+    pub client: Arc<WeaverHttpClient>,
     pub api: Service<Wrapper<M>>,
 }
 
@@ -86,6 +87,7 @@ where
         Self {
             session_manager,
             resolver: Arc::new(IdentityResolver::new(resolver_config)),
+            client: Arc::clone(&http_client),
             api,
         }
     }
@@ -94,6 +96,10 @@ where
 
     pub async fn did(&self) -> Option<Did> {
         self.session_manager.did().await
+    }
+
+    pub fn pds(&self) -> String {
+        self.session_manager.base_uri()
     }
 }
 
@@ -173,6 +179,33 @@ where
             }
         }
     }
+    pub async fn create_record(
+        &self,
+        collection: Nsid,
+        record: Unknown,
+        repo: AtIdentifier,
+        rkey: Option<RecordKey>,
+    ) -> Result<crate::com::atproto::repo::create_record::OutputData, Error> {
+        use crate::com::atproto::repo::create_record::*;
+        let result = self
+            .api
+            .com
+            .atproto
+            .repo
+            .create_record(
+                InputData {
+                    collection,
+                    record,
+                    repo,
+                    rkey,
+                    swap_commit: None,
+                    validate: None,
+                }
+                .into(),
+            )
+            .await?;
+        Ok(result.data)
+    }
 
     pub async fn put_record(
         &self,
@@ -249,6 +282,45 @@ where
         Ok(result.data)
     }
 
+    pub async fn publish_blob(
+        &self,
+        input: Vec<u8>,
+    ) -> Result<
+        (
+            BlobRef,
+            crate::com::atproto::repo::create_record::OutputData,
+        ),
+        Error,
+    > {
+        use crate::sh::weaver::publish;
+        let blobref = self
+            .api
+            .com
+            .atproto
+            .repo
+            .upload_blob(input.into())
+            .await?
+            .blob
+            .clone();
+        let upload_record = publish::blob::RecordData {
+            upload: blobref.clone(),
+        };
+        let at_identifier = AtIdentifier::try_from(self.did().await.expect("valid did"))
+            .expect("valid did should be valid at identifier");
+        let result = self
+            .create_record(
+                Nsid::new(publish::Blob::NSID.to_string())
+                    .expect("sh.weaver.publish.blob should be a valid NSID"),
+                upload_record
+                    .try_into_unknown()
+                    .expect("this should just work"),
+                at_identifier,
+                None,
+            )
+            .await?;
+        Ok((blobref, result))
+    }
+
     pub async fn upload_artifact(
         &self,
         content: String,
@@ -313,9 +385,7 @@ where
     M: CloneWithProxy + SessionManager + Send + Sync,
 {
     /// Configures the atproto-proxy header to be applied on requests.
-
     ///
-
     /// Returns a new client service with the proxy header configured.
 
     pub fn api_with_proxy(&self, did: Did, service_type: impl AsRef<str>) -> Service<Wrapper<M>> {

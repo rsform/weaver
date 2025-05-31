@@ -2,6 +2,7 @@
 //!Definitions for the `sh.weaver.notebook` namespace.
 pub mod authors;
 pub mod book;
+pub mod chapter;
 pub mod defs;
 pub mod entry;
 #[derive(Debug)]
@@ -15,6 +16,12 @@ pub struct Book;
 impl atrium_api::types::Collection for Book {
     const NSID: &'static str = "sh.weaver.notebook.book";
     type Record = book::Record;
+}
+#[derive(Debug)]
+pub struct Chapter;
+impl atrium_api::types::Collection for Chapter {
+    const NSID: &'static str = "sh.weaver.notebook.chapter";
+    type Record = chapter::Record;
 }
 #[derive(Debug)]
 pub struct Entry;

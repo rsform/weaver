@@ -4,3 +4,4 @@ pub mod actor;
 pub mod edit;
 pub mod embed;
 pub mod notebook;
+pub mod publish;

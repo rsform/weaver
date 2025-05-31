@@ -37,9 +37,8 @@
         p.rust-bin.selectLatestNightlyWith(toolchain: toolchain.default.override {
           # Set the build targets supported by the toolchain,
           # wasm32-unknown-unknown is required for trunk.
-          #targets = ["wasm32-unknown-unknown"];
+          targets = ["wasm32-unknown-unknown"];
           extensions = [
-            "llvm-tools"
             "rust-src"
             "rust-analyzer"
             "clippy"

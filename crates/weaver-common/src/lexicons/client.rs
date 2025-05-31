@@ -1150,7 +1150,7 @@ where
             _ => Err(atrium_xrpc::Error::UnexpectedResponseType),
         }
     }
-    ///Find posts matching search criteria, returning views of those posts.
+    ///Find posts matching search criteria, returning views of those posts. Note that this API endpoint may require authentication (eg, not public) for some service providers and implementations.
     pub async fn search_posts(
         &self,
         params: crate::app::bsky::feed::search_posts::Parameters,

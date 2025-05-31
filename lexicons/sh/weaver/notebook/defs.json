@@ -112,6 +112,18 @@
       },
       "maxLength": 10,
       "description": "An array of tags associated with the notebook entry. Tags can help categorize and organize entries."
+    },
+    "contentFormat": {
+      "type": "object",
+      "description": "The format of the content. This is used to determine how to render the content.",
+      "properties": {
+        "markdown": {
+          "type": "string",
+          "description": "The format of the content. This is used to determine how to render the content.",
+          "enum": ["commonmark", "gfm", "obsidian", "weaver"],
+          "default": "weaver"
+        }
+      }
     }
   }
 }

@@ -60,6 +60,8 @@ tower-service = "0.3.3"
 tower-layer = "0.3.3"
 multibase = "0.9.1"
 dirs = "6.0.0"
+regex = "1.11.1"
+markdown-weaver-escape = { workspace = true, features = ["std"] }
 
 
 
