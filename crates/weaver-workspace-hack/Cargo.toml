@@ -16,23 +16,28 @@ publish = false
 
 ### BEGIN HAKARI SECTION
 [dependencies]
-base16ct = { version = "0.2", default-features = false, features = ["alloc"] }
+aho-corasick = { version = "1" }
 byteorder = { version = "1" }
+bytes = { version = "1", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 data-encoding = { version = "2" }
-der = { version = "0.7", default-features = false, features = ["oid", "pem"] }
 diesel = { version = "2", features = ["chrono", "i-implement-a-third-party-backend-and-opt-into-breaking-changes", "postgres", "serde_json", "sqlite"] }
 diesel-async = { version = "0.5", features = ["deadpool", "postgres", "sync-connection-wrapper"] }
-ecdsa = { version = "0.16", features = ["alloc", "der", "signing", "verifying"] }
-either = { version = "1", features = ["use_std"] }
-elliptic-curve = { version = "0.13", features = ["digest", "hazmat", "jwk", "pem"] }
+elliptic-curve = { version = "0.13", features = ["digest", "hazmat", "jwk", "pem", "std"] }
 fastrand = { version = "2" }
-ff = { version = "0.13", default-features = false, features = ["alloc"] }
 futures-channel = { version = "0.3", features = ["sink"] }
+futures-core = { version = "0.3" }
+futures-task = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
 generic-array = { version = "0.14", default-features = false, features = ["more_lengths", "serde", "zeroize"] }
-group = { version = "0.13", default-features = false, features = ["alloc"] }
 hashbrown = { version = "0.15", features = ["serde"] }
 idna = { version = "1" }
+jacquard = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false, features = ["api_bluesky", "derive", "dns", "loopback", "tracing", "websocket", "zstd"] }
+jacquard-api = { git = "https://tangled.org/@nonbinary.computer/jacquard", features = ["bluesky", "sh_weaver"] }
+jacquard-common = { git = "https://tangled.org/@nonbinary.computer/jacquard", features = ["tracing", "websocket", "zstd"] }
+jacquard-identity = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false, features = ["dns", "tracing"] }
+jacquard-lexicon = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
+jacquard-oauth = { git = "https://tangled.org/@nonbinary.computer/jacquard", features = ["browser-open", "loopback", "tracing"] }
 log = { version = "0.4", default-features = false, features = ["std"] }
 memchr = { version = "2", features = ["use_std"] }
 miette = { version = "7", features = ["fancy", "syntect-highlighter"] }
@@ -41,20 +46,63 @@ minijinja = { version = "2" }
 num-traits = { version = "0.2", default-features = false, features = ["i128", "libm", "std"] }
 p384 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 percent-encoding = { version = "2" }
-pkcs8 = { version = "0.10", default-features = false, features = ["pem"] }
-proc-macro2 = { version = "1" }
-quote = { version = "1" }
-rand_core = { version = "0.6", default-features = false, features = ["std"] }
-reqwest = { version = "0.12", features = ["gzip", "json", "rustls-tls"] }
-scopeguard = { version = "1" }
-sec1 = { version = "0.7", features = ["pem", "serde", "subtle"] }
-serde = { version = "1", features = ["alloc", "derive"] }
+rand = { version = "0.8", features = ["small_rng"] }
+regex-automata = { version = "0.4", default-features = false, features = ["dfa-onepass", "hybrid", "meta", "nfa", "perf", "std", "unicode"] }
+reqwest = { version = "0.12", features = ["gzip", "json", "rustls-tls", "stream"] }
+sec1 = { version = "0.7", features = ["pem", "serde", "std", "subtle"] }
+serde_core = { version = "1", features = ["alloc"] }
 serde_json = { version = "1", features = ["alloc", "preserve_order", "raw_value"] }
 sha2 = { version = "0.10", features = ["oid"] }
 smallvec = { version = "1", default-features = false, features = ["const_new"] }
-spki = { version = "0.7", default-features = false, features = ["pem"] }
+spin = { version = "0.9", default-features = false, features = ["once", "spin_mutex"] }
 subtle = { version = "2" }
 syn = { version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
+syntect = { version = "5", features = ["default-fancy"] }
+time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec", "io"] }
+toml = { version = "0.8", features = ["preserve_order"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "normalize-path", "request-id", "timeout", "trace"] }
+tracing = { version = "0.1", features = ["log"] }
+tracing-core = { version = "0.1" }
+uuid = { version = "1", features = ["serde", "v4", "v7"] }
+zeroize = { version = "1", features = ["derive", "serde"] }
+
+[build-dependencies]
+aho-corasick = { version = "1" }
+bytes = { version = "1", features = ["serde"] }
+cc = { version = "1", default-features = false, features = ["parallel"] }
+chrono = { version = "0.4", features = ["serde"] }
+data-encoding = { version = "2" }
+diesel_derives = { version = "2", features = ["32-column-tables", "chrono", "postgres", "sqlite", "with-deprecated"] }
+elliptic-curve = { version = "0.13", features = ["digest", "hazmat", "jwk", "pem", "std"] }
+fastrand = { version = "2" }
+futures-channel = { version = "0.3", features = ["sink"] }
+futures-core = { version = "0.3" }
+futures-task = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
+generic-array = { version = "0.14", default-features = false, features = ["more_lengths", "serde", "zeroize"] }
+hashbrown = { version = "0.15", features = ["serde"] }
+idna = { version = "1" }
+jacquard-common = { git = "https://tangled.org/@nonbinary.computer/jacquard", features = ["tracing", "websocket", "zstd"] }
+jacquard-lexicon = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
+log = { version = "0.4", default-features = false, features = ["std"] }
+memchr = { version = "2", features = ["use_std"] }
+miette = { version = "7", features = ["fancy", "syntect-highlighter"] }
+num-traits = { version = "0.2", default-features = false, features = ["i128", "libm", "std"] }
+percent-encoding = { version = "2" }
+rand = { version = "0.8", features = ["small_rng"] }
+regex-automata = { version = "0.4", default-features = false, features = ["dfa-onepass", "hybrid", "meta", "nfa", "perf", "std", "unicode"] }
+reqwest = { version = "0.12", features = ["gzip", "json", "rustls-tls", "stream"] }
+sec1 = { version = "0.7", features = ["pem", "serde", "std", "subtle"] }
+serde_core = { version = "1", features = ["alloc"] }
+serde_json = { version = "1", features = ["alloc", "preserve_order", "raw_value"] }
+sha2 = { version = "0.10", features = ["oid"] }
+smallvec = { version = "1", default-features = false, features = ["const_new"] }
+spin = { version = "0.9", default-features = false, features = ["once", "spin_mutex"] }
+subtle = { version = "2" }
+syn = { version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
+syntect = { version = "5", features = ["default-fancy"] }
 time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec", "io"] }
@@ -62,16 +110,5 @@ toml = { version = "0.8", features = ["preserve_order"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-core = { version = "0.1" }
 zeroize = { version = "1", features = ["derive", "serde"] }
-
-[build-dependencies]
-data-encoding = { version = "2" }
-diesel_derives = { version = "2", features = ["32-column-tables", "chrono", "postgres", "sqlite", "with-deprecated"] }
-either = { version = "1", features = ["use_std"] }
-hashbrown = { version = "0.15", features = ["serde"] }
-proc-macro2 = { version = "1" }
-quote = { version = "1" }
-serde = { version = "1", features = ["alloc", "derive"] }
-syn = { version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
-toml = { version = "0.8", features = ["preserve_order"] }
 
 ### END HAKARI SECTION

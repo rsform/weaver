@@ -30,13 +30,13 @@ diesel::table! {
 }
 
 diesel::table! {
-    oauth_requests (id) {
+    oauth_auth_requests (id) {
         id -> Int4,
-        auth_server_iss -> Text,
-        state -> Nullable<Text>,
-        did -> Text,
-        pkce_verifier -> Text,
-        dpop_key -> Jsonb,
+        state -> Text,
+        account_did -> Nullable<Text>,
+        auth_req_data -> Jsonb,
+        created_at -> Timestamptz,
+        expires_at -> Timestamptz,
     }
 }
 
@@ -44,9 +44,10 @@ diesel::table! {
     oauth_sessions (id) {
         id -> Int4,
         did -> Text,
-        pds_url -> Text,
-        session -> Jsonb,
-        expiry -> Nullable<Text>,
+        session_id -> Text,
+        session_data -> Jsonb,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -106,7 +107,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     _jetstream,
     emails,
     follows,
-    oauth_requests,
+    oauth_auth_requests,
     oauth_sessions,
     profile,
     profile_links,

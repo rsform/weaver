@@ -1,176 +1,200 @@
-use atrium_api::types::string::Did;
-use atrium_identity::did::CommonDidResolver;
-use atrium_identity::handle::AtprotoHandleResolver;
-use atrium_oauth::DefaultHttpClient;
-use atrium_oauth::store::session::Session;
-use atrium_oauth::store::state::InternalStateData;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
-use jose_jwk::Key;
+use jacquard::oauth::authstore::ClientAuthStore;
+use jacquard::oauth::session::{AuthRequestData, ClientSessionData};
+use jacquard::session::SessionStoreError;
+use jacquard::types::string::Did;
 use miette::IntoDiagnostic;
-use miette::Result;
-use miette::miette;
-use weaver_common::agent::WeaverHttpClient;
-use weaver_common::oauth::WeaverOAuthClient;
-use weaver_common::resolver::HickoryDnsTxtResolver;
 
-use crate::api_error::ApiError;
-use crate::models::OauthRequest;
-use crate::models::OauthSession;
+use crate::models::{NewOauthAuthRequest, NewOauthSession, OauthAuthRequest, OauthSession};
 
-/// Basic implementation of the atrium-common Store trait for a database using diesel-async and deadpool to store OAuth sessions.
-pub struct DBSessionStore {
+/// Database-backed implementation of ClientAuthStore for jacquard OAuth
+pub struct DBAuthStore {
     pub db: crate::db::Db,
 }
 
-impl DBSessionStore {
+impl DBAuthStore {
     pub fn new(db: &crate::db::Db) -> Self {
         Self { db: db.clone() }
     }
+}
 
-    pub async fn get(&self, user_did: &Did) -> Result<Option<Session>> {
+impl ClientAuthStore for DBAuthStore {
+    async fn get_session(
+        &self,
+        did_param: &Did<'_>,
+        session_id_param: &str,
+    ) -> Result<Option<ClientSessionData<'_>>, SessionStoreError> {
         use crate::schema::oauth_sessions::dsl::*;
-        let mut conn = self.db.pool.get().await.into_diagnostic()?;
 
-        let results: Vec<OauthSession> = oauth_sessions
-            .filter(did.eq(user_did.as_str()))
+        let mut conn = self
+            .db
+            .pool
+            .get()
+            .await
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        let result: Vec<OauthSession> = oauth_sessions
+            .filter(did.eq(did_param.as_str()))
+            .filter(session_id.eq(session_id_param))
             .limit(1)
             .select(OauthSession::as_select())
             .load(&mut conn)
             .await
-            .into_diagnostic()?;
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
 
-        if let Some(sess) = results.get(0) {
-            let sess: Option<Session> = serde_json::from_value(sess.session.clone()).ok();
-            Ok(sess)
+        if let Some(sess) = result.get(0) {
+            let data = jacquard::from_json_value::<ClientSessionData>(sess.session_data.clone())
+                .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+            Ok(Some(data))
         } else {
             Ok(None)
         }
     }
 
-    async fn set(&self, key: Did, value: Session) -> Result<()> {
+    async fn upsert_session(
+        &self,
+        session: ClientSessionData<'_>,
+    ) -> Result<(), SessionStoreError> {
         use crate::schema::oauth_sessions::dsl::*;
-        let mut conn = self.db.pool.get().await.into_diagnostic()?;
-        // do an upsert or similar here?
-        let sess = OauthSession {
-            id: 0,
-            did: key.as_str().to_string(),
-            pds_url: value.token_set.aud.clone(),
-            session: serde_json::to_value(&value).unwrap(),
-            expiry: value.token_set.expires_at.map(|t| t.as_str().to_string()),
+
+        let mut conn = self
+            .db
+            .pool
+            .get()
+            .await
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        let session_json =
+            serde_json::to_value(&session).map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        let new_session = NewOauthSession {
+            did: session.account_did.as_str().to_string(),
+            session_id: session.session_id.as_ref().to_string(),
+            session_data: session_json,
         };
 
+        // Try insert, on conflict update
         diesel::insert_into(oauth_sessions)
-            .values(&sess)
+            .values(&new_session)
+            .on_conflict((did, session_id))
+            .do_update()
+            .set((
+                session_data.eq(&new_session.session_data),
+                updated_at.eq(diesel::dsl::now),
+            ))
             .execute(&mut conn)
             .await
-            .into_diagnostic()?;
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
 
         Ok(())
     }
 
-    async fn del(&self, key: &Did) -> Result<()> {
+    async fn delete_session(
+        &self,
+        did_param: &Did<'_>,
+        session_id_param: &str,
+    ) -> Result<(), SessionStoreError> {
         use crate::schema::oauth_sessions::dsl::*;
-        let mut conn = self.db.pool.get().await.into_diagnostic()?;
-        let query = diesel::delete(oauth_sessions.filter(did.eq(key.as_str())));
-        query.execute(&mut conn).await.into_diagnostic()?;
+
+        let mut conn = self
+            .db
+            .pool
+            .get()
+            .await
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        diesel::delete(
+            oauth_sessions
+                .filter(did.eq(did_param.as_str()))
+                .filter(session_id.eq(session_id_param)),
+        )
+        .execute(&mut conn)
+        .await
+        .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
         Ok(())
     }
 
-    async fn clear(&self) -> Result<()> {
-        Err(miette!(
-            "this would clear the whole fucking table in the database so nope!"
-        ))
-    }
-}
+    async fn get_auth_req_info(
+        &self,
+        state_param: &str,
+    ) -> Result<Option<AuthRequestData<'_>>, SessionStoreError> {
+        use crate::schema::oauth_auth_requests::dsl::*;
 
-impl atrium_common::store::Store<Did, Session> for DBSessionStore {
-    type Error = ApiError;
+        let mut conn = self
+            .db
+            .pool
+            .get()
+            .await
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
 
-    async fn get(&self, did: &Did) -> Result<Option<Session>, Self::Error> {
-        Ok(self.get(did).await?)
-    }
-
-    async fn set(&self, key: Did, value: Session) -> Result<(), Self::Error> {
-        Ok(self.set(key, value).await?)
-    }
-
-    async fn del(&self, key: &Did) -> Result<(), Self::Error> {
-        Ok(self.del(key).await?)
-    }
-
-    async fn clear(&self) -> Result<(), Self::Error> {
-        Ok(self.clear().await?)
-    }
-}
-
-impl atrium_oauth::store::session::SessionStore for DBSessionStore {}
-
-pub struct DBStateStore {
-    pub db: crate::db::Db,
-}
-
-impl DBStateStore {
-    pub fn new(db: &crate::db::Db) -> Self {
-        Self { db: db.clone() }
-    }
-
-    pub async fn get(&self, key: &str) -> Result<Option<InternalStateData>> {
-        use crate::schema::oauth_requests::dsl::*;
-        let mut conn = self.db.pool.get().await.into_diagnostic()?;
-
-        let results: Vec<OauthRequest> = oauth_requests
-            .filter(state.eq(key))
+        let result: Vec<OauthAuthRequest> = oauth_auth_requests
+            .filter(state.eq(state_param))
             .limit(1)
-            .select(OauthRequest::as_select())
+            .select(OauthAuthRequest::as_select())
             .load(&mut conn)
             .await
-            .into_diagnostic()?;
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
 
-        if let Some(req) = results.get(0) {
-            if let Ok(key) = serde_json::from_value::<Key>(req.dpop_key.clone()) {
-                Ok(Some(InternalStateData {
-                    iss: req.auth_server_iss.clone(),
-                    dpop_key: key,
-                    verifier: req.pkce_verifier.clone(),
-                    app_state: req.state.clone(),
-                }))
-            } else {
-                Ok(None)
-            }
+        if let Some(req) = result.get(0) {
+            let auth_data = jacquard::from_json_value::<AuthRequestData>(req.auth_req_data.clone())
+                .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+            Ok(Some(auth_data))
         } else {
             Ok(None)
         }
     }
+
+    async fn save_auth_req_info(
+        &self,
+        auth_req_info: &AuthRequestData<'_>,
+    ) -> Result<(), SessionStoreError> {
+        use crate::schema::oauth_auth_requests::dsl::*;
+
+        let mut conn = self
+            .db
+            .pool
+            .get()
+            .await
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        let auth_json = serde_json::to_value(auth_req_info)
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        let new_auth_req = NewOauthAuthRequest {
+            state: auth_req_info.state.as_ref().to_string(),
+            account_did: auth_req_info
+                .account_did
+                .as_ref()
+                .map(|d| d.as_str().to_string()),
+            auth_req_data: auth_json,
+        };
+
+        diesel::insert_into(oauth_auth_requests)
+            .values(&new_auth_req)
+            .execute(&mut conn)
+            .await
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        Ok(())
+    }
+
+    async fn delete_auth_req_info(&self, state_param: &str) -> Result<(), SessionStoreError> {
+        use crate::schema::oauth_auth_requests::dsl::*;
+
+        let mut conn = self
+            .db
+            .pool
+            .get()
+            .await
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        diesel::delete(oauth_auth_requests.filter(state.eq(state_param)))
+            .execute(&mut conn)
+            .await
+            .map_err(|e| SessionStoreError::Other(Box::new(e)))?;
+
+        Ok(())
+    }
 }
-
-impl atrium_common::store::Store<String, InternalStateData> for DBStateStore {
-    type Error = ApiError;
-
-    async fn get(&self, key: &String) -> Result<Option<InternalStateData>, Self::Error> {
-        Ok(self.get(key).await?)
-    }
-
-    async fn set(&self, key: String, value: InternalStateData) -> Result<(), Self::Error> {
-        todo!()
-    }
-
-    async fn del(&self, key: &String) -> Result<(), Self::Error> {
-        todo!()
-    }
-
-    async fn clear(&self) -> Result<(), Self::Error> {
-        todo!()
-    }
-}
-
-impl atrium_oauth::store::state::StateStore for DBStateStore {}
-
-pub type AppviewOAuthSession = atrium_oauth::OAuthSession<
-    DefaultHttpClient,
-    CommonDidResolver<WeaverHttpClient>,
-    AtprotoHandleResolver<HickoryDnsTxtResolver, WeaverHttpClient>,
-    DBSessionStore,
->;
-
-pub type AppviewOAuthClient = WeaverOAuthClient<DBStateStore, DBSessionStore>;

@@ -7,8 +7,6 @@ publish = false
 
 [dependencies]
 n0-future.workspace = true
-atrium-api = { version = "0.25.3", default-features = false }
-
 weaver-common = { path = "../weaver-common" }
 markdown-weaver = { workspace = true }
 weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
@@ -30,6 +28,10 @@ pin-utils = "0.1.0"
 pin-project = "1.1.10"
 dynosaur = "0.2.0"
 async-trait = "0.1.88"
+reqwest = { version = "0.12.7", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
 tokio = { version = "1.28", features = ["rt", "time"] }

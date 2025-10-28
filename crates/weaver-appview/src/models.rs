@@ -82,23 +82,42 @@ pub struct ProfilePronoun {
     pub pronoun: String,
 }
 
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = crate::schema::oauth_requests)]
-pub struct OauthRequest {
-    pub id: i32,
-    pub auth_server_iss: String,
-    pub state: Option<String>,
-    pub did: String,
-    pub pkce_verifier: String,
-    pub dpop_key: serde_json::Value,
-}
+// Jacquard OAuth models
 
-#[derive(Queryable, Selectable, Insertable)]
+#[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::oauth_sessions)]
 pub struct OauthSession {
     pub id: i32,
     pub did: String,
-    pub pds_url: String,
-    pub session: serde_json::Value,
-    pub expiry: Option<String>,
+    pub session_id: String,
+    pub session_data: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::oauth_sessions)]
+pub struct NewOauthSession {
+    pub did: String,
+    pub session_id: String,
+    pub session_data: serde_json::Value,
+}
+
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = crate::schema::oauth_auth_requests)]
+pub struct OauthAuthRequest {
+    pub id: i32,
+    pub state: String,
+    pub account_did: Option<String>,
+    pub auth_req_data: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::oauth_auth_requests)]
+pub struct NewOauthAuthRequest {
+    pub state: String,
+    pub account_did: Option<String>,
+    pub auth_req_data: serde_json::Value,
 }

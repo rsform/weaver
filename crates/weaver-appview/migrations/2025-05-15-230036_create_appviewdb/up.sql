@@ -91,19 +91,40 @@ create table if not exists profile_pronouns (
   foreign key (did) references profile (did) on delete cascade
 );
 
-create table if not exists oauth_requests (
-  id serial primary key,
-  auth_server_iss text not null,
-  state text,
-  did text not null,
-  pkce_verifier text not null,
-  dpop_key jsonb not null
-);
-
+-- OAuth sessions table for jacquard ClientSessionData
 create table if not exists oauth_sessions (
   id serial primary key,
+  -- Extracted from ClientSessionData for indexing
   did text not null,
-  pds_url text not null,
-  session jsonb not null,
-  expiry text
+  session_id text not null,
+  -- Full ClientSessionData as jsonb
+  session_data jsonb not null,
+  created_at timestamp with time zone not null default (now() at time zone 'utc'),
+  updated_at timestamp with time zone not null default (now() at time zone 'utc'),
+  unique (did, session_id)
 );
+
+-- OAuth authorization requests table for jacquard AuthRequestData
+create table if not exists oauth_auth_requests (
+  id serial primary key,
+  -- Extracted from AuthRequestData for indexing
+  state text not null unique,
+  -- Optional DID if known at auth request time
+  account_did text,
+  -- Full AuthRequestData as jsonb
+  auth_req_data jsonb not null,
+  created_at timestamp with time zone not null default (now() at time zone 'utc'),
+  expires_at timestamp with time zone not null default ((now() at time zone 'utc') + interval '10 minutes')
+);
+
+-- Index for quick session lookups
+create index if not exists idx_oauth_sessions_did_session on oauth_sessions(did, session_id);
+
+-- Index for DID lookups
+create index if not exists idx_oauth_sessions_did on oauth_sessions(did);
+
+-- Index for auth request cleanup
+create index if not exists idx_oauth_auth_requests_expires on oauth_auth_requests(expires_at);
+
+-- Index for DID lookups in auth requests
+create index if not exists idx_oauth_auth_requests_did on oauth_auth_requests(account_did) where account_did is not null;

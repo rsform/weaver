@@ -30,7 +30,7 @@ pub enum ApiError {
 
     #[error("A Weaver error has occurred.")]
     #[diagnostic(transparent)]
-    WeaverError(#[from] weaver_common::error::Error),
+    WeaverError(#[from] weaver_common::error::WeaverError),
     /// Converts from any `anyhow::Error`.
     #[error("An internal server error has occurred.")]
     #[diagnostic(transparent)]

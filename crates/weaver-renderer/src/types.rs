@@ -1,34 +1,34 @@
-use atrium_api::types::string::{Cid, Did};
 use compact_string::CompactString;
 use http::Uri;
+use weaver_common::jacquard::types::string::{Cid, Did};
 
-pub struct Link {
+pub struct Link<'a> {
     pub uri: Uri,
-    pub blob: BlobLink,
+    pub blob: BlobLink<'a>,
 }
 
 pub type MimeType = CompactString;
 
-pub enum BlobLink {
+pub enum BlobLink<'a> {
     PDS {
         pds_host: String,
-        did: Did,
-        cid: Cid,
+        did: Did<'a>,
+        cid: Cid<'a>,
         mime_type: MimeType,
     },
-    BskyCdn(CdnLink),
-    WeaverCdn(CdnLink),
+    BskyCdn(CdnLink<'a>),
+    WeaverCdn(CdnLink<'a>),
 }
 
-pub enum CdnLink {
-    Avatar(Did, Cid, MimeType),
-    Banner(Did, Cid, MimeType),
-    Thumbnail(Did, Cid, MimeType),
-    PostImage(Did, Cid, MimeType),
-    EmbedImage(Did, Cid, MimeType),
+pub enum CdnLink<'a> {
+    Avatar(Did<'a>, Cid<'a>, MimeType),
+    Banner(Did<'a>, Cid<'a>, MimeType),
+    Thumbnail(Did<'a>, Cid<'a>, MimeType),
+    PostImage(Did<'a>, Cid<'a>, MimeType),
+    EmbedImage(Did<'a>, Cid<'a>, MimeType),
 }
 
-impl std::fmt::Display for BlobLink {
+impl std::fmt::Display for BlobLink<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BlobLink::PDS {
@@ -57,7 +57,7 @@ impl std::fmt::Display for BlobLink {
     }
 }
 
-impl BlobLink {
+impl<'a> BlobLink<'a> {
     #[inline]
     pub fn url_prefix(&self) -> &str {
         match self {
@@ -82,7 +82,7 @@ impl BlobLink {
     }
 
     #[inline]
-    pub const fn did(&self) -> &Did {
+    pub const fn did(&self) -> &Did<'a> {
         match self {
             BlobLink::PDS { did, .. } => did,
             BlobLink::BskyCdn(CdnLink::Avatar(did, ..))
@@ -99,7 +99,7 @@ impl BlobLink {
     }
 
     #[inline]
-    pub const fn cid(&self) -> &Cid {
+    pub const fn cid(&self) -> &Cid<'a> {
         match self {
             BlobLink::PDS { cid, .. } => cid,
             BlobLink::BskyCdn(CdnLink::Avatar(_, cid, ..))

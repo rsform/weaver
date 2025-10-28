@@ -1,10 +1,19 @@
-use crate::oauth::AppviewOAuthClient;
 use dashmap::DashMap;
+use jacquard::identity::JacquardResolver;
+use jacquard::oauth::atproto::{AtprotoClientMetadata, GrantType};
+use jacquard::oauth::client::OAuthClient;
+use jacquard::oauth::keyset::Keyset;
+use jacquard::oauth::scopes::Scope;
+use jacquard::oauth::session::ClientData;
+use std::sync::Arc;
+use url::Url;
 
 use crate::config::Config;
 use crate::db::Db;
-use crate::oauth::{AppviewOAuthSession, DBSessionStore, DBStateStore};
-use std::sync::Arc;
+use crate::oauth::DBAuthStore;
+
+pub type AppviewOAuthClient = OAuthClient<JacquardResolver, DBAuthStore>;
+pub type AppviewOAuthSession = jacquard::oauth::client::OAuthSession<JacquardResolver, DBAuthStore>;
 
 pub struct AppStateInner {
     pub cfg: Config,
@@ -20,13 +29,38 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(cfg: Config, db: Db) -> Self {
-        let oauth_client = weaver_common::oauth::oauth_client(
-            &cfg.core.appview_host,
-            Some(cfg.oauth.jwks.clone()),
-            DBSessionStore::new(&db),
-            DBStateStore::new(&db),
-        )
-        .unwrap();
+        let store = DBAuthStore::new(&db);
+
+        // Build keyset from config JWKs
+        let keyset = Some(
+            Keyset::try_from(cfg.oauth.jwks.clone()).expect("failed to create keyset from JWKs"),
+        );
+
+        // Build AT Protocol client metadata
+        let client_id =
+            Url::parse(&cfg.core.appview_host).expect("appview_host must be a valid URL");
+
+        let redirect_uris = vec![
+            Url::parse(&format!("{}/oauth/callback", cfg.core.appview_host))
+                .expect("failed to build redirect URI"),
+        ];
+
+        let scopes =
+            Scope::parse_multiple("atproto transition:generic").expect("failed to parse scopes");
+
+        let config = AtprotoClientMetadata::new(
+            client_id.clone(),
+            Some(client_id),
+            redirect_uris,
+            vec![GrantType::AuthorizationCode, GrantType::RefreshToken],
+            scopes,
+            None, // jwks_uri - None means jwks will be embedded
+        );
+
+        let client_data = ClientData { keyset, config };
+
+        let oauth_client = OAuthClient::new(store, client_data);
+
         Self {
             db,
             inner: Arc::new(AppStateInner {

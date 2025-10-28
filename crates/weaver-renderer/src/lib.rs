@@ -186,7 +186,6 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext> Stream
     }
 }
 
-#[async_trait]
 pub trait NotebookContext {
     fn set_entry_title(&self, title: CowStr<'_>);
     fn entry_title(&self) -> CowStr<'_>;
@@ -210,9 +209,9 @@ pub trait NotebookContext {
     }
     fn frontmatter(&self) -> Frontmatter;
     fn set_frontmatter(&self, frontmatter: Frontmatter);
-    async fn handle_link<'s>(&self, link: Tag<'s>) -> Tag<'s>;
-    async fn handle_image<'s>(&self, image: Tag<'s>) -> Tag<'s>;
-    async fn handle_embed<'s>(&self, embed: Tag<'s>) -> Tag<'s>;
+    fn handle_link<'s>(&self, link: Tag<'s>) -> impl Future<Output = Tag<'s>>;
+    fn handle_image<'s>(&self, image: Tag<'s>) -> impl Future<Output = Tag<'s>>;
+    fn handle_embed<'s>(&self, embed: Tag<'s>) -> impl Future<Output = Tag<'s>>;
     fn handle_reference(&self, reference: CowStr<'_>) -> CowStr<'_>;
     fn add_reference(&self, reference: CowStr<'_>);
 }

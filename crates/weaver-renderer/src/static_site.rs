@@ -12,7 +12,6 @@ use std::{
 
 use crate::{ContextIterator, NotebookProcessor, base_html::TableState, walker::WalkOptions};
 use async_trait::async_trait;
-use atrium_api::agent::{Configure, SessionManager};
 use bitflags::bitflags;
 use dashmap::DashMap;
 use markdown_weaver::{
@@ -30,8 +29,13 @@ use n0_future::io::AsyncWriteExt;
 use tokio::io::AsyncWriteExt;
 use unicode_normalization::UnicodeNormalization;
 use weaver_common::{
-    agent::{WeaverAgent, WeaverHttpClient},
     aturi_to_http,
+    jacquard::{
+        client::{Agent, AgentSession, AgentSessionExt},
+        identity::resolver::IdentityError,
+        prelude::*,
+        types::blob::MimeType,
+    },
 };
 use yaml_rust2::Yaml;
 
@@ -80,7 +84,7 @@ pub fn default_md_options() -> markdown_weaver::Options {
         | markdown_weaver::Options::ENABLE_HEADING_ATTRIBUTES
 }
 
-pub struct StaticSiteContext<'a, M: SessionManager + Send + Sync> {
+pub struct StaticSiteContext<'a, A: AgentSession> {
     options: StaticSiteOptions,
     md_options: markdown_weaver::Options,
     pub bsky_appview: CowStr<'a>,
@@ -92,10 +96,11 @@ pub struct StaticSiteContext<'a, M: SessionManager + Send + Sync> {
     reference_map: Arc<DashMap<CowStr<'a>, PathBuf>>,
     titles: Arc<DashMap<PathBuf, CowStr<'a>>>,
     position: usize,
-    agent: Option<Arc<WeaverAgent<M>>>,
+    client: reqwest::Client,
+    agent: Option<Arc<Agent<A>>>,
 }
 
-impl<M: SessionManager + Send + Sync> StaticSiteContext<'_, M> {
+impl<A: AgentSession> StaticSiteContext<'_, A> {
     pub fn clone_with_dir_contents(&self, dir_contents: &[PathBuf]) -> Self {
         Self {
             start_at: self.start_at.clone(),
@@ -109,6 +114,7 @@ impl<M: SessionManager + Send + Sync> StaticSiteContext<'_, M> {
             reference_map: self.reference_map.clone(),
             titles: self.titles.clone(),
             position: self.position,
+            client: self.client.clone(),
             agent: self.agent.clone(),
         }
     }
@@ -134,10 +140,11 @@ impl<M: SessionManager + Send + Sync> StaticSiteContext<'_, M> {
             reference_map: self.reference_map.clone(),
             titles: self.titles.clone(),
             position,
+            client: reqwest::Client::default(),
             agent: self.agent.clone(),
         }
     }
-    pub fn new(root: PathBuf, destination: PathBuf, session: Option<M>) -> Self {
+    pub fn new(root: PathBuf, destination: PathBuf, session: Option<A>) -> Self {
         Self {
             start_at: root.clone(),
             root,
@@ -150,7 +157,8 @@ impl<M: SessionManager + Send + Sync> StaticSiteContext<'_, M> {
             reference_map: Arc::new(DashMap::new()),
             titles: Arc::new(DashMap::new()),
             position: 0,
-            agent: session.map(|session| Arc::new(WeaverAgent::new(session))),
+            client: reqwest::Client::default(),
+            agent: session.map(|session| Arc::new(Agent::new(session))),
         }
     }
 
@@ -169,73 +177,68 @@ impl<M: SessionManager + Send + Sync> StaticSiteContext<'_, M> {
     }
 
     pub async fn handle_embed_aturi<'s>(&self, embed: Tag<'s>) -> Tag<'s> {
-        if let Some(agent) = &self.agent {
-            match &embed {
-                Tag::Embed {
-                    embed_type,
-                    dest_url,
-                    title,
-                    id,
-                    attrs,
-                } => {
-                    if dest_url.starts_with("at://") {
-                        let width = if let Some(attrs) = attrs {
-                            let mut width = 600;
-                            for attr in &attrs.attrs {
-                                if attr.0 == CowStr::Borrowed("width".into()) {
-                                    width = attr.1.parse::<usize>().unwrap_or(600);
-                                    break;
-                                }
+        match &embed {
+            Tag::Embed {
+                embed_type,
+                dest_url,
+                title,
+                id,
+                attrs,
+            } => {
+                if dest_url.starts_with("at://") {
+                    let width = if let Some(attrs) = attrs {
+                        let mut width = 600;
+                        for attr in &attrs.attrs {
+                            if attr.0 == CowStr::Borrowed("width".into()) {
+                                width = attr.1.parse::<usize>().unwrap_or(600);
+                                break;
                             }
-                            width
+                        }
+                        width
+                    } else {
+                        600
+                    };
+                    let html = if let Ok(resp) = self
+                        .client
+                        .get("https://embed.bsky.app/oembed")
+                        .query(&[
+                            ("url", dest_url.clone().into_string()),
+                            ("maxwidth", width.to_string()),
+                        ])
+                        .send()
+                        .await
+                    {
+                        resp.text().await.ok()
+                    } else {
+                        None
+                    };
+                    if let Some(html) = html {
+                        let link = aturi_to_http(&dest_url, &self.bsky_appview)
+                            .expect("assuming the at-uri is valid rn");
+                        let mut attrs = if let Some(attrs) = attrs {
+                            attrs.clone()
                         } else {
-                            600
-                        };
-                        let html = if let Ok(resp) = agent
-                            .client
-                            .client
-                            .get("https://embed.bsky.app/oembed")
-                            .query(&[
-                                ("url", dest_url.clone().into_string()),
-                                ("maxwidth", width.to_string()),
-                            ])
-                            .send()
-                            .await
-                        {
-                            resp.text().await.ok()
-                        } else {
-                            None
-                        };
-                        if let Some(html) = html {
-                            let link = aturi_to_http(&dest_url, &self.bsky_appview)
-                                .expect("assuming the at-uri is valid rn");
-                            let mut attrs = if let Some(attrs) = attrs {
-                                attrs.clone()
-                            } else {
-                                WeaverAttributes {
-                                    classes: vec![],
-                                    attrs: vec![],
-                                }
-                            };
-                            attrs.attrs.push(("content".into(), html.into()));
-                            Tag::Embed {
-                                embed_type: EmbedType::Comments, // change this when i update markdown-weaver
-                                dest_url: link.into_static(),
-                                title: title.clone(),
-                                id: id.clone(),
-                                attrs: Some(attrs),
+                            WeaverAttributes {
+                                classes: vec![],
+                                attrs: vec![],
                             }
-                        } else {
-                            self.handle_embed_normal(embed).await
+                        };
+                        attrs.attrs.push(("content".into(), html.into()));
+                        Tag::Embed {
+                            embed_type: EmbedType::Comments, // change this when i update markdown-weaver
+                            dest_url: link.into_static(),
+                            title: title.clone(),
+                            id: id.clone(),
+                            attrs: Some(attrs),
                         }
                     } else {
                         self.handle_embed_normal(embed).await
                     }
+                } else {
+                    self.handle_embed_normal(embed).await
                 }
-                _ => embed,
             }
-        } else {
-            self.handle_embed_normal(embed).await
+            _ => embed,
         }
     }
 
@@ -267,12 +270,8 @@ impl<M: SessionManager + Send + Sync> StaticSiteContext<'_, M> {
                         };
                         crate::utils::inline_file(&file_path).await
                     } else if let Some(agent) = &self.agent {
-                        if let Ok(resp) = agent
-                            .client
-                            .client
-                            .get(dest_url.clone().into_string())
-                            .send()
-                            .await
+                        if let Ok(resp) =
+                            self.client.get(dest_url.clone().into_string()).send().await
                         {
                             resp.text().await.ok()
                         } else {
@@ -314,7 +313,7 @@ impl<M: SessionManager + Send + Sync> StaticSiteContext<'_, M> {
     }
 }
 
-impl<M: SessionManager + Configure + Send + Sync> StaticSiteContext<'_, M> {
+impl<A: AgentSession + IdentityResolver> StaticSiteContext<'_, A> {
     pub async fn upload_image<'s>(&self, image: Tag<'s>) -> Tag<'s> {
         if let Some(agent) = &self.agent {
             match &image {
@@ -328,12 +327,16 @@ impl<M: SessionManager + Configure + Send + Sync> StaticSiteContext<'_, M> {
                     if crate::utils::is_local_path(&dest_url) {
                         let root_path = self.root.clone();
                         let file_path = root_path.join(Path::new(&dest_url as &str));
-                        if let Ok(bytes) = std::fs::read(&file_path) {
-                            if let Ok(blob_data) = agent.upload_blob(bytes).await {
+                        if let Ok(image_data) = std::fs::read(&file_path) {
+                            if let Ok(blob) = agent
+                                .upload_blob(image_data, MimeType::new_static("image/jpg"))
+                                .await
+                            {
+                                let (did, _) = agent.info().await.unwrap();
                                 let url = weaver_common::blob_url(
-                                    agent.did().await.as_ref().unwrap(),
-                                    &agent.pds(),
-                                    &blob_data.blob,
+                                    &did,
+                                    agent.endpoint().await.as_str(),
+                                    &blob.r#ref.0,
                                 );
                                 return Tag::Image {
                                     link_type: *link_type,
@@ -353,8 +356,7 @@ impl<M: SessionManager + Configure + Send + Sync> StaticSiteContext<'_, M> {
     }
 }
 
-#[async_trait]
-impl<M: SessionManager + Configure + Send + Sync> NotebookContext for StaticSiteContext<'_, M> {
+impl<A: AgentSession + IdentityResolver> NotebookContext for StaticSiteContext<'_, A> {
     fn set_entry_title(&self, title: CowStr<'_>) {
         let path = self.current_path();
         self.titles
@@ -453,26 +455,26 @@ impl<M: SessionManager + Configure + Send + Sync> NotebookContext for StaticSite
     }
 }
 
-pub struct StaticSiteWriter<'a, M>
+pub struct StaticSiteWriter<'a, A>
 where
-    M: SessionManager + Send + Sync,
+    A: AgentSession,
 {
-    context: StaticSiteContext<'a, M>,
+    context: StaticSiteContext<'a, A>,
 }
 
-impl<'a, M> StaticSiteWriter<'a, M>
+impl<'a, A> StaticSiteWriter<'a, A>
 where
-    M: SessionManager + Send + Sync,
+    A: AgentSession,
 {
-    pub fn new(root: PathBuf, destination: PathBuf, session: Option<M>) -> Self {
+    pub fn new(root: PathBuf, destination: PathBuf, session: Option<A>) -> Self {
         let context = StaticSiteContext::new(root, destination, session);
         Self { context }
     }
 }
 
-impl<'a, M> StaticSiteWriter<'a, M>
+impl<'a, A> StaticSiteWriter<'a, A>
 where
-    M: SessionManager + Configure + Send + Sync,
+    A: AgentSession + IdentityResolver,
 {
     pub async fn run(self) -> Result<(), miette::Report> {
         todo!()
@@ -481,7 +483,7 @@ where
     pub async fn export_page<'s, 'input>(
         &'s self,
         contents: &'input str,
-        context: StaticSiteContext<'s, M>,
+        context: StaticSiteContext<'s, A>,
     ) -> Result<String, miette::Report> {
         let callback = if let Some(dir_contents) = context.dir_contents.clone() {
             Some(VaultBrokenLinkCallback {
@@ -518,10 +520,10 @@ pub struct StaticPageWriter<
     'a,
     'input,
     I: Iterator<Item = Event<'input>>,
-    M: SessionManager + Send + Sync,
+    A: AgentSession,
     W: StrWrite,
 > {
-    context: NotebookProcessor<'input, I, StaticSiteContext<'a, M>>,
+    context: NotebookProcessor<'input, I, StaticSiteContext<'a, A>>,
     writer: W,
     /// Whether or not the last write wrote a newline.
     end_newline: bool,
@@ -535,10 +537,10 @@ pub struct StaticPageWriter<
     numbers: DashMap<CowStr<'a>, usize>,
 }
 
-impl<'a, 'input, I: Iterator<Item = Event<'input>>, M: SessionManager + Send + Sync, W: StrWrite>
-    StaticPageWriter<'a, 'input, I, M, W>
+impl<'a, 'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
+    StaticPageWriter<'a, 'input, I, A, W>
 {
-    pub fn new(context: NotebookProcessor<'input, I, StaticSiteContext<'a, M>>, writer: W) -> Self {
+    pub fn new(context: NotebookProcessor<'input, I, StaticSiteContext<'a, A>>, writer: W) -> Self {
         Self {
             context,
             writer,
@@ -660,13 +662,8 @@ impl<'a, 'input, I: Iterator<Item = Event<'input>>, M: SessionManager + Send + S
     }
 }
 
-impl<
-    'a,
-    'input,
-    I: Iterator<Item = Event<'input>>,
-    M: SessionManager + Configure + Send + Sync,
-    W: StrWrite,
-> StaticPageWriter<'a, 'input, I, M, W>
+impl<'a, 'input, I: Iterator<Item = Event<'input>>, A: AgentSession + IdentityResolver, W: StrWrite>
+    StaticPageWriter<'a, 'input, I, A, W>
 {
     async fn run(mut self) -> Result<(), W::Error> {
         while let Some(event) = self.context.next().await {

@@ -23,7 +23,6 @@ name = "weaver-workspace"
 [workspace.dependencies]
 
 serde = { version = "1.0", features = ["derive"] }
-merde = { version = "10.0.6" }
 
 minijinja = { version = "2.9.0", default-features = false }
 minijinja-contrib = { version = "2.9.0", default-features = false }
@@ -40,5 +39,6 @@ lexicon_cid = { package = "cid", version = "0.10.1", features = [
 markdown-weaver = { git = "https://github.com/rsform/markdown-weaver" }
 markdown-weaver-escape = { git = "https://github.com/rsform/markdown-weaver" }
 
-esquema-codegen = { git = "https://github.com/fatfingers23/esquema.git", branch = "main" }
-atrium-lex = { git = "https://github.com/sugyan/atrium.git", rev = "f162f815a04b5ecb0421b390d521c883c41d5f75" }
+jacquard = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false, features = ["derive", "api_bluesky", "dns"] }
+jacquard-api = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
+jacquard-axum = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
