@@ -14,7 +14,6 @@
     crane.url = "github:ipetkov/crane";
   };
 
-
   outputs = {
     self,
     nixpkgs,
@@ -34,16 +33,17 @@
       inherit (pkgs) lib;
 
       rustToolchainFor = p:
-        p.rust-bin.selectLatestNightlyWith(toolchain: toolchain.default.override {
-          # Set the build targets supported by the toolchain,
-          # wasm32-unknown-unknown is required for trunk.
-          targets = ["wasm32-unknown-unknown"];
-          extensions = [
-            "rust-src"
-            "rust-analyzer"
-            "clippy"
-          ];
-        });
+        p.rust-bin.selectLatestNightlyWith (toolchain:
+          toolchain.default.override {
+            # Set the build targets supported by the toolchain,
+            # wasm32-unknown-unknown is required for trunk.
+            targets = ["wasm32-unknown-unknown" "wasm32-wasip1" "wasm32-wasip2"];
+            extensions = [
+              "rust-src"
+              "rust-analyzer"
+              "clippy"
+            ];
+          });
       craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchainFor;
       src = craneLib.cleanCargoSource ./.;
 
@@ -52,8 +52,8 @@
         inherit src;
         strictDeps = true;
 
-        buildInputs =
-          with pkgs; [
+        buildInputs = with pkgs;
+          [
             # Add additional build inputs here
             sqlite
             pkg-config
@@ -215,7 +215,6 @@
         weaver-server = flake-utils.lib.mkApp {
           drv = weaver-server;
         };
-
       };
 
       devShells.default = craneLib.devShell {

@@ -3,6 +3,7 @@ pub mod app;
 pub mod chat;
 pub mod client;
 pub mod com;
+pub mod place;
 pub mod record;
 pub mod sh;
 pub mod tools;

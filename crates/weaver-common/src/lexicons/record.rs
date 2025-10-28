@@ -39,6 +39,8 @@ pub enum KnownRecord {
     LexiconsChatBskyActorDeclaration(Box<crate::lexicons::chat::bsky::actor::declaration::Record>),
     #[serde(rename = "com.atproto.lexicon.schema")]
     LexiconsComAtprotoLexiconSchema(Box<crate::lexicons::com::atproto::lexicon::schema::Record>),
+    #[serde(rename = "place.stream.live.profile")]
+    LexiconsPlaceStreamLiveProfile(Box<crate::lexicons::place::stream::live::profile::Record>),
     #[serde(rename = "sh.tangled.actor.profile")]
     LexiconsShTangledActorProfile(Box<crate::lexicons::sh::tangled::actor::profile::Record>),
     #[serde(rename = "sh.weaver.actor.profile")]
@@ -238,6 +240,16 @@ impl From<crate::lexicons::com::atproto::lexicon::schema::Record> for KnownRecor
 impl From<crate::lexicons::com::atproto::lexicon::schema::RecordData> for KnownRecord {
     fn from(record_data: crate::lexicons::com::atproto::lexicon::schema::RecordData) -> Self {
         KnownRecord::LexiconsComAtprotoLexiconSchema(Box::new(record_data.into()))
+    }
+}
+impl From<crate::lexicons::place::stream::live::profile::Record> for KnownRecord {
+    fn from(record: crate::lexicons::place::stream::live::profile::Record) -> Self {
+        KnownRecord::LexiconsPlaceStreamLiveProfile(Box::new(record))
+    }
+}
+impl From<crate::lexicons::place::stream::live::profile::RecordData> for KnownRecord {
+    fn from(record_data: crate::lexicons::place::stream::live::profile::RecordData) -> Self {
+        KnownRecord::LexiconsPlaceStreamLiveProfile(Box::new(record_data.into()))
     }
 }
 impl From<crate::lexicons::sh::tangled::actor::profile::Record> for KnownRecord {

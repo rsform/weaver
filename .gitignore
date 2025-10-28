@@ -3,11 +3,12 @@
 /result-lib
 /dist
 /node_modules
-
+/plans
 .direnv
 .env
 .devenv
-
+CLAUDE.md
+grant_proposal.md
 .db/
 **/.db/
 
