@@ -5787,6 +5787,7 @@ dependencies = [
  "pin-utils",
  "regex",
  "reqwest",
+ "smol_str",
  "syntect",
  "thiserror 2.0.17",
  "tokio",
