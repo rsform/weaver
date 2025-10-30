@@ -1,0 +1,8 @@
+---
+source: crates/weaver-renderer/src/static_site.rs
+expression: output
+---
+<p>Inline <span class="math math-inline">x^2</span> and display:</p>
+<p><span class="math math-display">
+y = mx + b
+</span></p>

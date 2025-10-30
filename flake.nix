@@ -242,6 +242,7 @@
           alejandra
           diesel-cli
           postgresql
+          cargo-insta
           jq
         ];
       };

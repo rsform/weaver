@@ -1,0 +1,8 @@
+---
+source: crates/weaver-renderer/src/static_site.rs
+expression: output
+---
+<blockquote>
+<p>This is a quote</p>
+<p>With multiple lines</p>
+</blockquote>

@@ -2301,7 +2301,7 @@ dependencies = [
  "jacquard-identity",
  "jacquard-oauth",
  "jose-jwk",
- "miette",
+ "miette 7.6.0",
  "regex",
  "reqwest",
  "serde",
@@ -2326,7 +2326,7 @@ dependencies = [
  "jacquard-common",
  "jacquard-derive",
  "jacquard-lexicon",
- "miette",
+ "miette 7.6.0",
  "rustversion",
  "serde",
  "serde_ipld_dagcbor",
@@ -2345,7 +2345,7 @@ dependencies = [
  "jacquard-common",
  "jacquard-derive",
  "jacquard-identity",
- "miette",
+ "miette 7.6.0",
  "multibase",
  "serde",
  "serde_html_form",
@@ -2374,7 +2374,7 @@ dependencies = [
  "ipld-core",
  "k256",
  "langtag",
- "miette",
+ "miette 7.6.0",
  "multibase",
  "multihash",
  "n0-future",
@@ -2423,7 +2423,7 @@ dependencies = [
  "jacquard-api",
  "jacquard-common",
  "jacquard-lexicon",
- "miette",
+ "miette 7.6.0",
  "moka",
  "percent-encoding",
  "reqwest",
@@ -2448,7 +2448,7 @@ dependencies = [
  "heck 0.5.0",
  "inventory",
  "jacquard-common",
- "miette",
+ "miette 7.6.0",
  "multihash",
  "prettyplease",
  "proc-macro2",
@@ -2479,7 +2479,7 @@ dependencies = [
  "jacquard-identity",
  "jose-jwa",
  "jose-jwk",
- "miette",
+ "miette 7.6.0",
  "p256",
  "rand 0.8.5",
  "rouille",
@@ -2618,6 +2618,17 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "sha2",
+]
+
+[[package]]
+name = "kdl"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e03e2e96c5926fe761088d66c8c2aee3a4352a2573f4eaca50043ad130af9117"
+dependencies = [
+ "miette 5.10.0",
+ "nom",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -2866,6 +2877,18 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "miette"
+version = "5.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59bb584eaeeab6bd0226ccf3509a69d7936d148cf3d036ad350abe35e8c6856e"
+dependencies = [
+ "miette-derive 5.10.0",
+ "once_cell",
+ "thiserror 1.0.69",
+ "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miette"
 version = "7.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7"
@@ -2873,7 +2896,7 @@ dependencies = [
  "backtrace",
  "backtrace-ext",
  "cfg-if",
- "miette-derive",
+ "miette-derive 7.6.0",
  "owo-colors",
  "supports-color",
  "supports-hyperlinks",
@@ -2882,6 +2905,17 @@ dependencies = [
  "terminal_size",
  "textwrap",
  "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miette-derive"
+version = "5.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49e7bc1560b95a3c4a25d03de42fe76ca718ab92d1a22a55b9b4cf67b3ae635c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.108",
 ]
 
 [[package]]
@@ -5660,7 +5694,7 @@ dependencies = [
  "jacquard-axum",
  "jose",
  "jose-jwk",
- "miette",
+ "miette 7.6.0",
  "minijinja",
  "minijinja-contrib",
  "reqwest",
@@ -5689,9 +5723,11 @@ dependencies = [
  "dirs",
  "jacquard",
  "jacquard-api",
- "miette",
+ "kdl",
+ "miette 7.6.0",
  "tokio",
  "weaver-common",
+ "weaver-renderer",
  "weaver-workspace-hack",
 ]
 
@@ -5707,7 +5743,7 @@ dependencies = [
  "jose-jwk",
  "markdown-weaver",
  "markdown-weaver-escape",
- "miette",
+ "miette 7.6.0",
  "minijinja",
  "multibase",
  "n0-future",
@@ -5744,7 +5780,7 @@ dependencies = [
  "insta",
  "markdown-weaver",
  "markdown-weaver-escape",
- "miette",
+ "miette 7.6.0",
  "n0-future",
  "pathdiff",
  "pin-project",
@@ -5806,7 +5842,7 @@ dependencies = [
  "jacquard-oauth",
  "log",
  "memchr",
- "miette",
+ "miette 7.6.0",
  "mime_guess",
  "minijinja",
  "num-traits",

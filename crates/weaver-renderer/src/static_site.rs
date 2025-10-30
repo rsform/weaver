@@ -10,8 +10,12 @@ use std::{
     sync::Arc,
 };
 
-use crate::{ContextIterator, NotebookProcessor, base_html::TableState, walker::WalkOptions};
-use async_trait::async_trait;
+use crate::{
+    ContextIterator, NotebookProcessor,
+    base_html::TableState,
+    utils::flatten_dir_to_just_one_parent,
+    walker::{WalkOptions, vault_contents},
+};
 use bitflags::bitflags;
 use dashmap::DashMap;
 use markdown_weaver::{
@@ -22,9 +26,9 @@ use markdown_weaver_escape::{
     FmtWriter, StrWrite, escape_href, escape_html, escape_html_body_text,
 };
 use miette::IntoDiagnostic;
-use n0_future::StreamExt;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use n0_future::io::AsyncWriteExt;
+use n0_future::{IterExt, StreamExt};
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use tokio::io::AsyncWriteExt;
 use unicode_normalization::UnicodeNormalization;
@@ -62,7 +66,7 @@ bitflags! {
 impl Default for StaticSiteOptions {
     fn default() -> Self {
         Self::FLATTEN_STRUCTURE
-            | Self::UPLOAD_BLOBS
+            //| Self::UPLOAD_BLOBS
             | Self::RESOLVE_AT_IDENTIFIERS
             | Self::RESOLVE_AT_URIS
             | Self::CREATE_INDEX
@@ -96,8 +100,28 @@ pub struct StaticSiteContext<'a, A: AgentSession> {
     reference_map: Arc<DashMap<CowStr<'a>, PathBuf>>,
     titles: Arc<DashMap<PathBuf, CowStr<'a>>>,
     position: usize,
-    client: reqwest::Client,
+    client: Option<reqwest::Client>,
     agent: Option<Arc<Agent<A>>>,
+}
+
+impl<'a, A: AgentSession> Clone for StaticSiteContext<'a, A> {
+    fn clone(&self) -> Self {
+        Self {
+            options: self.options.clone(),
+            md_options: self.md_options.clone(),
+            bsky_appview: self.bsky_appview.clone(),
+            root: self.root.clone(),
+            destination: self.destination.clone(),
+            start_at: self.start_at.clone(),
+            frontmatter: self.frontmatter.clone(),
+            dir_contents: self.dir_contents.clone(),
+            reference_map: self.reference_map.clone(),
+            titles: self.titles.clone(),
+            position: self.position.clone(),
+            client: self.client.clone(),
+            agent: self.agent.clone(),
+        }
+    }
 }
 
 impl<A: AgentSession> StaticSiteContext<'_, A> {
@@ -140,7 +164,7 @@ impl<A: AgentSession> StaticSiteContext<'_, A> {
             reference_map: self.reference_map.clone(),
             titles: self.titles.clone(),
             position,
-            client: reqwest::Client::default(),
+            client: Some(reqwest::Client::default()),
             agent: self.agent.clone(),
         }
     }
@@ -157,7 +181,7 @@ impl<A: AgentSession> StaticSiteContext<'_, A> {
             reference_map: Arc::new(DashMap::new()),
             titles: Arc::new(DashMap::new()),
             position: 0,
-            client: reqwest::Client::default(),
+            client: Some(reqwest::Client::default()),
             agent: session.map(|session| Arc::new(Agent::new(session))),
         }
     }
@@ -198,17 +222,20 @@ impl<A: AgentSession> StaticSiteContext<'_, A> {
                     } else {
                         600
                     };
-                    let html = if let Ok(resp) = self
-                        .client
-                        .get("https://embed.bsky.app/oembed")
-                        .query(&[
-                            ("url", dest_url.clone().into_string()),
-                            ("maxwidth", width.to_string()),
-                        ])
-                        .send()
-                        .await
-                    {
-                        resp.text().await.ok()
+                    let html = if let Some(client) = &self.client {
+                        if let Ok(resp) = client
+                            .get("https://embed.bsky.app/oembed")
+                            .query(&[
+                                ("url", dest_url.clone().into_string()),
+                                ("maxwidth", width.to_string()),
+                            ])
+                            .send()
+                            .await
+                        {
+                            resp.text().await.ok()
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };
@@ -269,10 +296,8 @@ impl<A: AgentSession> StaticSiteContext<'_, A> {
                             PathBuf::from(&dest_url as &str)
                         };
                         crate::utils::inline_file(&file_path).await
-                    } else if let Some(agent) = &self.agent {
-                        if let Ok(resp) =
-                            self.client.get(dest_url.clone().into_string()).send().await
-                        {
+                    } else if let Some(client) = &self.client {
+                        if let Ok(resp) = client.get(dest_url.clone().into_string()).send().await {
                             resp.text().await.ok()
                         } else {
                             None
@@ -314,6 +339,9 @@ impl<A: AgentSession> StaticSiteContext<'_, A> {
 }
 
 impl<A: AgentSession + IdentityResolver> StaticSiteContext<'_, A> {
+    /// TODO: rework this a bit, to not just do the same thing as whitewind
+    /// (also need to make a record to refer to them) that being said, doing
+    /// this with the static site renderer isn't *really* the standard workflow
     pub async fn upload_image<'s>(&self, image: Tag<'s>) -> Tag<'s> {
         if let Some(agent) = &self.agent {
             match &image {
@@ -400,7 +428,11 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for StaticSiteContext<'
                         let (parent, filename) = crate::utils::flatten_dir_to_just_one_parent(&dest_url);
                         let dest_url = if crate::utils::is_relative_link(&dest_url)
                             && self.options.contains(StaticSiteOptions::CREATE_CHAPTERS_BY_DIRECTORY) {
-                            CowStr::Boxed(format!("./{}/{}", parent, filename).into_boxed_str())
+                            if !parent.is_empty() {
+                                CowStr::Boxed(format!("./{}/{}", parent, filename).into_boxed_str())
+                            } else {
+                                CowStr::Boxed(format!("./{}", filename).into_boxed_str())
+                            }
                         } else {
                             CowStr::Boxed(format!("./entry/{}", filename).into_boxed_str())
                         };
@@ -474,46 +506,135 @@ where
 
 impl<'a, A> StaticSiteWriter<'a, A>
 where
-    A: AgentSession + IdentityResolver,
+    A: AgentSession + IdentityResolver + 'a,
 {
-    pub async fn run(self) -> Result<(), miette::Report> {
-        todo!()
-    }
+    pub async fn run(mut self) -> Result<(), miette::Report> {
+        if !self.context.root.exists() {
+            return Err(miette::miette!(
+                "The path specified ({}) does not exist",
+                self.context.root.display()
+            ));
+        }
+        let contents = vault_contents(&self.context.root, WalkOptions::new())?;
 
-    pub async fn export_page<'s, 'input>(
-        &'s self,
-        contents: &'input str,
-        context: StaticSiteContext<'s, A>,
-    ) -> Result<String, miette::Report> {
-        let callback = if let Some(dir_contents) = context.dir_contents.clone() {
-            Some(VaultBrokenLinkCallback {
-                vault_contents: dir_contents,
-            })
-        } else {
-            None
-        };
-        let parser = Parser::new_with_broken_link_callback(&contents, context.md_options, callback);
-        let iterator = ContextIterator::default(parser);
-        let mut output = String::new();
-        let writer = StaticPageWriter::new(
-            NotebookProcessor::new(context, iterator),
-            FmtWriter(&mut output),
-        );
-        writer.run().await.into_diagnostic()?;
-        Ok(output)
-    }
+        self.context.dir_contents = Some(contents.into());
 
-    pub async fn write_page(&'a self, path: PathBuf) -> Result<(), miette::Report> {
-        let contents = tokio::fs::read_to_string(&path).await.into_diagnostic()?;
-        let mut output_file = crate::utils::create_file(&path).await?;
-        let context = self.context.clone_with_path(&path);
-        let output = self.export_page(&contents, context).await?;
-        output_file
-            .write_all(output.as_bytes())
-            .await
-            .into_diagnostic()?;
+        if self.context.root.is_file() || self.context.start_at.is_file() {
+            let source_filename = self
+                .context
+                .start_at
+                .file_name()
+                .expect("wtf how!?")
+                .to_string_lossy();
+
+            let dest = if self.context.destination.is_dir() {
+                self.context.destination.join(String::from(source_filename))
+            } else {
+                let parent = self
+                    .context
+                    .destination
+                    .parent()
+                    .unwrap_or(&self.context.destination);
+                // Avoid recursively creating self.destination through the call to
+                // export_note when the parent directory doesn't exist.
+                if !parent.exists() {
+                    return Err(miette::miette!(
+                        "Destination parent path ({}) does not exist, SOMEHOW",
+                        parent.display()
+                    ));
+                }
+                self.context.destination.clone()
+            };
+            return write_page(self.context.clone(), &self.context.start_at, dest).await;
+        }
+
+        if !self.context.destination.exists() {
+            return Err(miette::miette!(
+                "The destination path specified ({}) does not exist",
+                self.context.destination.display()
+            ));
+        }
+
+        for file in self
+            .context
+            .dir_contents
+            .as_ref()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .filter(|file| file.starts_with(&self.context.start_at))
+        {
+            let context = self.context.clone();
+            let relative_path = file
+                .strip_prefix(context.start_at.clone())
+                .expect("file should always be nested under root")
+                .to_path_buf();
+            if context
+                .options
+                .contains(StaticSiteOptions::FLATTEN_STRUCTURE)
+            {
+                let path_str = relative_path.to_string_lossy();
+                let (parent, file) = flatten_dir_to_just_one_parent(&path_str);
+                let output_path = context
+                    .destination
+                    .join(String::from(parent))
+                    .join(String::from(file));
+
+                write_page(context.clone(), relative_path, output_path).await?;
+            } else {
+                let output_path = context.destination.join(relative_path.clone());
+
+                write_page(context.clone(), relative_path, output_path).await?;
+            }
+        }
         Ok(())
     }
+}
+
+pub async fn export_page<'s, 'input, A>(
+    contents: &'input str,
+    context: StaticSiteContext<'s, A>,
+) -> Result<String, miette::Report>
+where
+    A: AgentSession + IdentityResolver,
+{
+    let callback = if let Some(dir_contents) = context.dir_contents.clone() {
+        Some(VaultBrokenLinkCallback {
+            vault_contents: dir_contents,
+        })
+    } else {
+        None
+    };
+    let parser = Parser::new_with_broken_link_callback(&contents, context.md_options, callback);
+    let iterator = ContextIterator::default(parser);
+    let mut output = String::new();
+    let writer = StaticPageWriter::new(
+        NotebookProcessor::new(context, iterator),
+        FmtWriter(&mut output),
+    );
+    writer.run().await.into_diagnostic()?;
+    Ok(output)
+}
+
+pub async fn write_page<'s, A>(
+    context: StaticSiteContext<'s, A>,
+    input_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> Result<(), miette::Report>
+where
+    A: AgentSession + IdentityResolver,
+{
+    let contents = tokio::fs::read_to_string(&input_path)
+        .await
+        .into_diagnostic()?;
+    let mut output_file = crate::utils::create_file(output_path.as_ref()).await?;
+    let context = context.clone_with_path(input_path);
+    let output = export_page(&contents, context).await?;
+    output_file
+        .write_all(output.as_bytes())
+        .await
+        .into_diagnostic()?;
+    Ok(())
 }
 
 pub struct StaticPageWriter<
@@ -1238,5 +1359,218 @@ impl<'input> markdown_weaver::BrokenLinkCallback<'input> for VaultBrokenLinkCall
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use weaver_common::jacquard::client::{
+        AtpSession, MemorySessionStore,
+        credential_session::{CredentialSession, SessionKey},
+    };
+
+    /// Type alias for the session used in tests
+    type TestSession = CredentialSession<
+        MemorySessionStore<SessionKey, AtpSession>,
+        weaver_common::jacquard::identity::JacquardResolver,
+    >;
+
+    /// Helper: Create test context without network capabilities
+    fn test_context() -> StaticSiteContext<'static, TestSession> {
+        let root = PathBuf::from("/tmp/test");
+        let destination = PathBuf::from("/tmp/output");
+        let mut ctx = StaticSiteContext::new(root, destination, None);
+        ctx.client = None; // Explicitly disable network
+        ctx
+    }
+
+    /// Helper: Render markdown to HTML using test context
+    async fn render_markdown(input: &str) -> String {
+        let context = test_context();
+        export_page(input, context).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_smoke() {
+        let output = render_markdown("Hello world").await;
+        assert!(output.contains("Hello world"));
+    }
+
+    #[tokio::test]
+    async fn test_paragraph_rendering() {
+        let input = "This is a paragraph.\n\nThis is another paragraph.";
+        let output = render_markdown(input).await;
+        insta::assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_heading_rendering() {
+        let input = "# Heading 1\n\n## Heading 2\n\n### Heading 3";
+        let output = render_markdown(input).await;
+        insta::assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_list_rendering() {
+        let input = "- Item 1\n- Item 2\n  - Nested\n\n1. Ordered 1\n2. Ordered 2";
+        let output = render_markdown(input).await;
+        insta::assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_code_block_rendering() {
+        let input = "```rust\nfn main() {\n    println!(\"Hello\");\n}\n```";
+        let output = render_markdown(input).await;
+        insta::assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_table_rendering() {
+        let input = "| Left | Center | Right |\n|:-----|:------:|------:|\n| A | B | C |";
+        let output = render_markdown(input).await;
+        insta::assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_blockquote_rendering() {
+        let input = "> This is a quote\n>\n> With multiple lines";
+        let output = render_markdown(input).await;
+        insta::assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_math_rendering() {
+        let input = "Inline $x^2$ and display:\n\n$$\ny = mx + b\n$$";
+        let output = render_markdown(input).await;
+        insta::assert_snapshot!(output);
+    }
+
+    #[tokio::test]
+    async fn test_wikilink_resolution() {
+        let vault_contents = vec![
+            PathBuf::from("notes/First Note.md"),
+            PathBuf::from("notes/Second Note.md"),
+        ];
+
+        let mut context = test_context();
+        context.dir_contents = Some(vault_contents.into());
+
+        let input = "[[First Note]] and [[Second Note]]";
+        let output = export_page(input, context).await.unwrap();
+        println!("{output}");
+        assert!(output.contains("./First%20Note"));
+        assert!(output.contains("./Second%20Note"));
+    }
+
+    #[tokio::test]
+    async fn test_broken_wikilink() {
+        let vault_contents = vec![PathBuf::from("notes/Exists.md")];
+
+        let mut context = test_context();
+        context.dir_contents = Some(vault_contents.into());
+
+        let input = "[[Does Not Exist]]";
+        let output = export_page(input, context).await.unwrap();
+
+        // Broken wikilinks become links (they just don't point anywhere valid)
+        // This is acceptable - static site will show 404 on click
+        assert!(output.contains("<a href="));
+        assert!(output.contains("Does Not Exist</a>") || output.contains("Does%20Not%20Exist"));
+    }
+
+    #[tokio::test]
+    async fn test_wikilink_with_section() {
+        let vault_contents = vec![PathBuf::from("Note.md")];
+
+        let mut context = test_context();
+        context.dir_contents = Some(vault_contents.into());
+
+        let input = "[[Note#Section]]";
+        let output = export_page(input, context).await.unwrap();
+        println!("{output}");
+        assert!(output.contains("Note#Section"));
+    }
+
+    #[tokio::test]
+    async fn test_link_flattening_enabled() {
+        let mut context = test_context();
+        context.options = StaticSiteOptions::FLATTEN_STRUCTURE;
+
+        let input = "[Link](path/to/nested/file.md)";
+        let output = export_page(input, context).await.unwrap();
+        println!("{output}");
+        // Should flatten to single parent directory
+        assert!(output.contains("./entry/file.md"));
+    }
+
+    #[tokio::test]
+    async fn test_link_flattening_disabled() {
+        let mut context = test_context();
+        context.options = StaticSiteOptions::empty();
+
+        let input = "[Link](path/to/nested/file.md)";
+        let output = export_page(input, context).await.unwrap();
+        println!("{output}");
+        // Should preserve original path
+        assert!(output.contains("path/to/nested/file.md"));
+    }
+
+    #[tokio::test]
+    async fn test_frontmatter_parsing() {
+        let input = "---\ntitle: Test Page\nauthor: Test Author\n---\n\nContent here";
+        let context = test_context();
+        let output = export_page(input, context.clone()).await.unwrap();
+
+        // Frontmatter should be parsed but not rendered
+        assert!(!output.contains("title: Test Page"));
+        assert!(output.contains("Content here"));
+
+        // Verify frontmatter was captured
+        let frontmatter = context.frontmatter();
+        let yaml = frontmatter.contents();
+        let yaml_guard = yaml.read().unwrap();
+        assert!(yaml_guard.len() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_empty_frontmatter() {
+        let input = "---\n---\n\nContent";
+        let output = render_markdown(input).await;
+
+        assert!(output.contains("Content"));
+        assert!(!output.contains("---"));
+    }
+
+    #[tokio::test]
+    async fn test_empty_input() {
+        let output = render_markdown("").await;
+        assert_eq!(output, "");
+    }
+
+    #[tokio::test]
+    async fn test_html_and_special_characters() {
+        // Test that markdown correctly handles HTML and special chars per CommonMark spec
+        let input = "Text with <special> & some text. Valid tags: <em>emphasis</em> and <strong>bold</strong>";
+        let output = render_markdown(input).await;
+
+        // & must be escaped for valid HTML
+        assert!(output.contains("&amp;"));
+
+        // Inline HTML tags pass through (CommonMark behavior)
+        assert!(output.contains("<special>"));
+        assert!(output.contains("<em>emphasis</em>"));
+        assert!(output.contains("<strong>bold</strong>"));
+    }
+
+    #[tokio::test]
+    async fn test_unicode_content() {
+        let input = "Unicode: 你好 🎉 café";
+        let output = render_markdown(input).await;
+
+        assert!(output.contains("你好"));
+        assert!(output.contains("🎉"));
+        assert!(output.contains("café"));
     }
 }
