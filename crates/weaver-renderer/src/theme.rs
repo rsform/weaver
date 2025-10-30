@@ -38,7 +38,7 @@ impl Default for Theme {
             colors: ColorScheme::default(),
             fonts: FontScheme::default(),
             spacing: SpacingScheme::default(),
-            syntect_theme_name: SmolStr::new("rose-pine"),
+            syntect_theme_name: SmolStr::new("rose-pine-dawn"),
             custom_syntect_theme_path: None,
         }
     }
@@ -47,10 +47,10 @@ impl Default for Theme {
 impl Default for ColorScheme {
     fn default() -> Self {
         Self {
-            background: SmolStr::new("#ffffff"),
+            background: SmolStr::new("#faf4ed"),
             foreground: SmolStr::new("#2b303b"),
-            link: SmolStr::new("#0366d6"),
-            link_hover: SmolStr::new("#0256b8"),
+            link: SmolStr::new("#286983"),
+            link_hover: SmolStr::new("#56949f"),
         }
     }
 }
