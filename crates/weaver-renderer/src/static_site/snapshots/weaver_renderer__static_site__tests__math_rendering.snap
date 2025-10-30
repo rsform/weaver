@@ -1,5 +1,5 @@
 ---
-source: crates/weaver-renderer/src/static_site.rs
+source: crates/weaver-renderer/src/static_site/tests.rs
 expression: output
 ---
 <p>Inline <span class="math math-inline">x^2</span> and display:</p>

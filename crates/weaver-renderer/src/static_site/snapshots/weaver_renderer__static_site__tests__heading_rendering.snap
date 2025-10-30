@@ -1,5 +1,5 @@
 ---
-source: crates/weaver-renderer/src/static_site.rs
+source: crates/weaver-renderer/src/static_site/tests.rs
 expression: output
 ---
 <h1>Heading 1</h1>

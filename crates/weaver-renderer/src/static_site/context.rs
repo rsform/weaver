@@ -392,15 +392,20 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for StaticSiteContext<A
                 Tag::Link { link_type, dest_url, title, id } => {
                     if self.options.contains(StaticSiteOptions::FLATTEN_STRUCTURE) {
                         let (parent, filename) = crate::utils::flatten_dir_to_just_one_parent(&dest_url);
-                        let dest_url = if crate::utils::is_relative_link(&dest_url)
-                            && self.options.contains(StaticSiteOptions::CREATE_CHAPTERS_BY_DIRECTORY) {
-                            if !parent.is_empty() {
-                                CowStr::Boxed(format!("./{}/{}", parent, filename).into_boxed_str())
+                        let dest_url = if crate::utils::is_local_path(&dest_url) {
+                            let filename = PathBuf::from(filename).with_extension("html");
+                            if crate::utils::is_relative_link(&dest_url)
+                                && self.options.contains(StaticSiteOptions::CREATE_CHAPTERS_BY_DIRECTORY) {
+                                if !parent.is_empty() {
+                                    CowStr::Boxed(format!("./{}/{}", parent, filename.display()).into_boxed_str())
+                                } else {
+                                    CowStr::Boxed(format!("./{}", filename.display()).into_boxed_str())
+                                }
                             } else {
-                                CowStr::Boxed(format!("./{}", filename).into_boxed_str())
+                                CowStr::Boxed(format!("./entry/{}", filename.display()).into_boxed_str())
                             }
                         } else {
-                            CowStr::Boxed(format!("./entry/{}", filename).into_boxed_str())
+                            dest_url.clone()
                         };
                         Tag::Link {
                             link_type: *link_type,
@@ -409,8 +414,17 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for StaticSiteContext<A
                             id: id.clone(),
                         }
                     } else {
-                        link
-
+                        if crate::utils::is_local_path(&dest_url) {
+                            let filename = PathBuf::from(dest_url.as_ref() as &str).with_extension("html");
+                            Tag::Link {
+                                link_type: *link_type,
+                                dest_url: CowStr::Boxed(filename.to_string_lossy().into()),
+                                title: title.clone(),
+                                id: id.clone(),
+                            }
+                        } else {
+                            link
+                        }
                     }
                 },
                 _ => link,

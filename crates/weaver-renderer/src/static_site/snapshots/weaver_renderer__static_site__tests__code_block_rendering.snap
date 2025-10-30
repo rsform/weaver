@@ -1,5 +1,5 @@
 ---
-source: crates/weaver-renderer/src/static_site.rs
+source: crates/weaver-renderer/src/static_site/tests.rs
 expression: output
 ---
 <pre><code class="language-Rust"><span class="wvrcode-source wvrcode-rust"><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-storage wvrcode-type wvrcode-function wvrcode-rust">fn</span> </span><span class="wvrcode-entity wvrcode-name wvrcode-function wvrcode-rust">main</span></span><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-meta wvrcode-function wvrcode-parameters wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-parameters wvrcode-begin wvrcode-rust">(</span></span><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-meta wvrcode-function wvrcode-parameters wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-parameters wvrcode-end wvrcode-rust">)</span></span></span></span><span class="wvrcode-meta wvrcode-function wvrcode-rust"> </span><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-meta wvrcode-block wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-block wvrcode-begin wvrcode-rust">{</span>

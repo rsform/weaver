@@ -4,6 +4,7 @@
 /dist
 /node_modules
 /plans
+/alloy
 .direnv
 .env
 .devenv

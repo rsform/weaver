@@ -1,5 +1,5 @@
 ---
-source: crates/weaver-renderer/src/static_site.rs
+source: crates/weaver-renderer/src/static_site/tests.rs
 expression: output
 ---
 <table><thead><tr><th style="text-align: left">Left</th><th style="text-align: center">Center</th><th style="text-align: right">Right</th></tr></thead><tbody>

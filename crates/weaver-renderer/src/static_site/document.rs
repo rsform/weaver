@@ -41,13 +41,13 @@ pub async fn write_document_head<A: AgentSession>(
     // Calculate relative path to root based on output file depth
     let relative_to_root = if let Ok(rel) = output_path.strip_prefix(&context.destination) {
         let depth = rel.components().count() - 1; // -1 because the file itself doesn't count
-        if depth == 0 {
-            ".".to_string()
+        if depth <= 0 {
+            "./".to_string()
         } else {
             "../".repeat(depth)
         }
     } else {
-        ".".to_string()
+        "./".to_string()
     };
 
     writer
@@ -77,11 +77,23 @@ pub async fn write_document_head<A: AgentSession>(
     match css_mode {
         CssMode::Linked => {
             writer
-                .write_all(format!("  <link rel=\"stylesheet\" href=\"{}/css/base.css\">\n", relative_to_root).as_bytes())
+                .write_all(
+                    format!(
+                        "  <link rel=\"stylesheet\" href=\"{}css/base.css\">\n",
+                        relative_to_root
+                    )
+                    .as_bytes(),
+                )
                 .await
                 .into_diagnostic()?;
             writer
-                .write_all(format!("  <link rel=\"stylesheet\" href=\"{}/css/syntax.css\">\n", relative_to_root).as_bytes())
+                .write_all(
+                    format!(
+                        "  <link rel=\"stylesheet\" href=\"{}css/syntax.css\">\n",
+                        relative_to_root
+                    )
+                    .as_bytes(),
+                )
                 .await
                 .into_diagnostic()?;
         }
