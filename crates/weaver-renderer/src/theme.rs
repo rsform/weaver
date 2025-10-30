@@ -1,4 +1,5 @@
 use smol_str::SmolStr;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -6,6 +7,7 @@ pub struct Theme {
     pub fonts: FontScheme,
     pub spacing: SpacingScheme,
     pub syntect_theme_name: SmolStr,
+    pub custom_syntect_theme_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,7 +38,8 @@ impl Default for Theme {
             colors: ColorScheme::default(),
             fonts: FontScheme::default(),
             spacing: SpacingScheme::default(),
-            syntect_theme_name: SmolStr::new("base16-ocean.dark"),
+            syntect_theme_name: SmolStr::new("rose-pine"),
+            custom_syntect_theme_path: None,
         }
     }
 }
@@ -55,9 +58,15 @@ impl Default for ColorScheme {
 impl Default for FontScheme {
     fn default() -> Self {
         Self {
-            body: SmolStr::new("system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
-            heading: SmolStr::new("system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
-            monospace: SmolStr::new("'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace"),
+            body: SmolStr::new(
+                "IBM Plex, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            ),
+            heading: SmolStr::new(
+                "IBM Plex Sans, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            ),
+            monospace: SmolStr::new(
+                "'IBM Plex Mono', 'Berkeley Mono', 'Cascadia Code', 'Roboto Mono', Consolas, monospace",
+            ),
         }
     }
 }

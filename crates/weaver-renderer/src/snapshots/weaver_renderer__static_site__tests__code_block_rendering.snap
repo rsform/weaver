@@ -2,7 +2,7 @@
 source: crates/weaver-renderer/src/static_site.rs
 expression: output
 ---
-<pre><code class="language-rust">fn main() {
-    println!("Hello");
-}
-</code></pre>
+<pre><code class="language-Rust"><span class="wvrcode-source wvrcode-rust"><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-storage wvrcode-type wvrcode-function wvrcode-rust">fn</span> </span><span class="wvrcode-entity wvrcode-name wvrcode-function wvrcode-rust">main</span></span><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-meta wvrcode-function wvrcode-parameters wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-parameters wvrcode-begin wvrcode-rust">(</span></span><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-meta wvrcode-function wvrcode-parameters wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-parameters wvrcode-end wvrcode-rust">)</span></span></span></span><span class="wvrcode-meta wvrcode-function wvrcode-rust"> </span><span class="wvrcode-meta wvrcode-function wvrcode-rust"><span class="wvrcode-meta wvrcode-block wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-block wvrcode-begin wvrcode-rust">{</span>
+    <span class="wvrcode-support wvrcode-macro wvrcode-rust">println!</span><span class="wvrcode-meta wvrcode-group wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-group wvrcode-begin wvrcode-rust">(</span></span><span class="wvrcode-meta wvrcode-group wvrcode-rust"><span class="wvrcode-string wvrcode-quoted wvrcode-double wvrcode-rust"><span class="wvrcode-punctuation wvrcode-definition wvrcode-string wvrcode-begin wvrcode-rust">&quot;</span>Hello<span class="wvrcode-punctuation wvrcode-definition wvrcode-string wvrcode-end wvrcode-rust">&quot;</span></span></span><span class="wvrcode-meta wvrcode-group wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-group wvrcode-end wvrcode-rust">)</span></span><span class="wvrcode-punctuation wvrcode-terminator wvrcode-rust">;</span>
+</span><span class="wvrcode-meta wvrcode-block wvrcode-rust"><span class="wvrcode-punctuation wvrcode-section wvrcode-block wvrcode-end wvrcode-rust">}</span></span></span>
+</span></code></pre>

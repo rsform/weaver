@@ -11,7 +11,11 @@ pub mod writer;
 
 use crate::{
     ContextIterator, NotebookProcessor,
-    static_site::{context::StaticSiteContext, writer::StaticPageWriter},
+    static_site::{
+        context::StaticSiteContext,
+        document::{CssMode, write_document_footer, write_document_head},
+        writer::StaticPageWriter,
+    },
     utils::flatten_dir_to_just_one_parent,
     walker::{WalkOptions, vault_contents},
 };
@@ -131,7 +135,8 @@ where
                 }
                 self.context.destination.clone()
             };
-            return write_page(self.context.clone(), &self.context.start_at, dest).await;
+            // Use standalone writer for single file (inline CSS)
+            return write_page_standalone(self.context.clone(), &self.context.start_at, dest).await;
         }
 
         if !self.context.destination.exists() {
@@ -140,6 +145,9 @@ where
                 self.context.destination.display()
             ));
         }
+
+        // Generate CSS files for multi-file mode
+        self.generate_css_files().await?;
 
         let mut writers =
             Vec::with_capacity(self.context.dir_contents.clone().unwrap_or_default().len());
@@ -161,22 +169,65 @@ where
                     .strip_prefix(context.start_at.clone())
                     .expect("file should always be nested under root")
                     .to_path_buf();
+
+                // Check if this is a markdown file
+                let is_markdown = file.extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext == "md" || ext == "markdown")
+                    .unwrap_or(false);
+
+                if !is_markdown {
+                    // Copy non-markdown files directly
+                    let output_path = if context
+                        .options
+                        .contains(StaticSiteOptions::FLATTEN_STRUCTURE)
+                    {
+                        let path_str = relative_path.to_string_lossy();
+                        let (parent, fname) = flatten_dir_to_just_one_parent(&path_str);
+                        let parent = if parent.is_empty() { "entry" } else { parent };
+                        context
+                            .destination
+                            .join(String::from(parent))
+                            .join(String::from(fname))
+                    } else {
+                        context.destination.join(relative_path.clone())
+                    };
+
+                    // Create parent directory if needed
+                    if let Some(parent) = output_path.parent() {
+                        tokio::fs::create_dir_all(parent).await.into_diagnostic()?;
+                    }
+
+                    tokio::fs::copy(&file, &output_path).await.into_diagnostic()?;
+                    return Ok(());
+                }
+
+                // Process markdown files
+                // Check if this is the designated index file
+                if let Some(index) = &context.index_file {
+                    if &relative_path == index {
+                        let output_path = context.destination.join("index.html");
+                        return write_page(context.clone(), file, output_path).await;
+                    }
+                }
+
                 if context
                     .options
                     .contains(StaticSiteOptions::FLATTEN_STRUCTURE)
                 {
                     let path_str = relative_path.to_string_lossy();
-                    let (parent, file) = flatten_dir_to_just_one_parent(&path_str);
+                    let (parent, fname) = flatten_dir_to_just_one_parent(&path_str);
+                    let parent = if parent.is_empty() { "entry" } else { parent };
                     let output_path = context
                         .destination
                         .join(String::from(parent))
-                        .join(String::from(file));
+                        .join(String::from(fname));
 
-                    write_page(context.clone(), relative_path, output_path).await?;
+                    write_page(context.clone(), file.clone(), output_path).await?;
                 } else {
                     let output_path = context.destination.join(relative_path.clone());
 
-                    write_page(context.clone(), relative_path, output_path).await?;
+                    write_page(context.clone(), file.clone(), output_path).await?;
                 }
                 Ok::<(), miette::Report>(())
             }));
@@ -187,6 +238,103 @@ where
         for fut in n0_future::join_all(writers).await.into_iter() {
             fut.into_diagnostic()??;
         }
+
+        // Generate default index if requested and no custom index specified
+        if self
+            .context
+            .options
+            .contains(StaticSiteOptions::CREATE_INDEX)
+            && self.context.index_file.is_none()
+        {
+            self.generate_default_index().await?;
+        }
+
+        Ok(())
+    }
+
+    async fn generate_css_files(&self) -> Result<(), miette::Report> {
+        use crate::css::{generate_base_css, generate_syntax_css};
+        use crate::theme::Theme;
+
+        let css_dir = self.context.destination.join("css");
+        tokio::fs::create_dir_all(&css_dir)
+            .await
+            .into_diagnostic()?;
+
+        let default_theme = Theme::default();
+        let theme = self.context.theme.as_deref().unwrap_or(&default_theme);
+
+        // Write base.css
+        let base_css = generate_base_css(theme);
+        tokio::fs::write(css_dir.join("base.css"), base_css)
+            .await
+            .into_diagnostic()?;
+
+        // Write syntax.css
+        let syntax_css = generate_syntax_css(theme, &self.context.syntax_set)?;
+        tokio::fs::write(css_dir.join("syntax.css"), syntax_css)
+            .await
+            .into_diagnostic()?;
+
+        Ok(())
+    }
+
+    async fn generate_default_index(&self) -> Result<(), miette::Report> {
+        let index_path = self.context.destination.join("index.html");
+        let mut index_file = crate::utils::create_file(&index_path).await?;
+
+        // Write head
+        write_document_head(&self.context, &mut index_file, CssMode::Linked, &index_path).await?;
+
+        // Write title and list
+        index_file
+            .write_all(b"<h1>Index</h1>\n<ul>\n")
+            .await
+            .into_diagnostic()?;
+
+        // List all files
+        if let Some(contents) = &self.context.dir_contents {
+            for file in contents.iter() {
+                if let Ok(relative) = file.strip_prefix(&self.context.start_at) {
+                    let display_name = relative.to_string_lossy();
+                    let link = if self
+                        .context
+                        .options
+                        .contains(StaticSiteOptions::FLATTEN_STRUCTURE)
+                    {
+                        let (parent, fname) = flatten_dir_to_just_one_parent(&display_name);
+                        // Change extension to .html
+                        let fname_html =
+                            PathBuf::from(fname.as_ref() as &str).with_extension("html");
+                        let fname_html_str = fname_html.to_string_lossy();
+                        if !parent.is_empty() {
+                            format!("./{}/{}", parent, fname_html_str)
+                        } else {
+                            format!("./entry/{}", fname_html_str)
+                        }
+                    } else {
+                        // Change extension to .html
+                        let html_path =
+                            PathBuf::from(display_name.as_ref() as &str).with_extension("html");
+                        format!("./{}", html_path.to_string_lossy())
+                    };
+
+                    index_file
+                        .write_all(
+                            format!("  <li><a href=\"{}\">{}</a></li>\n", link, display_name)
+                                .as_bytes(),
+                        )
+                        .await
+                        .into_diagnostic()?;
+                }
+            }
+        }
+
+        index_file.write_all(b"</ul>\n").await.into_diagnostic()?;
+
+        // Write footer
+        write_document_footer(&mut index_file).await?;
+
         Ok(())
     }
 }
@@ -227,13 +375,58 @@ where
     let contents = tokio::fs::read_to_string(&input_path)
         .await
         .into_diagnostic()?;
-    let mut output_file = crate::utils::create_file(output_path.as_ref()).await?;
+
+    // Change extension to .html
+    let output_path = output_path.as_ref().with_extension("html");
+    let mut output_file = crate::utils::create_file(&output_path).await?;
     let context = context.clone_with_path(input_path);
+
+    // Write document head
+    write_document_head(&context, &mut output_file, CssMode::Linked, &output_path).await?;
+
+    // Write body content
     let output = export_page(&contents, context).await?;
     output_file
         .write_all(output.as_bytes())
         .await
         .into_diagnostic()?;
+
+    // Write document footer
+    write_document_footer(&mut output_file).await?;
+
+    Ok(())
+}
+
+pub async fn write_page_standalone<A>(
+    context: StaticSiteContext<A>,
+    input_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> Result<(), miette::Report>
+where
+    A: AgentSession + IdentityResolver,
+{
+    let contents = tokio::fs::read_to_string(&input_path)
+        .await
+        .into_diagnostic()?;
+
+    // Change extension to .html
+    let output_path = output_path.as_ref().with_extension("html");
+    let mut output_file = crate::utils::create_file(&output_path).await?;
+    let context = context.clone_with_path(input_path);
+
+    // Write document head with inline CSS
+    write_document_head(&context, &mut output_file, CssMode::Inline, &output_path).await?;
+
+    // Write body content
+    let output = export_page(&contents, context).await?;
+    output_file
+        .write_all(output.as_bytes())
+        .await
+        .into_diagnostic()?;
+
+    // Write document footer
+    write_document_footer(&mut output_file).await?;
+
     Ok(())
 }
 

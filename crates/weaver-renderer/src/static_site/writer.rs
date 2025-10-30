@@ -109,7 +109,7 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
                         ) {
                             Ok(_) => {
                                 self.write(&temp_output)?;
-                            },
+                            }
                             Err(_) => {
                                 // Fallback to plain code block
                                 self.write("<pre><code class=\"language-")?;
@@ -518,6 +518,7 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession + IdentityResolv
                 id,
                 attrs,
             } => {
+                println!("Image tag {}", dest_url);
                 self.write_image(Tag::Image {
                     link_type,
                     dest_url,
@@ -534,6 +535,7 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession + IdentityResolv
                 id,
                 attrs,
             } => {
+                println!("Embed {:?}: {} - {}", embed_type, title, dest_url);
                 if let Some(attrs) = attrs {
                     if let Some((_, content)) = attrs
                         .attrs

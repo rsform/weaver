@@ -1,8 +1,13 @@
 use crate::theme::Theme;
 use miette::IntoDiagnostic;
-use syntect::highlighting::ThemeSet;
+use syntect::highlighting::{Theme as SyntectTheme, ThemeSet};
 use syntect::html::{ClassStyle, css_for_theme_with_class_style};
 use syntect::parsing::SyntaxSet;
+use std::io::Cursor;
+
+// Embed rose-pine themes at compile time
+const ROSE_PINE_THEME: &str = include_str!("../themes/rose-pine.tmTheme");
+const ROSE_PINE_DAWN_THEME: &str = include_str!("../themes/rose-pine-dawn.tmTheme");
 
 pub fn generate_base_css(theme: &Theme) -> String {
     format!(
@@ -179,17 +184,43 @@ hr {{
 }
 
 pub fn generate_syntax_css(
-    syntect_theme_name: &str,
+    theme: &Theme,
     _syntax_set: &SyntaxSet,
 ) -> miette::Result<String> {
-    let theme_set = ThemeSet::load_defaults();
-    let theme = theme_set
-        .themes
-        .get(syntect_theme_name)
-        .ok_or_else(|| miette::miette!("Theme '{}' not found", syntect_theme_name))?;
+    let syntect_theme = if let Some(custom_path) = &theme.custom_syntect_theme_path {
+        // Load custom theme from file
+        ThemeSet::get_theme(custom_path)
+            .into_diagnostic()
+            .map_err(|e| miette::miette!("Failed to load custom theme from {:?}: {}", custom_path, e))?
+    } else {
+        // Check for embedded themes first
+        match theme.syntect_theme_name.as_str() {
+            "rose-pine" => {
+                let mut cursor = Cursor::new(ROSE_PINE_THEME.as_bytes());
+                ThemeSet::load_from_reader(&mut cursor)
+                    .into_diagnostic()
+                    .map_err(|e| miette::miette!("Failed to load embedded rose-pine theme: {}", e))?
+            }
+            "rose-pine-dawn" => {
+                let mut cursor = Cursor::new(ROSE_PINE_DAWN_THEME.as_bytes());
+                ThemeSet::load_from_reader(&mut cursor)
+                    .into_diagnostic()
+                    .map_err(|e| miette::miette!("Failed to load embedded rose-pine-dawn theme: {}", e))?
+            }
+            _ => {
+                // Fall back to syntect's built-in themes
+                let theme_set = ThemeSet::load_defaults();
+                theme_set
+                    .themes
+                    .get(theme.syntect_theme_name.as_str())
+                    .ok_or_else(|| miette::miette!("Theme '{}' not found in defaults", theme.syntect_theme_name))?
+                    .clone()
+            }
+        }
+    };
 
     let css = css_for_theme_with_class_style(
-        theme,
+        &syntect_theme,
         ClassStyle::SpacedPrefixed {
             prefix: crate::code_pretty::CSS_PREFIX,
         },
