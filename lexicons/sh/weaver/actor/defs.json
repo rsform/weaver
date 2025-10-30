@@ -15,10 +15,11 @@
         },
         "description": {
           "type": "string",
-          "maxGraphemes": 256,
-          "maxLength": 2560
+          "maxGraphemes": 1024,
+          "maxLength": 10240
         },
         "avatar": { "type": "string", "format": "uri" },
+        "banner": { "type": "string", "format": "uri" },
         "location": {
           "type": "string",
           "description": "Free-form location text.",
@@ -37,7 +38,11 @@
         },
         "indexedAt": { "type": "string", "format": "datetime" },
         "createdAt": { "type": "string", "format": "datetime" },
-
+        "pinned": {
+          "description": "Notebooks or other records pinned for display."
+          "type": "ref",
+          "ref": "sh.weaver.actor.profile#pinnedList"
+        }
         "labels": {
           "type": "array",
           "items": { "type": "ref", "ref": "com.atproto.label.defs#label" }
@@ -46,7 +51,38 @@
           "type": "ref",
           "description": "Pronouns to use in user-generated content.",
           "ref": "sh.weaver.actor.profile#pronounsList"
-        }
+        },
+        "subscriberCount": {
+          "type": "integer"
+        },
+        "subscribedCount": {
+          "type": "integer"
+        },
+      }
+    },
+    "profileViewBasic": {
+      "type": "object",
+      "required": ["did", "handle"],
+      "properties": {
+        "did": { "type": "string", "format": "did" },
+        "handle": { "type": "string", "format": "handle" },
+        "displayName": {
+          "type": "string",
+          "maxGraphemes": 64,
+          "maxLength": 640
+        },
+        "avatar": { "type": "string", "format": "uri" },
+        "indexedAt": { "type": "string", "format": "datetime" },
+        "createdAt": { "type": "string", "format": "datetime" },
+        "labels": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "com.atproto.label.defs#label" }
+        },
+        "pronouns": {
+          "type": "ref",
+          "description": "Pronouns to use in user-generated content.",
+          "ref": "sh.weaver.actor.profile#pronounsList"
+        },
       }
     },
     "profileDataView": {
@@ -55,7 +91,17 @@
       "properties": {
         "inner": {
           "type": "union",
-          "refs": ["sh.weaver.actor.defs#profileView", "app.bsky.actor.defs#profileViewDetailed"]
+          "refs": ["sh.weaver.actor.defs#profileView", "app.bsky.actor.defs#profileViewDetailed", "#tangledProfileView"]
+        }
+      }
+    },
+    "profileDataViewBasic": {
+      "type": "object",
+      "required": ["inner"],
+      "properties": {
+        "inner": {
+          "type": "union",
+          "refs": ["sh.weaver.actor.defs#profileViewBasic", "app.bsky.actor.defs#profileViewBasic", "#tangledProfileView"]
         }
       }
     },
@@ -73,6 +119,7 @@
         }
       }
     },
+
     "tangledProfileView": {
       "type": "object",
       "required": ["bluesky", "did", "handle"],

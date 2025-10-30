@@ -9,8 +9,44 @@
       "properties": {
         "records": {
           "type": "array",
-          "items": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+          "items": { "type": "ref", "ref": "#recordEmbed" },
           "maxLength": 48
+        }
+      }
+    },
+    "recordEmbed": {
+      "type": "object",
+      "required": ["record"],
+      "properties": {
+        "record": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "recordEmbedView": {
+      "type": "object",
+      "required": ["recordView"],
+      "properties": {
+        "recordView": {
+          "type": "union",
+          "refs": [
+            "app.bsky.embed.images#view",
+            "app.bsky.embed.video#view",
+            "app.bsky.embed.external#view",
+            "app.bsky.embed.record#view",
+            "app.bsky.embed.recordWithMedia#view",
+            "sh.weaver.embed.records#view",
+            "sh.weaver.embed.images#view"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128
         }
       }
     },
@@ -40,8 +76,8 @@
         "uri": { "type": "string", "format": "at-uri" },
         "cid": { "type": "string", "format": "cid" },
         "author": {
-          "type": "union",
-          "refs": ["app.bsky.actor.defs#profileViewBasic"]
+          "type": "ref",
+          "ref": "sh.weaver.actor.defs#profileDataViewBasic"
         },
         "value": {
           "type": "unknown",
@@ -58,15 +94,8 @@
         "embeds": {
           "type": "array",
           "items": {
-            "type": "union",
-            "refs": [
-              "app.bsky.embed.images#view",
-              "app.bsky.embed.video#view",
-              "app.bsky.embed.external#view",
-              "app.bsky.embed.record#view",
-              "app.bsky.embed.recordWithMedia#view",
-              "sh.weaver.embed.records#view"
-            ]
+            "type": "ref",
+            "ref": "#recordEmbedView"
           }
         },
         "indexedAt": { "type": "string", "format": "datetime" }

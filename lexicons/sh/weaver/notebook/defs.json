@@ -101,7 +101,7 @@
     },
     "title": {
       "type": "string",
-      "maxLength": 420,
+      "maxLength": 300,
       "description": "The title of the notebook entry."
     },
     "tags": {

@@ -17,13 +17,22 @@
           "description": {
             "type": "string",
             "description": "Free-form profile description text.",
-            "maxGraphemes": 256,
-            "maxLength": 2560
+            "maxGraphemes": 1024,
+            "maxLength": 10240
           },
           "avatar": {
             "type": "blob",
             "description": "Small image to be displayed next to posts from account. AKA, 'profile picture'",
             "accept": ["image/png", "image/jpeg"],
+            "maxSize": 1000000
+          },
+          "banner": {
+            "type": "blob",
+            "description": "Larger horizontal image to display behind profile view.",
+            "accept": [
+              "image/png",
+              "image/jpeg"
+            ],
             "maxSize": 1000000
           },
           "links": {
@@ -41,9 +50,10 @@
             "description": "Pronouns to use in user-generated content.",
             "ref": "#pronounsList"
           },
-          "pinnedPost": {
+          "pinned": {
+            "description": "Notebooks or other records pinned for display."
             "type": "ref",
-            "ref": "com.atproto.repo.strongRef"
+            "ref": "#pinnedList"
           },
           "bluesky": {
             "type": "boolean",
@@ -52,6 +62,17 @@
           "tangled": {
             "type": "boolean",
             "description": "Include link to this account on Tangled."
+          },
+          "streamplace": {
+            "type": "boolean",
+            "description": "Include link to this account on stream.place."
+          },
+          "labels": {
+            "type": "union",
+            "description": "Self-label values, specific to the application, on the overall account.",
+            "refs": [
+              "com.atproto.label.defs#selfLabels"
+            ]
           },
           "location": {
             "type": "string",
@@ -67,7 +88,15 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["she/her", "he/him", "they/them", "it/its", "she/they", "he/they", "they/he", "they/she"]
+        "maxLength": "50",
+        "knownValues": ["she/her", "he/him", "they/them", "it/its", "she/they", "he/they", "they/he", "they/she", "any/all"]
+      }
+    },
+    "pinnedList": {
+      "type": "array",
+      "items": {
+        "type": "ref",
+        "ref": "com.atproto.repo.strongRef"
       }
     }
   }
