@@ -48,12 +48,12 @@
           "pronouns": {
             "type": "ref",
             "description": "Pronouns to use in user-generated content.",
-            "ref": "#pronounsList"
+            "ref": "sh.weaver.actor.defs#pronounsList"
           },
           "pinned": {
             "description": "Notebooks or other records pinned for display."
             "type": "ref",
-            "ref": "#pinnedList"
+            "ref": "sh.weaver.actor.defs#pinnedList"
           },
           "bluesky": {
             "type": "boolean",
@@ -82,21 +82,6 @@
           },
           "createdAt": { "type": "string", "format": "datetime" }
         }
-      }
-    },
-    "pronounsList": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "maxLength": "50",
-        "knownValues": ["she/her", "he/him", "they/them", "it/its", "she/they", "he/they", "they/he", "they/she", "any/all"]
-      }
-    },
-    "pinnedList": {
-      "type": "array",
-      "items": {
-        "type": "ref",
-        "ref": "com.atproto.repo.strongRef"
       }
     }
   }

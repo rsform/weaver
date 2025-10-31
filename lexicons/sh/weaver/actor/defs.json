@@ -41,7 +41,7 @@
         "pinned": {
           "description": "Notebooks or other records pinned for display."
           "type": "ref",
-          "ref": "sh.weaver.actor.profile#pinnedList"
+          "ref": "#pinnedList"
         }
         "labels": {
           "type": "array",
@@ -50,7 +50,7 @@
         "pronouns": {
           "type": "ref",
           "description": "Pronouns to use in user-generated content.",
-          "ref": "sh.weaver.actor.profile#pronounsList"
+          "ref": "#pronounsList"
         },
         "subscriberCount": {
           "type": "integer"
@@ -81,7 +81,7 @@
         "pronouns": {
           "type": "ref",
           "description": "Pronouns to use in user-generated content.",
-          "ref": "sh.weaver.actor.profile#pronounsList"
+          "ref": "#pronounsList"
         },
       }
     },
@@ -91,7 +91,7 @@
       "properties": {
         "inner": {
           "type": "union",
-          "refs": ["sh.weaver.actor.defs#profileView", "app.bsky.actor.defs#profileViewDetailed", "#tangledProfileView"]
+          "refs": ["#profileView", "app.bsky.actor.defs#profileViewDetailed", "#tangledProfileView"]
         }
       }
     },
@@ -101,7 +101,7 @@
       "properties": {
         "inner": {
           "type": "union",
-          "refs": ["sh.weaver.actor.defs#profileViewBasic", "app.bsky.actor.defs#profileViewBasic", "#tangledProfileView"]
+          "refs": ["#profileViewBasic", "app.bsky.actor.defs#profileViewBasic", "#tangledProfileView"]
         }
       }
     },
@@ -119,7 +119,21 @@
         }
       }
     },
-
+    "pronounsList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": "50",
+        "knownValues": ["she/her", "he/him", "they/them", "it/its", "she/they", "he/they", "they/he", "they/she", "any/all"]
+      }
+    },
+    "pinnedList": {
+      "type": "array",
+      "items": {
+        "type": "ref",
+        "ref": "com.atproto.repo.strongRef"
+      }
+    },
     "tangledProfileView": {
       "type": "object",
       "required": ["bluesky", "did", "handle"],
