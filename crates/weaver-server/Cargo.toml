@@ -1,27 +1,23 @@
 [package]
 name = "weaver-server"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-publish = false
+version = "0.1.0"
+authors = ["Orual <orual@nonbinary.computer>"]
+edition = "2021"
 
-[[bin]]
-name = "weaver-server"
-path = "src/main.rs"
-
-[lib]
-name = "weaver_server"
-path = "src/lib.rs"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dioxus = { version = "0.6.0", features = ["router", "fullstack"] }
 weaver-common = { path = "../weaver-common" }
 weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 
 jacquard = { workspace = true, features = ["tracing"] }
-jacquard-axum = { workspace = true }
 
-axum = "0.8"
-tokio = { version = "1.44", features = ["full"] }
-notify = "8.0"
-
-clap = { version = "4.5", features = ["derive", "env", "cargo", "unicode"] }
+[features]
+default = ["web"]
+# The feature that are only required for the web = ["dioxus/web"] build target should be optional and only enabled in the web = ["dioxus/web"] feature
+web = ["dioxus/web"]
+# The feature that are only required for the desktop = ["dioxus/desktop"] build target should be optional and only enabled in the desktop = ["dioxus/desktop"] feature
+desktop = ["dioxus/desktop"]
+# The feature that are only required for the mobile = ["dioxus/mobile"] build target should be optional and only enabled in the mobile = ["dioxus/mobile"] feature
+mobile = ["dioxus/mobile"]

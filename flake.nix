@@ -37,7 +37,7 @@
           toolchain.default.override {
             # Set the build targets supported by the toolchain,
             # wasm32-unknown-unknown is required for trunk.
-            targets = ["wasm32-unknown-unknown" "wasm32-wasip1" "wasm32-wasip2"];
+            targets = ["wasm32-unknown-unknown"];
             extensions = [
               "rust-src"
               "rust-analyzer"
@@ -218,15 +218,15 @@
       };
 
       devShells.default = let
-        # dioxus-cli = pkgs.dioxus-cli.overrideAttrs (_: {
-        #   postPatch = ''
-        #     rm Cargo.lock
-        #     cp ${./Dioxus.lock} Cargo.lock
-        #   '';
-        #   cargoDeps = pkgs.rustPlatform.importCargoLock {
-        #     lockFile = ./Dioxus.lock;
-        #   };
-        # });
+        dioxus-cli = pkgs.dioxus-cli.overrideAttrs (_: {
+          postPatch = ''
+            rm Cargo.lock
+            cp ${./crates/weaver-server/Dioxus.lock} Cargo.lock
+          '';
+          cargoDeps = pkgs.rustPlatform.importCargoLock {
+            lockFile = ./crates/weaver-server/Dioxus.lock;
+          };
+        });
         cargoLock = builtins.fromTOML (builtins.readFile ./Cargo.lock);
 
         wasmBindgen =
