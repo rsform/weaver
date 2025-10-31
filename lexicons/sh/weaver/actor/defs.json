@@ -39,7 +39,7 @@
         "indexedAt": { "type": "string", "format": "datetime" },
         "createdAt": { "type": "string", "format": "datetime" },
         "pinned": {
-          "description": "Notebooks or other records pinned for display."
+          "description": "Notebooks or other records pinned for display.",
           "type": "ref",
           "ref": "#pinnedList"
         }
