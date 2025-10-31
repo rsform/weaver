@@ -23,7 +23,7 @@ name = "weaver-workspace"
 [workspace.dependencies]
 
 serde = { version = "1.0", features = ["derive"] }
-
+bytes = "1.10"
 minijinja = { version = "2.9.0", default-features = false }
 minijinja-contrib = { version = "2.9.0", default-features = false }
 miette = { version = "7.6" }

@@ -5,6 +5,18 @@
   "defs": {
     "main": {
       "type": "object",
+      "required": ["videos"],
+      "properties": {
+        "videos": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#video" },
+          "minItems": 1,
+          "maxItems": 10
+        }
+      }
+    },
+    "video": {
+      "type": "object",
       "required": ["video"],
       "properties": {
         "video": {

@@ -9,12 +9,12 @@
       "properties": {
         "embeds": {
           "type": "array",
-          "items": { "type": "ref", "ref": "#external" },
+          "items": { "type": "ref", "ref": "#externalEmbed" },
           "maxLength": 48
         }
       }
     },
-    "external": {
+    "externalEmbed": {
       "type": "object",
       "required": ["uri", "title", "description"],
       "properties": {
@@ -33,8 +33,9 @@
       "required": ["external"],
       "properties": {
         "external": {
-          "type": "ref",
-          "ref": "#viewExternal"
+          "type": "array",
+          "items": { "type": "ref", "ref": "#viewExternal" },
+          "maxLength": 48
         }
       }
     },

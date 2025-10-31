@@ -1,0 +1,35 @@
+[package]
+name = "weaver-api"
+description = "Generated AT Protocol API bindings for Weaver"
+edition.workspace = true
+version = "0.8.0"
+authors.workspace = true
+
+[dependencies]
+bytes = { workspace = true, features = ["serde"] }
+jacquard-common = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
+jacquard-derive = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
+jacquard-lexicon = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false }
+miette.workspace = true
+rustversion = "1.0"
+serde.workspace = true
+serde_ipld_dagcbor = "0.6"
+thiserror.workspace = true
+unicode-segmentation = "1.12"
+
+
+[lints.rust]
+# just so that my rust-analyzer shuts up about the module name for 2048.blue's namespace
+non_snake_case = "allow"
+
+[features]
+default = ["sh_weaver", "com_atproto"]
+streaming = ["jacquard-common/websocket"]
+
+# --- generated ---
+# Generated namespace features
+app_bsky = []
+chat_bsky = []
+com_atproto = []
+sh_weaver = ["app_bsky"]
+tools_ozone = ["chat_bsky", "com_atproto"]

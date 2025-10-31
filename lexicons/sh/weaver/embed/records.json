@@ -41,7 +41,9 @@
             "app.bsky.embed.record#view",
             "app.bsky.embed.recordWithMedia#view",
             "sh.weaver.embed.records#view",
-            "sh.weaver.embed.images#view"
+            "sh.weaver.embed.images#view",
+            "sh.weaver.embed.recordWithMedia#view",
+            "sh.weaver.embed.video#view"
           ]
         },
         "name": {

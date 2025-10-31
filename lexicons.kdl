@@ -1,0 +1,16 @@
+output {
+    lexicons "crates/weaver-api/lexicons"
+    codegen "crates/weaver-api/src"
+    cargo-toml "crates/weaver-api/Cargo.toml"
+}
+
+
+source "bluesky" type="git" priority=101 {
+    repo "https://github.com/bluesky-social/atproto"
+    pattern "**/*.json"
+}
+
+source "weaver" type="local" priority=200 {
+    path "./lexicons"
+
+}

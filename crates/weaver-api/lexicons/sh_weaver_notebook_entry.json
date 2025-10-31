@@ -1,0 +1,68 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.entry",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A notebook entry",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "content",
+          "title",
+          "createdAt"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "The content of the notebook entry. This should be some flavor of Markdown.",
+            "maxLength": 200000
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Client-declared timestamp when this was originally created.",
+            "format": "datetime"
+          },
+          "embeds": {
+            "type": "object",
+            "description": "The set of images and records, if any, embedded in the notebook entry.",
+            "properties": {
+              "externals": {
+                "type": "ref",
+                "ref": "sh.weaver.embed.external"
+              },
+              "images": {
+                "type": "ref",
+                "ref": "sh.weaver.embed.images"
+              },
+              "records": {
+                "type": "ref",
+                "ref": "sh.weaver.embed.records"
+              },
+              "recordsWithMedia": {
+                "type": "array",
+                "items": {
+                  "type": "ref",
+                  "ref": "sh.weaver.embed.recordWithMedia"
+                }
+              },
+              "videos": {
+                "type": "ref",
+                "ref": "sh.weaver.embed.video"
+              }
+            }
+          },
+          "tags": {
+            "type": "ref",
+            "ref": "sh.weaver.notebook.defs#tags"
+          },
+          "title": {
+            "type": "ref",
+            "ref": "sh.weaver.notebook.defs#title"
+          }
+        }
+      }
+    }
+  }
+}

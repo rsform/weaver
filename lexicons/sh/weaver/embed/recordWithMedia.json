@@ -13,7 +13,14 @@
         },
         "media": {
           "type": "union",
-          "refs": ["sh.weaver.embed.images", "sh.weaver.embed.external", "app.bsky.embed.images", "app.bsky.embed.video", "app.bsky.embed.external"]
+          "refs": [
+            "sh.weaver.embed.images",
+            "sh.weaver.embed.external",
+            "sh.weaver.embed.video",
+            "app.bsky.embed.images",
+            "app.bsky.embed.video",
+            "app.bsky.embed.external"
+          ]
         }
       }
     },
@@ -28,8 +35,9 @@
         "media": {
           "type": "union",
           "refs": [
-            "sh.weaver.embed.images",
+            "sh.weaver.embed.images#view",
             "sh.weaver.embed.external#view",
+            "sh.weaver.embed.video#view",
             "app.bsky.embed.images#view",
             "app.bsky.embed.video#view",
             "app.bsky.embed.external#view"

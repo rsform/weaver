@@ -494,9 +494,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.43"
+version = "1.2.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "739eb0f94557554b3ca9a86d2d37bebd49c5e6d0c1d2bda35ba5bdac830befc2"
+checksum = "37521ac7aabe3d13122dc382493e20c9416f299d2ccd5b3a5340a2570cdeb0f3"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -2290,7 +2290,7 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 [[package]]
 name = "jacquard"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#e806ffd7630aee98b94149686061a6cf1741aecf"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ece153be8332f8f222163257b910ba03d50951c8"
 dependencies = [
  "bytes",
  "getrandom 0.2.16",
@@ -2319,7 +2319,7 @@ dependencies = [
 [[package]]
 name = "jacquard-api"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#e806ffd7630aee98b94149686061a6cf1741aecf"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ece153be8332f8f222163257b910ba03d50951c8"
 dependencies = [
  "bon",
  "bytes",
@@ -2337,7 +2337,7 @@ dependencies = [
 [[package]]
 name = "jacquard-axum"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#e806ffd7630aee98b94149686061a6cf1741aecf"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ece153be8332f8f222163257b910ba03d50951c8"
 dependencies = [
  "axum",
  "bytes",
@@ -2359,7 +2359,7 @@ dependencies = [
 [[package]]
 name = "jacquard-common"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#e806ffd7630aee98b94149686061a6cf1741aecf"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ece153be8332f8f222163257b910ba03d50951c8"
 dependencies = [
  "base64 0.22.1",
  "bon",
@@ -2402,7 +2402,7 @@ dependencies = [
 [[package]]
 name = "jacquard-derive"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#e806ffd7630aee98b94149686061a6cf1741aecf"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ece153be8332f8f222163257b910ba03d50951c8"
 dependencies = [
  "heck 0.5.0",
  "jacquard-lexicon",
@@ -2414,7 +2414,7 @@ dependencies = [
 [[package]]
 name = "jacquard-identity"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#e806ffd7630aee98b94149686061a6cf1741aecf"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ece153be8332f8f222163257b910ba03d50951c8"
 dependencies = [
  "bon",
  "bytes",
@@ -2441,7 +2441,7 @@ dependencies = [
 [[package]]
 name = "jacquard-lexicon"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#e806ffd7630aee98b94149686061a6cf1741aecf"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ece153be8332f8f222163257b910ba03d50951c8"
 dependencies = [
  "cid",
  "dashmap",
@@ -2467,7 +2467,7 @@ dependencies = [
 [[package]]
 name = "jacquard-oauth"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#e806ffd7630aee98b94149686061a6cf1741aecf"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ece153be8332f8f222163257b910ba03d50951c8"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -5677,6 +5677,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "weaver-api"
+version = "0.8.0"
+dependencies = [
+ "bytes",
+ "jacquard-common",
+ "jacquard-derive",
+ "jacquard-lexicon",
+ "miette 7.6.0",
+ "rustversion",
+ "serde",
+ "serde_ipld_dagcbor",
+ "thiserror 2.0.17",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "weaver-appview"
 version = "0.1.0"
 dependencies = [
@@ -5820,14 +5836,11 @@ dependencies = [
  "aho-corasick",
  "byteorder",
  "bytes",
- "cc",
- "chrono",
  "data-encoding",
  "diesel",
  "diesel-async",
  "diesel_derives",
  "elliptic-curve",
- "fastrand",
  "futures-channel",
  "futures-core",
  "futures-task",
@@ -5844,8 +5857,9 @@ dependencies = [
  "log",
  "memchr",
  "miette 7.6.0",
- "mime_guess",
  "minijinja",
+ "minimal-lexical",
+ "nom",
  "num-traits",
  "p384",
  "percent-encoding",
@@ -5853,11 +5867,9 @@ dependencies = [
  "regex-automata",
  "reqwest",
  "sec1",
- "serde_core",
  "serde_json",
  "sha2",
  "smallvec",
- "spin 0.9.8",
  "subtle",
  "syn 2.0.108",
  "syntect",
@@ -5869,6 +5881,8 @@ dependencies = [
  "tracing",
  "tracing-core",
  "uuid",
+ "winnow",
+ "zerocopy",
  "zeroize",
 ]
 
