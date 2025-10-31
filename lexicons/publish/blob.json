@@ -8,8 +8,13 @@
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["upload"],
+        "required": ["upload", "path"],
         "properties": {
+          "path": {
+            "type": "string",
+            "description": "relative path to the blob",
+            "minLength": 1
+          },
           "upload": {
             "type": "blob",
             "description": "Reference to the uploaded file",

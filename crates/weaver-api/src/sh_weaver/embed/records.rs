@@ -237,11 +237,6 @@ fn lexicon_doc_sh_weaver_embed_records() -> ::jacquard_lexicon::lexicon::Lexicon
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Union(::jacquard_lexicon::lexicon::LexRefUnion {
                                 description: None,
                                 refs: vec![
-                                    ::jacquard_common::CowStr::new_static("app.bsky.embed.images#view"),
-                                    ::jacquard_common::CowStr::new_static("app.bsky.embed.video#view"),
-                                    ::jacquard_common::CowStr::new_static("app.bsky.embed.external#view"),
-                                    ::jacquard_common::CowStr::new_static("app.bsky.embed.record#view"),
-                                    ::jacquard_common::CowStr::new_static("app.bsky.embed.recordWithMedia#view"),
                                     ::jacquard_common::CowStr::new_static("sh.weaver.embed.records#view"),
                                     ::jacquard_common::CowStr::new_static("sh.weaver.embed.images#view"),
                                     ::jacquard_common::CowStr::new_static("sh.weaver.embed.recordWithMedia#view"),
@@ -957,16 +952,6 @@ where
 #[serde(tag = "$type")]
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum RecordEmbedViewRecordView<'a> {
-    #[serde(rename = "app.bsky.embed.images#view")]
-    BskyImagesView(Box<crate::app_bsky::embed::images::View<'a>>),
-    #[serde(rename = "app.bsky.embed.video#view")]
-    BskyVideoView(Box<crate::app_bsky::embed::video::View<'a>>),
-    #[serde(rename = "app.bsky.embed.external#view")]
-    ExternalView(Box<crate::app_bsky::embed::external::View<'a>>),
-    #[serde(rename = "app.bsky.embed.record#view")]
-    RecordView(Box<crate::app_bsky::embed::record::View<'a>>),
-    #[serde(rename = "app.bsky.embed.recordWithMedia#view")]
-    BskyRecordWithMediaView(Box<crate::app_bsky::embed::record_with_media::View<'a>>),
     #[serde(rename = "sh.weaver.embed.records#view")]
     View(Box<crate::sh_weaver::embed::records::View<'a>>),
     #[serde(rename = "sh.weaver.embed.images#view")]

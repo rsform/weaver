@@ -4,16 +4,31 @@ pub mod error;
 
 // Re-export jacquard for convenience
 pub use jacquard;
-use jacquard::CowStr;
-pub use jacquard_api;
+use jacquard::error::ClientError;
+use jacquard::types::ident::AtIdentifier;
+use jacquard::{CowStr, IntoStatic, xrpc};
 
 pub use error::WeaverError;
+use jacquard::types::tid::{Ticker, Tid};
 
-use jacquard::client::{Agent, AgentSession};
-use jacquard::types::blob::BlobRef;
-use jacquard::types::string::{AtUri, Cid, Did};
-use jacquard_api::sh_weaver::notebook::{book, chapter, entry};
+use jacquard::bytes::Bytes;
+use jacquard::client::{Agent, AgentError, AgentErrorKind, AgentSession, AgentSessionExt};
+use jacquard::prelude::*;
+use jacquard::smol_str::SmolStr;
+use jacquard::types::blob::{BlobRef, MimeType};
+use jacquard::types::string::{AtUri, Cid, Did, Handle, RecordKey};
+use jacquard::xrpc::Response;
 use std::path::Path;
+use std::sync::LazyLock;
+use tokio::sync::Mutex;
+use weaver_api::com_atproto::repo::get_record::GetRecordResponse;
+use weaver_api::com_atproto::repo::strong_ref::StrongRef;
+use weaver_api::sh_weaver::notebook::{book, chapter, entry};
+use weaver_api::sh_weaver::publish::blob::Blob as PublishedBlob;
+
+use crate::error::ParseError;
+
+static W_TICKER: LazyLock<Mutex<Ticker>> = LazyLock::new(|| Mutex::new(Ticker::new()));
 
 /// Extension trait providing weaver-specific multi-step operations on Agent
 ///
@@ -26,8 +41,8 @@ use std::path::Path;
 /// - `agent.upload_blob()` - Upload a single blob
 ///
 /// This trait is for multi-step workflows that coordinate between multiple operations.
-#[trait_variant::make(Send)]
-pub trait WeaverExt {
+//#[trait_variant::make(Send)]
+pub trait WeaverExt: AgentSessionExt {
     /// Publish a notebook directory to the user's PDS
     ///
     /// Multi-step workflow:
@@ -38,34 +53,117 @@ pub trait WeaverExt {
     /// 5. Create book record with entry refs
     ///
     /// Returns the AT-URI of the published book
-    async fn publish_notebook(&self, path: &Path) -> Result<PublishResult<'_>, WeaverError>;
+    fn publish_notebook(
+        &self,
+        path: &Path,
+    ) -> impl Future<Output = Result<PublishResult<'_>, WeaverError>>;
 
-    /// Upload assets from markdown content
+    /// Publish a blob to the user's PDS
     ///
     /// Multi-step workflow:
-    /// 1. Parse markdown for image/asset refs
-    /// 2. Upload each asset → BlobRef
-    /// 3. Return mapping of original path → BlobRef
+    /// 1. Upload blob to PDS
+    /// 2. Create blob record with CID
     ///
-    /// Used by renderer to transform local refs to atproto refs
-    async fn upload_assets(
+    /// Returns the AT-URI of the published blob
+    fn publish_blob<'a>(
         &self,
-        markdown: &str,
-    ) -> Result<Vec<(String, BlobRef<'_>)>, WeaverError>;
+        blob: Bytes,
+        url_path: &'a str,
+        prev: Option<Tid>,
+    ) -> impl Future<Output = Result<(StrongRef<'a>, PublishedBlob<'a>), WeaverError>>;
+
+    fn confirm_record_ref(
+        &self,
+        uri: &AtUri<'_>,
+    ) -> impl Future<Output = Result<StrongRef<'_>, WeaverError>>;
 }
 
-impl<A: AgentSession> WeaverExt for Agent<A> {
+impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
     async fn publish_notebook(&self, _path: &Path) -> Result<PublishResult<'_>, WeaverError> {
         // TODO: Implementation
         todo!("publish_notebook not yet implemented")
     }
 
-    async fn upload_assets(
+    async fn publish_blob<'a>(
         &self,
-        _markdown: &str,
-    ) -> Result<Vec<(String, BlobRef<'_>)>, WeaverError> {
-        // TODO: Implementation
-        todo!("upload_assets not yet implemented")
+        blob: Bytes,
+        url_path: &'a str,
+        prev: Option<Tid>,
+    ) -> Result<(StrongRef<'a>, PublishedBlob<'a>), WeaverError> {
+        let mime_type = MimeType::new_owned(tree_magic::from_u8(blob.as_ref()));
+
+        let blob = self.upload_blob(blob, mime_type).await?;
+        let publish_record = PublishedBlob::new()
+            .path(url_path)
+            .upload(BlobRef::Blob(blob))
+            .build();
+        let tid = W_TICKER.lock().await.next(prev);
+        let record = self
+            .create_record(publish_record.clone(), Some(RecordKey::any(tid.as_str())?))
+            .await?;
+        let strong_ref = StrongRef::new().uri(record.uri).cid(record.cid).build();
+
+        Ok((strong_ref, publish_record))
+    }
+
+    async fn confirm_record_ref(&self, uri: &AtUri<'_>) -> Result<StrongRef<'_>, WeaverError> {
+        let rkey = uri.rkey().ok_or_else(|| {
+            AgentError::from(
+                ClientError::invalid_request("AtUri missing rkey")
+                    .with_help("ensure the URI includes a record key after the collection"),
+            )
+        })?;
+
+        // Resolve authority (DID or handle) to get DID and PDS
+        use jacquard::types::ident::AtIdentifier;
+        let (repo_did, pds_url) = match uri.authority() {
+            AtIdentifier::Did(did) => {
+                let pds = self.pds_for_did(did).await.map_err(|e| {
+                    AgentError::from(
+                        ClientError::from(e)
+                            .with_context("DID document resolution failed during record retrieval"),
+                    )
+                })?;
+                (did.clone(), pds)
+            }
+            AtIdentifier::Handle(handle) => self.pds_for_handle(handle).await.map_err(|e| {
+                AgentError::from(
+                    ClientError::from(e)
+                        .with_context("handle resolution failed during record retrieval"),
+                )
+            })?,
+        };
+
+        // Make stateless XRPC call to that PDS (no auth required for public records)
+        use weaver_api::com_atproto::repo::get_record::GetRecord;
+        let request = GetRecord::new()
+            .repo(AtIdentifier::Did(repo_did))
+            .collection(
+                uri.collection()
+                    .expect("collection should exist if rkey does")
+                    .clone(),
+            )
+            .rkey(rkey.clone())
+            .build();
+
+        let response: Response<GetRecordResponse> = {
+            let http_request = xrpc::build_http_request(&pds_url, &request, &self.opts().await)
+                .map_err(|e| AgentError::from(ClientError::transport(e)))?;
+
+            let http_response = self
+                .send_http(http_request)
+                .await
+                .map_err(|e| AgentError::from(ClientError::transport(e)))?;
+
+            xrpc::process_response(http_response)
+        }
+        .map_err(|e| AgentError::new(AgentErrorKind::Client, Some(e.into())))?;
+        let record = response.parse().map_err(|e| AgentError::xrpc(e))?;
+        let strong_ref = StrongRef::new()
+            .uri(record.uri)
+            .cid(record.cid.expect("when does this NOT have a CID?"))
+            .build();
+        Ok(strong_ref.into_static())
     }
 }
 
@@ -77,7 +175,7 @@ pub struct PublishResult<'a> {
     /// CID of the book record
     pub cid: Cid<'a>,
     /// URIs of published entries
-    pub entries: Vec<AtUri<'a>>,
+    pub entries: Vec<StrongRef<'a>>,
 }
 
 /// too many cows, so we have conversions
@@ -171,5 +269,73 @@ pub fn aturi_to_http<'s>(aturi: &'s str, appview: &'s str) -> Option<markdown_we
         ))
     } else {
         Some(CowStr::Borrowed(aturi))
+    }
+}
+
+pub enum LinkUri<'a> {
+    AtRecord(AtUri<'a>),
+    AtIdent(Did<'a>, Handle<'a>),
+    Web(jacquard::url::Url),
+    Path(markdown_weaver::CowStr<'a>),
+    Heading(markdown_weaver::CowStr<'a>),
+    Footnote(markdown_weaver::CowStr<'a>),
+}
+
+impl<'a> LinkUri<'a> {
+    pub async fn resolve<A>(dest_url: &'a str, agent: &Agent<A>) -> LinkUri<'a>
+    where
+        A: AgentSession + IdentityResolver,
+    {
+        if dest_url.starts_with('@') {
+            if let Ok(handle) = Handle::new(dest_url) {
+                if let Ok(did) = agent.resolve_handle(&handle).await {
+                    return Self::AtIdent(did, handle);
+                }
+            }
+        } else if dest_url.starts_with("did:") {
+            if let Ok(did) = Did::new(dest_url) {
+                if let Ok(doc) = agent.resolve_did_doc(&did).await {
+                    if let Ok(doc) = doc.parse_validated() {
+                        if let Some(handle) = doc.handles().first() {
+                            return Self::AtIdent(did, handle.clone());
+                        }
+                    }
+                }
+            }
+        } else if dest_url.starts_with('#') {
+            // local fragment
+            return Self::Heading(markdown_weaver::CowStr::Borrowed(dest_url));
+        } else if dest_url.starts_with('^') {
+            // footnote
+            return Self::Footnote(markdown_weaver::CowStr::Borrowed(dest_url));
+        }
+        if let Ok(url) = jacquard::url::Url::parse(dest_url) {
+            if let Some(uri) = jacquard::richtext::extract_at_uri_from_url(
+                url.as_str(),
+                jacquard::richtext::DEFAULT_EMBED_DOMAINS,
+            ) {
+                if let AtIdentifier::Handle(handle) = uri.authority() {
+                    if let Ok(did) = agent.resolve_handle(handle).await {
+                        let mut aturi = format!("at://{did}");
+                        if let Some(collection) = uri.collection() {
+                            aturi.push_str(&format!("/{}", collection));
+                            if let Some(record) = uri.rkey() {
+                                aturi.push_str(&format!("/{}", record.0));
+                            }
+                        }
+                        if let Ok(aturi) = AtUri::new_owned(aturi) {
+                            return Self::AtRecord(aturi);
+                        }
+                    }
+                    return Self::AtRecord(uri);
+                } else {
+                    return Self::AtRecord(uri);
+                }
+            } else if url.scheme() == "http" || url.scheme() == "https" {
+                return Self::Web(url);
+            }
+        }
+
+        LinkUri::Path(markdown_weaver::CowStr::Borrowed(dest_url))
     }
 }

@@ -1,5 +1,6 @@
 //! Error types for weaver - thin wrapper over jacquard errors
 
+use jacquard::{types::string::AtStrError, xrpc::GenericXrpcError};
 use miette::{Diagnostic, NamedSource, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 
@@ -36,6 +37,14 @@ pub enum WeaverError {
     /// Task join error
     #[error(transparent)]
     Task(#[from] n0_future::task::JoinError),
+
+    /// atproto string parsing error
+    #[error(transparent)]
+    AtprotoString(#[from] AtStrError),
+
+    /// XRPC error
+    #[error(transparent)]
+    Xrpc(#[from] jacquard::xrpc::XrpcError<GenericXrpcError>),
 }
 
 /// Parse error with source code location information

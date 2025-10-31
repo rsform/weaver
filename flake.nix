@@ -109,7 +109,7 @@
       # cargo won't be able to find the sources for all members.
       weaver-cli = craneLib.buildPackage (individualCrateArgs
         // {
-          pname = "${name}-cli";
+          pname = "${name}";
           cargoExtraArgs = "-p ${name}-cli";
           src = fileSetForCrate ./crates/weaver-cli;
         });
@@ -217,34 +217,68 @@
         };
       };
 
-      devShells.default = craneLib.devShell {
-        inherit name;
-        # Inherit inputs from checks.
-        checks = self.checks.${system};
-        NIX_LD_LIBRARY_PATH = with pkgs;
-          lib.makeLibraryPath [
-            stdenv.cc.cc
-            openssl
-            # ...
+      devShells.default = let
+        # dioxus-cli = pkgs.dioxus-cli.overrideAttrs (_: {
+        #   postPatch = ''
+        #     rm Cargo.lock
+        #     cp ${./Dioxus.lock} Cargo.lock
+        #   '';
+        #   cargoDeps = pkgs.rustPlatform.importCargoLock {
+        #     lockFile = ./Dioxus.lock;
+        #   };
+        # });
+        cargoLock = builtins.fromTOML (builtins.readFile ./Cargo.lock);
+
+        wasmBindgen =
+          pkgs.lib.findFirst
+          (pkg: pkg.name == "wasm-bindgen")
+          (throw "Could not find wasm-bindgen package")
+          cargoLock.package;
+
+        wasm-bindgen-cli = pkgs.buildWasmBindgenCli rec {
+          src = pkgs.fetchCrate {
+            pname = "wasm-bindgen-cli";
+            version = wasmBindgen.version;
+            hash = "sha256-zLPFFgnqAWq5R2KkaTGAYqVQswfBEYm9x3OPjx8DJRY=";
+          };
+
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            inherit src;
+            inherit (src) pname version;
+            hash = "sha256-a2X9bzwnMWNt0fTf30qAiJ4noal/ET1jEtf5fBFj5OU=";
+          };
+        };
+      in
+        craneLib.devShell {
+          inherit name;
+          # Inherit inputs from checks.
+          checks = self.checks.${system};
+          NIX_LD_LIBRARY_PATH = with pkgs;
+            lib.makeLibraryPath [
+              stdenv.cc.cc
+              openssl
+              # ...
+            ];
+          NIX_LD = lib.fileContents "${pkgs.stdenv.cc}/nix-support/dynamic-linker";
+
+          LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:$NIX_LD_LIBRARY_PATH";
+          DATABASE_URL = "postgres://postgres:@localhost/weaver_appview";
+
+          # Additional dev-shell environment variables can be set directly
+          # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
+
+          # Extra inputs can be added here; cargo and rustc are provided by default.
+          packages = with pkgs; [
+            cargo-hakari
+            nixd
+            alejandra
+            diesel-cli
+            postgresql
+            cargo-insta
+            jq
+            dioxus-cli
+            wasm-bindgen-cli
           ];
-        NIX_LD = lib.fileContents "${pkgs.stdenv.cc}/nix-support/dynamic-linker";
-
-        LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:$NIX_LD_LIBRARY_PATH";
-        DATABASE_URL = "postgres://postgres:@localhost/weaver_appview";
-
-        # Additional dev-shell environment variables can be set directly
-        # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
-
-        # Extra inputs can be added here; cargo and rustc are provided by default.
-        packages = with pkgs; [
-          cargo-hakari
-          nixd
-          alejandra
-          diesel-cli
-          postgresql
-          cargo-insta
-          jq
-        ];
-      };
+        };
     });
 }

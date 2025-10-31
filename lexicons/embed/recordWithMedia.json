@@ -5,43 +5,29 @@
   "defs": {
     "main": {
       "type": "object",
-      "required": [
-        "records",
-        "media"
-      ],
+      "required": ["records", "media"],
       "properties": {
-        "media": {
-          "type": "union",
-          "refs": [
-            "sh.weaver.embed.images",
-            "sh.weaver.embed.external",
-            "sh.weaver.embed.video"
-          ]
-        },
         "records": {
           "type": "ref",
           "ref": "sh.weaver.embed.records"
+        },
+        "media": {
+          "type": "union",
+          "refs": ["sh.weaver.embed.images", "sh.weaver.embed.external", "sh.weaver.embed.video"]
         }
       }
     },
     "view": {
       "type": "object",
-      "required": [
-        "record",
-        "media"
-      ],
+      "required": ["record", "media"],
       "properties": {
-        "media": {
-          "type": "union",
-          "refs": [
-            "sh.weaver.embed.images#view",
-            "sh.weaver.embed.external#view",
-            "sh.weaver.embed.video#view"
-          ]
-        },
         "records": {
           "type": "ref",
           "ref": "sh.weaver.embed.records#view"
+        },
+        "media": {
+          "type": "union",
+          "refs": ["sh.weaver.embed.images#view", "sh.weaver.embed.external#view", "sh.weaver.embed.video#view"]
         }
       }
     }

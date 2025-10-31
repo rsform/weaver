@@ -42,3 +42,4 @@ markdown-weaver-escape = { git = "https://github.com/rsform/markdown-weaver" }
 jacquard = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false, features = ["derive", "api_bluesky", "dns"] }
 jacquard-api = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
 jacquard-axum = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
+tree_magic = { version = "0.2.3", features = ["cli"] }

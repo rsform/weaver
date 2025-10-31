@@ -3,13 +3,10 @@
 //! This crate works with the weaver-markdown crate to render and optionally upload markdown notebooks to your Atproto PDS.
 //!
 
-use async_trait::async_trait;
 use markdown_weaver::CowStr;
 use markdown_weaver::Event;
-use markdown_weaver::LinkType;
 use markdown_weaver::Tag;
 use n0_future::Stream;
-use n0_future::StreamExt;
 use n0_future::pin;
 use n0_future::stream::once_future;
 use yaml_rust2::Yaml;

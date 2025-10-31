@@ -8,10 +8,8 @@
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["cid", "uri", "doc", "snapshot"],
+        "required": ["doc", "snapshot"],
         "properties": {
-          "uri": { "type": "string", "format": "at-uri" },
-          "cid": { "type": "string", "format": "cid" },
           "snapshot": {
             "type": "blob",
             "accept": ["*/*"],

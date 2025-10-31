@@ -1,11 +1,8 @@
-use std::{fmt::Arguments, path::Path, sync::OnceLock};
+use std::{path::Path, sync::OnceLock};
 
 use markdown_weaver::{CodeBlockKind, CowStr, Event, Tag};
-use markdown_weaver_escape::StrWrite;
 use miette::IntoDiagnostic;
 use n0_future::TryFutureExt;
-use n0_future::io::AsyncWrite;
-use n0_future::io::AsyncWriteExt;
 use regex::Regex;
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
