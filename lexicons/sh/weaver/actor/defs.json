@@ -42,7 +42,7 @@
           "description": "Notebooks or other records pinned for display.",
           "type": "ref",
           "ref": "#pinnedList"
-        }
+        },
         "labels": {
           "type": "array",
           "items": { "type": "ref", "ref": "com.atproto.label.defs#label" }
@@ -57,7 +57,7 @@
         },
         "subscribedCount": {
           "type": "integer"
-        },
+        }
       }
     },
     "profileViewBasic": {
@@ -82,7 +82,7 @@
           "type": "ref",
           "description": "Pronouns to use in user-generated content.",
           "ref": "#pronounsList"
-        },
+        }
       }
     },
     "profileDataView": {
@@ -124,7 +124,17 @@
       "items": {
         "type": "string",
         "maxLength": "50",
-        "knownValues": ["she/her", "he/him", "they/them", "it/its", "she/they", "he/they", "they/he", "they/she", "any/all"]
+        "knownValues": [
+          "she/her",
+          "he/him",
+          "they/them",
+          "it/its",
+          "she/they",
+          "he/they",
+          "they/he",
+          "they/she",
+          "any/all"
+        ]
       }
     },
     "pinnedList": {
