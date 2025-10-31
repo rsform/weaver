@@ -123,7 +123,8 @@
       "type": "array",
       "items": {
         "type": "string",
-        "maxLength": "50",
+        "maxLength": 500,
+        "maxGraphemes": 50,
         "knownValues": [
           "she/her",
           "he/him",
@@ -135,7 +136,8 @@
           "they/she",
           "any/all"
         ]
-      }
+      },
+      "maxLength": 5
     },
     "pinnedList": {
       "type": "array",
