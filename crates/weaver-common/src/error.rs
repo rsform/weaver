@@ -112,8 +112,6 @@ pub enum SerDeError {
     #[diagnostic_source]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Cbor(#[from] serde_cbor::Error),
-    #[error(transparent)]
     DagCbor(#[from] serde_ipld_dagcbor::error::CodecError),
     #[error(transparent)]
     HtmlForm(#[from] serde_html_form::ser::Error),

@@ -13,10 +13,9 @@ path = "src/main.rs"
 clap = { version = "4.5", features = ["derive", "env", "cargo", "unicode"] }
 weaver-common = { path = "../weaver-common", features = ["native"] }
 weaver-renderer = { path = "../weaver-renderer" }
-weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 miette = { workspace = true, features = ["fancy"] }
 
-jacquard = { workspace = true, features = ["loopback"] }
+jacquard = { workspace = true, features = ["loopback", "dns"] }
 jacquard-api = { workspace = true, features = ["sh_weaver"] }
 
 tokio = { version = "1.45.0", features = ["full"] }

@@ -11,7 +11,6 @@ embedded-db = ["diesel/sqlite", "diesel-async/sync-connection-wrapper"]
 
 [dependencies]
 weaver-common = { path = "../weaver-common", default-features = false }
-weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 clap = { version = "4.5", features = ["derive", "env", "cargo", "unicode"] }
 dotenvy = "0.15"
 

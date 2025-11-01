@@ -7,11 +7,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.6.0", features = ["router", "fullstack"] }
+dashmap = "6.1.0"
+dioxus = { version = "0.7.0", features = ["router", "fullstack"] }
 weaver-common = { path = "../weaver-common" }
-weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
-
-jacquard = { workspace = true, features = ["tracing"] }
+jacquard = { workspace = true, features = ["streaming"] }
+jacquard-axum = { workspace = true, optional = true }
+weaver-api = { path = "../weaver-api", features = ["streaming"] }
+markdown-weaver = { workspace = true }
+moka = { version = "0.12", features = ["future"], optional = true }
+mini-moka = { version = "0.10" }
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false }
 
 [features]
 default = ["web"]
@@ -21,3 +26,5 @@ web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 # The feature that are only required for the mobile = ["dioxus/mobile"] build target should be optional and only enabled in the mobile = ["dioxus/mobile"] feature
 mobile = ["dioxus/mobile"]
+# The feature that are only required for the server = ["dioxus/server"] build target should be optional and only enabled in the server = ["dioxus/server"] feature
+server = ["dioxus/server", "dep:jacquard-axum", "dep:moka"]

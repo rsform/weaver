@@ -8,11 +8,10 @@ publish = false
 [features]
 default = ["dev"]
 dev = []
-native = ["tokio"]
+native = ["jacquard/dns"]
 
 [dependencies]
 n0-future = { workspace = true }
-weaver-workspace-hack = { version = "0.1", path = "../weaver-workspace-hack" }
 weaver-api = { version = "0.1", path = "../weaver-api" }
 markdown-weaver = { workspace = true }
 #libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }
@@ -25,9 +24,9 @@ trait-variant = "0.1"
 serde = { workspace = true }
 serde_json = { version = "1.0.140", features = ["preserve_order", "raw_value"] }
 serde_ipld_dagcbor = { version = "0.6.1", features = ["codec"] }
-serde_cbor = "0.11.2"
 serde_html_form = "0.2.7"
 serde_bytes = "0.11.17"
+tokio = { version = "1.44", features = ["sync"] }
 
 minijinja = { workspace = true, features = [
   "builtins",
@@ -45,20 +44,10 @@ miette = { workspace = true }
 owo-colors = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-hickory-resolver = "0.24.1"
-toml = "0.8.22"
-#jose = { version = "0.0.2", features = ["crypto-rustcrypto"] }
-jose-jwk = "0.1.2"
 reqwest = "0.12.15"
-tokio = { version = "1.44", features = ["full"], optional = true }
-
-tower-service = "0.3.3"
-tower-layer = "0.3.3"
-multibase = "0.9.1"
-dirs = "6.0.0"
 regex = "1.11.1"
 markdown-weaver-escape = { workspace = true, features = ["std"] }
-tree_magic.workspace = true
+mime-sniffer = "^0.1"
 
 
 [dev-dependencies]

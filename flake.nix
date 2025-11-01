@@ -12,6 +12,7 @@
 
     rust-overlay.url = "github:oxalica/rust-overlay";
     crane.url = "github:ipetkov/crane";
+    dioxus.url = "github:DioxusLabs/dioxus";
   };
 
   outputs = {
@@ -21,6 +22,7 @@
     rust-overlay,
     flake-utils,
     advisory-db,
+    dioxus,
     ...
   }: let
     name = "weaver";
@@ -28,7 +30,12 @@
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [(import rust-overlay)];
+        overlays = [
+          (import rust-overlay)
+          (_: prev: {
+            dioxus-cli = dioxus.packages.${prev.system}.dioxus-cli;
+          })
+        ];
       };
       inherit (pkgs) lib;
 
@@ -37,7 +44,7 @@
           toolchain.default.override {
             # Set the build targets supported by the toolchain,
             # wasm32-unknown-unknown is required for trunk.
-            targets = ["wasm32-unknown-unknown"];
+            targets = ["wasm32-unknown-unknown" "wasm32-wasip1" "wasm32-wasip2"];
             extensions = [
               "rust-src"
               "rust-analyzer"
@@ -93,8 +100,8 @@
           fileset = lib.fileset.unions [
             ./Cargo.toml
             ./Cargo.lock
+            (lib.fileset.maybeMissing ./crates/weaver-server/Dioxus.lock)
             (craneLib.fileset.commonCargoSources ./crates/weaver-common)
-            (craneLib.fileset.commonCargoSources ./crates/weaver-workspace-hack)
             (craneLib.fileset.commonCargoSources crate)
           ];
         };
@@ -178,24 +185,6 @@
             partitionType = "count";
             cargoNextestPartitionsExtraArgs = "--no-tests=pass";
           });
-
-        # Ensure that cargo-hakari is up to date
-        "${name}-workspace-hakari" = craneLib.mkCargoDerivation {
-          inherit src;
-          pname = "${name}-workspace-hakari";
-          cargoArtifacts = null;
-          doInstallCargoArtifacts = false;
-
-          buildPhaseCargoCommand = ''
-            cargo hakari generate --diff  # workspace-hack Cargo.toml is up-to-date
-            cargo hakari manage-deps --dry-run  # all workspace crates depend on workspace-hack
-            cargo hakari verify
-          '';
-
-          nativeBuildInputs = with pkgs; [
-            cargo-hakari
-          ];
-        };
       };
 
       packages =
@@ -218,15 +207,15 @@
       };
 
       devShells.default = let
-        dioxus-cli = pkgs.dioxus-cli.overrideAttrs (_: {
-          postPatch = ''
-            rm Cargo.lock
-            cp ${./crates/weaver-server/Dioxus.lock} Cargo.lock
-          '';
-          cargoDeps = pkgs.rustPlatform.importCargoLock {
-            lockFile = ./crates/weaver-server/Dioxus.lock;
-          };
-        });
+        # dioxus-cli = pkgs.dioxus-cli.overrideAttrs (_: {
+        #   postPatch = ''
+        #     rm Cargo.lock
+        #     cp ${./crates/weaver-server/Dioxus.lock} Cargo.lock
+        #   '';
+        #   cargoDeps = pkgs.rustPlatform.importCargoLock {
+        #     lockFile = ./crates/weaver-server/Dioxus.lock;
+        #   };
+        # });
         cargoLock = builtins.fromTOML (builtins.readFile ./Cargo.lock);
 
         wasmBindgen =
@@ -269,7 +258,6 @@
 
           # Extra inputs can be added here; cargo and rustc are provided by default.
           packages = with pkgs; [
-            cargo-hakari
             nixd
             alejandra
             diesel-cli

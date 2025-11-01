@@ -1,10 +1,10 @@
 {
   "lexicon": 1,
-  "id": "sh.weaver.notebook.chapter",
+  "id": "sh.weaver.notebook.page",
   "defs": {
     "main": {
       "type": "record",
-      "description": "A grouping of entries in a notebook.",
+      "description": "A grouping of entries in a notebook, intended to be displayed as a single page.",
       "key": "tid",
       "record": {
         "type": "object",
@@ -14,13 +14,6 @@
           "entryList"
         ],
         "properties": {
-          "authors": {
-            "type": "array",
-            "items": {
-              "type": "ref",
-              "ref": "sh.weaver.actor.defs#author"
-            }
-          },
           "createdAt": {
             "type": "string",
             "description": "Client-declared timestamp when this was originally created.",
@@ -35,7 +28,7 @@
           },
           "notebook": {
             "type": "ref",
-            "description": "The notebook this chapter belongs to.",
+            "description": "The notebook this page belongs to.",
             "ref": "com.atproto.repo.strongRef"
           },
           "tags": {

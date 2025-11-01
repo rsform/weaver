@@ -4,7 +4,7 @@
   "defs": {
     "notebookView": {
       "type": "object",
-      "required": ["uri", "cid", "author", "record", "indexedAt"],
+      "required": ["uri", "cid", "authors", "record", "indexedAt"],
 
       "properties": {
         "title": { "type": "ref", "ref": "#title" },
@@ -12,8 +12,8 @@
         "uri": { "type": "string", "format": "at-uri" },
         "cid": { "type": "string", "format": "cid" },
         "authors": {
-          "type": "ref",
-          "ref": "#authorListView"
+          "type": "array",
+          "items": { "type": "ref", "ref": "#authorListView" }
         },
         "record": { "type": "unknown" },
         "indexedAt": { "type": "string", "format": "datetime" }
@@ -21,7 +21,7 @@
     },
     "entryView": {
       "type": "object",
-      "required": ["uri", "cid", "author", "record", "indexedAt"],
+      "required": ["uri", "cid", "authors", "record", "indexedAt"],
 
       "properties": {
         "title": { "type": "ref", "ref": "#title" },
@@ -29,8 +29,8 @@
         "uri": { "type": "string", "format": "at-uri" },
         "cid": { "type": "string", "format": "cid" },
         "authors": {
-          "type": "ref",
-          "ref": "#authorListView"
+          "type": "array",
+          "items": { "type": "ref", "ref": "#authorListView" }
         },
         "record": { "type": "unknown" },
         "renderedView": {
@@ -60,10 +60,9 @@
     },
     "authorListView": {
       "type": "object",
-      "required": ["profile", "index"],
+      "required": ["record", "index"],
       "properties": {
         "uri": { "type": "string", "format": "at-uri" },
-        "cid": { "type": "string", "format": "cid" },
         "record": { "type": "unknown" },
         "index": { "type": "integer" }
       }
@@ -89,6 +88,7 @@
         }
       }
     },
+
     "bookEntryRef": {
       "type": "object",
       "required": ["entry"],

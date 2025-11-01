@@ -11,8 +11,11 @@
 mod home;
 pub use home::Home;
 
-mod blog;
-pub use blog::Blog;
-
 mod navbar;
 pub use navbar::Navbar;
+
+mod notebookpage;
+pub use notebookpage::NotebookPage;
+
+mod notebook;
+pub use notebook::{Notebook, NotebookIndex};

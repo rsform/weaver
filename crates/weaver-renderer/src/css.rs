@@ -1,9 +1,9 @@
 use crate::theme::Theme;
 use miette::IntoDiagnostic;
+use std::io::Cursor;
 use syntect::highlighting::{Theme as SyntectTheme, ThemeSet};
 use syntect::html::{ClassStyle, css_for_theme_with_class_style};
 use syntect::parsing::SyntaxSet;
-use std::io::Cursor;
 
 // Embed rose-pine themes at compile time
 const ROSE_PINE_THEME: &str = include_str!("../themes/rose-pine.tmTheme");
@@ -24,6 +24,8 @@ pub fn generate_base_css(theme: &Theme) -> String {
     --color-foreground: {};
     --color-link: {};
     --color-link-hover: {};
+    --color-primary: {};
+    --color-secondary: {};
 
     --font-body: {};
     --font-heading: {};
@@ -57,11 +59,26 @@ h1, h2, h3, h4, h5, h6 {{
     line-height: 1.2;
 }}
 
-h1 {{ font-size: 2.5rem; }}
-h2 {{ font-size: 2rem; }}
-h3 {{ font-size: 1.5rem; }}
-h4 {{ font-size: 1.25rem; }}
-h5 {{ font-size: 1.125rem; }}
+h1 {{
+  font-size: 2.5rem;
+  color: var(--color-primary);
+}}
+h2 {{
+  font-size: 2rem;
+  color: var(--color-secondary);
+}}
+h3 {{
+  font-size: 1.5rem;
+  color: var(--color-primary);
+}}
+h4 {{
+  font-size: 1.25rem;
+  color: var(--color-secondary);
+}}
+h5 {{
+  font-size: 1.125rem;
+  color: var(--color-primary);
+}}
 h6 {{ font-size: 1rem; }}
 
 p {{
@@ -174,6 +191,8 @@ hr {{
         theme.colors.foreground,
         theme.colors.link,
         theme.colors.link_hover,
+        theme.colors.primary,
+        theme.colors.secondary,
         theme.fonts.body,
         theme.fonts.heading,
         theme.fonts.monospace,
@@ -183,15 +202,14 @@ hr {{
     )
 }
 
-pub fn generate_syntax_css(
-    theme: &Theme,
-    _syntax_set: &SyntaxSet,
-) -> miette::Result<String> {
+pub fn generate_syntax_css(theme: &Theme, _syntax_set: &SyntaxSet) -> miette::Result<String> {
     let syntect_theme = if let Some(custom_path) = &theme.custom_syntect_theme_path {
         // Load custom theme from file
         ThemeSet::get_theme(custom_path)
             .into_diagnostic()
-            .map_err(|e| miette::miette!("Failed to load custom theme from {:?}: {}", custom_path, e))?
+            .map_err(|e| {
+                miette::miette!("Failed to load custom theme from {:?}: {}", custom_path, e)
+            })?
     } else {
         // Check for embedded themes first
         match theme.syntect_theme_name.as_str() {
@@ -199,13 +217,17 @@ pub fn generate_syntax_css(
                 let mut cursor = Cursor::new(ROSE_PINE_THEME.as_bytes());
                 ThemeSet::load_from_reader(&mut cursor)
                     .into_diagnostic()
-                    .map_err(|e| miette::miette!("Failed to load embedded rose-pine theme: {}", e))?
+                    .map_err(|e| {
+                        miette::miette!("Failed to load embedded rose-pine theme: {}", e)
+                    })?
             }
             "rose-pine-dawn" => {
                 let mut cursor = Cursor::new(ROSE_PINE_DAWN_THEME.as_bytes());
                 ThemeSet::load_from_reader(&mut cursor)
                     .into_diagnostic()
-                    .map_err(|e| miette::miette!("Failed to load embedded rose-pine-dawn theme: {}", e))?
+                    .map_err(|e| {
+                        miette::miette!("Failed to load embedded rose-pine-dawn theme: {}", e)
+                    })?
             }
             _ => {
                 // Fall back to syntect's built-in themes
@@ -213,7 +235,12 @@ pub fn generate_syntax_css(
                 theme_set
                     .themes
                     .get(theme.syntect_theme_name.as_str())
-                    .ok_or_else(|| miette::miette!("Theme '{}' not found in defaults", theme.syntect_theme_name))?
+                    .ok_or_else(|| {
+                        miette::miette!(
+                            "Theme '{}' not found in defaults",
+                            theme.syntect_theme_name
+                        )
+                    })?
                     .clone()
             }
         }

@@ -1,6 +1,7 @@
 //! Weaver common library - thin wrapper around jacquard with notebook-specific conveniences
 
 pub mod error;
+pub mod view;
 
 // Re-export jacquard for convenience
 pub use jacquard;
@@ -18,6 +19,7 @@ use jacquard::smol_str::SmolStr;
 use jacquard::types::blob::{BlobRef, MimeType};
 use jacquard::types::string::{AtUri, Cid, Did, Handle, RecordKey};
 use jacquard::xrpc::Response;
+use mime_sniffer::MimeTypeSniffer;
 use std::path::Path;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
@@ -90,7 +92,10 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         url_path: &'a str,
         prev: Option<Tid>,
     ) -> Result<(StrongRef<'a>, PublishedBlob<'a>), WeaverError> {
-        let mime_type = MimeType::new_owned(tree_magic::from_u8(blob.as_ref()));
+        let mime_type = MimeType::new_owned(
+            blob.sniff_mime_type()
+                .unwrap_or("applicaction/octet-stream"),
+        );
 
         let blob = self.upload_blob(blob, mime_type).await?;
         let publish_record = PublishedBlob::new()

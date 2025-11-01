@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "sh.weaver.notebook.chapter",
+  "id": "sh.weaver.notebook.page",
   "defs": {
     "main": {
       "type": "record",

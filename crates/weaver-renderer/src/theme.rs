@@ -16,6 +16,8 @@ pub struct ColorScheme {
     pub foreground: SmolStr,
     pub link: SmolStr,
     pub link_hover: SmolStr,
+    pub primary: SmolStr,
+    pub secondary: SmolStr,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +53,8 @@ impl Default for ColorScheme {
             foreground: SmolStr::new("#2b303b"),
             link: SmolStr::new("#286983"),
             link_hover: SmolStr::new("#56949f"),
+            primary: SmolStr::new("#c4a7e7"),
+            secondary: SmolStr::new("#3e8fb0"),
         }
     }
 }

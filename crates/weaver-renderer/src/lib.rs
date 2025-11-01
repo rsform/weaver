@@ -25,10 +25,12 @@ pub mod atproto;
 pub mod base_html;
 pub mod code_pretty;
 pub mod css;
+#[cfg(not(target_family = "wasm"))]
 pub mod static_site;
 pub mod theme;
 pub mod types;
 pub mod utils;
+#[cfg(not(target_family = "wasm"))]
 pub mod walker;
 
 pub static OBSIDIAN_NOTE_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
