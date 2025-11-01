@@ -1,0 +1,125 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.theme",
+  "defs": {
+    "codeThemeFile": {
+      "type": "object",
+      "required": [
+        "name",
+        "did",
+        "content"
+      ],
+      "properties": {
+        "content": {
+          "type": "blob",
+          "accept": [
+            "*/*"
+          ],
+          "maxSize": 20000
+        },
+        "did": {
+          "type": "string",
+          "format": "did"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "codeThemeName": {
+      "type": "string"
+    },
+    "main": {
+      "type": "record",
+      "description": "Theme for a notebook",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "colours",
+          "fonts",
+          "spacing",
+          "codeTheme"
+        ],
+        "properties": {
+          "codeTheme": {
+            "type": "union",
+            "refs": [
+              "#codeThemeName",
+              "#codeThemeFile"
+            ]
+          },
+          "colours": {
+            "type": "object",
+            "required": [
+              "background",
+              "foreground",
+              "primary",
+              "secondary",
+              "link",
+              "link_hover"
+            ],
+            "properties": {
+              "background": {
+                "type": "string"
+              },
+              "foreground": {
+                "type": "string"
+              },
+              "link": {
+                "type": "string"
+              },
+              "link_hover": {
+                "type": "string"
+              },
+              "primary": {
+                "type": "string"
+              },
+              "secondary": {
+                "type": "string"
+              }
+            }
+          },
+          "fonts": {
+            "type": "object",
+            "required": [
+              "body",
+              "heading",
+              "monospace"
+            ],
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "heading": {
+                "type": "string"
+              },
+              "monospace": {
+                "type": "string"
+              }
+            }
+          },
+          "spacing": {
+            "type": "object",
+            "required": [
+              "baseSize",
+              "lineHeight",
+              "scale"
+            ],
+            "properties": {
+              "baseSize": {
+                "type": "string"
+              },
+              "lineHeight": {
+                "type": "string"
+              },
+              "scale": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

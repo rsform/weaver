@@ -1,6 +1,6 @@
 use crate::css::{generate_base_css, generate_syntax_css};
 use crate::static_site::context::{KaTeXSource, StaticSiteContext};
-use crate::theme::Theme;
+use crate::theme::{Theme, defaultTheme};
 use miette::IntoDiagnostic;
 use weaver_common::jacquard::client::AgentSession;
 
@@ -98,7 +98,7 @@ pub async fn write_document_head<A: AgentSession>(
                 .into_diagnostic()?;
         }
         CssMode::Inline => {
-            let default_theme = Theme::default();
+            let default_theme = defaultTheme();
             let theme = context.theme.as_deref().unwrap_or(&default_theme);
 
             writer.write_all(b"  <style>\n").await.into_diagnostic()?;
@@ -109,7 +109,7 @@ pub async fn write_document_head<A: AgentSession>(
             writer.write_all(b"  </style>\n").await.into_diagnostic()?;
 
             writer.write_all(b"  <style>\n").await.into_diagnostic()?;
-            let syntax_css = generate_syntax_css(theme, &context.syntax_set)?;
+            let syntax_css = generate_syntax_css(theme).await?;
             writer
                 .write_all(syntax_css.as_bytes())
                 .await

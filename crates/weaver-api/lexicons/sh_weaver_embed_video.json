@@ -50,10 +50,6 @@
           "maxLength": 10000,
           "maxGraphemes": 1000
         },
-        "aspectRatio": {
-          "type": "ref",
-          "ref": "app.bsky.embed.defs#aspectRatio"
-        },
         "captions": {
           "type": "array",
           "items": {
@@ -61,6 +57,18 @@
             "ref": "#caption"
           },
           "maxLength": 20
+        },
+        "dimensions": {
+          "type": "union",
+          "refs": [
+            "app.bsky.embed.defs#aspectRatio",
+            "sh.weaver.embed.defs#percentSize",
+            "sh.weaver.embed.defs#pixelSize"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128
         },
         "video": {
           "type": "blob",
@@ -84,13 +92,21 @@
           "maxLength": 10000,
           "maxGraphemes": 1000
         },
-        "aspectRatio": {
-          "type": "ref",
-          "ref": "app.bsky.embed.defs#aspectRatio"
-        },
         "cid": {
           "type": "string",
           "format": "cid"
+        },
+        "dimensions": {
+          "type": "union",
+          "refs": [
+            "app.bsky.embed.defs#aspectRatio",
+            "sh.weaver.embed.defs#percentSize",
+            "sh.weaver.embed.defs#pixelSize"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128
         },
         "playlist": {
           "type": "string",

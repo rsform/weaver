@@ -12,8 +12,8 @@ use weaver_common::view::{entry_by_title, fetch_entry_view, notebook_by_title, v
 
 #[derive(Clone)]
 pub struct CachedFetcher {
-    client: Arc<BasicClient>,
-
+    pub client: Arc<BasicClient>,
+    #[cfg(not(feature = "server"))]
     book_cache: Arc<
         Mutex<
             mini_moka::unsync::Cache<
@@ -22,6 +22,7 @@ pub struct CachedFetcher {
             >,
         >,
     >,
+    #[cfg(not(feature = "server"))]
     entry_cache: Arc<
         Mutex<
             mini_moka::unsync::Cache<
@@ -30,15 +31,52 @@ pub struct CachedFetcher {
             >,
         >,
     >,
+    #[cfg(feature = "server")]
+    book_cache: Arc<
+        Mutex<
+            mini_moka::sync::Cache<
+                (AtIdentifier<'static>, SmolStr),
+                Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>,
+            >,
+        >,
+    >,
+    #[cfg(feature = "server")]
+    entry_cache: Arc<
+        Mutex<
+            mini_moka::sync::Cache<
+                (AtIdentifier<'static>, SmolStr),
+                Arc<(BookEntryView<'static>, Entry<'static>)>,
+            >,
+        >,
+    >,
 }
 
 impl CachedFetcher {
+    #[cfg(not(feature = "server"))]
     pub fn new(client: Arc<BasicClient>) -> Self {
         let book_cache = mini_moka::unsync::Cache::builder()
             .max_capacity(100)
             .time_to_idle(Duration::from_secs(1200))
             .build();
         let entry_cache = mini_moka::unsync::Cache::builder()
+            .max_capacity(100)
+            .time_to_idle(Duration::from_secs(600))
+            .build();
+
+        Self {
+            client,
+            book_cache: Arc::new(Mutex::new(book_cache)),
+            entry_cache: Arc::new(Mutex::new(entry_cache)),
+        }
+    }
+
+    #[cfg(feature = "server")]
+    pub fn new(client: Arc<BasicClient>) -> Self {
+        let book_cache = mini_moka::sync::Cache::builder()
+            .max_capacity(100)
+            .time_to_idle(Duration::from_secs(1200))
+            .build();
+        let entry_cache = mini_moka::sync::Cache::builder()
             .max_capacity(100)
             .time_to_idle(Duration::from_secs(600))
             .build();
@@ -112,6 +150,7 @@ impl CachedFetcher {
         }
     }
 
+    #[cfg(not(feature = "server"))]
     pub fn list_recent_entries(&self) -> Vec<Arc<(BookEntryView<'static>, Entry<'static>)>> {
         if let Ok(entry_cache) = self.entry_cache.lock() {
             let mut entries = Vec::new();
@@ -124,12 +163,41 @@ impl CachedFetcher {
         }
     }
 
+    #[cfg(not(feature = "server"))]
     pub fn list_recent_notebooks(
         &self,
     ) -> Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>> {
         if let Ok(book_cache) = self.book_cache.lock() {
             let mut entries = Vec::new();
             for (_, entry) in book_cache.iter() {
+                entries.push(entry.clone());
+            }
+            entries
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[cfg(feature = "server")]
+    pub fn list_recent_entries(&self) -> Vec<Arc<(BookEntryView<'static>, Entry<'static>)>> {
+        if let Ok(entry_cache) = self.entry_cache.lock() {
+            let mut entries = Vec::new();
+            for entry in entry_cache.iter() {
+                entries.push(entry.clone());
+            }
+            entries
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[cfg(feature = "server")]
+    pub fn list_recent_notebooks(
+        &self,
+    ) -> Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>> {
+        if let Ok(book_cache) = self.book_cache.lock() {
+            let mut entries = Vec::new();
+            for entry in book_cache.iter() {
                 entries.push(entry.clone());
             }
             entries

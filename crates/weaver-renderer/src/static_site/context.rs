@@ -39,7 +39,7 @@ pub struct StaticSiteContext<A: AgentSession> {
     pub client: Option<reqwest::Client>,
     agent: Option<Arc<Agent<A>>>,
 
-    pub theme: Option<Arc<Theme>>,
+    pub theme: Option<Arc<Theme<'static>>>,
     pub katex_source: Option<KaTeXSource>,
     pub syntax_set: Arc<SyntaxSet>,
     pub index_file: Option<PathBuf>,
@@ -143,7 +143,7 @@ impl<A: AgentSession> StaticSiteContext<A> {
         }
     }
 
-    pub fn with_theme(mut self, theme: Theme) -> Self {
+    pub fn with_theme(mut self, theme: Theme<'static>) -> Self {
         self.theme = Some(Arc::new(theme));
         self
     }

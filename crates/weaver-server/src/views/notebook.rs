@@ -1,14 +1,9 @@
-use crate::{fetch, Route};
+use crate::{components::NotebookCss, fetch, Route};
 use dioxus::prelude::*;
 use jacquard::{
-    client::BasicClient,
-    smol_str::SmolStr,
-    types::{ident::AtIdentifier, tid::Tid},
-    CowStr,
+    smol_str::{SmolStr, ToSmolStr},
+    types::ident::AtIdentifier,
 };
-use std::sync::Arc;
-
-const BLOG_CSS: Asset = asset!("/assets/styling/blog.css");
 
 /// The Blog page component that will be rendered when the current route is `[Route::Blog]`
 ///
@@ -16,9 +11,8 @@ const BLOG_CSS: Asset = asset!("/assets/styling/blog.css");
 /// re-run and the rendered HTML will be updated.
 #[component]
 pub fn Notebook(ident: AtIdentifier<'static>, book_title: SmolStr) -> Element {
-    let fetcher = use_context::<fetch::CachedFetcher>();
     rsx! {
-        document::Link { rel: "stylesheet", href: BLOG_CSS }
+        NotebookCss { ident: ident.to_smolstr(), notebook: book_title }
         Outlet::<Route> {}
     }
 }

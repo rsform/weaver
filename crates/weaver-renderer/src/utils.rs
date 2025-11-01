@@ -223,6 +223,7 @@ fn codeblock_kind_to_owned<'a>(codeblock_kind: CodeBlockKind<'_>) -> CodeBlockKi
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use tokio::fs::{self, File};
 
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub async fn create_file(dest: &Path) -> miette::Result<File> {
     let file = File::create(dest)
         .or_else(async |err| {

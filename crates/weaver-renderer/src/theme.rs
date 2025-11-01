@@ -1,86 +1,38 @@
-use smol_str::SmolStr;
-use std::path::PathBuf;
+pub use weaver_api::sh_weaver::notebook::theme::{
+    Theme, ThemeCodeTheme, ThemeColours, ThemeFonts, ThemeSpacing,
+};
+use weaver_common::jacquard::CowStr;
+use weaver_common::jacquard::cowstr::ToCowStr;
 
-#[derive(Debug, Clone)]
-pub struct Theme {
-    pub colors: ColorScheme,
-    pub fonts: FontScheme,
-    pub spacing: SpacingScheme,
-    pub syntect_theme_name: SmolStr,
-    pub custom_syntect_theme_path: Option<PathBuf>,
-}
+pub fn defaultTheme() -> Theme<'static> {
+    Theme::new()
+        .code_theme(ThemeCodeTheme::CodeThemeName(Box::new(
+            "rose-pine".to_cowstr(),
+        )))
+        .colours(ThemeColours {
+            background: CowStr::new_static("#faf4ed"),
+            foreground: CowStr::new_static("#2b303b"),
+            link: CowStr::new_static("#286983"),
+            link_hover: CowStr::new_static("#56949f"),
+            primary: CowStr::new_static("#c4a7e7"),
+            secondary: CowStr::new_static("#3e8fb0"),
 
-#[derive(Debug, Clone)]
-pub struct ColorScheme {
-    pub background: SmolStr,
-    pub foreground: SmolStr,
-    pub link: SmolStr,
-    pub link_hover: SmolStr,
-    pub primary: SmolStr,
-    pub secondary: SmolStr,
-}
-
-#[derive(Debug, Clone)]
-pub struct FontScheme {
-    pub body: SmolStr,
-    pub heading: SmolStr,
-    pub monospace: SmolStr,
-}
-
-#[derive(Debug, Clone)]
-pub struct SpacingScheme {
-    pub base_font_size: SmolStr,
-    pub line_height: SmolStr,
-    pub scale: SmolStr,
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self {
-            colors: ColorScheme::default(),
-            fonts: FontScheme::default(),
-            spacing: SpacingScheme::default(),
-            syntect_theme_name: SmolStr::new("rose-pine-dawn"),
-            custom_syntect_theme_path: None,
-        }
-    }
-}
-
-impl Default for ColorScheme {
-    fn default() -> Self {
-        Self {
-            background: SmolStr::new("#faf4ed"),
-            foreground: SmolStr::new("#2b303b"),
-            link: SmolStr::new("#286983"),
-            link_hover: SmolStr::new("#56949f"),
-            primary: SmolStr::new("#c4a7e7"),
-            secondary: SmolStr::new("#3e8fb0"),
-        }
-    }
-}
-
-impl Default for FontScheme {
-    fn default() -> Self {
-        Self {
-            body: SmolStr::new(
+            ..Default::default()
+        }).fonts(ThemeFonts {
+            body: CowStr::new_static(
                 "IBM Plex, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             ),
-            heading: SmolStr::new(
+            heading:CowStr::new_static(
                 "IBM Plex Sans, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             ),
-            monospace: SmolStr::new(
+            monospace: CowStr::new_static(
                 "'IBM Plex Mono', 'Berkeley Mono', 'Cascadia Code', 'Roboto Mono', Consolas, monospace",
             ),
-        }
-    }
-}
-
-impl Default for SpacingScheme {
-    fn default() -> Self {
-        Self {
-            base_font_size: SmolStr::new("16px"),
-            line_height: SmolStr::new("1.6"),
-            scale: SmolStr::new("1.25"),
-        }
-    }
+            ..Default::default()
+        }).spacing(ThemeSpacing {
+            base_size: CowStr::new_static("16px"),
+            line_height: CowStr::new_static("1.6"),
+            scale: CowStr::new_static("1.25"),
+            ..Default::default()
+        }).build()
 }

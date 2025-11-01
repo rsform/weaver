@@ -14,9 +14,11 @@ jacquard = { workspace = true, features = ["streaming"] }
 jacquard-axum = { workspace = true, optional = true }
 weaver-api = { path = "../weaver-api", features = ["streaming"] }
 markdown-weaver = { workspace = true }
+weaver-renderer = { path = "../weaver-renderer" }
 moka = { version = "0.12", features = ["future"], optional = true }
 mini-moka = { version = "0.10" }
 dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false }
+axum = {version = "0.8.6", optional = true}
 
 [features]
 default = ["web"]
@@ -27,4 +29,4 @@ desktop = ["dioxus/desktop"]
 # The feature that are only required for the mobile = ["dioxus/mobile"] build target should be optional and only enabled in the mobile = ["dioxus/mobile"] feature
 mobile = ["dioxus/mobile"]
 # The feature that are only required for the server = ["dioxus/server"] build target should be optional and only enabled in the server = ["dioxus/server"] feature
-server = ["dioxus/server", "dep:jacquard-axum", "dep:moka"]
+server = ["dioxus/server", "dep:jacquard-axum", "dep:moka", "dep:axum"]

@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 n0-future.workspace = true
 weaver-common = { path = "../weaver-common" }
+weaver-api = { path = "../weaver-api" }
 markdown-weaver = { workspace = true }
 compact_string = "0.1.0"
 http = "1.3.1"

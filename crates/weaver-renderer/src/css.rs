@@ -4,6 +4,11 @@ use std::io::Cursor;
 use syntect::highlighting::{Theme as SyntectTheme, ThemeSet};
 use syntect::html::{ClassStyle, css_for_theme_with_class_style};
 use syntect::parsing::SyntaxSet;
+use weaver_api::com_atproto::sync::get_blob::GetBlob;
+use weaver_api::sh_weaver::notebook::theme::ThemeCodeTheme;
+use weaver_common::jacquard::client::BasicClient;
+use weaver_common::jacquard::prelude::*;
+use weaver_common::jacquard::xrpc::XrpcExt;
 
 // Embed rose-pine themes at compile time
 const ROSE_PINE_THEME: &str = include_str!("../themes/rose-pine.tmTheme");
@@ -187,62 +192,76 @@ hr {{
     margin: 2rem 0;
 }}
 "#,
-        theme.colors.background,
-        theme.colors.foreground,
-        theme.colors.link,
-        theme.colors.link_hover,
-        theme.colors.primary,
-        theme.colors.secondary,
+        theme.colours.background,
+        theme.colours.foreground,
+        theme.colours.link,
+        theme.colours.link_hover,
+        theme.colours.primary,
+        theme.colours.secondary,
         theme.fonts.body,
         theme.fonts.heading,
         theme.fonts.monospace,
-        theme.spacing.base_font_size,
+        theme.spacing.base_size,
         theme.spacing.line_height,
         theme.spacing.scale,
     )
 }
 
-pub fn generate_syntax_css(theme: &Theme, _syntax_set: &SyntaxSet) -> miette::Result<String> {
-    let syntect_theme = if let Some(custom_path) = &theme.custom_syntect_theme_path {
-        // Load custom theme from file
-        ThemeSet::get_theme(custom_path)
-            .into_diagnostic()
-            .map_err(|e| {
-                miette::miette!("Failed to load custom theme from {:?}: {}", custom_path, e)
-            })?
-    } else {
-        // Check for embedded themes first
-        match theme.syntect_theme_name.as_str() {
-            "rose-pine" => {
-                let mut cursor = Cursor::new(ROSE_PINE_THEME.as_bytes());
-                ThemeSet::load_from_reader(&mut cursor)
-                    .into_diagnostic()
-                    .map_err(|e| {
-                        miette::miette!("Failed to load embedded rose-pine theme: {}", e)
-                    })?
+pub async fn generate_syntax_css(theme: &Theme<'_>) -> miette::Result<String> {
+    let syntect_theme = match &theme.code_theme {
+        ThemeCodeTheme::CodeThemeName(name) => {
+            match name.as_str() {
+                "rose-pine" => {
+                    let mut cursor = Cursor::new(ROSE_PINE_THEME.as_bytes());
+                    ThemeSet::load_from_reader(&mut cursor)
+                        .into_diagnostic()
+                        .map_err(|e| {
+                            miette::miette!("Failed to load embedded rose-pine theme: {}", e)
+                        })?
+                }
+                "rose-pine-dawn" => {
+                    let mut cursor = Cursor::new(ROSE_PINE_DAWN_THEME.as_bytes());
+                    ThemeSet::load_from_reader(&mut cursor)
+                        .into_diagnostic()
+                        .map_err(|e| {
+                            miette::miette!("Failed to load embedded rose-pine-dawn theme: {}", e)
+                        })?
+                }
+                _ => {
+                    // Fall back to syntect's built-in themes
+                    let theme_set = ThemeSet::load_defaults();
+                    theme_set
+                        .themes
+                        .get(name.as_str())
+                        .ok_or_else(|| miette::miette!("Theme '{}' not found in defaults", name))?
+                        .clone()
+                }
             }
-            "rose-pine-dawn" => {
-                let mut cursor = Cursor::new(ROSE_PINE_DAWN_THEME.as_bytes());
-                ThemeSet::load_from_reader(&mut cursor)
-                    .into_diagnostic()
-                    .map_err(|e| {
-                        miette::miette!("Failed to load embedded rose-pine-dawn theme: {}", e)
-                    })?
-            }
-            _ => {
-                // Fall back to syntect's built-in themes
-                let theme_set = ThemeSet::load_defaults();
-                theme_set
-                    .themes
-                    .get(theme.syntect_theme_name.as_str())
-                    .ok_or_else(|| {
-                        miette::miette!(
-                            "Theme '{}' not found in defaults",
-                            theme.syntect_theme_name
-                        )
-                    })?
-                    .clone()
-            }
+        }
+        ThemeCodeTheme::CodeThemeFile(file) => {
+            let client = BasicClient::unauthenticated();
+            let pds = client.pds_for_did(&file.did).await?;
+            let blob = client
+                .xrpc(pds)
+                .send(
+                    &GetBlob::new()
+                        .did(file.did.clone())
+                        .cid(file.content.blob().cid().clone())
+                        .build(),
+                )
+                .await?
+                .buffer()
+                .clone();
+            let mut cursor = Cursor::new(blob);
+            ThemeSet::load_from_reader(&mut cursor)
+                .into_diagnostic()
+                .map_err(|e| miette::miette!("Failed to download theme: {}", e))?
+        }
+        _ => {
+            let mut cursor = Cursor::new(ROSE_PINE_THEME.as_bytes());
+            ThemeSet::load_from_reader(&mut cursor)
+                .into_diagnostic()
+                .map_err(|e| miette::miette!("Failed to load embedded rose-pine theme: {}", e))?
         }
     };
 

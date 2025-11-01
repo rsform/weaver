@@ -8,6 +8,7 @@ use jacquard::{
 use std::sync::Arc;
 use views::{Home, Navbar, Notebook, NotebookIndex, NotebookPage};
 
+mod blobcache;
 /// Define a components module that contains all shared components for our app.
 mod components;
 mod fetch;
@@ -53,8 +54,24 @@ fn main() {
     // Run `serve()` on the server only
     #[cfg(feature = "server")]
     dioxus::serve(|| async move {
+        use axum::{extract::Request, middleware, middleware::Next};
         // Create a new router for our app using the `router` function
-        let mut router = dioxus::server::router(App);
+        let mut router = dioxus::server::router(App).layer(middleware::from_fn(
+            |mut req: Request, next: Next| async move {
+                // Attach some extra state to the request
+
+                use crate::fetch::CachedFetcher;
+                use std::convert::Infallible;
+                use std::sync::Arc;
+                req.extensions_mut()
+                    .insert(Arc::new(CachedFetcher::new(Arc::new(
+                        BasicClient::unauthenticated(),
+                    ))));
+
+                // And then return the response with `next.run()
+                Ok::<_, Infallible>(next.run(req).await)
+            },
+        ));
 
         // .. customize the router, adding layers and new routes
 

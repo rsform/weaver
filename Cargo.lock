@@ -8754,6 +8754,7 @@ dependencies = [
  "tokio-util",
  "unicode-normalization",
  "url",
+ "weaver-api",
  "weaver-common",
  "yaml-rust2",
 ]
@@ -8762,6 +8763,7 @@ dependencies = [
 name = "weaver-server"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "dashmap 6.1.0",
  "dioxus",
  "dioxus-primitives",
@@ -8772,6 +8774,7 @@ dependencies = [
  "moka",
  "weaver-api",
  "weaver-common",
+ "weaver-renderer",
 ]
 
 [[package]]

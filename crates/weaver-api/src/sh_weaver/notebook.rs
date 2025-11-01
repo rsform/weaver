@@ -10,6 +10,7 @@ pub mod book;
 pub mod chapter;
 pub mod entry;
 pub mod page;
+pub mod theme;
 
 #[jacquard_derive::lexicon]
 #[derive(

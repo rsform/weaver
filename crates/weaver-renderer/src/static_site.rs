@@ -16,6 +16,7 @@ use crate::{
         document::{CssMode, write_document_footer, write_document_head},
         writer::StaticPageWriter,
     },
+    theme::defaultTheme,
     utils::flatten_dir_to_just_one_parent,
     walker::{WalkOptions, vault_contents},
 };
@@ -149,9 +150,6 @@ where
         // Generate CSS files for multi-file mode
         self.generate_css_files().await?;
 
-        let mut writers =
-            Vec::with_capacity(self.context.dir_contents.clone().unwrap_or_default().len());
-
         for file in self
             .context
             .dir_contents
@@ -162,84 +160,73 @@ where
             .filter(|file| file.starts_with(&self.context.start_at))
         {
             let context = self.context.clone();
-            let file = file.clone();
-            // we'll see if this is a problem or not
-            writers.push(n0_future::task::spawn(async move {
-                let relative_path = file
-                    .strip_prefix(context.start_at.clone())
-                    .expect("file should always be nested under root")
-                    .to_path_buf();
+            let relative_path = file
+                .strip_prefix(context.start_at.clone())
+                .expect("file should always be nested under root")
+                .to_path_buf();
 
-                // Check if this is a markdown file
-                let is_markdown = file
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(|ext| ext == "md" || ext == "markdown")
-                    .unwrap_or(false);
+            // Check if this is a markdown file
+            let is_markdown = file
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext == "md" || ext == "markdown")
+                .unwrap_or(false);
 
-                if !is_markdown {
-                    // Copy non-markdown files directly
-                    let output_path = if context
-                        .options
-                        .contains(StaticSiteOptions::FLATTEN_STRUCTURE)
-                    {
-                        let path_str = relative_path.to_string_lossy();
-                        let (parent, fname) = flatten_dir_to_just_one_parent(&path_str);
-                        let parent = if parent.is_empty() { "entry" } else { parent };
-                        context
-                            .destination
-                            .join(String::from(parent))
-                            .join(String::from(fname))
-                    } else {
-                        context.destination.join(relative_path.clone())
-                    };
-
-                    // Create parent directory if needed
-                    if let Some(parent) = output_path.parent() {
-                        tokio::fs::create_dir_all(parent).await.into_diagnostic()?;
-                    }
-
-                    tokio::fs::copy(&file, &output_path)
-                        .await
-                        .into_diagnostic()?;
-                    return Ok(());
-                }
-
-                // Process markdown files
-                // Check if this is the designated index file
-                if let Some(index) = &context.index_file {
-                    if &relative_path == index {
-                        let output_path = context.destination.join("index.html");
-                        return write_page(context.clone(), file, output_path).await;
-                    }
-                }
-
-                if context
+            if !is_markdown {
+                // Copy non-markdown files directly
+                let output_path = if context
                     .options
                     .contains(StaticSiteOptions::FLATTEN_STRUCTURE)
                 {
                     let path_str = relative_path.to_string_lossy();
                     let (parent, fname) = flatten_dir_to_just_one_parent(&path_str);
                     let parent = if parent.is_empty() { "entry" } else { parent };
-                    let output_path = context
+                    context
                         .destination
                         .join(String::from(parent))
-                        .join(String::from(fname));
-
-                    write_page(context.clone(), file.clone(), output_path).await?;
+                        .join(String::from(fname))
                 } else {
-                    let output_path = context.destination.join(relative_path.clone());
+                    context.destination.join(relative_path.clone())
+                };
 
-                    write_page(context.clone(), file.clone(), output_path).await?;
+                // Create parent directory if needed
+                if let Some(parent) = output_path.parent() {
+                    tokio::fs::create_dir_all(parent).await.into_diagnostic()?;
                 }
-                Ok::<(), miette::Report>(())
-            }));
-        }
 
-        // def want to scope these so we wait until they all complete before we return
-        // and then we def want the errors, or at least the first error
-        for fut in n0_future::join_all(writers).await.into_iter() {
-            fut.into_diagnostic()??;
+                tokio::fs::copy(&file, &output_path)
+                    .await
+                    .into_diagnostic()?;
+                return Ok(());
+            }
+
+            // Process markdown files
+            // Check if this is the designated index file
+            if let Some(index) = &context.index_file {
+                if &relative_path == index {
+                    let output_path = context.destination.join("index.html");
+                    return write_page(context.clone(), file, output_path).await;
+                }
+            }
+
+            if context
+                .options
+                .contains(StaticSiteOptions::FLATTEN_STRUCTURE)
+            {
+                let path_str = relative_path.to_string_lossy();
+                let (parent, fname) = flatten_dir_to_just_one_parent(&path_str);
+                let parent = if parent.is_empty() { "entry" } else { parent };
+                let output_path = context
+                    .destination
+                    .join(String::from(parent))
+                    .join(String::from(fname));
+
+                write_page(context.clone(), file.clone(), output_path).await?;
+            } else {
+                let output_path = context.destination.join(relative_path.clone());
+
+                write_page(context.clone(), file.clone(), output_path).await?;
+            }
         }
 
         // Generate default index if requested and no custom index specified
@@ -257,14 +244,13 @@ where
 
     async fn generate_css_files(&self) -> Result<(), miette::Report> {
         use crate::css::{generate_base_css, generate_syntax_css};
-        use crate::theme::Theme;
 
         let css_dir = self.context.destination.join("css");
         tokio::fs::create_dir_all(&css_dir)
             .await
             .into_diagnostic()?;
 
-        let default_theme = Theme::default();
+        let default_theme = defaultTheme();
         let theme = self.context.theme.as_deref().unwrap_or(&default_theme);
 
         // Write base.css
@@ -274,7 +260,7 @@ where
             .into_diagnostic()?;
 
         // Write syntax.css
-        let syntax_css = generate_syntax_css(theme, &self.context.syntax_set)?;
+        let syntax_css = generate_syntax_css(theme).await?;
         tokio::fs::write(css_dir.join("syntax.css"), syntax_css)
             .await
             .into_diagnostic()?;
