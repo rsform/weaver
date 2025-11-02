@@ -14,3 +14,4 @@ grant_proposal.md
 **/.db/
 
 **/.claude/settings.local.json
+.workspaces/
