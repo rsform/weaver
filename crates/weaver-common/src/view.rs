@@ -7,7 +7,7 @@ use jacquard::{
     prelude::IdentityResolver,
     to_data,
     types::{
-        aturi::AtUri, collection::Collection, did::Did, ident::AtIdentifier, nsid::Nsid,
+        aturi::AtUri, collection::Collection, ident::AtIdentifier, nsid::Nsid,
         string::Datetime,
     },
     xrpc::XrpcExt,
@@ -16,10 +16,12 @@ use miette::{IntoDiagnostic, Result};
 use weaver_api::{
     app_bsky::actor::profile::Profile as BskyProfile,
     com_atproto::repo::{list_records::ListRecords, strong_ref::StrongRef},
-    sh_weaver::notebook::{
-        AuthorListView, BookEntryRef, BookEntryView, EntryView, NotebookView, book::Book,
-        entry::Entry, page::Page,
-    },
+    sh_weaver::notebook::{book::Book, entry::Entry, page::Page},
+};
+
+// Re-export view types for use elsewhere
+pub use weaver_api::sh_weaver::notebook::{
+    AuthorListView, BookEntryRef, BookEntryView, EntryView, NotebookView,
 };
 
 pub async fn view_notebook(

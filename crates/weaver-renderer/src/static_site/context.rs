@@ -1,6 +1,6 @@
-use crate::static_site::{StaticSiteOptions, default_md_options};
+use crate::static_site::{StaticSiteOptions};
 use crate::theme::Theme;
-use crate::{Frontmatter, NotebookContext};
+use crate::{Frontmatter, NotebookContext,default_md_options};
 use dashmap::DashMap;
 use markdown_weaver::{CowStr, EmbedType, Tag, WeaverAttributes};
 use std::{

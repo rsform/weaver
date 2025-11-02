@@ -2,13 +2,17 @@ use jacquard::client::{Agent, FileAuthStore};
 use jacquard::identity::JacquardResolver;
 use jacquard::oauth::client::{OAuthClient, OAuthSession};
 use jacquard::oauth::loopback::LoopbackConfig;
-use jacquard::prelude::XrpcClient;
-use jacquard::types::ident::AtIdentifier;
-use jacquard::types::string::CowStr;
-use jacquard_api::app_bsky::actor::get_profile::GetProfile;
+use jacquard::prelude::*;
+use jacquard::types::string::Handle;
+use jacquard::IntoStatic;
 use miette::{IntoDiagnostic, Result};
+use std::io::BufRead;
 use std::path::PathBuf;
+use std::sync::Arc;
 use weaver_renderer::static_site::StaticSiteWriter;
+use weaver_renderer::walker::{WalkOptions, vault_contents};
+use weaver_renderer::atproto::AtProtoPreprocessContext;
+use weaver_renderer::utils::VaultBrokenLinkCallback;
 
 use clap::{Parser, Subcommand};
 
@@ -41,6 +45,19 @@ enum Commands {
         #[arg(long)]
         store: Option<PathBuf>,
     },
+    /// Publish notebook to AT Protocol
+    Publish {
+        /// Path to notebook directory
+        source: PathBuf,
+
+        /// Notebook title
+        #[arg(long)]
+        title: String,
+
+        /// Path to auth store file
+        #[arg(long)]
+        store: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -53,6 +70,10 @@ async fn main() -> Result<()> {
         Some(Commands::Auth { handle, store }) => {
             let store_path = store.unwrap_or_else(default_auth_store_path);
             authenticate(handle, store_path).await?;
+        }
+        Some(Commands::Publish { source, title, store }) => {
+            let store_path = store.unwrap_or_else(default_auth_store_path);
+            publish_notebook(source, title, store_path).await?;
         }
         None => {
             // Render command (default)
@@ -176,13 +197,197 @@ fn default_auth_store_path() -> PathBuf {
         .join("auth.json")
 }
 
+async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -> Result<()> {
+    println!("Publishing notebook from: {}", source.display());
+    println!("Title: {}", title);
+
+    // Validate source exists
+    if !source.exists() {
+        return Err(miette::miette!(
+            "Source directory not found: {}",
+            source.display()
+        ));
+    }
+
+    // Try to load session, trigger auth if needed
+    let session = match try_load_session(&store_path).await {
+        Some(session) => {
+            println!("✓ Authenticated");
+            session
+        }
+        None => {
+            println!("⚠ No authentication found");
+            println!("Please enter your handle to authenticate:");
+
+            let mut handle = String::new();
+            let stdin = std::io::stdin();
+            stdin.lock().read_line(&mut handle).into_diagnostic()?;
+            let handle = handle.trim().to_string();
+
+            authenticate(handle, store_path.clone()).await?;
+
+            // Load the session we just created
+            try_load_session(&store_path).await
+                .ok_or_else(|| miette::miette!("Failed to load session after authentication"))?
+        }
+    };
+
+    // Get user DID and handle from session
+
+    // Create agent and resolve DID document to get handle
+    let agent = Agent::new(session);
+    let (did, _session_id) = agent.info().await
+        .ok_or_else(|| miette::miette!("No session info available"))?;
+    let did_doc_response = agent.resolve_did_doc(&did).await?;
+    let did_doc = did_doc_response.parse()?;
+
+    // Extract handle from alsoKnownAs
+    let aka_vec = did_doc
+        .also_known_as
+        .ok_or_else(|| miette::miette!("No alsoKnownAs in DID document"))?;
+    let handle_str = aka_vec
+        .get(0)
+        .and_then(|aka| aka.as_ref().strip_prefix("at://"))
+        .ok_or_else(|| miette::miette!("No handle found in DID document"))?;
+    let handle = Handle::new(handle_str)?;
+
+    println!("Publishing as @{}", handle.as_ref());
+
+    // Walk vault directory
+    println!("→ Scanning vault...");
+    let contents = vault_contents(&source, WalkOptions::new())?;
+
+    // Convert to Arc first
+    let agent = Arc::new(agent);
+    let vault_arc: Arc<[PathBuf]> = contents.into();
+
+    // Filter markdown files after converting to Arc
+    let md_files: Vec<PathBuf> = vault_arc
+        .iter()
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext == "md" || ext == "markdown")
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+
+    println!("Found {} markdown files", md_files.len());
+
+    // Create preprocessing context
+    let context = AtProtoPreprocessContext::new(
+        vault_arc.clone(),
+        title.clone(),
+        agent.clone(),
+    ).with_creator(did.clone().into_static(), handle.clone().into_static());
+
+    // Process each file
+    for file_path in &md_files {
+        println!("Processing: {}", file_path.display());
+
+        // Read file content
+        let contents = tokio::fs::read_to_string(&file_path)
+            .await
+            .into_diagnostic()?;
+
+        // Clone context for this file
+        let mut file_context = context.clone();
+        file_context.set_current_path(file_path.clone());
+        let callback = Some(VaultBrokenLinkCallback {
+            vault_contents: vault_arc.clone(),
+        });
+
+        // Parse markdown
+        use weaver_renderer::default_md_options;
+        use markdown_weaver::Parser;
+        let parser = Parser::new_with_broken_link_callback(&contents, default_md_options(), callback);
+        let iterator = weaver_renderer::ContextIterator::default(parser);
+
+        // Process through NotebookProcessor
+        use weaver_renderer::{NotebookProcessor, NotebookContext};
+        use n0_future::StreamExt;
+        let mut processor = NotebookProcessor::new(file_context.clone(), iterator);
+
+        // Write canonical markdown with MarkdownWriter
+        use markdown_weaver_escape::FmtWriter;
+        use weaver_renderer::atproto::MarkdownWriter;
+        let mut output = String::new();
+        let mut md_writer = MarkdownWriter::new(FmtWriter(&mut output));
+
+        // Process all events
+        while let Some(event) = processor.next().await {
+            md_writer.write_event(event).map_err(|e| {
+                miette::miette!("Failed to write markdown: {:?}", e)
+            })?;
+        }
+
+        // Extract blobs and entry metadata
+        let blobs = file_context.blobs();
+        let entry_title = file_context.entry_title();
+
+        // Build Entry record with blobs
+        use weaver_api::sh_weaver::notebook::entry::{Entry, EntryEmbeds};
+        use weaver_api::sh_weaver::embed::images::{Images, Image};
+        use jacquard::types::string::Datetime;
+        use jacquard::types::blob::BlobRef;
+
+        let embeds = if !blobs.is_empty() {
+            // Build images from blobs
+            let images: Vec<Image> = blobs
+                .iter()
+                .map(|blob_info| {
+                    Image::new()
+                        .image(BlobRef::Blob(blob_info.blob.clone()))
+                        .alt(blob_info.alt.as_ref().map(|a| a.as_ref()).unwrap_or(""))
+                        .maybe_name(Some(blob_info.name.as_str().into()))
+                        .build()
+                })
+                .collect();
+
+            Some(EntryEmbeds {
+                images: Some(Images::new().images(images).build()),
+                externals: None,
+                records: None,
+                records_with_media: None,
+                videos: None,
+                extra_data: None,
+            })
+        } else {
+            None
+        };
+
+        let entry = Entry::new()
+            .content(output.as_str())
+            .title(entry_title.as_ref())
+            .created_at(Datetime::now())
+            .maybe_embeds(embeds)
+            .build();
+
+        // Use WeaverExt to upsert entry (handles notebook + entry creation/updates)
+        use weaver_common::WeaverExt;
+        let (entry_uri, was_created) = (*agent)
+            .upsert_entry(&title, entry_title.as_ref(), entry)
+            .await?;
+
+        if was_created {
+            println!("  ✓ Created new entry: {}", entry_uri.as_ref());
+        } else {
+            println!("  ✓ Updated existing entry: {}", entry_uri.as_ref());
+        }
+    }
+
+    println!("✓ Published {} entries", md_files.len());
+
+    Ok(())
+}
+
 fn init_miette() {
     miette::set_hook(Box::new(|_| {
         Box::new(
             miette::MietteHandlerOpts::new()
                 .terminal_links(true)
                 .with_cause_chain()
-                .with_syntax_highlighting(miette::highlighters::SyntectHighlighter::default())
                 .color(true)
                 .context_lines(5)
                 .tab_width(2)

@@ -6,9 +6,9 @@
 use markdown_weaver::CowStr;
 use markdown_weaver::Event;
 use markdown_weaver::Tag;
-use n0_future::Stream;
 use n0_future::pin;
 use n0_future::stream::once_future;
+use n0_future::Stream;
 use yaml_rust2::Yaml;
 use yaml_rust2::YamlLoader;
 
@@ -326,4 +326,16 @@ impl EventContext {
             _ => false,
         }
     }
+}
+
+pub fn default_md_options() -> markdown_weaver::Options {
+    markdown_weaver::Options::ENABLE_WIKILINKS
+        | markdown_weaver::Options::ENABLE_FOOTNOTES
+        | markdown_weaver::Options::ENABLE_TABLES
+        | markdown_weaver::Options::ENABLE_GFM
+        | markdown_weaver::Options::ENABLE_STRIKETHROUGH
+        | markdown_weaver::Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
+        | markdown_weaver::Options::ENABLE_OBSIDIAN_EMBEDS
+        | markdown_weaver::Options::ENABLE_MATH
+        | markdown_weaver::Options::ENABLE_HEADING_ATTRIBUTES
 }

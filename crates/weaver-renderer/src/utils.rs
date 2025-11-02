@@ -1,9 +1,12 @@
 use std::{path::Path, sync::OnceLock};
-
 use markdown_weaver::{CodeBlockKind, CowStr, Event, Tag};
 use miette::IntoDiagnostic;
 use n0_future::TryFutureExt;
 use regex::Regex;
+use markdown_weaver::BrokenLink;
+use std::path::PathBuf;
+use std::sync::Arc;
+use unicode_normalization::UnicodeNormalization;
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub async fn inline_file(path: impl AsRef<Path>) -> Option<String> {
@@ -239,4 +242,75 @@ pub async fn create_file(dest: &Path) -> miette::Result<File> {
         .await
         .into_diagnostic()?;
     Ok(file)
+}
+
+
+/// Path lookup in an Obsidian vault
+///
+/// Credit to https://github.com/zoni
+///
+/// Taken from https://github.com/zoni/obsidian-export/blob/main/src/lib.rs.rs on 2025-05-21
+///
+pub fn lookup_filename_in_vault<'a>(
+    filename: &str,
+    vault_contents: &'a [PathBuf],
+) -> Option<&'a PathBuf> {
+    let filename = PathBuf::from(filename);
+    let filename_normalized: String = filename.to_string_lossy().nfc().collect();
+
+    vault_contents.iter().find(|path| {
+        let path_normalized_str: String = path.to_string_lossy().nfc().collect();
+        let path_normalized = PathBuf::from(&path_normalized_str);
+        let path_normalized_lowered = PathBuf::from(&path_normalized_str.to_lowercase());
+
+        // It would be convenient if we could just do `filename.set_extension("md")` at the start
+        // of this funtion so we don't need multiple separate + ".md" match cases here, however
+        // that would break with a reference of `[[Note.1]]` linking to `[[Note.1.md]]`.
+
+        path_normalized.ends_with(&filename_normalized)
+            || path_normalized.ends_with(filename_normalized.clone() + ".md")
+            || path_normalized_lowered.ends_with(filename_normalized.to_lowercase())
+            || path_normalized_lowered.ends_with(filename_normalized.to_lowercase() + ".md")
+    })
+}
+
+pub struct VaultBrokenLinkCallback {
+    pub vault_contents: Arc<[PathBuf]>,
+}
+
+impl<'input> markdown_weaver::BrokenLinkCallback<'input> for VaultBrokenLinkCallback {
+    fn handle_broken_link(
+        &mut self,
+        link: BrokenLink<'input>,
+    ) -> Option<(CowStr<'input>, CowStr<'input>)> {
+        let text = link.reference;
+        let captures = crate::OBSIDIAN_NOTE_LINK_RE
+            .captures(&text)
+            .expect("note link regex didn't match - bad input?");
+        let file = captures.name("file").map(|v| v.as_str().trim());
+        let label = captures.name("label").map(|v| v.as_str());
+        let section = captures.name("section").map(|v| v.as_str().trim());
+
+        if let Some(file) = file {
+            if let Some(path) = lookup_filename_in_vault(file, self.vault_contents.as_ref()) {
+                let mut link_text = String::from(path.to_string_lossy());
+                if let Some(section) = section {
+                    link_text.push('#');
+                    link_text.push_str(section);
+                    if let Some(label) = label {
+                        let label = label.to_string();
+                        Some((CowStr::from(link_text), CowStr::from(label)))
+                    } else {
+                        Some((link_text.into(), format!("{} > {}", file, section).into()))
+                    }
+                } else {
+                    Some((link_text.into(), format!("{}", file).into()))
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
 }

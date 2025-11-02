@@ -15,7 +15,6 @@ use jacquard::types::tid::{Ticker, Tid};
 use jacquard::bytes::Bytes;
 use jacquard::client::{Agent, AgentError, AgentErrorKind, AgentSession, AgentSessionExt};
 use jacquard::prelude::*;
-use jacquard::smol_str::SmolStr;
 use jacquard::types::blob::{BlobRef, MimeType};
 use jacquard::types::string::{AtUri, Cid, Did, Handle, RecordKey};
 use jacquard::xrpc::Response;
@@ -25,10 +24,8 @@ use std::sync::LazyLock;
 use tokio::sync::Mutex;
 use weaver_api::com_atproto::repo::get_record::GetRecordResponse;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
-use weaver_api::sh_weaver::notebook::{book, chapter, entry};
+use weaver_api::sh_weaver::notebook::entry;
 use weaver_api::sh_weaver::publish::blob::Blob as PublishedBlob;
-
-use crate::error::ParseError;
 
 static W_TICKER: LazyLock<Mutex<Ticker>> = LazyLock::new(|| Mutex::new(Ticker::new()));
 
@@ -78,6 +75,61 @@ pub trait WeaverExt: AgentSessionExt {
         &self,
         uri: &AtUri<'_>,
     ) -> impl Future<Output = Result<StrongRef<'_>, WeaverError>>;
+
+    /// Find or create a notebook by title, returning its URI and entry list
+    ///
+    /// If the notebook doesn't exist, creates it with the given DID as author.
+    fn upsert_notebook(
+        &self,
+        title: &str,
+        author_did: &Did<'_>,
+    ) -> impl Future<Output = Result<(AtUri<'static>, Vec<StrongRef<'static>>), WeaverError>>;
+
+    /// Find or create an entry within a notebook by title
+    ///
+    /// Multi-step workflow:
+    /// 1. Find the notebook by title
+    /// 2. Check notebook's entry_list for entry with matching title
+    /// 3. If found: update the entry with new content
+    /// 4. If not found: create new entry and append to notebook's entry_list
+    ///
+    /// Returns (entry_uri, was_created)
+    fn upsert_entry(
+        &self,
+        notebook_title: &str,
+        entry_title: &str,
+        entry: entry::Entry<'_>,
+    ) -> impl Future<Output = Result<(AtUri<'static>, bool), WeaverError>>;
+
+    /// View functions - generic versions that work with any Agent
+
+    /// Fetch a notebook and construct NotebookView with author profiles
+    fn view_notebook(
+        &self,
+        uri: &AtUri<'_>,
+    ) -> impl Future<Output = Result<(view::NotebookView<'static>, Vec<StrongRef<'static>>), WeaverError>>;
+
+    /// Fetch an entry and construct EntryView
+    fn fetch_entry_view<'a>(
+        &self,
+        notebook: &view::NotebookView<'a>,
+        entry_ref: &StrongRef<'_>,
+    ) -> impl Future<Output = Result<view::EntryView<'a>, WeaverError>>;
+
+    /// Search for an entry by title within a notebook's entry list
+    fn entry_by_title<'a>(
+        &self,
+        notebook: &view::NotebookView<'a>,
+        entries: &[StrongRef<'_>],
+        title: &str,
+    ) -> impl Future<Output = Result<Option<(view::BookEntryView<'a>, entry::Entry<'a>)>, WeaverError>>;
+
+    /// Search for a notebook by title for a given DID or handle
+    fn notebook_by_title(
+        &self,
+        ident: &jacquard::types::ident::AtIdentifier<'_>,
+        title: &str,
+    ) -> impl Future<Output = Result<Option<(view::NotebookView<'static>, Vec<StrongRef<'static>>)>, WeaverError>>;
 }
 
 impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
@@ -109,6 +161,360 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         let strong_ref = StrongRef::new().uri(record.uri).cid(record.cid).build();
 
         Ok((strong_ref, publish_record))
+    }
+
+    async fn upsert_notebook(
+        &self,
+        title: &str,
+        author_did: &Did<'_>,
+    ) -> Result<(AtUri<'static>, Vec<StrongRef<'static>>), WeaverError> {
+        use jacquard::types::collection::Collection;
+        use jacquard::types::nsid::Nsid;
+        use jacquard::xrpc::XrpcExt;
+        use weaver_api::com_atproto::repo::list_records::ListRecords;
+        use weaver_api::sh_weaver::notebook::book::Book;
+
+        // Find the PDS for this DID
+        let pds_url = self.pds_for_did(author_did).await.map_err(|e| {
+            AgentError::from(ClientError::from(e).with_context("Failed to resolve PDS for DID"))
+        })?;
+
+        // Search for existing notebook with this title
+        let resp = self
+            .xrpc(pds_url)
+            .send(
+                &ListRecords::new()
+                    .repo(author_did.clone())
+                    .collection(Nsid::raw(Book::NSID))
+                    .limit(100)
+                    .build(),
+            )
+            .await
+            .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+        if let Ok(list) = resp.parse() {
+            for record in list.records {
+                let notebook: Book = jacquard::from_data(&record.value).map_err(|_| {
+                    AgentError::from(ClientError::invalid_request("Failed to parse notebook record"))
+                })?;
+                if let Some(book_title) = notebook.title
+                    && book_title == title
+                {
+                    let entries = notebook
+                        .entry_list
+                        .iter()
+                        .cloned()
+                        .map(IntoStatic::into_static)
+                        .collect();
+                    return Ok((record.uri.into_static(), entries));
+                }
+            }
+        }
+
+        // Notebook doesn't exist, create it
+        use weaver_api::sh_weaver::actor::Author;
+        let author = Author::new().did(author_did.clone()).build();
+        let book = Book::new()
+            .authors(vec![author])
+            .entry_list(vec![])
+            .maybe_title(Some(title.into()))
+            .maybe_created_at(Some(jacquard::types::string::Datetime::now()))
+            .build();
+
+        let response = self.create_record(book, None).await?;
+        Ok((response.uri, Vec::new()))
+    }
+
+    async fn upsert_entry(
+        &self,
+        notebook_title: &str,
+        entry_title: &str,
+        entry: entry::Entry<'_>,
+    ) -> Result<(AtUri<'static>, bool), WeaverError> {
+        // Get our own DID
+        let (did, _) = self.info().await.ok_or_else(|| {
+            AgentError::from(ClientError::invalid_request("No session info available"))
+        })?;
+
+        // Find or create notebook
+        let (notebook_uri, entry_refs) = self.upsert_notebook(notebook_title, &did).await?;
+
+        // Check if entry with this title exists in the notebook
+        for entry_ref in &entry_refs {
+            let existing = self
+                .get_record::<entry::Entry>(&entry_ref.uri)
+                .await
+                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+            if let Ok(existing_entry) = existing.parse() {
+                if existing_entry.value.title == entry_title {
+                    // Update existing entry
+                    self.update_record::<entry::Entry>(&entry_ref.uri, |e| {
+                        e.content = entry.content.clone();
+                        e.embeds = entry.embeds.clone();
+                        e.tags = entry.tags.clone();
+                    })
+                    .await?;
+                    return Ok((entry_ref.uri.clone().into_static(), false));
+                }
+            }
+        }
+
+        // Entry doesn't exist, create it
+        let response = self.create_record(entry, None).await?;
+        let entry_uri = response.uri.clone();
+
+        // Add to notebook's entry_list
+        use weaver_api::sh_weaver::notebook::book::Book;
+        let new_ref = StrongRef::new()
+            .uri(response.uri)
+            .cid(response.cid)
+            .build();
+
+        self.update_record::<Book>(&notebook_uri, |book| {
+            book.entry_list.push(new_ref);
+        })
+        .await?;
+
+        Ok((entry_uri, true))
+    }
+
+    async fn view_notebook(
+        &self,
+        uri: &AtUri<'_>,
+    ) -> Result<(view::NotebookView<'static>, Vec<StrongRef<'static>>), WeaverError> {
+        use weaver_api::app_bsky::actor::profile::Profile as BskyProfile;
+        use weaver_api::sh_weaver::notebook::book::Book;
+        use weaver_api::sh_weaver::notebook::AuthorListView;
+        use jacquard::to_data;
+
+        let notebook = self
+            .get_record::<Book>(uri)
+            .await
+            .map_err(|e| AgentError::from(e))?
+            .into_output()
+            .map_err(|_| {
+                AgentError::from(ClientError::invalid_request("Failed to parse Book record"))
+            })?;
+
+        let title = notebook.value.title.clone();
+        let tags = notebook.value.tags.clone();
+
+        let mut authors = Vec::new();
+
+        for (index, author) in notebook.value.authors.iter().enumerate() {
+            let author_uri = BskyProfile::uri(format!("at://{}/app.bsky.actor.profile/self", author.did))
+                .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid author profile URI")))?;
+            let author_profile = self.fetch_record(&author_uri).await?;
+
+            authors.push(
+                AuthorListView::new()
+                    .uri(author_uri.as_uri().clone())
+                    .record(to_data(&author_profile).map_err(|_| {
+                        AgentError::from(ClientError::invalid_request("Failed to serialize author profile"))
+                    })?)
+                    .index(index as i64)
+                    .build(),
+            );
+        }
+        let entries = notebook
+            .value
+            .entry_list
+            .iter()
+            .cloned()
+            .map(IntoStatic::into_static)
+            .collect();
+
+        Ok((
+            view::NotebookView::new()
+                .cid(notebook.cid.ok_or_else(|| {
+                    AgentError::from(ClientError::invalid_request("Notebook missing CID"))
+                })?)
+                .uri(notebook.uri)
+                .indexed_at(jacquard::types::string::Datetime::now())
+                .maybe_title(title)
+                .maybe_tags(tags)
+                .authors(authors)
+                .record(to_data(&notebook.value).map_err(|_| {
+                    AgentError::from(ClientError::invalid_request("Failed to serialize notebook"))
+                })?)
+                .build(),
+            entries,
+        ))
+    }
+
+    async fn fetch_entry_view<'a>(
+        &self,
+        notebook: &view::NotebookView<'a>,
+        entry_ref: &StrongRef<'_>,
+    ) -> Result<view::EntryView<'a>, WeaverError> {
+        use weaver_api::sh_weaver::notebook::entry::Entry;
+        use jacquard::to_data;
+
+        let entry_uri = Entry::uri(entry_ref.uri.clone())
+            .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid entry URI")))?;
+        let entry = self.fetch_record(&entry_uri).await?;
+
+        let title = entry.value.title.clone();
+        let tags = entry.value.tags.clone();
+
+        Ok(view::EntryView::new()
+            .cid(entry.cid.ok_or_else(|| {
+                AgentError::from(ClientError::invalid_request("Entry missing CID"))
+            })?)
+            .uri(entry.uri)
+            .indexed_at(jacquard::types::string::Datetime::now())
+            .record(to_data(&entry.value).map_err(|_| {
+                AgentError::from(ClientError::invalid_request("Failed to serialize entry"))
+            })?)
+            .maybe_tags(tags)
+            .title(title)
+            .authors(notebook.authors.clone())
+            .build())
+    }
+
+    async fn entry_by_title<'a>(
+        &self,
+        notebook: &view::NotebookView<'a>,
+        entries: &[StrongRef<'_>],
+        title: &str,
+    ) -> Result<Option<(view::BookEntryView<'a>, entry::Entry<'a>)>, WeaverError> {
+        use weaver_api::sh_weaver::notebook::entry::Entry;
+        use weaver_api::sh_weaver::notebook::BookEntryRef;
+
+        for (index, entry_ref) in entries.iter().enumerate() {
+            let resp = self
+                .get_record::<Entry>(&entry_ref.uri)
+                .await
+                .map_err(|e| AgentError::from(e))?;
+            if let Ok(entry) = resp.parse() {
+                if entry.value.title == title {
+                    // Build BookEntryView with prev/next
+                    let entry_view = self.fetch_entry_view(notebook, entry_ref).await?;
+
+                    let prev_entry = if index > 0 {
+                        let prev_entry_ref = &entries[index - 1];
+                        self.fetch_entry_view(notebook, prev_entry_ref).await.ok()
+                    } else {
+                        None
+                    }
+                    .map(|e| BookEntryRef::new().entry(e).build());
+
+                    let next_entry = if index < entries.len() - 1 {
+                        let next_entry_ref = &entries[index + 1];
+                        self.fetch_entry_view(notebook, next_entry_ref).await.ok()
+                    } else {
+                        None
+                    }
+                    .map(|e| BookEntryRef::new().entry(e).build());
+
+                    let book_entry_view = view::BookEntryView::new()
+                        .entry(entry_view)
+                        .maybe_next(next_entry)
+                        .maybe_prev(prev_entry)
+                        .index(index as i64)
+                        .build();
+
+                    return Ok(Some((book_entry_view, entry.value.into_static())));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn notebook_by_title(
+        &self,
+        ident: &jacquard::types::ident::AtIdentifier<'_>,
+        title: &str,
+    ) -> Result<Option<(view::NotebookView<'static>, Vec<StrongRef<'static>>)>, WeaverError> {
+        use jacquard::types::collection::Collection;
+        use jacquard::types::nsid::Nsid;
+        use jacquard::xrpc::XrpcExt;
+        use weaver_api::com_atproto::repo::list_records::ListRecords;
+        use weaver_api::sh_weaver::notebook::book::Book;
+        use weaver_api::app_bsky::actor::profile::Profile as BskyProfile;
+        use weaver_api::sh_weaver::notebook::AuthorListView;
+        use jacquard::to_data;
+
+        let (repo_did, pds_url) = match ident {
+            jacquard::types::ident::AtIdentifier::Did(did) => {
+                let pds = self.pds_for_did(did).await.map_err(|e| {
+                    AgentError::from(ClientError::from(e).with_context("Failed to resolve PDS for DID"))
+                })?;
+                (did.clone(), pds)
+            }
+            jacquard::types::ident::AtIdentifier::Handle(handle) => self.pds_for_handle(handle).await.map_err(|e| {
+                AgentError::from(ClientError::from(e).with_context("Failed to resolve handle"))
+            })?,
+        };
+
+        // TODO: use the cursor to search through all records with this NSID for the repo
+        let resp = self
+            .xrpc(pds_url)
+            .send(
+                &ListRecords::new()
+                    .repo(repo_did)
+                    .collection(Nsid::raw(Book::NSID))
+                    .limit(100)
+                    .build(),
+            )
+            .await
+            .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+        if let Ok(list) = resp.parse() {
+            for record in list.records {
+                let notebook: Book = jacquard::from_data(&record.value).map_err(|_| {
+                    AgentError::from(ClientError::invalid_request("Failed to parse notebook record"))
+                })?;
+                if let Some(book_title) = notebook.title
+                    && book_title == title
+                {
+                    let tags = notebook.tags.clone();
+
+                    let mut authors = Vec::new();
+
+                    for (index, author) in notebook.authors.iter().enumerate() {
+                        let author_uri = BskyProfile::uri(format!(
+                            "at://{}/app.bsky.actor.profile/self",
+                            author.did
+                        ))
+                        .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid author profile URI")))?;
+                        let author_profile = self.fetch_record(&author_uri).await?;
+
+                        authors.push(
+                            AuthorListView::new()
+                                .uri(author_uri.as_uri().clone())
+                                .record(to_data(&author_profile).map_err(|_| {
+                                    AgentError::from(ClientError::invalid_request("Failed to serialize author profile"))
+                                })?)
+                                .index(index as i64)
+                                .build(),
+                        );
+                    }
+                    let entries = notebook
+                        .entry_list
+                        .iter()
+                        .cloned()
+                        .map(IntoStatic::into_static)
+                        .collect();
+
+                    return Ok(Some((
+                        view::NotebookView::new()
+                            .cid(record.cid)
+                            .uri(record.uri)
+                            .indexed_at(jacquard::types::string::Datetime::now())
+                            .title(book_title)
+                            .maybe_tags(tags)
+                            .authors(authors)
+                            .record(record.value.clone())
+                            .build()
+                            .into_static(),
+                        entries,
+                    )));
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     async fn confirm_record_ref(&self, uri: &AtUri<'_>) -> Result<StrongRef<'_>, WeaverError> {
