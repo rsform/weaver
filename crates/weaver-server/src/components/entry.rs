@@ -1,19 +1,50 @@
 #![allow(non_snake_case)]
 
-use crate::fetch;
-use dioxus::prelude::*;
-use jacquard::{smol_str::SmolStr, types::string::AtIdentifier, CowStr};
+#[allow(unused_imports)]
+use crate::{blobcache::BlobCache, fetch};
+#[allow(unused_imports)]
+use dioxus::{fullstack::extract::Extension, CapturedError};
+use dioxus::{
+    fullstack::{get_server_url, reqwest},
+    prelude::*,
+};
+use jacquard::smol_str::ToSmolStr;
+#[allow(unused_imports)]
+use jacquard::{
+    smol_str::SmolStr,
+    types::{cid::Cid, string::AtIdentifier},
+};
+#[allow(unused_imports)]
+use std::sync::Arc;
 use weaver_api::sh_weaver::notebook::{entry, BookEntryView};
 
 #[component]
 pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) -> Element {
     let entry = use_resource(use_reactive!(|(ident, book_title, title)| async move {
         let fetcher = use_context::<fetch::CachedFetcher>();
-        fetcher
-            .get_entry(ident, book_title, title)
+        let entry = fetcher
+            .get_entry(ident.clone(), book_title, title)
             .await
             .ok()
-            .flatten()
+            .flatten();
+        if let Some(entry) = &entry {
+            let entry = &entry.1;
+            if let Some(embeds) = &entry.embeds {
+                if let Some(images) = &embeds.images {
+                    for image in &images.images {
+                        let cid = image.image.blob().cid();
+                        cache_blob(
+                            ident.to_smolstr(),
+                            cid.to_smolstr(),
+                            image.name.as_ref().map(|n| n.to_smolstr()),
+                        )
+                        .await
+                        .ok();
+                    }
+                }
+            }
+        }
+        entry
     }));
 
     rsx! {
@@ -62,4 +93,11 @@ pub fn EntryMarkdown(props: EntryMarkdownProps) -> Element {
             dangerous_inner_html: "{html_buf}"
         }
     }
+}
+
+#[put("/cache/{ident}/{cid}?name", cache: Extension<Arc<BlobCache>>)]
+pub async fn cache_blob(ident: SmolStr, cid: SmolStr, name: Option<SmolStr>) -> Result<()> {
+    let ident = AtIdentifier::new_owned(ident)?;
+    let cid = Cid::new_owned(cid.as_bytes())?;
+    cache.cache(ident, cid, name).await
 }

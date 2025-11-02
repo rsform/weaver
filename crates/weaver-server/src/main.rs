@@ -2,9 +2,7 @@
 // need dioxus
 use components::{Entry, Repository, RepositoryIndex};
 use dioxus::{fullstack::FullstackContext, prelude::*};
-use jacquard::{
-    client::BasicClient, smol_str::SmolStr, types::did::Did, types::string::AtIdentifier, CowStr,
-};
+use jacquard::{client::BasicClient, smol_str::SmolStr, types::string::AtIdentifier};
 use std::sync::Arc;
 use views::{Home, Navbar, Notebook, NotebookIndex, NotebookPage};
 
@@ -32,11 +30,11 @@ enum Route {
         Home {},
         #[layout(ErrorLayout)]
         #[nest("/:ident")]
-          #[layout(components::Repository)]
+          #[layout(Repository)]
             #[route("/")]
             RepositoryIndex { ident: AtIdentifier<'static> },
             #[nest("/:book_title")]
-              #[layout(views::Notebook)]
+              #[layout(Notebook)]
               #[route("/")]
               NotebookIndex { ident: AtIdentifier<'static>, book_title: SmolStr },
                 #[route("/:title")]
@@ -60,11 +58,16 @@ fn main() {
             |mut req: Request, next: Next| async move {
                 // Attach some extra state to the request
 
+                use crate::blobcache::BlobCache;
                 use crate::fetch::CachedFetcher;
                 use std::convert::Infallible;
                 use std::sync::Arc;
                 req.extensions_mut()
                     .insert(Arc::new(CachedFetcher::new(Arc::new(
+                        BasicClient::unauthenticated(),
+                    ))));
+                req.extensions_mut()
+                    .insert(Arc::new(BlobCache::new(Arc::new(
                         BasicClient::unauthenticated(),
                     ))));
 
@@ -120,8 +123,4 @@ fn ErrorLayout() -> Element {
             Outlet::<Route> {}
         }
     }
-}
-
-struct Config {
-    did: Option<Did<'static>>,
 }

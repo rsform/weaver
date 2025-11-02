@@ -1,4 +1,4 @@
-use dioxus::{CapturedError, Result};
+use dioxus::Result;
 use jacquard::{client::BasicClient, smol_str::SmolStr, types::ident::AtIdentifier};
 use std::{
     sync::{Arc, Mutex},
@@ -8,7 +8,7 @@ use weaver_api::{
     com_atproto::repo::strong_ref::StrongRef,
     sh_weaver::notebook::{entry::Entry, BookEntryView, NotebookView},
 };
-use weaver_common::view::{entry_by_title, fetch_entry_view, notebook_by_title, view_entry};
+use weaver_common::view::{entry_by_title, notebook_by_title};
 
 #[derive(Clone)]
 pub struct CachedFetcher {
