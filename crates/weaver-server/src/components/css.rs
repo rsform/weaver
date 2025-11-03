@@ -1,14 +1,15 @@
 #[allow(unused_imports)]
 use crate::fetch;
 #[allow(unused_imports)]
-use dioxus::{fullstack::get_server_url, CapturedError};
 use dioxus::{
     fullstack::{
+        get_server_url,
         headers::ContentType,
         http::header::CONTENT_TYPE,
         response::{self, Response},
     },
     prelude::*,
+    CapturedError,
 };
 use jacquard::smol_str::SmolStr;
 #[allow(unused_imports)]

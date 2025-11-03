@@ -19,6 +19,6 @@ pub fn Notebook(ident: AtIdentifier<'static>, book_title: SmolStr) -> Element {
 
 #[component]
 pub fn NotebookIndex(ident: AtIdentifier<'static>, book_title: SmolStr) -> Element {
-    let fetcher = use_context::<fetch::CachedFetcher>();
+    let _fetcher = use_context::<fetch::CachedFetcher>();
     rsx! {}
 }

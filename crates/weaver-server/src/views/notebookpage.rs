@@ -1,4 +1,3 @@
-use crate::Route;
 use dioxus::prelude::*;
 use jacquard::types::tid::Tid;
 
@@ -10,11 +9,7 @@ use jacquard::types::tid::Tid;
 pub fn NotebookPage(id: Tid, children: Element) -> Element {
     rsx! {
         div {
-            id: "blog",
 
-            // Content
-            h1 { "This is blog #{id}!" }
-            p { "In blog #{id}, we show how the Dioxus router works and how URL parameters can be passed as props to our route components." }
 
         }
     }

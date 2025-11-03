@@ -72,8 +72,12 @@ pub fn resolve_at_ident_or_uri<'s>(
 
 /// Rough and ready check if a path is a local path.
 /// Basically checks if the path is absolute and if so, is it accessible.
-/// Relative paths are assumed to be local
+/// Relative paths are assumed to be local, but URL schemes are not
 pub fn is_local_path(path: &str) -> bool {
+    // Check for URL schemes (http, https, at, etc.)
+    if path.contains("://") {
+        return false;
+    }
     let path = Path::new(path);
     path.is_relative() || path.try_exists().unwrap_or(false)
 }

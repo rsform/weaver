@@ -6,6 +6,7 @@ use jacquard::{client::BasicClient, smol_str::SmolStr, types::string::AtIdentifi
 use std::sync::Arc;
 use views::{Home, Navbar, Notebook, NotebookIndex, NotebookPage};
 
+#[cfg(feature = "server")]
 mod blobcache;
 mod cache_impl;
 /// Define a components module that contains all shared components for our app.

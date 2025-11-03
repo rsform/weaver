@@ -1,13 +1,11 @@
 #![allow(non_snake_case)]
 
-#[allow(unused_imports)]
-use crate::{blobcache::BlobCache, fetch};
+#[cfg(feature = "server")]
+use crate::blobcache::BlobCache;
+use crate::fetch;
+use dioxus::prelude::*;
 #[allow(unused_imports)]
 use dioxus::{fullstack::extract::Extension, CapturedError};
-use dioxus::{
-    fullstack::{get_server_url, reqwest},
-    prelude::*,
-};
 use jacquard::{prelude::IdentityResolver, smol_str::ToSmolStr};
 #[allow(unused_imports)]
 use jacquard::{
@@ -78,6 +76,7 @@ pub struct EntryMarkdownProps {
 }
 
 /// Render some text as markdown.
+#[allow(unused)]
 pub fn EntryMarkdown(props: EntryMarkdownProps) -> Element {
     let content = &*props.content.read();
     let parser = markdown_weaver::Parser::new(&content.content);

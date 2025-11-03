@@ -38,6 +38,8 @@ pub struct ClientWriter<W: StrWrite, E = ()> {
     numbers: HashMap<String, usize>,
 
     embed_provider: Option<E>,
+
+    code_buffer: Option<(Option<String>, String)>, // (lang, content)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -57,6 +59,7 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             table_cell_index: 0,
             numbers: HashMap::new(),
             embed_provider: None,
+            code_buffer: None,
         }
     }
 
@@ -71,6 +74,7 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             table_cell_index: self.table_cell_index,
             numbers: self.numbers,
             embed_provider: Some(provider),
+            code_buffer: self.code_buffer,
         }
     }
 }
@@ -105,7 +109,10 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             Start(tag) => self.start_tag(tag)?,
             End(tag) => self.end_tag(tag)?,
             Text(text) => {
-                if !self.in_non_writing_block {
+                // If buffering code, append to buffer instead of writing
+                if let Some((_, ref mut buffer)) = self.code_buffer {
+                    buffer.push_str(&text);
+                } else if !self.in_non_writing_block {
                     escape_html_body_text(&mut self.writer, &text)?;
                     self.end_newline = text.ends_with('\n');
                 }
@@ -254,20 +261,22 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
                 }
                 match info {
                     CodeBlockKind::Fenced(info) => {
-                        let lang = info.split(' ').next().unwrap_or("");
-                        if !lang.is_empty() {
-                            self.write("<pre><code class=\"language-")?;
-                            escape_html(&mut self.writer, lang)?;
-                            self.write("\">")?;
+                        let lang = info.split(' ').next().unwrap();
+                        let lang_opt = if lang.is_empty() {
+                            None
                         } else {
-                            self.write("<pre><code>")?;
-                        }
+                            Some(lang.to_string())
+                        };
+                        // Start buffering
+                        self.code_buffer = Some((lang_opt, String::new()));
+                        Ok(())
                     }
                     CodeBlockKind::Indented => {
-                        self.write("<pre><code>")?;
+                        // Start buffering with no language
+                        self.code_buffer = Some((None, String::new()));
+                        Ok(())
                     }
                 }
-                Ok(())
             }
             Tag::List(Some(1)) => {
                 if self.end_newline {
@@ -442,7 +451,44 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
                 Ok(())
             }
             TagEnd::BlockQuote(_) => self.write("</blockquote>\n"),
-            TagEnd::CodeBlock => self.write("</code></pre>\n"),
+            TagEnd::CodeBlock => {
+                use std::sync::LazyLock;
+                use syntect::parsing::SyntaxSet;
+                static SYNTAX_SET: LazyLock<SyntaxSet> =
+                    LazyLock::new(|| SyntaxSet::load_defaults_newlines());
+
+                if let Some((lang, buffer)) = self.code_buffer.take() {
+                    if let Some(ref lang_str) = lang {
+                        // Use a temporary String buffer for syntect
+                        let mut temp_output = String::new();
+                        match crate::code_pretty::highlight(
+                            &SYNTAX_SET,
+                            Some(lang_str),
+                            &buffer,
+                            &mut temp_output,
+                        ) {
+                            Ok(_) => {
+                                self.write(&temp_output)?;
+                            }
+                            Err(_) => {
+                                // Fallback to plain code block
+                                self.write("<pre><code class=\"language-")?;
+                                escape_html(&mut self.writer, lang_str)?;
+                                self.write("\">")?;
+                                escape_html_body_text(&mut self.writer, &buffer)?;
+                                self.write("</code></pre>\n")?;
+                            }
+                        }
+                    } else {
+                        self.write("<pre><code>")?;
+                        escape_html_body_text(&mut self.writer, &buffer)?;
+                        self.write("</code></pre>\n")?;
+                    }
+                } else {
+                    self.write("</code></pre>\n")?;
+                }
+                Ok(())
+            }
             TagEnd::List(true) => self.write("</ol>\n"),
             TagEnd::List(false) => self.write("</ul>\n"),
             TagEnd::Item => self.write("</li>\n"),

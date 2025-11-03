@@ -1,11 +1,8 @@
 use crate::{fetch, Route};
 use dioxus::prelude::*;
-use jacquard::{
-    client::BasicClient,
-    types::{ident::AtIdentifier, tid::Tid},
-    CowStr,
-};
+use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::notebook::NotebookView;
+
 #[component]
 pub fn Repository(ident: AtIdentifier<'static>) -> Element {
     rsx! {
