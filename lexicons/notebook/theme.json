@@ -8,31 +8,17 @@
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["colours", "fonts", "spacing", "codeTheme"],
+        "required": ["darkScheme", "lightScheme", "fonts", "spacing", "darkCodeTheme", "lightCodeTheme"],
         "properties": {
-          "colours": {
-            "type": "object",
-            "required": ["background", "foreground", "primary", "secondary", "link", "link_hover"],
-            "properties": {
-              "background": {
-                "type": "string"
-              },
-              "foreground": {
-                "type": "string"
-              },
-              "primary": {
-                "type": "string"
-              },
-              "secondary": {
-                "type": "string"
-              },
-              "link": {
-                "type": "string"
-              },
-              "link_hover": {
-                "type": "string"
-              }
-            }
+          "darkScheme": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "Reference to a dark colour scheme"
+          },
+          "lightScheme": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "Reference to a light colour scheme"
           },
           "fonts": {
             "type": "object",
@@ -64,9 +50,15 @@
               }
             }
           },
-          "codeTheme": {
+          "darkCodeTheme": {
             "type": "union",
-            "refs": ["#codeThemeName", "#codeThemeFile"]
+            "refs": ["#codeThemeName", "#codeThemeFile"],
+            "description": "Syntax highlighting theme for dark mode"
+          },
+          "lightCodeTheme": {
+            "type": "union",
+            "refs": ["#codeThemeName", "#codeThemeFile"],
+            "description": "Syntax highlighting theme for light mode"
           }
         }
       }

@@ -1,0 +1,102 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.colourScheme",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A colour palette for notebook theming",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["name", "variant", "colours"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the colour scheme"
+          },
+          "variant": {
+            "type": "string",
+            "enum": ["dark", "light"],
+            "description": "Whether this is a dark or light colour scheme"
+          },
+          "colours": {
+            "type": "object",
+            "required": [
+              "base", "surface", "overlay",
+              "text", "muted", "subtle", "emphasis",
+              "primary", "secondary", "tertiary",
+              "error", "warning", "success",
+              "border", "link", "highlight"
+            ],
+            "properties": {
+              "base": {
+                "type": "string",
+                "description": "Primary background for page/frame"
+              },
+              "surface": {
+                "type": "string",
+                "description": "Secondary background for panels/cards"
+              },
+              "overlay": {
+                "type": "string",
+                "description": "Tertiary background for popovers/dialogs"
+              },
+              "text": {
+                "type": "string",
+                "description": "Primary readable text colour"
+              },
+              "muted": {
+                "type": "string",
+                "description": "De-emphasized text (disabled, metadata)"
+              },
+              "subtle": {
+                "type": "string",
+                "description": "Medium emphasis text (comments, labels)"
+              },
+              "emphasis": {
+                "type": "string",
+                "description": "Emphasized text (bold, important)"
+              },
+              "primary": {
+                "type": "string",
+                "description": "Primary brand/accent colour"
+              },
+              "secondary": {
+                "type": "string",
+                "description": "Secondary accent colour"
+              },
+              "tertiary": {
+                "type": "string",
+                "description": "Tertiary accent colour"
+              },
+              "error": {
+                "type": "string",
+                "description": "Error state colour"
+              },
+              "warning": {
+                "type": "string",
+                "description": "Warning state colour"
+              },
+              "success": {
+                "type": "string",
+                "description": "Success state colour"
+              },
+              "border": {
+                "type": "string",
+                "description": "Border/divider colour"
+              },
+              "link": {
+                "type": "string",
+                "description": "Hyperlink colour"
+              },
+              "highlight": {
+                "type": "string",
+                "description": "Selection/highlight colour"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

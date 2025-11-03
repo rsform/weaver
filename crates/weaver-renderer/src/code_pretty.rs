@@ -27,7 +27,7 @@ where
             .find_syntax_by_first_line(code.as_ref())
             .unwrap_or_else(|| syn_set.find_syntax_plain_text())
     };
-    writer.write_str("<pre><code class=\"language-")?;
+    writer.write_str("<pre><code class=\"wvrcode-code language-")?;
     writer.write_str(&lang_syn.name)?;
     writer.write_str("\">")?;
 

@@ -129,7 +129,12 @@ pub trait WeaverExt: AgentSessionExt {
         &self,
         ident: &jacquard::types::ident::AtIdentifier<'_>,
         title: &str,
-    ) -> impl Future<Output = Result<Option<(view::NotebookView<'static>, Vec<StrongRef<'static>>)>, WeaverError>>;
+    ) -> impl Future<
+        Output = Result<
+            Option<(view::NotebookView<'static>, Vec<StrongRef<'static>>)>,
+            WeaverError,
+        >,
+    >;
 }
 
 impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
@@ -144,10 +149,8 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         url_path: &'a str,
         prev: Option<Tid>,
     ) -> Result<(StrongRef<'a>, PublishedBlob<'a>), WeaverError> {
-        let mime_type = MimeType::new_owned(
-            blob.sniff_mime_type()
-                .unwrap_or("applicaction/octet-stream"),
-        );
+        let mime_type =
+            MimeType::new_owned(blob.sniff_mime_type().unwrap_or("application/octet-stream"));
 
         let blob = self.upload_blob(blob, mime_type).await?;
         let publish_record = PublishedBlob::new()
@@ -195,7 +198,9 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         if let Ok(list) = resp.parse() {
             for record in list.records {
                 let notebook: Book = jacquard::from_data(&record.value).map_err(|_| {
-                    AgentError::from(ClientError::invalid_request("Failed to parse notebook record"))
+                    AgentError::from(ClientError::invalid_request(
+                        "Failed to parse notebook record",
+                    ))
                 })?;
                 if let Some(book_title) = notebook.title
                     && book_title == title
@@ -265,10 +270,7 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
 
         // Add to notebook's entry_list
         use weaver_api::sh_weaver::notebook::book::Book;
-        let new_ref = StrongRef::new()
-            .uri(response.uri)
-            .cid(response.cid)
-            .build();
+        let new_ref = StrongRef::new().uri(response.uri).cid(response.cid).build();
 
         self.update_record::<Book>(&notebook_uri, |book| {
             book.entry_list.push(new_ref);
@@ -282,10 +284,10 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         &self,
         uri: &AtUri<'_>,
     ) -> Result<(view::NotebookView<'static>, Vec<StrongRef<'static>>), WeaverError> {
-        use weaver_api::app_bsky::actor::profile::Profile as BskyProfile;
-        use weaver_api::sh_weaver::notebook::book::Book;
-        use weaver_api::sh_weaver::notebook::AuthorListView;
         use jacquard::to_data;
+        use weaver_api::app_bsky::actor::profile::Profile as BskyProfile;
+        use weaver_api::sh_weaver::notebook::AuthorListView;
+        use weaver_api::sh_weaver::notebook::book::Book;
 
         let notebook = self
             .get_record::<Book>(uri)
@@ -302,15 +304,20 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         let mut authors = Vec::new();
 
         for (index, author) in notebook.value.authors.iter().enumerate() {
-            let author_uri = BskyProfile::uri(format!("at://{}/app.bsky.actor.profile/self", author.did))
-                .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid author profile URI")))?;
+            let author_uri =
+                BskyProfile::uri(format!("at://{}/app.bsky.actor.profile/self", author.did))
+                    .map_err(|_| {
+                        AgentError::from(ClientError::invalid_request("Invalid author profile URI"))
+                    })?;
             let author_profile = self.fetch_record(&author_uri).await?;
 
             authors.push(
                 AuthorListView::new()
                     .uri(author_uri.as_uri().clone())
                     .record(to_data(&author_profile).map_err(|_| {
-                        AgentError::from(ClientError::invalid_request("Failed to serialize author profile"))
+                        AgentError::from(ClientError::invalid_request(
+                            "Failed to serialize author profile",
+                        ))
                     })?)
                     .index(index as i64)
                     .build(),
@@ -347,8 +354,8 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         notebook: &view::NotebookView<'a>,
         entry_ref: &StrongRef<'_>,
     ) -> Result<view::EntryView<'a>, WeaverError> {
-        use weaver_api::sh_weaver::notebook::entry::Entry;
         use jacquard::to_data;
+        use weaver_api::sh_weaver::notebook::entry::Entry;
 
         let entry_uri = Entry::uri(entry_ref.uri.clone())
             .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid entry URI")))?;
@@ -378,8 +385,8 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         entries: &[StrongRef<'_>],
         title: &str,
     ) -> Result<Option<(view::BookEntryView<'a>, entry::Entry<'a>)>, WeaverError> {
-        use weaver_api::sh_weaver::notebook::entry::Entry;
         use weaver_api::sh_weaver::notebook::BookEntryRef;
+        use weaver_api::sh_weaver::notebook::entry::Entry;
 
         for (index, entry_ref) in entries.iter().enumerate() {
             let resp = self
@@ -426,25 +433,29 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         ident: &jacquard::types::ident::AtIdentifier<'_>,
         title: &str,
     ) -> Result<Option<(view::NotebookView<'static>, Vec<StrongRef<'static>>)>, WeaverError> {
+        use jacquard::to_data;
         use jacquard::types::collection::Collection;
         use jacquard::types::nsid::Nsid;
         use jacquard::xrpc::XrpcExt;
-        use weaver_api::com_atproto::repo::list_records::ListRecords;
-        use weaver_api::sh_weaver::notebook::book::Book;
         use weaver_api::app_bsky::actor::profile::Profile as BskyProfile;
+        use weaver_api::com_atproto::repo::list_records::ListRecords;
         use weaver_api::sh_weaver::notebook::AuthorListView;
-        use jacquard::to_data;
+        use weaver_api::sh_weaver::notebook::book::Book;
 
         let (repo_did, pds_url) = match ident {
             jacquard::types::ident::AtIdentifier::Did(did) => {
                 let pds = self.pds_for_did(did).await.map_err(|e| {
-                    AgentError::from(ClientError::from(e).with_context("Failed to resolve PDS for DID"))
+                    AgentError::from(
+                        ClientError::from(e).with_context("Failed to resolve PDS for DID"),
+                    )
                 })?;
                 (did.clone(), pds)
             }
-            jacquard::types::ident::AtIdentifier::Handle(handle) => self.pds_for_handle(handle).await.map_err(|e| {
-                AgentError::from(ClientError::from(e).with_context("Failed to resolve handle"))
-            })?,
+            jacquard::types::ident::AtIdentifier::Handle(handle) => {
+                self.pds_for_handle(handle).await.map_err(|e| {
+                    AgentError::from(ClientError::from(e).with_context("Failed to resolve handle"))
+                })?
+            }
         };
 
         // TODO: use the cursor to search through all records with this NSID for the repo
@@ -463,7 +474,9 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
         if let Ok(list) = resp.parse() {
             for record in list.records {
                 let notebook: Book = jacquard::from_data(&record.value).map_err(|_| {
-                    AgentError::from(ClientError::invalid_request("Failed to parse notebook record"))
+                    AgentError::from(ClientError::invalid_request(
+                        "Failed to parse notebook record",
+                    ))
                 })?;
                 if let Some(book_title) = notebook.title
                     && book_title == title
@@ -477,14 +490,20 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
                             "at://{}/app.bsky.actor.profile/self",
                             author.did
                         ))
-                        .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid author profile URI")))?;
+                        .map_err(|_| {
+                            AgentError::from(ClientError::invalid_request(
+                                "Invalid author profile URI",
+                            ))
+                        })?;
                         let author_profile = self.fetch_record(&author_uri).await?;
 
                         authors.push(
                             AuthorListView::new()
                                 .uri(author_uri.as_uri().clone())
                                 .record(to_data(&author_profile).map_err(|_| {
-                                    AgentError::from(ClientError::invalid_request("Failed to serialize author profile"))
+                                    AgentError::from(ClientError::invalid_request(
+                                        "Failed to serialize author profile",
+                                    ))
                                 })?)
                                 .index(index as i64)
                                 .build(),

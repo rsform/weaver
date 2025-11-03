@@ -8,6 +8,7 @@
 pub mod authors;
 pub mod book;
 pub mod chapter;
+pub mod colour_scheme;
 pub mod entry;
 pub mod page;
 pub mod theme;

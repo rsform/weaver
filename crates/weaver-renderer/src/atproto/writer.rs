@@ -26,7 +26,8 @@ impl EmbedContentProvider for () {
 ///
 /// This writer is designed for client-side rendering where embeds may have
 /// pre-rendered content in their attributes.
-pub struct ClientWriter<W: StrWrite, E = ()> {
+pub struct ClientWriter<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E = ()> {
+    events: I,
     writer: W,
     end_newline: bool,
     in_non_writing_block: bool,
@@ -40,6 +41,7 @@ pub struct ClientWriter<W: StrWrite, E = ()> {
     embed_provider: Option<E>,
 
     code_buffer: Option<(Option<String>, String)>, // (lang, content)
+    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,9 +50,10 @@ enum TableState {
     Body,
 }
 
-impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
-    pub fn new(writer: W) -> Self {
+impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider> ClientWriter<'a, I, W, E> {
+    pub fn new(events: I, writer: W) -> Self {
         Self {
+            events,
             writer,
             end_newline: true,
             in_non_writing_block: false,
@@ -60,12 +63,14 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             numbers: HashMap::new(),
             embed_provider: None,
             code_buffer: None,
+            _phantom: std::marker::PhantomData,
         }
     }
 
     /// Add an embed content provider
-    pub fn with_embed_provider(self, provider: E) -> ClientWriter<W, E> {
+    pub fn with_embed_provider(self, provider: E) -> ClientWriter<'a, I, W, E> {
         ClientWriter {
+            events: self.events,
             writer: self.writer,
             end_newline: self.end_newline,
             in_non_writing_block: self.in_non_writing_block,
@@ -75,11 +80,9 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             numbers: self.numbers,
             embed_provider: Some(provider),
             code_buffer: self.code_buffer,
+            _phantom: std::marker::PhantomData,
         }
     }
-}
-
-impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
     #[inline]
     fn write_newline(&mut self) -> Result<(), W::Error> {
         self.end_newline = true;
@@ -96,11 +99,57 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
     }
 
     /// Process markdown events and write HTML
-    pub fn run<'a>(mut self, events: impl Iterator<Item = Event<'a>>) -> Result<W, W::Error> {
-        for event in events {
+    pub fn run(mut self) -> Result<W, W::Error> {
+        while let Some(event) = self.events.next() {
             self.process_event(event)?;
         }
         Ok(self.writer)
+    }
+
+    // Consume raw text events until end tag, for alt attributes
+    fn raw_text(&mut self) -> Result<(), W::Error> {
+        use Event::*;
+        let mut nest = 0;
+        while let Some(event) = self.events.next() {
+            match event {
+                Start(_) => nest += 1,
+                End(_) => {
+                    if nest == 0 {
+                        break;
+                    }
+                    nest -= 1;
+                }
+                Html(_) => {}
+                InlineHtml(text) | Code(text) | Text(text) => {
+                    // Don't use escape_html_body_text here.
+                    // The output of this function is used in the `alt` attribute.
+                    escape_html(&mut self.writer, &text)?;
+                    self.end_newline = text.ends_with('\n');
+                }
+                InlineMath(text) => {
+                    self.write("$")?;
+                    escape_html(&mut self.writer, &text)?;
+                    self.write("$")?;
+                }
+                DisplayMath(text) => {
+                    self.write("$$")?;
+                    escape_html(&mut self.writer, &text)?;
+                    self.write("$$")?;
+                }
+                SoftBreak | HardBreak | Rule => {
+                    self.write(" ")?;
+                }
+                FootnoteReference(name) => {
+                    let len = self.numbers.len() + 1;
+                    let number = *self.numbers.entry(name.into_string()).or_insert(len);
+                    write!(&mut self.writer, "[{}]", number)?;
+                }
+                TaskListMarker(true) => self.write("[x]")?,
+                TaskListMarker(false) => self.write("[ ]")?,
+                WeaverBlock(_) => {}
+            }
+        }
+        Ok(())
     }
 
     fn process_event(&mut self, event: Event<'_>) -> Result<(), W::Error> {
@@ -368,20 +417,25 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
                 self.write("<img src=\"")?;
                 escape_href(&mut self.writer, &dest_url)?;
                 self.write("\" alt=\"")?;
+                // Consume text events for alt attribute
+                self.raw_text()?;
+                self.write("\"")?;
                 if !title.is_empty() {
+                    self.write(" title=\"")?;
                     escape_html(&mut self.writer, &title)?;
+                    self.write("\"")?;
                 }
                 if let Some(attrs) = attrs {
                     if !attrs.classes.is_empty() {
-                        self.write("\" class=\"")?;
+                        self.write(" class=\"")?;
                         for (i, class) in attrs.classes.iter().enumerate() {
                             if i > 0 {
                                 self.write(" ")?;
                             }
                             escape_html(&mut self.writer, class)?;
                         }
+                        self.write("\"")?;
                     }
-                    self.write("\"")?;
                     for (attr, value) in &attrs.attrs {
                         self.write(" ")?;
                         escape_html(&mut self.writer, attr)?;
@@ -389,8 +443,6 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
                         escape_html(&mut self.writer, value)?;
                         self.write("\"")?;
                     }
-                } else {
-                    self.write("\"")?;
                 }
                 self.write(" />")
             }
@@ -501,7 +553,7 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             TagEnd::Strong => self.write("</strong>"),
             TagEnd::Strikethrough => self.write("</del>"),
             TagEnd::Link => self.write("</a>"),
-            TagEnd::Image => Ok(()),
+            TagEnd::Image => Ok(()), // No-op: raw_text() already consumed the End(Image) event
             TagEnd::Embed => Ok(()),
             TagEnd::WeaverBlock(_) => {
                 self.in_non_writing_block = false;
@@ -516,7 +568,7 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
     }
 }
 
-impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
+impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider> ClientWriter<'a, I, W, E> {
     fn write_embed(
         &mut self,
         embed_type: EmbedType,

@@ -26,10 +26,11 @@ markdown-weaver = { workspace = true }
 weaver-renderer = { path = "../weaver-renderer" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka", rev = "da864e849f5d034f32e02197fee9bb5d5af36d3d" }
 n0-future = { workspace = true }
-#dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false }
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false }
 axum = {version = "0.8.6", optional = true}
-
+mime-sniffer = {version = "^0.1"}
 chrono = { version = "0.4" }
+serde_json = "1.0"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 time = { version = "0.3", features = ["wasm-bindgen"] }

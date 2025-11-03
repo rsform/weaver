@@ -1,7 +1,7 @@
 body {
-    background-color: #0f1116;
-    color: #ffffff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--color-base);
+    color: var(--color-text);
+    font-family: var(--font-body);
     margin: 20px;
 }
 
@@ -17,23 +17,25 @@ body {
     width: 400px;
     text-align: left;
     font-size: x-large;
-    color: white;
+    color: var(--color-text);
     display: flex;
     flex-direction: column;
 }
 
 #links a {
-    color: white;
+    color: var(--color-link);
     text-decoration: none;
     margin-top: 20px;
     margin: 10px 0px;
-    border: white 1px solid;
+    border: 1px solid var(--color-border);
     border-radius: 5px;
     padding: 10px;
+    transition: all 0.2s ease;
 }
 
 #links a:hover {
-    background-color: #1f1f1f;
+    background-color: var(--color-surface);
+    border-color: var(--color-primary);
     cursor: pointer;
 }
 

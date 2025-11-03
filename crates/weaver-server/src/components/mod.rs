@@ -10,4 +10,4 @@ pub use entry::{Entry, EntryCard};
 
 mod identity;
 pub use identity::{Repository, RepositoryIndex};
-//pub mod avatar;
+pub mod avatar;

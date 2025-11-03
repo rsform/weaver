@@ -17,7 +17,7 @@ use crate::{
         document::{CssMode, write_document_footer, write_document_head},
         writer::StaticPageWriter,
     },
-    theme::default_theme,
+    theme::default_resolved_theme,
     utils::flatten_dir_to_just_one_parent,
     walker::{WalkOptions, vault_contents},
 };
@@ -239,7 +239,7 @@ where
             .await
             .into_diagnostic()?;
 
-        let default_theme = default_theme();
+        let default_theme = default_resolved_theme();
         let theme = self.context.theme.as_deref().unwrap_or(&default_theme);
 
         // Write base.css

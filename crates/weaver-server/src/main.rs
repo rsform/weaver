@@ -1,9 +1,21 @@
 // The dioxus prelude contains a ton of common items used in dioxus apps. It's a good idea to import wherever you
 // need dioxus
 use components::{Entry, Repository, RepositoryIndex};
-use dioxus::{fullstack::FullstackContext, prelude::*};
-use jacquard::{client::BasicClient, smol_str::SmolStr, types::string::AtIdentifier};
+#[allow(unused)]
+use dioxus::{
+    fullstack::{response::Extension, FullstackContext},
+    prelude::*,
+    CapturedError,
+};
+#[allow(unused)]
+use jacquard::{
+    client::BasicClient,
+    smol_str::SmolStr,
+    types::{cid::Cid, string::AtIdentifier},
+};
+
 use std::sync::Arc;
+#[allow(unused)]
 use views::{Home, Navbar, Notebook, NotebookIndex, NotebookPage};
 
 #[cfg(feature = "server")]
@@ -133,5 +145,42 @@ fn ErrorLayout() -> Element {
             },
             Outlet::<Route> {}
         }
+    }
+}
+
+#[get("/{notebook}/image/{name}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
+pub async fn image_named(
+    notebook: SmolStr,
+    name: SmolStr,
+) -> Result<dioxus_fullstack::response::Response> {
+    use axum::response::IntoResponse;
+    use mime_sniffer::MimeTypeSniffer;
+    if let Some(bytes) = blob_cache.get_named(&name) {
+        let blob = bytes.clone();
+        let mime = blob.sniff_mime_type().unwrap_or("application/octet-stream");
+        Ok((
+            [(dioxus_fullstack::http::header::CONTENT_TYPE, mime)],
+            bytes,
+        )
+            .into_response())
+    } else {
+        Err(CapturedError::from_display("no image"))
+    }
+}
+
+#[get("/{notebook}/blob/{cid}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
+pub async fn blob(notebook: SmolStr, cid: SmolStr) -> Result<dioxus_fullstack::response::Response> {
+    use axum::response::IntoResponse;
+    use mime_sniffer::MimeTypeSniffer;
+    if let Some(bytes) = blob_cache.get_cid(&Cid::new_owned(cid.as_bytes())?) {
+        let blob = bytes.clone();
+        let mime = blob.sniff_mime_type().unwrap_or("application/octet-stream");
+        Ok((
+            [(dioxus_fullstack::http::header::CONTENT_TYPE, mime)],
+            bytes,
+        )
+            .into_response())
+    } else {
+        Err(CapturedError::from_display("no blob"))
     }
 }

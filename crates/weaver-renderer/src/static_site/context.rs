@@ -1,5 +1,5 @@
 use crate::static_site::{StaticSiteOptions};
-use crate::theme::Theme;
+use crate::theme::ResolvedTheme;
 use crate::{Frontmatter, NotebookContext,default_md_options};
 use dashmap::DashMap;
 use markdown_weaver::{CowStr, EmbedType, Tag, WeaverAttributes};
@@ -39,7 +39,7 @@ pub struct StaticSiteContext<A: AgentSession> {
     pub client: Option<reqwest::Client>,
     agent: Option<Arc<Agent<A>>>,
 
-    pub theme: Option<Arc<Theme<'static>>>,
+    pub theme: Option<Arc<ResolvedTheme<'static>>>,
     pub katex_source: Option<KaTeXSource>,
     pub syntax_set: Arc<SyntaxSet>,
     pub index_file: Option<PathBuf>,
@@ -122,6 +122,8 @@ impl<A: AgentSession> StaticSiteContext<A> {
         }
     }
     pub fn new(root: PathBuf, destination: PathBuf, session: Option<A>) -> Self {
+        use crate::theme::default_resolved_theme;
+
         Self {
             start_at: root.clone(),
             root,
@@ -136,14 +138,14 @@ impl<A: AgentSession> StaticSiteContext<A> {
             position: 0,
             client: Some(reqwest::Client::default()),
             agent: session.map(|session| Arc::new(Agent::new(session))),
-            theme: None,
+            theme: Some(Arc::new(default_resolved_theme())),
             katex_source: None,
             syntax_set: Arc::new(SyntaxSet::load_defaults_newlines()),
             index_file: None,
         }
     }
 
-    pub fn with_theme(mut self, theme: Theme<'static>) -> Self {
+    pub fn with_theme(mut self, theme: ResolvedTheme<'static>) -> Self {
         self.theme = Some(Arc::new(theme));
         self
     }

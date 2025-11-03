@@ -36,49 +36,26 @@
       "record": {
         "type": "object",
         "required": [
-          "colours",
+          "darkScheme",
+          "lightScheme",
           "fonts",
           "spacing",
-          "codeTheme"
+          "darkCodeTheme",
+          "lightCodeTheme"
         ],
         "properties": {
-          "codeTheme": {
+          "darkCodeTheme": {
             "type": "union",
+            "description": "Syntax highlighting theme for dark mode",
             "refs": [
               "#codeThemeName",
               "#codeThemeFile"
             ]
           },
-          "colours": {
-            "type": "object",
-            "required": [
-              "background",
-              "foreground",
-              "primary",
-              "secondary",
-              "link",
-              "link_hover"
-            ],
-            "properties": {
-              "background": {
-                "type": "string"
-              },
-              "foreground": {
-                "type": "string"
-              },
-              "link": {
-                "type": "string"
-              },
-              "link_hover": {
-                "type": "string"
-              },
-              "primary": {
-                "type": "string"
-              },
-              "secondary": {
-                "type": "string"
-              }
-            }
+          "darkScheme": {
+            "type": "ref",
+            "description": "Reference to a dark colour scheme",
+            "ref": "com.atproto.repo.strongRef"
           },
           "fonts": {
             "type": "object",
@@ -98,6 +75,19 @@
                 "type": "string"
               }
             }
+          },
+          "lightCodeTheme": {
+            "type": "union",
+            "description": "Syntax highlighting theme for light mode",
+            "refs": [
+              "#codeThemeName",
+              "#codeThemeFile"
+            ]
+          },
+          "lightScheme": {
+            "type": "ref",
+            "description": "Reference to a light colour scheme",
+            "ref": "com.atproto.repo.strongRef"
           },
           "spacing": {
             "type": "object",

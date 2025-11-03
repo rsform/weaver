@@ -15,7 +15,7 @@ use jacquard::smol_str::SmolStr;
 #[allow(unused_imports)]
 use std::sync::Arc;
 #[allow(unused_imports)]
-use weaver_renderer::theme::Theme;
+use weaver_renderer::theme::{Theme, ResolvedTheme};
 
 #[cfg(feature = "server")]
 use axum::{extract::Extension, response::IntoResponse};
@@ -37,29 +37,35 @@ pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<Response> {
 
     use weaver_api::sh_weaver::notebook::book::Book;
     use weaver_renderer::css::{generate_base_css, generate_syntax_css};
-    use weaver_renderer::theme::default_theme;
+    use weaver_renderer::theme::{default_resolved_theme, resolve_theme};
 
     let ident = AtIdentifier::new_owned(ident)?;
-    let theme = if let Some(notebook) = fetcher.get_notebook(ident, notebook).await? {
+    let resolved_theme = if let Some(notebook) = fetcher.get_notebook(ident, notebook).await? {
         let book: Book = from_data(&notebook.0.record).unwrap();
-        if let Some(theme) = book.theme {
-            if let Ok(theme) = fetcher.client.get_record::<Theme>(&theme.uri).await {
-                theme
-                    .into_output()
-                    .map(|t| t.value)
-                    .unwrap_or(default_theme())
+        if let Some(theme_ref) = book.theme {
+            if let Ok(theme_response) = fetcher.client.get_record::<Theme>(&theme_ref.uri).await {
+                if let Ok(theme_output) = theme_response.into_output() {
+                    let theme: Theme = theme_output.into();
+                    // Try to resolve the theme (fetch colour schemes from PDS)
+                    resolve_theme(fetcher.client.as_ref(), &theme)
+                        .await
+                        .unwrap_or_else(|_| default_resolved_theme())
+                } else {
+                    default_resolved_theme()
+                }
             } else {
-                default_theme()
+                default_resolved_theme()
             }
         } else {
-            default_theme()
+            default_resolved_theme()
         }
     } else {
-        default_theme()
+        default_resolved_theme()
     };
-    let mut css = generate_base_css(&theme);
+
+    let mut css = generate_base_css(&resolved_theme);
     css.push_str(
-        &generate_syntax_css(&theme)
+        &generate_syntax_css(&resolved_theme)
             .await
             .map_err(|e| CapturedError::from_display(e))
             .unwrap_or_default(),
