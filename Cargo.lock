@@ -8624,6 +8624,7 @@ dependencies = [
  "jacquard-axum",
  "markdown-weaver",
  "mini-moka",
+ "n0-future",
  "time",
  "weaver-api",
  "weaver-common",

@@ -8,7 +8,7 @@ use dioxus::{
     fullstack::{get_server_url, reqwest},
     prelude::*,
 };
-use jacquard::smol_str::ToSmolStr;
+use jacquard::{prelude::IdentityResolver, smol_str::ToSmolStr};
 #[allow(unused_imports)]
 use jacquard::{
     smol_str::SmolStr,
@@ -20,6 +20,7 @@ use weaver_api::sh_weaver::notebook::{entry, BookEntryView};
 
 #[component]
 pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) -> Element {
+    let ident_clone = ident.clone();
     let entry = use_resource(use_reactive!(|(ident, book_title, title)| async move {
         let fetcher = use_context::<fetch::CachedFetcher>();
         let entry = fetcher
@@ -50,13 +51,14 @@ pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) 
     match &*entry.read_unchecked() {
         Some(Some(entry_data)) => {
             rsx! { EntryMarkdownDirect {
-                content: entry_data.1.clone()
+                content: entry_data.1.clone(),
+                ident: ident_clone
             } }
-        },
+        }
         Some(None) => {
             rsx! { div { class: "error", "Entry not found" } }
         }
-        None => rsx! { p { "Loading..." } }
+        None => rsx! { p { "Loading..." } },
     }
 }
 
@@ -98,18 +100,50 @@ fn EntryMarkdownDirect(
     #[props(default)] id: String,
     #[props(default = "entry".to_string())] class: String,
     content: entry::Entry<'static>,
+    ident: AtIdentifier<'static>,
 ) -> Element {
-    let parser = markdown_weaver::Parser::new(&content.content);
+    use n0_future::stream::StreamExt;
+    use weaver_renderer::{
+        atproto::{ClientContext, ClientWriter},
+        ContextIterator, NotebookProcessor,
+    };
 
-    let mut html_buf = String::new();
-    markdown_weaver::html::push_html(&mut html_buf, parser);
+    let processed = use_resource(use_reactive!(|(content, ident)| async move {
+        // Create client context for link/image/embed handling
+        let fetcher = use_context::<fetch::CachedFetcher>();
+        let did = match ident {
+            AtIdentifier::Did(d) => d,
+            AtIdentifier::Handle(h) => fetcher.client.resolve_handle(&h).await.ok()?,
+        };
+        let ctx = ClientContext::<()>::new(content.clone(), did);
+        let parser = markdown_weaver::Parser::new(&content.content);
+        let iter = ContextIterator::default(parser);
+        let processor = NotebookProcessor::new(ctx, iter);
 
-    rsx! {
-        div {
-            id: "{id}",
-            class: "{class}",
-            dangerous_inner_html: "{html_buf}"
-        }
+        // Collect events from the processor stream
+        let events: Vec<_> = StreamExt::collect(processor).await;
+
+        // Render to HTML
+        let mut html_buf = String::new();
+        let _ = ClientWriter::<_, ()>::new(&mut html_buf).run(events.into_iter());
+        Some(html_buf)
+    }));
+
+    match &*processed.read_unchecked() {
+        Some(Some(html_buf)) => rsx! {
+            div {
+                id: "{id}",
+                class: "{class}",
+                dangerous_inner_html: "{html_buf}"
+            }
+        },
+        _ => rsx! {
+            div {
+                id: "{id}",
+                class: "{class}",
+                "Loading..."
+            }
+        },
     }
 }
 

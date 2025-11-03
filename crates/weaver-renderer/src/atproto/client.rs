@@ -115,6 +115,20 @@ impl<A: AgentSession + IdentityResolver> EmbedResolver for DefaultEmbedResolver<
     }
 }
 
+impl EmbedResolver for () {
+    async fn resolve_profile(&self, uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
+        Ok("".to_string())
+    }
+
+    async fn resolve_post(&self, uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
+        Ok("".to_string())
+    }
+
+    async fn resolve_markdown(&self, url: &str, depth: usize) -> Result<String, ClientRenderError> {
+        Ok("".to_string())
+    }
+}
+
 const MAX_EMBED_DEPTH: usize = 3;
 
 pub struct ClientContext<'a, R = ()> {
@@ -134,12 +148,12 @@ pub struct ClientContext<'a, R = ()> {
     title: MdCowStr<'a>,
 }
 
-impl<'a> ClientContext<'a, ()> {
-    pub fn new(entry: Entry<'a>, creator_did: Did<'a>) -> Self {
+impl<'a, R: EmbedResolver> ClientContext<'a, R> {
+    pub fn new(entry: Entry<'a>, creator_did: Did<'a>) -> ClientContext<'a, ()> {
         let blob_map = Self::build_blob_map(&entry);
         let title = MdCowStr::Boxed(entry.title.as_ref().into());
 
-        Self {
+        ClientContext {
             entry,
             creator_did,
             blob_map,
@@ -151,7 +165,7 @@ impl<'a> ClientContext<'a, ()> {
     }
 
     /// Add an embed resolver for fetching embed content
-    pub fn with_embed_resolver<R: EmbedResolver>(self, resolver: Arc<R>) -> ClientContext<'a, R> {
+    pub fn with_embed_resolver(self, resolver: Arc<R>) -> ClientContext<'a, R> {
         ClientContext {
             entry: self.entry,
             creator_did: self.creator_did,
@@ -164,7 +178,7 @@ impl<'a> ClientContext<'a, ()> {
     }
 }
 
-impl<'a, R> ClientContext<'a, R> {
+impl<'a, R: EmbedResolver> ClientContext<'a, R> {
     /// Create a child context with incremented embed depth (for recursive embeds)
     fn with_depth(&self, depth: usize) -> Self
     where
@@ -432,7 +446,7 @@ mod tests {
             .created_at(Datetime::now())
             .build();
 
-        let ctx = ClientContext::new(entry, Did::new("did:plc:test").unwrap());
+        let ctx = ClientContext::<()>::new(entry, Did::new("did:plc:test").unwrap());
         assert_eq!(ctx.title.as_ref(), "Test");
     }
 

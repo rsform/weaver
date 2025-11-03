@@ -6,7 +6,7 @@
 use markdown_weaver::{
     Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, Tag,
 };
-use markdown_weaver_escape::{escape_href, escape_html, escape_html_body_text, StrWrite};
+use markdown_weaver_escape::{StrWrite, escape_href, escape_html, escape_html_body_text};
 use std::collections::HashMap;
 
 /// Synchronous callback for injecting embed content
@@ -14,6 +14,12 @@ use std::collections::HashMap;
 /// Takes the embed tag and returns optional HTML content to inject.
 pub trait EmbedContentProvider {
     fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String>;
+}
+
+impl EmbedContentProvider for () {
+    fn get_embed_content(&self, _tag: &Tag<'_>) -> Option<String> {
+        None
+    }
 }
 
 /// Simple writer that outputs HTML from markdown events
@@ -40,7 +46,7 @@ enum TableState {
     Body,
 }
 
-impl<W: StrWrite> ClientWriter<W, ()> {
+impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
     pub fn new(writer: W) -> Self {
         Self {
             writer,
@@ -55,7 +61,7 @@ impl<W: StrWrite> ClientWriter<W, ()> {
     }
 
     /// Add an embed content provider
-    pub fn with_embed_provider<E: EmbedContentProvider>(self, provider: E) -> ClientWriter<W, E> {
+    pub fn with_embed_provider(self, provider: E) -> ClientWriter<W, E> {
         ClientWriter {
             writer: self.writer,
             end_newline: self.end_newline,
@@ -162,7 +168,12 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
                     self.write("\n<p>")
                 }
             }
-            Tag::Heading { level, id, classes, attrs } => {
+            Tag::Heading {
+                level,
+                id,
+                classes,
+                attrs,
+            } => {
                 if !self.end_newline {
                     self.write("\n")?;
                 }
@@ -314,7 +325,12 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             Tag::Emphasis => self.write("<em>"),
             Tag::Strong => self.write("<strong>"),
             Tag::Strikethrough => self.write("<del>"),
-            Tag::Link { link_type: LinkType::Email, dest_url, title, .. } => {
+            Tag::Link {
+                link_type: LinkType::Email,
+                dest_url,
+                title,
+                ..
+            } => {
                 self.write("<a href=\"mailto:")?;
                 escape_href(&mut self.writer, &dest_url)?;
                 if !title.is_empty() {
@@ -323,7 +339,9 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
                 }
                 self.write("\">")
             }
-            Tag::Link { dest_url, title, .. } => {
+            Tag::Link {
+                dest_url, title, ..
+            } => {
                 self.write("<a href=\"")?;
                 escape_href(&mut self.writer, &dest_url)?;
                 if !title.is_empty() {
@@ -332,7 +350,12 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
                 }
                 self.write("\">")
             }
-            Tag::Image { dest_url, title, attrs, .. } => {
+            Tag::Image {
+                dest_url,
+                title,
+                attrs,
+                ..
+            } => {
                 self.write("<img src=\"")?;
                 escape_href(&mut self.writer, &dest_url)?;
                 self.write("\" alt=\"")?;
@@ -362,9 +385,13 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
                 }
                 self.write(" />")
             }
-            Tag::Embed { embed_type, dest_url, title, id, attrs } => {
-                self.write_embed(embed_type, dest_url, title, id, attrs)
-            }
+            Tag::Embed {
+                embed_type,
+                dest_url,
+                title,
+                id,
+                attrs,
+            } => self.write_embed(embed_type, dest_url, title, id, attrs),
             Tag::WeaverBlock(_, _) => {
                 self.in_non_writing_block = true;
                 Ok(())
@@ -441,7 +468,9 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             }
         }
     }
+}
 
+impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
     fn write_embed(
         &mut self,
         embed_type: EmbedType,
@@ -452,7 +481,9 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
     ) -> Result<(), W::Error> {
         // Try to get content from attributes first
         let content_from_attrs = if let Some(ref attrs) = attrs {
-            attrs.attrs.iter()
+            attrs
+                .attrs
+                .iter()
                 .find(|(k, _)| k.as_ref() == "content")
                 .map(|(_, v)| v.as_ref().to_string())
         } else {
@@ -515,7 +546,6 @@ impl<W: StrWrite, E: EmbedContentProvider> ClientWriter<W, E> {
             }
             self.write("></iframe>")?;
         }
-
         Ok(())
     }
 }
