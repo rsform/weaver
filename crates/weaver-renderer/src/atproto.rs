@@ -3,18 +3,22 @@
 //! Two-stage pipeline: markdown→markdown preprocessing (CLI),
 //! then client-side markdown→HTML rendering (WASM).
 
-mod error;
-mod types;
-mod markdown_writer;
-mod preprocess;
 mod client;
 mod embed_renderer;
+mod error;
+mod markdown_writer;
+#[cfg(not(target_family = "wasm"))]
+mod preprocess;
+mod types;
 mod writer;
 
+pub use client::{ClientContext, DefaultEmbedResolver, EmbedResolver};
+pub use embed_renderer::{
+    fetch_and_render_generic, fetch_and_render_post, fetch_and_render_profile,
+};
 pub use error::{AtProtoPreprocessError, ClientRenderError};
-pub use types::{BlobName, BlobInfo};
-pub use preprocess::AtProtoPreprocessContext;
-pub use client::{ClientContext, EmbedResolver, DefaultEmbedResolver};
 pub use markdown_writer::MarkdownWriter;
-pub use embed_renderer::{fetch_and_render_profile, fetch_and_render_post, fetch_and_render_generic};
+#[cfg(not(target_family = "wasm"))]
+pub use preprocess::AtProtoPreprocessContext;
+pub use types::{BlobInfo, BlobName};
 pub use writer::{ClientWriter, EmbedContentProvider};

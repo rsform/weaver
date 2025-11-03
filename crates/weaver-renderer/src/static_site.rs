@@ -9,6 +9,7 @@ pub mod context;
 pub mod document;
 pub mod writer;
 
+use crate::utils::VaultBrokenLinkCallback;
 use crate::{
     ContextIterator, NotebookProcessor,
     static_site::{
@@ -16,7 +17,7 @@ use crate::{
         document::{CssMode, write_document_footer, write_document_head},
         writer::StaticPageWriter,
     },
-    theme::defaultTheme,
+    theme::default_theme,
     utils::flatten_dir_to_just_one_parent,
     walker::{WalkOptions, vault_contents},
 };
@@ -30,7 +31,6 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use crate::utils::VaultBrokenLinkCallback;
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use tokio::io::AsyncWriteExt;
 use unicode_normalization::UnicodeNormalization;
@@ -66,7 +66,6 @@ impl Default for StaticSiteOptions {
             | Self::NORMALIZE_DIR_NAMES
     }
 }
-
 
 pub struct StaticSiteWriter<A>
 where
@@ -240,7 +239,7 @@ where
             .await
             .into_diagnostic()?;
 
-        let default_theme = defaultTheme();
+        let default_theme = default_theme();
         let theme = self.context.theme.as_deref().unwrap_or(&default_theme);
 
         // Write base.css
@@ -408,8 +407,6 @@ where
 
     Ok(())
 }
-
-
 
 #[cfg(test)]
 mod tests;

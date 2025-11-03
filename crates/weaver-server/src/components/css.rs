@@ -1,13 +1,23 @@
 #[allow(unused_imports)]
 use crate::fetch;
-use dioxus::prelude::*;
 #[allow(unused_imports)]
-use dioxus::{fullstack::extract::Extension, fullstack::get_server_url, CapturedError};
+use dioxus::{fullstack::get_server_url, CapturedError};
+use dioxus::{
+    fullstack::{
+        headers::ContentType,
+        http::header::CONTENT_TYPE,
+        response::{self, Response},
+    },
+    prelude::*,
+};
 use jacquard::smol_str::SmolStr;
 #[allow(unused_imports)]
 use std::sync::Arc;
 #[allow(unused_imports)]
 use weaver_renderer::theme::Theme;
+
+#[cfg(feature = "server")]
+use axum::{extract::Extension, response::IntoResponse};
 
 #[component]
 pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
@@ -19,14 +29,14 @@ pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
 }
 
 #[get("/css/{ident}/{notebook}", fetcher: Extension<Arc<fetch::CachedFetcher>>)]
-pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<String> {
+pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<Response> {
     use jacquard::client::AgentSessionExt;
     use jacquard::types::ident::AtIdentifier;
     use jacquard::{from_data, CowStr};
 
     use weaver_api::sh_weaver::notebook::book::Book;
     use weaver_renderer::css::{generate_base_css, generate_syntax_css};
-    use weaver_renderer::theme::defaultTheme;
+    use weaver_renderer::theme::default_theme;
 
     let ident = AtIdentifier::new_owned(ident)?;
     let theme = if let Some(notebook) = fetcher.get_notebook(ident, notebook).await? {
@@ -36,15 +46,15 @@ pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<String> {
                 theme
                     .into_output()
                     .map(|t| t.value)
-                    .unwrap_or(defaultTheme())
+                    .unwrap_or(default_theme())
             } else {
-                defaultTheme()
+                default_theme()
             }
         } else {
-            defaultTheme()
+            default_theme()
         }
     } else {
-        defaultTheme()
+        default_theme()
     };
     let mut css = generate_base_css(&theme);
     css.push_str(
@@ -53,5 +63,6 @@ pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<String> {
             .map_err(|e| CapturedError::from_display(e))
             .unwrap_or_default(),
     );
-    Ok(css)
+
+    Ok(([(CONTENT_TYPE, "text/css")], css).into_response())
 }

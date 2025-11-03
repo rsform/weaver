@@ -1,18 +1,18 @@
+use jacquard::IntoStatic;
 use jacquard::client::{Agent, FileAuthStore};
 use jacquard::identity::JacquardResolver;
 use jacquard::oauth::client::{OAuthClient, OAuthSession};
 use jacquard::oauth::loopback::LoopbackConfig;
 use jacquard::prelude::*;
 use jacquard::types::string::Handle;
-use jacquard::IntoStatic;
 use miette::{IntoDiagnostic, Result};
 use std::io::BufRead;
 use std::path::PathBuf;
 use std::sync::Arc;
-use weaver_renderer::static_site::StaticSiteWriter;
-use weaver_renderer::walker::{WalkOptions, vault_contents};
 use weaver_renderer::atproto::AtProtoPreprocessContext;
+use weaver_renderer::static_site::StaticSiteWriter;
 use weaver_renderer::utils::VaultBrokenLinkCallback;
+use weaver_renderer::walker::{WalkOptions, vault_contents};
 
 use clap::{Parser, Subcommand};
 
@@ -51,7 +51,7 @@ enum Commands {
         source: PathBuf,
 
         /// Notebook title
-        #[arg(long)]
+        //#[arg(long)]
         title: String,
 
         /// Path to auth store file
@@ -71,7 +71,11 @@ async fn main() -> Result<()> {
             let store_path = store.unwrap_or_else(default_auth_store_path);
             authenticate(handle, store_path).await?;
         }
-        Some(Commands::Publish { source, title, store }) => {
+        Some(Commands::Publish {
+            source,
+            title,
+            store,
+        }) => {
             let store_path = store.unwrap_or_else(default_auth_store_path);
             publish_notebook(source, title, store_path).await?;
         }
@@ -227,7 +231,8 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
             authenticate(handle, store_path.clone()).await?;
 
             // Load the session we just created
-            try_load_session(&store_path).await
+            try_load_session(&store_path)
+                .await
                 .ok_or_else(|| miette::miette!("Failed to load session after authentication"))?
         }
     };
@@ -236,7 +241,9 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
 
     // Create agent and resolve DID document to get handle
     let agent = Agent::new(session);
-    let (did, _session_id) = agent.info().await
+    let (did, _session_id) = agent
+        .info()
+        .await
         .ok_or_else(|| miette::miette!("No session info available"))?;
     let did_doc_response = agent.resolve_did_doc(&did).await?;
     let did_doc = did_doc_response.parse()?;
@@ -276,11 +283,8 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
     println!("Found {} markdown files", md_files.len());
 
     // Create preprocessing context
-    let context = AtProtoPreprocessContext::new(
-        vault_arc.clone(),
-        title.clone(),
-        agent.clone(),
-    ).with_creator(did.clone().into_static(), handle.clone().into_static());
+    let context = AtProtoPreprocessContext::new(vault_arc.clone(), title.clone(), agent.clone())
+        .with_creator(did.clone().into_static(), handle.clone().into_static());
 
     // Process each file
     for file_path in &md_files {
@@ -299,14 +303,15 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
         });
 
         // Parse markdown
-        use weaver_renderer::default_md_options;
         use markdown_weaver::Parser;
-        let parser = Parser::new_with_broken_link_callback(&contents, default_md_options(), callback);
+        use weaver_renderer::default_md_options;
+        let parser =
+            Parser::new_with_broken_link_callback(&contents, default_md_options(), callback);
         let iterator = weaver_renderer::ContextIterator::default(parser);
 
         // Process through NotebookProcessor
-        use weaver_renderer::{NotebookProcessor, NotebookContext};
         use n0_future::StreamExt;
+        use weaver_renderer::{NotebookContext, NotebookProcessor};
         let mut processor = NotebookProcessor::new(file_context.clone(), iterator);
 
         // Write canonical markdown with MarkdownWriter
@@ -317,9 +322,9 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
 
         // Process all events
         while let Some(event) = processor.next().await {
-            md_writer.write_event(event).map_err(|e| {
-                miette::miette!("Failed to write markdown: {:?}", e)
-            })?;
+            md_writer
+                .write_event(event)
+                .map_err(|e| miette::miette!("Failed to write markdown: {:?}", e))?;
         }
 
         // Extract blobs and entry metadata
@@ -327,10 +332,10 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
         let entry_title = file_context.entry_title();
 
         // Build Entry record with blobs
-        use weaver_api::sh_weaver::notebook::entry::{Entry, EntryEmbeds};
-        use weaver_api::sh_weaver::embed::images::{Images, Image};
-        use jacquard::types::string::Datetime;
         use jacquard::types::blob::BlobRef;
+        use jacquard::types::string::Datetime;
+        use weaver_api::sh_weaver::embed::images::{Image, Images};
+        use weaver_api::sh_weaver::notebook::entry::{Entry, EntryEmbeds};
 
         let embeds = if !blobs.is_empty() {
             // Build images from blobs

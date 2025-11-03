@@ -208,17 +208,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-lock"
-version = "3.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fd03604047cee9b6ce9de9f70c6cd540a0520c813cbd49bae61f33ab80ed1dc"
-dependencies = [
- "event-listener",
- "event-listener-strategy",
- "pin-project-lite",
-]
-
-[[package]]
 name = "async-recursion"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -564,9 +553,9 @@ dependencies = [
 
 [[package]]
 name = "borrow-or-share"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fa326467c5d528c03e479661320269e7716d6b7d5d49bafd30890ce0c725696"
+checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 
 [[package]]
 name = "borsh"
@@ -649,12 +638,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
-name = "bytecount"
-version = "0.6.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
-
-[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -692,37 +675,6 @@ dependencies = [
  "glib-sys",
  "libc",
  "system-deps",
-]
-
-[[package]]
-name = "camino"
-version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "276a59bf2b2c967788139340c9f0c5b12d7fd6630315c15c217e559de85d2609"
-dependencies = [
- "serde_core",
-]
-
-[[package]]
-name = "cargo-platform"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e35af189006b9c0f00a064685c727031e3ed2d8020f7ba284d78cc2671bd36ea"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "cargo_metadata"
-version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4acbb09d9ee8e23699b9634375c72795d095bf268439da88562cf9b501f181fa"
-dependencies = [
- "camino",
- "cargo-platform",
- "semver",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -998,6 +950,16 @@ dependencies = [
  "libc",
  "once_cell",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1387,19 +1349,6 @@ dependencies = [
 
 [[package]]
 name = "dashmap"
-version = "5.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
-dependencies = [
- "cfg-if",
- "hashbrown 0.14.5",
- "lock_api",
- "once_cell",
- "parking_lot_core",
-]
-
-[[package]]
-name = "dashmap"
 version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
@@ -1775,7 +1724,7 @@ dependencies = [
  "global-hotkey",
  "infer",
  "jni",
- "lazy-js-bundle 0.7.0",
+ "lazy-js-bundle",
  "libc",
  "muda",
  "ndk",
@@ -1847,7 +1796,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "generational-box",
- "lazy-js-bundle 0.7.0",
+ "lazy-js-bundle",
  "serde",
  "serde_json",
  "tracing",
@@ -2006,7 +1955,7 @@ dependencies = [
  "futures-util",
  "generational-box",
  "keyboard-types",
- "lazy-js-bundle 0.7.0",
+ "lazy-js-bundle",
  "rustversion",
  "serde",
  "serde_json",
@@ -2036,7 +1985,7 @@ dependencies = [
  "dioxus-core-types",
  "dioxus-html",
  "js-sys",
- "lazy-js-bundle 0.7.0",
+ "lazy-js-bundle",
  "rustc-hash 2.1.1",
  "serde",
  "sledgehammer_bindgen",
@@ -2084,19 +2033,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-wasm",
-]
-
-[[package]]
-name = "dioxus-primitives"
-version = "0.0.1"
-source = "git+https://github.com/DioxusLabs/components#8e25631c7d4234ee070509156ed2abebb7b1d6e9"
-dependencies = [
- "dioxus",
- "dioxus-time",
- "lazy-js-bundle 0.6.2",
- "num-integer",
- "time",
- "tracing",
 ]
 
 [[package]]
@@ -2160,7 +2096,7 @@ dependencies = [
  "bytes",
  "chrono",
  "ciborium",
- "dashmap 6.1.0",
+ "dashmap",
  "dioxus-cli-config",
  "dioxus-core",
  "dioxus-core-macro",
@@ -2257,17 +2193,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-time"
-version = "0.7.0"
-source = "git+https://github.com/ealmloff/dioxus-std?branch=0.7#e5a74354cd36be440febdd6b701f584bd552bd62"
-dependencies = [
- "dioxus",
- "futures",
- "gloo-timers",
- "tokio",
-]
-
-[[package]]
 name = "dioxus-web"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2288,7 +2213,7 @@ dependencies = [
  "generational-box",
  "gloo-timers",
  "js-sys",
- "lazy-js-bundle 0.7.0",
+ "lazy-js-bundle",
  "rustc-hash 2.1.1",
  "send_wrapper",
  "serde",
@@ -2627,15 +2552,6 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "error-chain"
-version = "0.12.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d2f06b9cac1506ece98fe3231e3cc9c4410ec3d5b1f24ae1c8946f0742cdefc"
-dependencies = [
- "version_check",
 ]
 
 [[package]]
@@ -3230,12 +3146,6 @@ dependencies = [
  "libc",
  "system-deps",
 ]
-
-[[package]]
-name = "glob"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "global-hotkey"
@@ -4017,7 +3927,7 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 [[package]]
 name = "jacquard"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#10d719d2a2c459ab562b2be6fecdfe11f52b521c"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
 dependencies = [
  "bytes",
  "getrandom 0.2.16",
@@ -4046,7 +3956,7 @@ dependencies = [
 [[package]]
 name = "jacquard-api"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#10d719d2a2c459ab562b2be6fecdfe11f52b521c"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
 dependencies = [
  "bon",
  "bytes",
@@ -4064,7 +3974,7 @@ dependencies = [
 [[package]]
 name = "jacquard-axum"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#10d719d2a2c459ab562b2be6fecdfe11f52b521c"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
 dependencies = [
  "axum",
  "bytes",
@@ -4086,7 +3996,7 @@ dependencies = [
 [[package]]
 name = "jacquard-common"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#10d719d2a2c459ab562b2be6fecdfe11f52b521c"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
 dependencies = [
  "base64 0.22.1",
  "bon",
@@ -4128,7 +4038,7 @@ dependencies = [
 [[package]]
 name = "jacquard-derive"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#10d719d2a2c459ab562b2be6fecdfe11f52b521c"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
 dependencies = [
  "heck 0.5.0",
  "jacquard-lexicon",
@@ -4140,7 +4050,7 @@ dependencies = [
 [[package]]
 name = "jacquard-identity"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#10d719d2a2c459ab562b2be6fecdfe11f52b521c"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
 dependencies = [
  "bon",
  "bytes",
@@ -4150,7 +4060,7 @@ dependencies = [
  "jacquard-common",
  "jacquard-lexicon",
  "miette 7.6.0",
- "moka",
+ "mini-moka",
  "n0-future",
  "percent-encoding",
  "reqwest",
@@ -4167,10 +4077,10 @@ dependencies = [
 [[package]]
 name = "jacquard-lexicon"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#10d719d2a2c459ab562b2be6fecdfe11f52b521c"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
 dependencies = [
  "cid",
- "dashmap 6.1.0",
+ "dashmap",
  "heck 0.5.0",
  "inventory",
  "jacquard-common",
@@ -4193,12 +4103,12 @@ dependencies = [
 [[package]]
 name = "jacquard-oauth"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#10d719d2a2c459ab562b2be6fecdfe11f52b521c"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
 dependencies = [
  "base64 0.22.1",
  "bytes",
  "chrono",
- "dashmap 6.1.0",
+ "dashmap",
  "elliptic-curve",
  "http",
  "jacquard-common",
@@ -4413,12 +4323,6 @@ dependencies = [
  "static-regular-grammar",
  "thiserror 1.0.69",
 ]
-
-[[package]]
-name = "lazy-js-bundle"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e49596223b9d9d4947a14a25c142a6e7d8ab3f27eb3ade269d238bb8b5c267e2"
 
 [[package]]
 name = "lazy-js-bundle"
@@ -4932,17 +4836,16 @@ dependencies = [
 
 [[package]]
 name = "mini-moka"
-version = "0.10.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c325dfab65f261f386debee8b0969da215b3fa0037e74c8a1234db7ba986d803"
+version = "0.11.0"
+source = "git+https://github.com/moka-rs/mini-moka?rev=da864e849f5d034f32e02197fee9bb5d5af36d3d#da864e849f5d034f32e02197fee9bb5d5af36d3d"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-utils",
- "dashmap 5.5.3",
- "skeptic",
+ "dashmap",
  "smallvec",
  "tagptr",
  "triomphe",
+ "web-time",
 ]
 
 [[package]]
@@ -4989,27 +4892,6 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "moka"
-version = "0.12.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8261cd88c312e0004c1d51baad2980c66528dfdb2bee62003e643a4d8f86b077"
-dependencies = [
- "async-lock",
- "crossbeam-channel",
- "crossbeam-epoch",
- "crossbeam-utils",
- "equivalent",
- "event-listener",
- "futures-util",
- "parking_lot",
- "portable-atomic",
- "rustc_version",
- "smallvec",
- "tagptr",
- "uuid",
 ]
 
 [[package]]
@@ -5205,11 +5087,10 @@ dependencies = [
 
 [[package]]
 name = "num-bigint-dig"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc84195820f291c7697304f3cbdadd1cb7199c0efc917ff5eafd71225c136151"
+checksum = "82c79c15c05d4bf82b6f5ef163104cc81a760d8e874d38ac50ab67c8877b647b"
 dependencies = [
- "byteorder",
  "lazy_static",
  "libm",
  "num-integer",
@@ -5878,12 +5759,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
 
 [[package]]
-name = "portable-atomic"
-version = "1.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f84267b20a16ea918e43c6a88433c2d54fa145c92a811b5b047ccbe153674483"
-
-[[package]]
 name = "postgres-protocol"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6066,17 +5941,6 @@ checksum = "6f42ea446cab60335f76979ec15e12619a2165b5ae2c12166bef27d283a9fadf"
 dependencies = [
  "idna",
  "psl-types",
-]
-
-[[package]]
-name = "pulldown-cmark"
-version = "0.9.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57206b407293d2bcd3af849ce869d52068623f19e1b5ff8e8778e3309439682b"
-dependencies = [
- "bitflags 2.10.0",
- "memchr",
- "unicase",
 ]
 
 [[package]]
@@ -6656,9 +6520,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.0.4"
+version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82d20c4491bc164fa2f6c5d44565947a52ad80b9505d8e36f8d54c27c739fcd0"
+checksum = "1317c3bf3e7df961da95b0a56a172a02abead31276215a0497241a7624b487ce"
 dependencies = [
  "dyn-clone",
  "ref-cast",
@@ -6771,10 +6635,6 @@ name = "semver"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
-dependencies = [
- "serde",
- "serde_core",
-]
 
 [[package]]
 name = "send_wrapper"
@@ -6960,7 +6820,7 @@ dependencies = [
  "indexmap 1.9.3",
  "indexmap 2.12.0",
  "schemars 0.9.0",
- "schemars 1.0.4",
+ "schemars 1.0.5",
  "serde_core",
  "serde_json",
  "serde_with_macros",
@@ -7094,21 +6954,6 @@ name = "siphasher"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
-
-[[package]]
-name = "skeptic"
-version = "0.13.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16d23b015676c90a0f01c197bfdc786c20342c73a0afdda9025adb0bc42940a8"
-dependencies = [
- "bytecount",
- "cargo_metadata",
- "error-chain",
- "glob",
- "pulldown-cmark",
- "tempfile",
- "walkdir",
-]
 
 [[package]]
 name = "slab"
@@ -7640,6 +7485,7 @@ checksum = "91e7d9e3bb61134e77bde20dd4825b97c010155709965fedf0f49bb138e52a9d"
 dependencies = [
  "deranged",
  "itoa",
+ "js-sys",
  "libc",
  "num-conv",
  "num_threads",
@@ -7850,9 +7696,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.16"
+version = "0.7.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14307c986784f72ef81c89db7d9e28d6ac26d16213b109ea501696195e6e3ce5"
+checksum = "2efa149fe76073d6e8fd97ef4f4eca7b67f599660115591483572e406e165594"
 dependencies = [
  "bytes",
  "futures-core",
@@ -8655,7 +8501,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
- "dashmap 6.1.0",
+ "dashmap",
  "diesel",
  "diesel-async",
  "diesel_migrations",
@@ -8738,7 +8584,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags 2.10.0",
  "compact_string",
- "dashmap 6.1.0",
+ "dashmap",
  "dynosaur",
  "http",
  "ignore",
@@ -8770,14 +8616,15 @@ name = "weaver-server"
 version = "0.1.0"
 dependencies = [
  "axum",
- "dashmap 6.1.0",
+ "chrono",
+ "console_error_panic_hook",
+ "dashmap",
  "dioxus",
- "dioxus-primitives",
  "jacquard",
  "jacquard-axum",
  "markdown-weaver",
  "mini-moka",
- "moka",
+ "time",
  "weaver-api",
  "weaver-common",
  "weaver-renderer",
@@ -8894,9 +8741,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.3"
+version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32b130c0d2d49f8b6889abc456e795e82525204f27c42cf767cf0d7734e089b8"
+checksum = "b2878ef029c47c6e8cf779119f20fcf52bde7ad42a731b2a304bc221df17571e"
 dependencies = [
  "rustls-pki-types",
 ]

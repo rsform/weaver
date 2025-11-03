@@ -47,19 +47,16 @@ pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) 
         entry
     }));
 
-    rsx! {
-        match &*entry.read_unchecked() {
-            Some(Some(entry)) => {
-                let class = use_signal(|| String::from("entry"));
-                let content = use_signal(||entry.1.clone());
-                rsx! { EntryMarkdown {
-                    class,
-                    content
-                } }
-            },
-            Some(None) => rsx! { p { "Loading entry failed" } },
-            None =>  rsx! { p { "Loading..." } }
+    match &*entry.read_unchecked() {
+        Some(Some(entry_data)) => {
+            rsx! { EntryMarkdownDirect {
+                content: entry_data.1.clone()
+            } }
+        },
+        Some(None) => {
+            rsx! { div { class: "error", "Entry not found" } }
         }
+        None => rsx! { p { "Loading..." } }
     }
 }
 
@@ -90,6 +87,27 @@ pub fn EntryMarkdown(props: EntryMarkdownProps) -> Element {
         div {
             id: "{&*props.id.read()}",
             class: "{&*props.class.read()}",
+            dangerous_inner_html: "{html_buf}"
+        }
+    }
+}
+
+/// Render entry content directly without signals
+#[component]
+fn EntryMarkdownDirect(
+    #[props(default)] id: String,
+    #[props(default = "entry".to_string())] class: String,
+    content: entry::Entry<'static>,
+) -> Element {
+    let parser = markdown_weaver::Parser::new(&content.content);
+
+    let mut html_buf = String::new();
+    markdown_weaver::html::push_html(&mut html_buf, parser);
+
+    rsx! {
+        div {
+            id: "{id}",
+            class: "{class}",
             dangerous_inner_html: "{html_buf}"
         }
     }

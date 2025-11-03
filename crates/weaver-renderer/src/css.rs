@@ -1,9 +1,8 @@
 use crate::theme::Theme;
 use miette::IntoDiagnostic;
 use std::io::Cursor;
-use syntect::highlighting::{Theme as SyntectTheme, ThemeSet};
+use syntect::highlighting::ThemeSet;
 use syntect::html::{ClassStyle, css_for_theme_with_class_style};
-use syntect::parsing::SyntaxSet;
 use weaver_api::com_atproto::sync::get_blob::GetBlob;
 use weaver_api::sh_weaver::notebook::theme::ThemeCodeTheme;
 use weaver_common::jacquard::client::BasicClient;

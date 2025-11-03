@@ -1,11 +1,11 @@
+use super::{error::ClientRenderError, types::BlobName};
 use crate::{Frontmatter, NotebookContext};
-use super::{types::BlobName, error::ClientRenderError};
 use jacquard::{
     client::{Agent, AgentSession},
     prelude::IdentityResolver,
     types::string::{AtUri, Cid, Did},
 };
-use markdown_weaver::{Tag, CowStr as MdCowStr, WeaverAttributes};
+use markdown_weaver::{CowStr as MdCowStr, Tag, WeaverAttributes};
 use std::collections::HashMap;
 use std::sync::Arc;
 use weaver_api::sh_weaver::notebook::entry::Entry;
@@ -13,18 +13,18 @@ use weaver_api::sh_weaver::notebook::entry::Entry;
 /// Trait for resolving embed content on the client side
 ///
 /// Implementations can fetch from cache, make HTTP requests, or use other sources.
-pub trait EmbedResolver: Send + Sync {
+pub trait EmbedResolver {
     /// Resolve a profile embed by AT URI
     fn resolve_profile(
         &self,
         uri: &AtUri<'_>,
-    ) -> impl std::future::Future<Output = Result<String, ClientRenderError>> + Send;
+    ) -> impl std::future::Future<Output = Result<String, ClientRenderError>>;
 
     /// Resolve a post/record embed by AT URI
     fn resolve_post(
         &self,
         uri: &AtUri<'_>,
-    ) -> impl std::future::Future<Output = Result<String, ClientRenderError>> + Send;
+    ) -> impl std::future::Future<Output = Result<String, ClientRenderError>>;
 
     /// Resolve a markdown embed from URL
     ///
@@ -33,7 +33,7 @@ pub trait EmbedResolver: Send + Sync {
         &self,
         url: &str,
         depth: usize,
-    ) -> impl std::future::Future<Output = Result<String, ClientRenderError>> + Send;
+    ) -> impl std::future::Future<Output = Result<String, ClientRenderError>>;
 }
 
 /// Default embed resolver that fetches records from PDSs
@@ -74,27 +74,25 @@ impl<A: AgentSession + IdentityResolver> EmbedResolver for DefaultEmbedResolver<
     }
 
     async fn resolve_post(&self, uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
-        use crate::atproto::{fetch_and_render_post, fetch_and_render_generic};
+        use crate::atproto::{fetch_and_render_generic, fetch_and_render_post};
 
         // Check if it's a known type
         if let Some(collection) = uri.collection() {
             match collection.as_ref() {
                 "app.bsky.feed.post" => {
-                    fetch_and_render_post(uri, &*self.agent)
-                        .await
-                        .map_err(|e| ClientRenderError::EntryFetch {
+                    fetch_and_render_post(uri, &*self.agent).await.map_err(|e| {
+                        ClientRenderError::EntryFetch {
                             uri: uri.as_ref().to_string(),
                             source: Box::new(e),
-                        })
+                        }
+                    })
                 }
-                _ => {
-                    fetch_and_render_generic(uri, &*self.agent)
-                        .await
-                        .map_err(|e| ClientRenderError::EntryFetch {
-                            uri: uri.as_ref().to_string(),
-                            source: Box::new(e),
-                        })
-                }
+                _ => fetch_and_render_generic(uri, &*self.agent)
+                    .await
+                    .map_err(|e| ClientRenderError::EntryFetch {
+                        uri: uri.as_ref().to_string(),
+                        source: Box::new(e),
+                    }),
             }
         } else {
             Err(ClientRenderError::EntryFetch {
@@ -153,10 +151,7 @@ impl<'a> ClientContext<'a, ()> {
     }
 
     /// Add an embed resolver for fetching embed content
-    pub fn with_embed_resolver<R: EmbedResolver>(
-        self,
-        resolver: Arc<R>,
-    ) -> ClientContext<'a, R> {
+    pub fn with_embed_resolver<R: EmbedResolver>(self, resolver: Arc<R>) -> ClientContext<'a, R> {
         ClientContext {
             entry: self.entry,
             creator_did: self.creator_did,
@@ -247,7 +242,10 @@ fn at_uri_to_web_url(at_uri: &AtUri<'_>) -> String {
             }
             // Weaver records and unknown collections go to weaver.sh
             _ => {
-                format!("https://weaver.sh/{}/{}/{}", authority, collection_str, rkey_str)
+                format!(
+                    "https://weaver.sh/{}/{}/{}",
+                    authority, collection_str, rkey_str
+                )
             }
         }
     } else {
@@ -279,7 +277,12 @@ where
 
     async fn handle_link<'s>(&self, link: Tag<'s>) -> Tag<'s> {
         match &link {
-            Tag::Link { link_type, dest_url, title, id } => {
+            Tag::Link {
+                link_type,
+                dest_url,
+                title,
+                id,
+            } => {
                 let url = dest_url.as_ref();
 
                 // Try to parse as AT URI
@@ -418,8 +421,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jacquard::types::string::{Datetime, Did};
     use weaver_api::sh_weaver::notebook::entry::Entry;
-    use jacquard::types::string::{Did, Datetime};
 
     #[test]
     fn test_client_context_creation() {
@@ -436,10 +439,7 @@ mod tests {
     #[test]
     fn test_at_uri_to_web_url_profile() {
         let uri = AtUri::new("at://did:plc:xyz123").unwrap();
-        assert_eq!(
-            at_uri_to_web_url(&uri),
-            "https://weaver.sh/did:plc:xyz123"
-        );
+        assert_eq!(at_uri_to_web_url(&uri), "https://weaver.sh/did:plc:xyz123");
     }
 
     #[test]

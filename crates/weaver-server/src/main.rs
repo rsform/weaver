@@ -7,6 +7,7 @@ use std::sync::Arc;
 use views::{Home, Navbar, Notebook, NotebookIndex, NotebookPage};
 
 mod blobcache;
+mod cache_impl;
 /// Define a components module that contains all shared components for our app.
 mod components;
 mod fetch;
@@ -49,35 +50,44 @@ const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
 
 fn main() {
+    // Set up better panic messages for wasm
+    #[cfg(target_arch = "wasm32")]
+    console_error_panic_hook::set_once();
+
     // Run `serve()` on the server only
     #[cfg(feature = "server")]
     dioxus::serve(|| async move {
-        use axum::{extract::Request, middleware, middleware::Next};
+        use crate::blobcache::BlobCache;
+        use crate::fetch::CachedFetcher;
+        use axum::{
+            extract::{Extension, Request},
+            middleware,
+            middleware::Next,
+        };
+        use std::convert::Infallible;
+        use std::sync::Arc;
+
+        // Create shared state
+        let fetcher = Arc::new(CachedFetcher::new(Arc::new(BasicClient::unauthenticated())));
+        let blob_cache = Arc::new(BlobCache::new(Arc::new(BasicClient::unauthenticated())));
+
         // Create a new router for our app using the `router` function
-        let mut router = dioxus::server::router(App).layer(middleware::from_fn(
-            |mut req: Request, next: Next| async move {
-                // Attach some extra state to the request
+        let router = dioxus::server::router(App).layer(middleware::from_fn({
+            let fetcher = fetcher.clone();
+            let blob_cache = blob_cache.clone();
+            move |mut req: Request, next: Next| {
+                let fetcher = fetcher.clone();
+                let blob_cache = blob_cache.clone();
+                async move {
+                    // Attach extensions for dioxus server functions
+                    req.extensions_mut().insert(fetcher);
+                    req.extensions_mut().insert(blob_cache);
 
-                use crate::blobcache::BlobCache;
-                use crate::fetch::CachedFetcher;
-                use std::convert::Infallible;
-                use std::sync::Arc;
-                req.extensions_mut()
-                    .insert(Arc::new(CachedFetcher::new(Arc::new(
-                        BasicClient::unauthenticated(),
-                    ))));
-                req.extensions_mut()
-                    .insert(Arc::new(BlobCache::new(Arc::new(
-                        BasicClient::unauthenticated(),
-                    ))));
-
-                // And then return the response with `next.run()
-                Ok::<_, Infallible>(next.run(req).await)
-            },
-        ));
-
-        // .. customize the router, adding layers and new routes
-
+                    // And then return the response with `next.run()
+                    Ok::<_, Infallible>(next.run(req).await)
+                }
+            }
+        }));
         // And then return the router
         Ok(router)
     });

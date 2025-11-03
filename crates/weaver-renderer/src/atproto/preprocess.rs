@@ -1,16 +1,14 @@
+use super::types::{BlobInfo, BlobName};
 use crate::{Frontmatter, NotebookContext};
-use super::types::{BlobName, BlobInfo};
 use dashmap::DashMap;
 use jacquard::{
     client::{Agent, AgentSession, AgentSessionExt},
     prelude::IdentityResolver,
     types::string::{CowStr, Did, Handle},
 };
-use markdown_weaver::{Tag, CowStr as MdCowStr, WeaverAttributes};
-use std::{
-    path::PathBuf,
-    sync::Arc,
-};
+use markdown_weaver::{CowStr as MdCowStr, Tag, WeaverAttributes};
+use std::{path::PathBuf, sync::Arc};
+use yaml_rust2::Yaml;
 
 pub struct AtProtoPreprocessContext<A: AgentSession + IdentityResolver> {
     // Vault information
@@ -113,14 +111,40 @@ impl<A: AgentSession + IdentityResolver> AtProtoPreprocessContext<A> {
 // Stub NotebookContext implementation
 impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessContext<A> {
     fn set_entry_title(&self, title: MdCowStr<'_>) {
-        self.titles.insert(self.current_path.clone(), title.into_static());
+        let path = self.current_path.clone();
+        self.titles
+            .insert(path.clone(), title.clone().into_static());
+        self.frontmatter.get_mut(&path).map(|frontmatter| {
+            if let Ok(mut yaml) = frontmatter.yaml.write() {
+                if yaml.get(0).is_some_and(|y| y.is_hash()) {
+                    let map = yaml.get_mut(0).unwrap().as_mut_hash().unwrap();
+                    map.insert(
+                        Yaml::String("title".into()),
+                        Yaml::String(title.into_static().into()),
+                    );
+                }
+            }
+        });
     }
 
     fn entry_title(&self) -> MdCowStr<'_> {
         self.titles
             .get(&self.current_path)
             .map(|t| t.value().clone())
-            .unwrap_or(MdCowStr::Borrowed(""))
+            .unwrap_or_else(|| {
+                // Fall back to file stem if no explicit title set
+                let title = self
+                    .current_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| MdCowStr::Borrowed(s))
+                    .unwrap_or(MdCowStr::Borrowed("Untitled"));
+
+                // Cache the derived title
+                self.titles
+                    .insert(self.current_path.clone(), title.clone().into_static());
+                title
+            })
     }
 
     fn frontmatter(&self) -> Frontmatter {
@@ -131,7 +155,8 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
     }
 
     fn set_frontmatter(&self, frontmatter: Frontmatter) {
-        self.frontmatter.insert(self.current_path.clone(), frontmatter);
+        self.frontmatter
+            .insert(self.current_path.clone(), frontmatter);
     }
 
     async fn handle_link<'s>(&self, link: Tag<'s>) -> Tag<'s> {
@@ -151,7 +176,9 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                 match resolved {
                     LinkUri::Path(path) => {
                         // Local wikilink - look up in vault
-                        if let Some(file_path) = lookup_filename_in_vault(path.as_ref(), &self.vault_contents) {
+                        if let Some(file_path) =
+                            lookup_filename_in_vault(path.as_ref(), &self.vault_contents)
+                        {
                             let entry_title = file_path
                                 .file_stem()
                                 .and_then(|s| s.to_str())
@@ -166,11 +193,7 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                                     normalized_title
                                 )
                             } else {
-                                format!(
-                                    "/{}/{}",
-                                    self.notebook_title.as_ref(),
-                                    normalized_title
-                                )
+                                format!("/{}/{}", self.notebook_title.as_ref(), normalized_title)
                             };
 
                             return Tag::Link {
@@ -213,10 +236,10 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
 
     async fn handle_image<'s>(&self, image: Tag<'s>) -> Tag<'s> {
         use crate::utils::is_local_path;
-        use tokio::fs;
         use jacquard::bytes::Bytes;
         use jacquard::types::blob::MimeType;
         use mime_sniffer::MimeTypeSniffer;
+        use tokio::fs;
 
         match &image {
             Tag::Image {
@@ -248,7 +271,9 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                         // Sniff mime type from data
                         let bytes = Bytes::from(image_data.clone());
                         let mime = MimeType::new_owned(
-                            bytes.sniff_mime_type().unwrap_or("application/octet-stream")
+                            bytes
+                                .sniff_mime_type()
+                                .unwrap_or("application/octet-stream"),
                         );
 
                         // Upload blob (dereference Arc)
@@ -309,7 +334,9 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                 match resolved {
                     LinkUri::Path(path) => {
                         // Entry embed - look up in vault
-                        if let Some(file_path) = lookup_filename_in_vault(path.as_ref(), &self.vault_contents) {
+                        if let Some(file_path) =
+                            lookup_filename_in_vault(path.as_ref(), &self.vault_contents)
+                        {
                             let entry_title = file_path
                                 .file_stem()
                                 .and_then(|s| s.to_str())
@@ -324,12 +351,98 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                                     normalized_title
                                 )
                             } else {
-                                format!(
-                                    "/{}/{}",
-                                    self.notebook_title.as_ref(),
-                                    normalized_title
-                                )
+                                format!("/{}/{}", self.notebook_title.as_ref(), normalized_title)
                             };
+                            // Markdown embed - look up in vault and render
+                            //use tokio::fs;
+
+                            // Check depth limit
+                            const MAX_DEPTH: usize = 1;
+                            if self.embed_depth >= MAX_DEPTH {
+                                eprintln!("Max embed depth reached for {}", path.as_ref());
+                                return Tag::Embed {
+                                    embed_type: *embed_type,
+                                    dest_url: MdCowStr::Boxed(canonical_url.into_boxed_str()),
+                                    title: title.clone(),
+                                    id: id.clone(),
+                                    attrs: attrs.clone(),
+                                };
+                            }
+                            // // Read the markdown file
+                            // match fs::read_to_string(&file_path).await {
+                            //     Ok(markdown_content) => {
+                            //         // Create a child context with incremented depth
+                            //         let mut child_ctx = self.with_depth(self.embed_depth + 1);
+                            //         child_ctx.current_path = file_path.clone();
+
+                            //         // Render the markdown through the processor
+                            //         // We'll use markdown_weaver to parse and render to HTML
+                            //         use markdown_weaver::{Options, Parser};
+                            //         use markdown_weaver_escape::StrWrite;
+
+                            //         let parser = Parser::new_ext(&markdown_content, Options::all());
+                            //         let mut html_output = String::new();
+
+                            //         // Process events through context callbacks
+                            //         for event in parser {
+                            //             match event {
+                            //                 markdown_weaver::Event::Start(tag) => {
+                            //                     let processed = match tag {
+                            //                         Tag::Link { .. } => {
+                            //                             child_ctx.handle_link(tag).await
+                            //                         }
+                            //                         Tag::Image { .. } => {
+                            //                             child_ctx.handle_image(tag).await
+                            //                         }
+                            //                         Tag::Embed { .. } => {
+                            //                             child_ctx.handle_embed(tag).await
+                            //                         }
+                            //                         _ => tag,
+                            //                     };
+                            //                     // Simple HTML writing (reuse escape logic)
+                            //                     match processed {
+                            //                         Tag::Paragraph => {
+                            //                             html_output.write_str("<p>").ok()
+                            //                         }
+                            //                         _ => None,
+                            //                     };
+                            //                 }
+                            //                 markdown_weaver::Event::End(tag_end) => {
+                            //                     match tag_end {
+                            //                         markdown_weaver::TagEnd::Paragraph => {
+                            //                             html_output.write_str("</p>\n").ok()
+                            //                         }
+                            //                         _ => None,
+                            //                     };
+                            //                 }
+                            //                 markdown_weaver::Event::Text(text) => {
+                            //                     use markdown_weaver_escape::escape_html_body_text;
+                            //                     escape_html_body_text(&mut html_output, &text).ok();
+                            //                 }
+                            //                 _ => {}
+                            //             }
+                            //         }
+
+                            //         let mut new_attrs =
+                            //             attrs.clone().unwrap_or_else(|| WeaverAttributes {
+                            //                 classes: vec![],
+                            //                 attrs: vec![],
+                            //             });
+
+                            //         new_attrs.attrs.push(("content".into(), html_output.into()));
+
+                            //         return Tag::Embed {
+                            //             embed_type: *embed_type,
+                            //             dest_url: MdCowStr::Boxed(canonical_url.into_boxed_str()),
+                            //             title: title.clone(),
+                            //             id: id.clone(),
+                            //             attrs: Some(new_attrs),
+                            //         };
+                            //     }
+                            //     Err(e) => {
+                            //         eprintln!("Failed to read file {:?}: {}", file_path, e);
+                            //     }
+                            // }
 
                             return Tag::Embed {
                                 embed_type: *embed_type,
@@ -363,7 +476,9 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                         });
 
                         if let Some(content_html) = content {
-                            new_attrs.attrs.push(("content".into(), content_html.into()));
+                            new_attrs
+                                .attrs
+                                .push(("content".into(), content_html.into()));
                         }
 
                         return Tag::Embed {
@@ -376,7 +491,7 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                     }
                     LinkUri::AtRecord(uri) => {
                         // AT URI embed - fetch and render
-                        use crate::atproto::{fetch_and_render_post, fetch_and_render_generic};
+                        use crate::atproto::{fetch_and_render_generic, fetch_and_render_post};
                         use markdown_weaver::WeaverAttributes;
 
                         // Determine if this is a known type
@@ -387,7 +502,11 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                                     match fetch_and_render_post(&uri, &*self.agent).await {
                                         Ok(html) => Some(html),
                                         Err(e) => {
-                                            eprintln!("Failed to fetch post {}: {}", uri.as_ref(), e);
+                                            eprintln!(
+                                                "Failed to fetch post {}: {}",
+                                                uri.as_ref(),
+                                                e
+                                            );
                                             None
                                         }
                                     }
@@ -397,7 +516,11 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                                     match fetch_and_render_generic(&uri, &*self.agent).await {
                                         Ok(html) => Some(html),
                                         Err(e) => {
-                                            eprintln!("Failed to fetch record {}: {}", uri.as_ref(), e);
+                                            eprintln!(
+                                                "Failed to fetch record {}: {}",
+                                                uri.as_ref(),
+                                                e
+                                            );
                                             None
                                         }
                                     }
@@ -414,7 +537,9 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                         });
 
                         if let Some(content_html) = content {
-                            new_attrs.attrs.push(("content".into(), content_html.into()));
+                            new_attrs
+                                .attrs
+                                .push(("content".into(), content_html.into()));
                         }
 
                         return Tag::Embed {
@@ -425,98 +550,14 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                             attrs: Some(new_attrs),
                         };
                     }
-                    LinkUri::Path(path) => {
-                        // Markdown embed - look up in vault and render
-                        use crate::utils::lookup_filename_in_vault;
-                        use tokio::fs;
 
-                        // Check depth limit
-                        const MAX_DEPTH: usize = 1;
-                        if self.embed_depth >= MAX_DEPTH {
-                            eprintln!("Max embed depth reached for {}", path.as_ref());
-                            return embed.clone();
-                        }
-
-                        if let Some(file_path) = lookup_filename_in_vault(path.as_ref(), &self.vault_contents) {
-                            // Read the markdown file
-                            match fs::read_to_string(&file_path).await {
-                                Ok(markdown_content) => {
-                                    // Create a child context with incremented depth
-                                    let mut child_ctx = self.with_depth(self.embed_depth + 1);
-                                    child_ctx.current_path = file_path.clone();
-
-                                    // Render the markdown through the processor
-                                    // We'll use markdown_weaver to parse and render to HTML
-                                    use markdown_weaver::{Parser, Options};
-                                    use markdown_weaver_escape::StrWrite;
-
-                                    let parser = Parser::new_ext(&markdown_content, Options::all());
-                                    let mut html_output = String::new();
-
-                                    // Process events through context callbacks
-                                    for event in parser {
-                                        match event {
-                                            markdown_weaver::Event::Start(tag) => {
-                                                let processed = match tag {
-                                                    Tag::Link { .. } => child_ctx.handle_link(tag).await,
-                                                    Tag::Image { .. } => child_ctx.handle_image(tag).await,
-                                                    Tag::Embed { .. } => child_ctx.handle_embed(tag).await,
-                                                    _ => tag,
-                                                };
-                                                // Simple HTML writing (reuse escape logic)
-                                                match processed {
-                                                    Tag::Paragraph => html_output.write_str("<p>").ok(),
-                                                    _ => None,
-                                                };
-                                            }
-                                            markdown_weaver::Event::End(tag_end) => {
-                                                match tag_end {
-                                                    markdown_weaver::TagEnd::Paragraph => html_output.write_str("</p>\n").ok(),
-                                                    _ => None,
-                                                };
-                                            }
-                                            markdown_weaver::Event::Text(text) => {
-                                                use markdown_weaver_escape::escape_html_body_text;
-                                                escape_html_body_text(&mut html_output, &text).ok();
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-
-                                    let mut new_attrs = attrs.clone().unwrap_or_else(|| WeaverAttributes {
-                                        classes: vec![],
-                                        attrs: vec![],
-                                    });
-
-                                    new_attrs.attrs.push(("content".into(), html_output.into()));
-
-                                    return Tag::Embed {
-                                        embed_type: *embed_type,
-                                        dest_url: dest_url.clone(),
-                                        title: title.clone(),
-                                        id: id.clone(),
-                                        attrs: Some(new_attrs),
-                                    };
-                                }
-                                Err(e) => {
-                                    eprintln!("Failed to read file {:?}: {}", file_path, e);
-                                }
-                            }
-                        }
-                    }
                     _ => {}
                 }
 
                 // Pass through other embed types
                 embed.clone()
             }
-            Tag::Image {
-                link_type,
-                dest_url,
-                title,
-                id,
-                attrs,
-            } => {
+            Tag::Image { .. } => {
                 // Some embeds come through as explicit Tag::Image
                 // Delegate to handle_image for image-specific processing
                 self.handle_image(embed).await
@@ -530,7 +571,8 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
     }
 
     fn add_reference(&self, reference: MdCowStr<'_>) {
-        self.reference_map.insert(reference.into_static(), self.current_path.clone());
+        self.reference_map
+            .insert(reference.into_static(), self.current_path.clone());
     }
 }
 

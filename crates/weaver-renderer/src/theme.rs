@@ -4,16 +4,16 @@ pub use weaver_api::sh_weaver::notebook::theme::{
 use weaver_common::jacquard::CowStr;
 use weaver_common::jacquard::cowstr::ToCowStr;
 
-pub fn defaultTheme() -> Theme<'static> {
+pub fn default_theme() -> Theme<'static> {
     Theme::new()
         .code_theme(ThemeCodeTheme::CodeThemeName(Box::new(
             "rose-pine".to_cowstr(),
         )))
         .colours(ThemeColours {
-            background: CowStr::new_static("#faf4ed"),
-            foreground: CowStr::new_static("#2b303b"),
-            link: CowStr::new_static("#286983"),
-            link_hover: CowStr::new_static("#56949f"),
+            background: CowStr::new_static("#191724"),
+            foreground: CowStr::new_static("#e0def4"),
+            link: CowStr::new_static("#31748f"),
+            link_hover: CowStr::new_static("#9ccfd8"),
             primary: CowStr::new_static("#c4a7e7"),
             secondary: CowStr::new_static("#3e8fb0"),
 

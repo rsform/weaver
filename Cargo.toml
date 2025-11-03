@@ -36,6 +36,7 @@ tracing = { version = "0.1.41", default-features = false, features = ["std"] }
 lexicon_cid = { package = "cid", version = "0.10.1", features = [
   "serde-codec",
 ] }
+
 markdown-weaver = { git = "https://github.com/rsform/markdown-weaver" }
 markdown-weaver-escape = { git = "https://github.com/rsform/markdown-weaver" }
 

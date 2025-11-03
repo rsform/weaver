@@ -1,9 +1,7 @@
+use crate::cache_impl;
 use dioxus::Result;
 use jacquard::{client::BasicClient, smol_str::SmolStr, types::ident::AtIdentifier};
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 use weaver_api::{
     com_atproto::repo::strong_ref::StrongRef,
     sh_weaver::notebook::{entry::Entry, BookEntryView, NotebookView},
@@ -13,78 +11,22 @@ use weaver_common::view::{entry_by_title, notebook_by_title};
 #[derive(Clone)]
 pub struct CachedFetcher {
     pub client: Arc<BasicClient>,
-    #[cfg(not(feature = "server"))]
-    book_cache: Arc<
-        Mutex<
-            mini_moka::unsync::Cache<
-                (AtIdentifier<'static>, SmolStr),
-                Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>,
-            >,
-        >,
+    book_cache: cache_impl::Cache<
+        (AtIdentifier<'static>, SmolStr),
+        Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>,
     >,
-    #[cfg(not(feature = "server"))]
-    entry_cache: Arc<
-        Mutex<
-            mini_moka::unsync::Cache<
-                (AtIdentifier<'static>, SmolStr),
-                Arc<(BookEntryView<'static>, Entry<'static>)>,
-            >,
-        >,
-    >,
-    #[cfg(feature = "server")]
-    book_cache: Arc<
-        Mutex<
-            mini_moka::sync::Cache<
-                (AtIdentifier<'static>, SmolStr),
-                Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>,
-            >,
-        >,
-    >,
-    #[cfg(feature = "server")]
-    entry_cache: Arc<
-        Mutex<
-            mini_moka::sync::Cache<
-                (AtIdentifier<'static>, SmolStr),
-                Arc<(BookEntryView<'static>, Entry<'static>)>,
-            >,
-        >,
+    entry_cache: cache_impl::Cache<
+        (AtIdentifier<'static>, SmolStr),
+        Arc<(BookEntryView<'static>, Entry<'static>)>,
     >,
 }
 
 impl CachedFetcher {
-    #[cfg(not(feature = "server"))]
     pub fn new(client: Arc<BasicClient>) -> Self {
-        let book_cache = mini_moka::unsync::Cache::builder()
-            .max_capacity(100)
-            .time_to_idle(Duration::from_secs(1200))
-            .build();
-        let entry_cache = mini_moka::unsync::Cache::builder()
-            .max_capacity(100)
-            .time_to_idle(Duration::from_secs(600))
-            .build();
-
         Self {
             client,
-            book_cache: Arc::new(Mutex::new(book_cache)),
-            entry_cache: Arc::new(Mutex::new(entry_cache)),
-        }
-    }
-
-    #[cfg(feature = "server")]
-    pub fn new(client: Arc<BasicClient>) -> Self {
-        let book_cache = mini_moka::sync::Cache::builder()
-            .max_capacity(100)
-            .time_to_idle(Duration::from_secs(1200))
-            .build();
-        let entry_cache = mini_moka::sync::Cache::builder()
-            .max_capacity(100)
-            .time_to_idle(Duration::from_secs(600))
-            .build();
-
-        Self {
-            client,
-            book_cache: Arc::new(Mutex::new(book_cache)),
-            entry_cache: Arc::new(Mutex::new(entry_cache)),
+            book_cache: cache_impl::new_cache(100, Duration::from_secs(1200)),
+            entry_cache: cache_impl::new_cache(100, Duration::from_secs(600)),
         }
     }
 
@@ -93,24 +35,20 @@ impl CachedFetcher {
         ident: AtIdentifier<'static>,
         title: SmolStr,
     ) -> Result<Option<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
-        if let Ok(mut book_cache) = self.book_cache.lock() {
-            if let Some(entry) = book_cache.get(&(ident.clone(), title.clone())) {
-                Ok(Some(entry.clone()))
-            } else {
-                if let Some((notebook, entries)) =
-                    notebook_by_title(self.client.clone(), &ident, &title)
-                        .await
-                        .map_err(|e| dioxus::CapturedError::from_display(e))?
-                {
-                    let stored = Arc::new((notebook, entries));
-                    book_cache.insert((ident.clone(), title.into()), stored.clone());
-                    Ok(Some(stored))
-                } else {
-                    Ok(None)
-                }
-            }
+        if let Some(entry) = cache_impl::get(&self.book_cache, &(ident.clone(), title.clone())) {
+            Ok(Some(entry))
         } else {
-            Ok(None)
+            if let Some((notebook, entries)) =
+                notebook_by_title(self.client.clone(), &ident, &title)
+                    .await
+                    .map_err(|e| dioxus::CapturedError::from_display(e))?
+            {
+                let stored = Arc::new((notebook, entries));
+                cache_impl::insert(&self.book_cache, (ident, title), stored.clone());
+                Ok(Some(stored))
+            } else {
+                Ok(None)
+            }
         }
     }
 
@@ -122,87 +60,37 @@ impl CachedFetcher {
     ) -> Result<Option<Arc<(BookEntryView<'static>, Entry<'static>)>>> {
         if let Some(result) = self.get_notebook(ident.clone(), book_title).await? {
             let (notebook, entries) = result.as_ref();
-            if let Ok(mut entry_cache) = self.entry_cache.lock() {
-                if let Some(entry) = entry_cache.get(&(ident.clone(), entry_title.clone())) {
-                    Ok(Some(entry.clone()))
-                } else {
-                    if let Some(entry) = entry_by_title(
-                        self.client.clone(),
-                        notebook,
-                        entries.as_ref(),
-                        &entry_title,
-                    )
-                    .await
-                    .map_err(|e| dioxus::CapturedError::from_display(e))?
-                    {
-                        let stored = Arc::new(entry);
-                        entry_cache.insert((ident.clone(), entry_title.into()), stored.clone());
-                        Ok(Some(stored))
-                    } else {
-                        Ok(None)
-                    }
-                }
+            if let Some(entry) = cache_impl::get(&self.entry_cache, &(ident.clone(), entry_title.clone())) {
+                Ok(Some(entry))
             } else {
-                Ok(None)
+                if let Some(entry) = entry_by_title(
+                    self.client.clone(),
+                    notebook,
+                    entries.as_ref(),
+                    &entry_title,
+                )
+                .await
+                .map_err(|e| dioxus::CapturedError::from_display(e))?
+                {
+                    let stored = Arc::new(entry);
+                    cache_impl::insert(&self.entry_cache, (ident, entry_title), stored.clone());
+                    Ok(Some(stored))
+                } else {
+                    Ok(None)
+                }
             }
         } else {
             Ok(None)
         }
     }
 
-    #[cfg(not(feature = "server"))]
     pub fn list_recent_entries(&self) -> Vec<Arc<(BookEntryView<'static>, Entry<'static>)>> {
-        if let Ok(entry_cache) = self.entry_cache.lock() {
-            let mut entries = Vec::new();
-            for (_, entry) in entry_cache.iter() {
-                entries.push(entry.clone());
-            }
-            entries
-        } else {
-            Vec::new()
-        }
+        cache_impl::iter(&self.entry_cache)
     }
 
-    #[cfg(not(feature = "server"))]
     pub fn list_recent_notebooks(
         &self,
     ) -> Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>> {
-        if let Ok(book_cache) = self.book_cache.lock() {
-            let mut entries = Vec::new();
-            for (_, entry) in book_cache.iter() {
-                entries.push(entry.clone());
-            }
-            entries
-        } else {
-            Vec::new()
-        }
-    }
-
-    #[cfg(feature = "server")]
-    pub fn list_recent_entries(&self) -> Vec<Arc<(BookEntryView<'static>, Entry<'static>)>> {
-        if let Ok(entry_cache) = self.entry_cache.lock() {
-            let mut entries = Vec::new();
-            for entry in entry_cache.iter() {
-                entries.push(entry.clone());
-            }
-            entries
-        } else {
-            Vec::new()
-        }
-    }
-
-    #[cfg(feature = "server")]
-    pub fn list_recent_notebooks(
-        &self,
-    ) -> Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>> {
-        if let Ok(book_cache) = self.book_cache.lock() {
-            let mut entries = Vec::new();
-            for entry in book_cache.iter() {
-                entries.push(entry.clone());
-            }
-            entries
-        } else {
-            Vec::new()
-        }
+        cache_impl::iter(&self.book_cache)
     }
 }
