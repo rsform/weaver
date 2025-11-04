@@ -202,6 +202,14 @@ fn default_auth_store_path() -> PathBuf {
 }
 
 async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -> Result<()> {
+    // Initialize tracing for debugging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug"))
+        )
+        .init();
+
     println!("Publishing notebook from: {}", source.display());
     println!("Title: {}", title);
 
@@ -262,6 +270,7 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
 
     // Walk vault directory
     println!("→ Scanning vault...");
+    tracing::debug!("Scanning directory: {}", source.display());
     let contents = vault_contents(&source, WalkOptions::new())?;
 
     // Convert to Arc first
@@ -288,6 +297,7 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
 
     // Process each file
     for file_path in &md_files {
+        let _span = tracing::info_span!("process_file", path = %file_path.display()).entered();
         println!("Processing: {}", file_path.display());
 
         // Read file content
@@ -330,6 +340,10 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
         // Extract blobs and entry metadata
         let blobs = file_context.blobs();
         let entry_title = file_context.entry_title();
+
+        if !blobs.is_empty() {
+            tracing::debug!("Uploaded {} image(s)", blobs.len());
+        }
 
         // Build Entry record with blobs
         use jacquard::types::blob::BlobRef;

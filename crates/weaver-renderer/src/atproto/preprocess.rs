@@ -159,6 +159,7 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
             .insert(self.current_path.clone(), frontmatter);
     }
 
+    #[tracing::instrument(skip(self, link), fields(dest = ?link))]
     async fn handle_link<'s>(&self, link: Tag<'s>) -> Tag<'s> {
         use crate::utils::lookup_filename_in_vault;
         use weaver_common::LinkUri;
@@ -234,6 +235,7 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
         }
     }
 
+    #[tracing::instrument(skip(self, image), fields(dest = ?image))]
     async fn handle_image<'s>(&self, image: Tag<'s>) -> Tag<'s> {
         use crate::utils::is_local_path;
         use jacquard::bytes::Bytes;
@@ -260,7 +262,9 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                             .join(dest_url.as_ref())
                     };
 
+                    tracing::debug!("Reading image file: {}", file_path.display());
                     if let Ok(image_data) = fs::read(&file_path).await {
+                        tracing::debug!("Read {} bytes from {}", image_data.len(), file_path.display());
                         // Derive blob name from filename
                         let filename = file_path
                             .file_stem()
@@ -277,6 +281,7 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                         );
 
                         // Upload blob (dereference Arc)
+                        tracing::debug!("Uploading image blob: {} ({} bytes)", file_path.display(), bytes.len());
                         if let Ok(blob) = (*self.agent).upload_blob(bytes, mime.clone()).await {
                             use jacquard::IntoStatic;
 
@@ -316,6 +321,7 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
         }
     }
 
+    #[tracing::instrument(skip(self, embed), fields(dest = ?embed))]
     async fn handle_embed<'s>(&self, embed: Tag<'s>) -> Tag<'s> {
         use crate::utils::lookup_filename_in_vault;
         use weaver_common::LinkUri;
@@ -460,6 +466,7 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
 
                         let at_uri = format!("at://{}", did.as_ref());
 
+                        tracing::debug!("Fetching profile embed: {}", did.as_ref());
                         // Fetch and render the profile
                         let content = match fetch_and_render_profile(&did, &*self.agent).await {
                             Ok(html) => Some(html),
@@ -494,6 +501,7 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                         use crate::atproto::{fetch_and_render_generic, fetch_and_render_post};
                         use markdown_weaver::WeaverAttributes;
 
+                        tracing::debug!("Fetching record embed: {}", uri.as_ref());
                         // Determine if this is a known type
                         let content = if let Some(collection) = uri.collection() {
                             match collection.as_ref() {

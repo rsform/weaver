@@ -131,6 +131,7 @@ impl EmbedResolver for () {
 
 const MAX_EMBED_DEPTH: usize = 3;
 
+#[derive(Clone)]
 pub struct ClientContext<'a, R = ()> {
     // Entry being rendered
     entry: Entry<'a>,

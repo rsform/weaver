@@ -180,8 +180,12 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
     }
 }
 
-impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession + IdentityResolver, W: StrWrite>
-    StaticPageWriter<'input, I, A, W>
+impl<
+    'input,
+    I: Iterator<Item = Event<'input>>,
+    A: AgentSession + IdentityResolver + 'input,
+    W: StrWrite,
+> StaticPageWriter<'input, I, A, W>
 {
     pub async fn run(mut self) -> Result<(), W::Error> {
         while let Some(event) = self.context.next().await {

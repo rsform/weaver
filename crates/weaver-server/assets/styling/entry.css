@@ -128,12 +128,12 @@
 .entry-date {
     margin-left: auto;
     font-weight: 400;
-    color: var(--color-muted);
+    color: var(--color-subtle);
 }
 
 .meta-label {
     font-weight: 400;
-    color: var(--color-muted);
+    color: var(--color-subtle);
 }
 
 .author-name {

@@ -1,3 +1,7 @@
+```
+Or: "Get in kid, we're rebuilding the blogosphere!"
+```
+
 I grew up, like a lot of people on Bluesky, in the era of the internet where most of your online social interactions took place via text. I had a MySpace account, MSN messenger and Google Chat, I first got on Facebook back when they required a school email to sign up, I had a Tumblr, though not a LiveJournal. I was super into reddit for a long time. Big fan of Fanfiction.net and later Archive of Our Own.
 
 > ![[weaver_photo_med.jpg]]*The namesake of what I'm building*
@@ -33,4 +37,4 @@ The reason why I started with something developer-friendly rather than aiming fo
 
 >As to why I'm writing it in Rust (and currently zero Typescript) as opposed to Go and Typescript? Well it comes down to familiarity. Rust isn't necessarily anyone's first choice in a vacuum for a web-native programming language, but it works quite well as one, and I can share the vast majority of the protocol code, as well as the markdown rendering engine, between front and back end, with few if any compromises on performance, save a larger bundle size due to the nature of WebAssembly. And ultimately I may end up producing Typescript bindings for Jacquard and Weaver's core tools, if that's something people value, or I end up reconsidering doing web front-end in Rust.
 ### Evolution
-Weaver is therefore very much an evolving thing. It will always have and support the proof-of-concept workflow as a first-class citizen. That's part of the benefit of building this on atproto. If I screw this up, not too hard for someone else to pick up the torch and continue.
+Weaver is therefore very much an evolving thing. It will always have and support the proof-of-concept workflow as a first-class citizen. That's part of the benefit of building this on atproto. If I screw this up, not too hard for someone else to pick up the torch and continue. 

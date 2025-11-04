@@ -30,8 +30,8 @@ pub fn default_colour_scheme_dark() -> ColourSchemeColours<'static> {
         subtle: CowStr::new_static("#908caa"),
         emphasis: CowStr::new_static("#e0def4"),
         primary: CowStr::new_static("#c4a7e7"),
-        secondary: CowStr::new_static("#3e8fb0"),
-        tertiary: CowStr::new_static("#9ccfd8"),
+        secondary: CowStr::new_static("#9ccfd8"),
+        tertiary: CowStr::new_static("#ebbcba"),
         error: CowStr::new_static("#eb6f92"),
         warning: CowStr::new_static("#f6c177"),
         success: CowStr::new_static("#31748f"),
@@ -45,10 +45,10 @@ pub fn default_colour_scheme_dark() -> ColourSchemeColours<'static> {
 pub fn default_fonts() -> ThemeFonts<'static> {
     ThemeFonts {
         body: CowStr::new_static(
-            "IBM Plex, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "'IBM Plex', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         ),
         heading: CowStr::new_static(
-            "IBM Plex Sans, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         ),
         monospace: CowStr::new_static(
             "'IBM Plex Mono', 'Berkeley Mono', 'Cascadia Code', 'Roboto Mono', Consolas, monospace",

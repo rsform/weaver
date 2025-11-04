@@ -6,8 +6,6 @@
 use markdown_weaver::CowStr;
 use markdown_weaver::Event;
 use markdown_weaver::Tag;
-use n0_future::pin;
-use n0_future::stream::once_future;
 use n0_future::Stream;
 use yaml_rust2::Yaml;
 use yaml_rust2::YamlLoader;
@@ -76,20 +74,25 @@ impl<'a, I: Iterator<Item = Event<'a>>> Iterator for ContextIterator<'a, I> {
     }
 }
 
-#[derive(Debug, Default)]
 #[pin_project::pin_project]
 pub struct NotebookProcessor<'a, I: Iterator<Item = Event<'a>>, CTX> {
     context: CTX,
     iter: ContextIterator<'a, I>,
+    #[pin]
+    pending_future: Option<Pin<Box<dyn std::future::Future<Output = Event<'a>> + 'a>>>,
 }
 
 impl<'a, I: Iterator<Item = Event<'a>>, CTX> NotebookProcessor<'a, I, CTX> {
     pub fn new(ctx: CTX, iter: ContextIterator<'a, I>) -> Self {
-        Self { context: ctx, iter }
+        Self {
+            context: ctx,
+            iter,
+            pending_future: None,
+        }
     }
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext> Stream
+impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Stream
     for NotebookProcessor<'a, I, CTX>
 {
     type Item = Event<'a>;
@@ -98,20 +101,51 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext> Stream
         self.iter.size_hint()
     }
     fn poll_next(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
-        let this = self.project();
+        // First, poll any pending future to completion
+        if let Some(fut) = self.as_mut().project().pending_future.as_mut().as_pin_mut() {
+            match fut.poll(cx) {
+                Poll::Ready(event) => {
+                    // Clear the future and return the result
+                    self.as_mut().project().pending_future.set(None);
+                    return Poll::Ready(Some(event));
+                }
+                Poll::Pending => {
+                    // Keep the future for next poll
+                    return Poll::Pending;
+                }
+            }
+        }
+
+        let mut this = self.project();
         let iter: &mut ContextIterator<'a, I> = this.iter;
         if let Some((event, ctxt)) = iter.next() {
             match ctxt {
                 EventContext::EmbedLink => match event {
                     Event::Start(ref tag) => match tag {
                         Tag::Embed { .. } => {
-                            let fut = once_future(this.context.handle_embed(tag.clone()));
-                            pin!(fut);
-                            fut.poll_next(cx)
-                                .map(|tag| tag.map(|t| Event::Start(t.into_static())))
+                            let tag_clone = tag.clone();
+                            let ctx_clone = this.context.clone();
+                            let fut = async move {
+                                let processed_tag = ctx_clone.handle_embed(tag_clone).await;
+                                Event::Start(processed_tag.into_static())
+                            };
+
+                            *this.pending_future = Some(Box::pin(fut));
+
+                            if let Some(fut) = this.pending_future.as_mut().as_pin_mut() {
+                                match fut.poll(cx) {
+                                    Poll::Ready(event) => {
+                                        *this.pending_future = None;
+                                        Poll::Ready(Some(event))
+                                    }
+                                    Poll::Pending => Poll::Pending,
+                                }
+                            } else {
+                                unreachable!()
+                            }
                         }
                         _ => Poll::Ready(Some(event)),
                     },
@@ -124,9 +158,26 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext> Stream
                 EventContext::Reference => match event {
                     Event::Start(ref tag) => match tag {
                         Tag::Link { .. } => {
-                            let fut = once_future(this.context.handle_link(tag.clone()));
-                            pin!(fut);
-                            fut.poll_next(cx).map(|tag| tag.map(|t| Event::Start(t)))
+                            let tag_clone = tag.clone();
+                            let ctx_clone = this.context.clone();
+                            let fut = async move {
+                                let processed_tag = ctx_clone.handle_link(tag_clone).await;
+                                Event::Start(processed_tag)
+                            };
+
+                            *this.pending_future = Some(Box::pin(fut));
+
+                            if let Some(fut) = this.pending_future.as_mut().as_pin_mut() {
+                                match fut.poll(cx) {
+                                    Poll::Ready(event) => {
+                                        *this.pending_future = None;
+                                        Poll::Ready(Some(event))
+                                    }
+                                    Poll::Pending => Poll::Pending,
+                                }
+                            } else {
+                                unreachable!()
+                            }
                         }
                         _ => Poll::Ready(Some(event)),
                     },
@@ -149,9 +200,26 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext> Stream
                 EventContext::Link => match event {
                     Event::Start(ref tag) => match tag {
                         Tag::Link { .. } => {
-                            let fut = once_future(this.context.handle_link(tag.clone()));
-                            pin!(fut);
-                            fut.poll_next(cx).map(|tag| tag.map(|t| Event::Start(t)))
+                            let tag_clone = tag.clone();
+                            let ctx_clone = this.context.clone();
+                            let fut = async move {
+                                let processed_tag = ctx_clone.handle_link(tag_clone).await;
+                                Event::Start(processed_tag)
+                            };
+
+                            *this.pending_future = Some(Box::pin(fut));
+
+                            if let Some(fut) = this.pending_future.as_mut().as_pin_mut() {
+                                match fut.poll(cx) {
+                                    Poll::Ready(event) => {
+                                        *this.pending_future = None;
+                                        Poll::Ready(Some(event))
+                                    }
+                                    Poll::Pending => Poll::Pending,
+                                }
+                            } else {
+                                unreachable!()
+                            }
                         }
                         _ => Poll::Ready(Some(event)),
                     },
@@ -160,9 +228,29 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext> Stream
                 EventContext::Image => match event {
                     Event::Start(ref tag) => match tag {
                         Tag::Image { .. } => {
-                            let fut = once_future(this.context.handle_image(tag.clone()));
-                            pin!(fut);
-                            fut.poll_next(cx).map(|tag| tag.map(|t| Event::Start(t)))
+                            // Create future that handles the image and wraps result in Event::Start
+                            let tag_clone = tag.clone();
+                            let ctx_clone = this.context.clone();
+                            let fut = async move {
+                                let processed_tag = ctx_clone.handle_image(tag_clone).await;
+                                Event::Start(processed_tag)
+                            };
+
+                            // Store the future and poll it
+                            *this.pending_future = Some(Box::pin(fut));
+
+                            // Immediately poll the stored future
+                            if let Some(fut) = this.pending_future.as_mut().as_pin_mut() {
+                                match fut.poll(cx) {
+                                    Poll::Ready(event) => {
+                                        *this.pending_future = None;
+                                        Poll::Ready(Some(event))
+                                    }
+                                    Poll::Pending => Poll::Pending,
+                                }
+                            } else {
+                                unreachable!()
+                            }
                         }
                         _ => Poll::Ready(Some(event)),
                     },

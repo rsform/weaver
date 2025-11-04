@@ -101,23 +101,23 @@ h1, h2, h3, h4, h5, h6 {{
 
 h1 {{
   font-size: 2rem;
-  color: var(--color-primary);
+  color: var(--color-secondary);
 }}
 h2 {{
   font-size: 1.5rem;
-  color: var(--color-secondary);
+  color: var(--color-primary);
 }}
 h3 {{
   font-size: 1.25rem;
-  color: var(--color-primary);
+  color: var(--color-secondary);
 }}
 h4 {{
   font-size: 1.2rem;
-  color: var(--color-secondary);
+  color: var(--color-tertiary);
 }}
 h5 {{
   font-size: 1.125rem;
-  color: var(--color-primary);
+  color: var(--color-secondary);
 }}
 h6 {{ font-size: 1rem; }}
 
