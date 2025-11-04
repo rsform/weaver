@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Long-form writing.md",
+                "file": "Weaver - Long-form writing.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Long-form writing"
+              "title": "Weaver - Long-form writing"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Long-form writing.md",
+                "file": "Weaver - Long-form writing.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Long-form writing"
+              "title": "Backlinks for Weaver - Long-form writing"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Long-form writing.md",
+                "file": "Weaver - Long-form writing.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Long-form writing"
+              "title": "Outgoing links from Weaver - Long-form writing"
             }
           },
           {
@@ -142,21 +142,20 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Long-form writing.md",
+                "file": "Weaver - Long-form writing.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Long-form writing"
+              "title": "Outline of Weaver - Long-form writing"
             }
           }
         ]
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -171,6 +170,10 @@
   },
   "active": "f41bdf1f327c8668",
   "lastOpenFiles": [
-    "Long-form writing.md"
+    "weaver_photo_med.jpg",
+    "xkcd_345_excerpt.png",
+    "Weaver - Long-form writing.md",
+    "light_mode_excerpt.png",
+    "notebook_entry_preview.png"
   ]
 }

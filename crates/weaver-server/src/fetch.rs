@@ -93,4 +93,28 @@ impl CachedFetcher {
     ) -> Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>> {
         cache_impl::iter(&self.book_cache)
     }
+
+    pub async fn list_notebook_entries(
+        &self,
+        ident: AtIdentifier<'static>,
+        book_title: SmolStr,
+    ) -> Result<Option<Vec<BookEntryView<'static>>>> {
+        use weaver_common::view::view_entry;
+
+        if let Some(result) = self.get_notebook(ident.clone(), book_title).await? {
+            let (notebook, entries) = result.as_ref();
+            let mut book_entries = Vec::new();
+
+            for index in 0..entries.len() {
+                match view_entry(self.client.clone(), notebook, entries, index).await {
+                    Ok(book_entry) => book_entries.push(book_entry),
+                    Err(_) => continue, // Skip entries that fail to load
+                }
+            }
+
+            Ok(Some(book_entries))
+        } else {
+            Ok(None)
+        }
+    }
 }

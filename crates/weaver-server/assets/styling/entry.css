@@ -181,6 +181,10 @@
     background: var(--color-surface);
 }
 
+.entry-content-main pre code {
+    background: var(--color-surface);
+}
+
 .entry-content-main blockquote {
     border-left-color: var(--color-secondary);
     background: var(--color-surface);

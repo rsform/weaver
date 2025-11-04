@@ -6,6 +6,8 @@ use crate::{
     components::avatar::{Avatar, AvatarFallback, AvatarImage},
     fetch,
 };
+
+use crate::Route;
 use dioxus::prelude::*;
 
 const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
@@ -136,8 +138,114 @@ fn EntryPage(
 }
 
 #[component]
-pub fn EntryCard(entry: BookEntryView<'static>) -> Element {
-    rsx! {}
+pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element {
+    use crate::Route;
+    use jacquard::{from_data, IntoStatic};
+    use weaver_api::app_bsky::actor::profile::Profile;
+    use weaver_api::sh_weaver::notebook::entry::Entry;
+
+    let entry_view = &entry.entry;
+    let title = entry_view
+        .title
+        .as_ref()
+        .map(|t| t.as_ref())
+        .unwrap_or("Untitled");
+
+    let ident = entry_view.uri.authority().clone().into_static();
+    let ident_for_avatar = ident.clone();
+
+    // Format date
+    let formatted_date = entry_view
+        .indexed_at
+        .as_ref()
+        .format("%B %d, %Y")
+        .to_string();
+
+    // Get first author for display
+    let first_author = entry_view.authors.first();
+
+    // Render preview from entry content
+    let preview_html = from_data::<Entry>(&entry_view.record).ok().map(|entry| {
+        let parser = markdown_weaver::Parser::new(&entry.content);
+        let mut html_buf = String::new();
+        markdown_weaver::html::push_html(&mut html_buf, parser);
+        html_buf
+    });
+
+    rsx! {
+        div { class: "entry-card",
+            Link {
+                to: Route::Entry {
+                    ident: ident.clone(),
+                    book_title: book_title.clone(),
+                    title: title.to_string().into()
+                },
+                class: "entry-card-link",
+
+
+
+                div { class: "entry-card-meta",
+                    div { class: "entry-card-header",
+
+                        h3 { class: "entry-card-title", "{title}" }
+                        div { class: "entry-card-date",
+                            time { datetime: "{entry_view.indexed_at.as_str()}", "{formatted_date}" }
+                        }
+                    }
+                    if let Some(author) = first_author {
+                        div { class: "entry-card-author",
+                            {
+                                match from_data::<Profile>(author.record.get_at_path(".value").unwrap()) {
+                                    Ok(profile) => {
+                                        let avatar = profile.avatar
+                                            .map(|avatar| {
+                                                let cid = avatar.blob().cid();
+                                                format!("https://cdn.bsky.app/img/avatar/plain/{}/{cid}@jpeg", ident_for_avatar.as_ref())
+                                            });
+                                        let display_name = profile.display_name
+                                            .as_ref()
+                                            .map(|n| n.as_ref())
+                                            .unwrap_or("Unknown");
+                                        rsx! {
+                                            if let Some(avatar_url) = avatar {
+                                                Avatar {
+                                                    AvatarImage { src: avatar_url }
+                                                }
+                                            }
+                                            span { class: "author-name", "{display_name}" }
+                                            span { class: "meta-label", "@{ident}" }
+                                        }
+                                    }
+                                    Err(_) => {
+                                        rsx! {
+                                            span { class: "author-name", "Author {author.index}" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+
+                }
+
+
+
+                if let Some(ref html) = preview_html {
+                    div { class: "entry-card-preview", dangerous_inner_html: "{html}" }
+                }
+                if let Some(ref tags) = entry_view.tags {
+                    if !tags.is_empty() {
+                        div { class: "entry-card-tags",
+                            for tag in tags.iter() {
+                                span { class: "entry-card-tag", "{tag}" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Metadata header showing title, authors, date, tags
@@ -155,7 +263,7 @@ fn EntryMetadata(
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
 
-    let indexed_at_chrono = entry_view.indexed_at.as_ref();
+    //let indexed_at_chrono = entry_view.indexed_at.as_ref();
 
     rsx! {
         header { class: "entry-metadata",
@@ -182,15 +290,20 @@ fn EntryMetadata(
                                             .map(|n| n.as_ref())
                                             .unwrap_or("Unknown");
                                         rsx! {
-                                            if let Some(avatar) = avatar {
-                                                Avatar {
-                                                    AvatarImage {
-                                                        src: avatar
+                                            Link {
+                                                to: Route::RepositoryIndex { ident: ident.clone() },
+                                                div { class: "entry-authors",
+                                                    if let Some(avatar) = avatar {
+                                                        Avatar {
+                                                            AvatarImage {
+                                                                src: avatar
+                                                            }
+                                                        }
                                                     }
+                                                    span { class: "author-name", "{display_name}" }
+                                                    span { class: "meta-label", "@{ident}" }
                                                 }
                                             }
-                                            span { class: "author-name", "{display_name}" }
-                                            span { class: "meta-label", "@{ident}" }
                                         }
                                     }
                                     Err(_) => {
@@ -220,8 +333,10 @@ fn EntryMetadata(
                 if let Some(ref tags) = entry_view.tags {
                     div { class: "entry-tags",
                         // TODO: Parse tags structure
-                        span { class: "meta-label", "Tags: " }
-                        span { "[tags]" }
+                        span { class: "meta-label", "Tags:" }
+                        for tag in tags.iter() {
+                            span { class: "meta-label", "{tag}" }
+                        }
                     }
                 }
             }
@@ -237,8 +352,6 @@ fn NavButton(
     ident: AtIdentifier<'static>,
     book_title: SmolStr,
 ) -> Element {
-    use crate::Route;
-
     let entry_title = entry
         .title
         .as_ref()

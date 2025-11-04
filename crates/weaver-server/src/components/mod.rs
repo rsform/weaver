@@ -8,6 +8,6 @@ pub use css::NotebookCss;
 mod entry;
 pub use entry::{Entry, EntryCard};
 
-mod identity;
-pub use identity::{Repository, RepositoryIndex};
+pub mod identity;
+pub use identity::{NotebookCard, Repository, RepositoryIndex};
 pub mod avatar;

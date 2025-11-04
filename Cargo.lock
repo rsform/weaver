@@ -3951,7 +3951,7 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 [[package]]
 name = "jacquard"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ee0f31db86814449fa586aa6b1abf65a52733f9e"
 dependencies = [
  "bytes",
  "getrandom 0.2.16",
@@ -3980,7 +3980,7 @@ dependencies = [
 [[package]]
 name = "jacquard-api"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ee0f31db86814449fa586aa6b1abf65a52733f9e"
 dependencies = [
  "bon",
  "bytes",
@@ -3998,7 +3998,7 @@ dependencies = [
 [[package]]
 name = "jacquard-axum"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ee0f31db86814449fa586aa6b1abf65a52733f9e"
 dependencies = [
  "axum",
  "bytes",
@@ -4020,7 +4020,7 @@ dependencies = [
 [[package]]
 name = "jacquard-common"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ee0f31db86814449fa586aa6b1abf65a52733f9e"
 dependencies = [
  "base64 0.22.1",
  "bon",
@@ -4062,7 +4062,7 @@ dependencies = [
 [[package]]
 name = "jacquard-derive"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ee0f31db86814449fa586aa6b1abf65a52733f9e"
 dependencies = [
  "heck 0.5.0",
  "jacquard-lexicon",
@@ -4074,7 +4074,7 @@ dependencies = [
 [[package]]
 name = "jacquard-identity"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ee0f31db86814449fa586aa6b1abf65a52733f9e"
 dependencies = [
  "bon",
  "bytes",
@@ -4101,7 +4101,7 @@ dependencies = [
 [[package]]
 name = "jacquard-lexicon"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ee0f31db86814449fa586aa6b1abf65a52733f9e"
 dependencies = [
  "cid",
  "dashmap",
@@ -4127,7 +4127,7 @@ dependencies = [
 [[package]]
 name = "jacquard-oauth"
 version = "0.8.0"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#71aae4e8c9a174927d3404fdcf9031547ca89691"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#ee0f31db86814449fa586aa6b1abf65a52733f9e"
 dependencies = [
  "base64 0.22.1",
  "bytes",

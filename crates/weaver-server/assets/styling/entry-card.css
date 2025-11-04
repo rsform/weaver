@@ -1,0 +1,130 @@
+/* Entry card styling */
+
+.entries-list {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+
+.entry-card {
+    margin-bottom: calc(1.25rem * var(--spacing-scale, 1.25));
+}
+
+.entry-card-link {
+    display: block;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 1.25rem;
+    text-decoration: none;
+    color: var(--color-text);
+    transition: all 0.2s ease;
+}
+
+.entry-card-link:hover {
+    background: var(--color-overlay);
+    border-color: var(--color-secondary);
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--color-secondary) 8%, transparent);
+    transform: translateY(-1px);
+}
+
+.entry-card-header {
+}
+
+.entry-card-title {
+    margin-left: auto;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin: 0;
+    font-family: var(--font-heading);
+}
+
+.entry-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-subtle);
+}
+
+.entry-card-author {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.entry-card-author .author-name {
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.entry-card-date {
+    color: var(--color-muted);
+    font-size: 0.8rem;
+}
+
+.entry-card-tags {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.entry-card-tag {
+    padding: 0.2rem 0.5rem;
+    background: var(--color-base);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    font-size: 0.75rem;
+    color: var(--color-subtle);
+    transition: all 0.15s ease;
+}
+
+.entry-card-link:hover .entry-card-tag {
+    background: var(--color-surface);
+    border-color: var(--color-tertiary);
+}
+
+.loading,
+.error {
+    text-align: center;
+    padding: 2rem;
+    color: var(--color-muted);
+}
+
+.error {
+    color: var(--color-error);
+}
+
+.entry-card-preview {
+    margin-top: 0.5rem;
+    color: var(--color-subtle);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.entry-card-preview h1,
+.entry-card-preview h2,
+.entry-card-preview h3,
+.entry-card-preview h4,
+.entry-card-preview h5,
+.entry-card-preview h6 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin: 0.5rem 0;
+}
+
+.entry-card-preview p {
+    margin: 0;
+    display: inline;
+}
+
+.entry-card-preview code {
+    font-size: 0.8rem;
+}
