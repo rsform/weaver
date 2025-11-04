@@ -266,6 +266,8 @@
             jq
             dioxus-cli
             wasm-bindgen-cli
+            wasm-pack
+            binaryen.out
           ];
         };
     });
