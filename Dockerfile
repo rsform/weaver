@@ -18,11 +18,12 @@ RUN cargo binstall dioxus-cli --root /.cargo -y --force
 ENV PATH="/.cargo/bin:$PATH"
 
 # Create the final bundle folder. Bundle always executes in release mode with optimizations enabled
-RUN dx bundle -p weaver-server
+RUN cd crates/weaver-server && dx bundle --release
 
 FROM chef AS runtime
 
-COPY --from=builder /app/target/dx/weaver_server/release/web/ /usr/local/app
+
+COPY --from=builder /app/target/dx/weaver-server/release/web/ /usr/local/app
 
 # set our port and make sure to listen for all connections
 ENV PORT=8080
