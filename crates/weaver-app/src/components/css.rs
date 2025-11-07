@@ -15,7 +15,7 @@ use jacquard::smol_str::SmolStr;
 #[allow(unused_imports)]
 use std::sync::Arc;
 #[allow(unused_imports)]
-use weaver_renderer::theme::{Theme, ResolvedTheme};
+use weaver_renderer::theme::{ResolvedTheme, Theme};
 
 #[cfg(feature = "server")]
 use axum::{extract::Extension, response::IntoResponse};
@@ -24,12 +24,12 @@ use axum::{extract::Extension, response::IntoResponse};
 pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
     rsx! {
         document::Stylesheet {
-            href: "{get_server_url()}/css/{ident}/{notebook}"
+            href: "{get_server_url()}/{ident}/{notebook}/css"
         }
     }
 }
 
-#[get("/css/{ident}/{notebook}", fetcher: Extension<Arc<fetch::CachedFetcher>>)]
+#[get("/{ident}/{notebook}/css", fetcher: Extension<Arc<fetch::CachedFetcher>>)]
 pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<Response> {
     use jacquard::client::AgentSessionExt;
     use jacquard::types::ident::AtIdentifier;

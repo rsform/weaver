@@ -163,6 +163,11 @@
         }
       }
     },
+    "path": {
+      "type": "string",
+      "description": "The path of the notebook.",
+      "maxLength": 100
+    },
     "renderedView": {
       "type": "object",
       "description": "View of a rendered and cached notebook entry",

@@ -1,5 +1,6 @@
 //! Weaver common library - thin wrapper around jacquard with notebook-specific conveniences
 
+pub mod constellation;
 pub mod error;
 pub mod view;
 

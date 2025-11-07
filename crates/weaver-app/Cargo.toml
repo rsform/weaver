@@ -1,5 +1,5 @@
 [package]
-name = "weaver-server"
+name = "weaver-app"
 version = "0.1.0"
 authors = ["Orual <orual@nonbinary.computer>"]
 edition = "2021"

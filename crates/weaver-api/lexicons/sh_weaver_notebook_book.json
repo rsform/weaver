@@ -32,6 +32,10 @@
               "ref": "com.atproto.repo.strongRef"
             }
           },
+          "path": {
+            "type": "ref",
+            "ref": "sh.weaver.notebook.defs#path"
+          },
           "tags": {
             "type": "ref",
             "ref": "sh.weaver.notebook.defs#tags"

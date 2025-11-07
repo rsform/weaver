@@ -11,6 +11,7 @@
         "required": ["authors", "entryList"],
         "properties": {
           "title": { "type": "ref", "ref": "sh.weaver.notebook.defs#title" },
+          "path": { "type": "ref", "ref": "sh.weaver.notebook.defs#path" },
           "tags": { "type": "ref", "ref": "sh.weaver.notebook.defs#tags" },
           "authors": {
             "type": "array",

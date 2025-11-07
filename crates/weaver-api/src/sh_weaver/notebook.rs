@@ -601,6 +601,25 @@ fn lexicon_doc_sh_weaver_notebook_defs() -> ::jacquard_lexicon::lexicon::Lexicon
                 }),
             );
             map.insert(
+                ::jacquard_common::smol_str::SmolStr::new_static("path"),
+                ::jacquard_lexicon::lexicon::LexUserType::String(::jacquard_lexicon::lexicon::LexString {
+                    description: Some(
+                        ::jacquard_common::CowStr::new_static(
+                            "The path of the notebook.",
+                        ),
+                    ),
+                    format: None,
+                    default: None,
+                    min_length: None,
+                    max_length: Some(100usize),
+                    min_graphemes: None,
+                    max_graphemes: None,
+                    r#enum: None,
+                    r#const: None,
+                    known_values: None,
+                }),
+            );
+            map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("renderedView"),
                 ::jacquard_lexicon::lexicon::LexUserType::Object(::jacquard_lexicon::lexicon::LexObject {
                     description: Some(
@@ -1815,6 +1834,8 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for NotebookView<'a> {
     }
 }
 
+/// The path of the notebook.
+pub type Path<'a> = jacquard_common::CowStr<'a>;
 /// View of a rendered and cached notebook entry
 #[jacquard_derive::lexicon]
 #[derive(

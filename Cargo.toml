@@ -4,7 +4,7 @@ resolver = "2"
 # paths because the flake.nix is written in a way such that top-level members
 # (`weaver-cli` and `weaver-server`) are built as different derivations which avoid being
 # rebuilt if the other package's sources change.
-members = ["crates/*", "crates/weaver-server", "crates/weaver-server"]
+members = ["crates/*"]
 
 #default-members = ["crates/weaver-cli"]
 
@@ -42,6 +42,7 @@ markdown-weaver-escape = { git = "https://github.com/rsform/markdown-weaver" }
 
 jacquard = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false, features = ["derive", "api_bluesky"] }
 jacquard-api = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
+jacquard-common = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
 jacquard-axum = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
 
 [profile]

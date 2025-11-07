@@ -111,11 +111,9 @@
       "required": ["did"],
       "properties": {
         "did": { "type": "string", "format": "did" },
-        "handle": { "type": "string", "format": "handle" },
-        "displayName": {
-          "type": "string",
-          "maxGraphemes": 64,
-          "maxLength": 640
+        "signature": {
+          "type": "bytes"
+          "description": "signed bytes of the corresponding notebook record in the author's repo"
         }
       }
     },

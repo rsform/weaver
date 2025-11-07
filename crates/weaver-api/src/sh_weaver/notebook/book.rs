@@ -27,6 +27,9 @@ pub struct Book<'a> {
     pub entry_list: Vec<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
+    pub path: Option<crate::sh_weaver::notebook::Path<'a>>,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
     pub tags: Option<crate::sh_weaver::notebook::Tags<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
@@ -87,6 +90,7 @@ pub struct BookBuilder<'a, S: book_state::State> {
         ::core::option::Option<Vec<crate::sh_weaver::actor::Author<'a>>>,
         ::core::option::Option<jacquard_common::types::string::Datetime>,
         ::core::option::Option<Vec<crate::com_atproto::repo::strong_ref::StrongRef<'a>>>,
+        ::core::option::Option<crate::sh_weaver::notebook::Path<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
         ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Title<'a>>,
@@ -106,7 +110,7 @@ impl<'a> BookBuilder<'a, book_state::Empty> {
     pub fn new() -> Self {
         BookBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None, None),
+            __unsafe_private_named: (None, None, None, None, None, None, None),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -170,12 +174,31 @@ where
 }
 
 impl<'a, S: book_state::State> BookBuilder<'a, S> {
+    /// Set the `path` field (optional)
+    pub fn path(
+        mut self,
+        value: impl Into<Option<crate::sh_weaver::notebook::Path<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.3 = value.into();
+        self
+    }
+    /// Set the `path` field to an Option value (optional)
+    pub fn maybe_path(
+        mut self,
+        value: Option<crate::sh_weaver::notebook::Path<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.3 = value;
+        self
+    }
+}
+
+impl<'a, S: book_state::State> BookBuilder<'a, S> {
     /// Set the `tags` field (optional)
     pub fn tags(
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Tags<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.3 = value.into();
+        self.__unsafe_private_named.4 = value.into();
         self
     }
     /// Set the `tags` field to an Option value (optional)
@@ -183,7 +206,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Tags<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.3 = value;
+        self.__unsafe_private_named.4 = value;
         self
     }
 }
@@ -194,7 +217,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value.into();
+        self.__unsafe_private_named.5 = value.into();
         self
     }
     /// Set the `theme` field to an Option value (optional)
@@ -202,7 +225,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value;
+        self.__unsafe_private_named.5 = value;
         self
     }
 }
@@ -213,7 +236,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Title<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value.into();
+        self.__unsafe_private_named.6 = value.into();
         self
     }
     /// Set the `title` field to an Option value (optional)
@@ -221,7 +244,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Title<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value;
+        self.__unsafe_private_named.6 = value;
         self
     }
 }
@@ -238,9 +261,10 @@ where
             authors: self.__unsafe_private_named.0.unwrap(),
             created_at: self.__unsafe_private_named.1,
             entry_list: self.__unsafe_private_named.2.unwrap(),
-            tags: self.__unsafe_private_named.3,
-            theme: self.__unsafe_private_named.4,
-            title: self.__unsafe_private_named.5,
+            path: self.__unsafe_private_named.3,
+            tags: self.__unsafe_private_named.4,
+            theme: self.__unsafe_private_named.5,
+            title: self.__unsafe_private_named.6,
             extra_data: Default::default(),
         }
     }
@@ -256,9 +280,10 @@ where
             authors: self.__unsafe_private_named.0.unwrap(),
             created_at: self.__unsafe_private_named.1,
             entry_list: self.__unsafe_private_named.2.unwrap(),
-            tags: self.__unsafe_private_named.3,
-            theme: self.__unsafe_private_named.4,
-            title: self.__unsafe_private_named.5,
+            path: self.__unsafe_private_named.3,
+            tags: self.__unsafe_private_named.4,
+            theme: self.__unsafe_private_named.5,
+            title: self.__unsafe_private_named.6,
             extra_data: Some(extra_data),
         }
     }
@@ -424,6 +449,15 @@ fn lexicon_doc_sh_weaver_notebook_book() -> ::jacquard_lexicon::lexicon::Lexicon
                                     }),
                                     min_length: None,
                                     max_length: None,
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static("path"),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                    description: None,
+                                    r#ref: ::jacquard_common::CowStr::new_static(
+                                        "sh.weaver.notebook.defs#path",
+                                    ),
                                 }),
                             );
                             map.insert(

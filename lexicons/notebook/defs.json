@@ -104,6 +104,11 @@
       "maxLength": 300,
       "description": "The title of the notebook entry."
     },
+    "path": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "The path of the notebook."
+    },
     "tags": {
       "type": "array",
       "items": {

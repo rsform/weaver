@@ -8525,7 +8525,30 @@ dependencies = [
 ]
 
 [[package]]
-name = "weaver-appview"
+name = "weaver-app"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "console_error_panic_hook",
+ "dashmap",
+ "dioxus",
+ "dioxus-primitives",
+ "jacquard",
+ "jacquard-axum",
+ "markdown-weaver",
+ "mime-sniffer",
+ "mini-moka",
+ "n0-future",
+ "serde_json",
+ "time",
+ "weaver-api",
+ "weaver-common",
+ "weaver-renderer",
+]
+
+[[package]]
+name = "weaver-app-server"
 version = "0.1.0"
 dependencies = [
  "axum",
@@ -8589,6 +8612,7 @@ version = "0.1.0"
 dependencies = [
  "http",
  "jacquard",
+ "jacquard-common",
  "markdown-weaver",
  "markdown-weaver-escape",
  "miette 7.6.0",
@@ -8642,29 +8666,6 @@ dependencies = [
  "weaver-api",
  "weaver-common",
  "yaml-rust2",
-]
-
-[[package]]
-name = "weaver-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "console_error_panic_hook",
- "dashmap",
- "dioxus",
- "dioxus-primitives",
- "jacquard",
- "jacquard-axum",
- "markdown-weaver",
- "mime-sniffer",
- "mini-moka",
- "n0-future",
- "serde_json",
- "time",
- "weaver-api",
- "weaver-common",
- "weaver-renderer",
 ]
 
 [[package]]

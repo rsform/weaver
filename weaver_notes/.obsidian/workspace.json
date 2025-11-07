@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Weaver - Long-form writing.md",
+                "file": "Arch.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Weaver - Long-form writing"
+              "title": "Arch"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Weaver - Long-form writing.md",
+                "file": "Arch.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Weaver - Long-form writing"
+              "title": "Backlinks for Arch"
             }
           },
           {
@@ -170,9 +170,10 @@
   },
   "active": "f41bdf1f327c8668",
   "lastOpenFiles": [
+    "Weaver - Long-form writing.md",
+    "Arch.md",
     "weaver_photo_med.jpg",
     "xkcd_345_excerpt.png",
-    "Weaver - Long-form writing.md",
     "light_mode_excerpt.png",
     "notebook_entry_preview.png"
   ]

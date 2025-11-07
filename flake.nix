@@ -120,10 +120,10 @@
           cargoExtraArgs = "-p ${name}-cli";
           src = fileSetForCrate ./crates/weaver-cli;
         });
-      weaver-server = craneLib.buildPackage (individualCrateArgs
+      weaver-app = craneLib.buildPackage (individualCrateArgs
         // {
-          pname = "${name}-server";
-          cargoExtraArgs = "-p ${name}-server";
+          pname = "${name}-app";
+          cargoExtraArgs = "-p ${name}-app";
           src = fileSetForCrate ./crates/weaver-server;
         });
       weaver-renderer = craneLib.buildPackage (individualCrateArgs
@@ -135,7 +135,7 @@
     in {
       checks = {
         # Build the crates as part of `nix flake check` for convenience
-        inherit weaver-cli weaver-server weaver-renderer;
+        inherit weaver-cli weaver-app weaver-renderer;
 
         # Run clippy (and deny all warnings) on the workspace source,
         # again, reusing the dependency artifacts from above.
@@ -189,7 +189,7 @@
 
       packages =
         {
-          inherit weaver-cli weaver-server;
+          inherit weaver-cli weaver-app;
         }
         // lib.optionalAttrs (!pkgs.stdenv.isDarwin) {
           # weaver-workspace-llvm-coverage = craneLibLLvmTools.cargoLlvmCov (commonArgs // {
@@ -202,7 +202,7 @@
           drv = weaver-cli;
         };
         weaver-server = flake-utils.lib.mkApp {
-          drv = weaver-server;
+          drv = weaver-app;
         };
       };
 
@@ -210,10 +210,10 @@
         # dioxus-cli = pkgs.dioxus-cli.overrideAttrs (_: {
         #   postPatch = ''
         #     rm Cargo.lock
-        #     cp ${./crates/weaver-server/Dioxus.lock} Cargo.lock
+        #     cp ${./crates/weaver-app/Dioxus.lock} Cargo.lock
         #   '';
         #   cargoDeps = pkgs.rustPlatform.importCargoLock {
-        #     lockFile = ./crates/weaver-server/Dioxus.lock;
+        #     lockFile = ./crates/weaver-app/Dioxus.lock;
         #   };
         # });
         cargoLock = builtins.fromTOML (builtins.readFile ./Cargo.lock);

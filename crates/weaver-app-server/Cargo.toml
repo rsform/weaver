@@ -1,5 +1,5 @@
 [package]
-name = "weaver-appview"
+name = "weaver-app-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
