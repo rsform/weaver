@@ -3,6 +3,7 @@
 pub mod constellation;
 pub mod error;
 pub mod view;
+pub mod worker_rt;
 
 // Re-export jacquard for convenience
 pub use jacquard;

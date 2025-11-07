@@ -4,10 +4,11 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 use diesel_async::RunQueryDsl;
 use diesel_async::pooled_connection::AsyncDieselConnectionManager;
 use diesel_async::pooled_connection::deadpool::Pool;
+use diesel_async::sync_connection_wrapper::SyncConnectionWrapper;
 
 #[derive(Clone)]
 pub struct Db {
-    pub pool: Pool<diesel_async::AsyncPgConnection>,
+    pub pool: Pool<SyncConnectionWrapper<SqliteConnection>>,
 }
 
 impl Db {
@@ -20,8 +21,9 @@ impl Db {
         } else {
             std::env::var("DATABASE_URL").expect("DATABASE_URL must be set")
         };
-        let config =
-            AsyncDieselConnectionManager::<diesel_async::AsyncPgConnection>::new(database_url);
+        let config = AsyncDieselConnectionManager::<SyncConnectionWrapper<SqliteConnection>>::new(
+            database_url,
+        );
         let pool = Pool::builder(config)
             .build()
             .expect("Failed to create pool");
@@ -37,7 +39,7 @@ pub fn run_migrations(
     } else {
         std::env::var("DATABASE_URL").expect("DATABASE_URL must be set")
     };
-    let mut connection = PgConnection::establish(&database_url)
+    let mut connection = SqliteConnection::establish(&database_url)
         .unwrap_or_else(|_| panic!("Error connecting to {}", database_url));
     // This will run the necessary migrations.
     //
@@ -57,3 +59,5 @@ pub fn run_migrations(
     }
     Ok(())
 }
+
+pub struct Runtime;

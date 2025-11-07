@@ -50,6 +50,19 @@ regex = "1.11.1"
 markdown-weaver-escape = { workspace = true, features = ["std"] }
 mime-sniffer = "^0.1"
 
+# wasm-in-browser dependencies
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+futures-util = "0.3"
+js-sys = "0.3"
+pin-project = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-time = "1"
+send_wrapper = "0.6"
+wasmworker = "0.1"
+wasmworker-proc-macro = "0.1"
+
+
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }

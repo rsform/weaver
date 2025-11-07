@@ -14,8 +14,6 @@ use axum::Router;
 use clap::Parser;
 use config::*;
 use db::*;
-use diesel::prelude::*;
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use dotenvy::dotenv;
 use miette::IntoDiagnostic;
 use miette::miette;

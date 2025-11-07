@@ -4,8 +4,6 @@
 [print_schema]
 file = "src/schema.rs"
 custom_type_derives = ["diesel::query_builder::QueryId", "Clone", "std::fmt::Debug", "jacquard::IntoStatic"]
-patch_file = "src/schema.patch"
-
 
 [migrations_directory]
-dir = "/home/orual/Projects/weaver.sh/crates/weaver-index/migrations"
+dir = "/home/orual/Projects/weaver.sh/crates/weaver-app/migrations"

@@ -10,8 +10,8 @@
 .devenv
 CLAUDE.md
 grant_proposal.md
-.db/
-**/.db/
+
+**/**.db
 
 **/.claude/settings.local.json
 .workspaces/

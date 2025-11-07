@@ -251,7 +251,6 @@
           NIX_LD = lib.fileContents "${pkgs.stdenv.cc}/nix-support/dynamic-linker";
 
           LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:$NIX_LD_LIBRARY_PATH";
-          DATABASE_URL = "postgres://postgres:@localhost/weaver_appview";
 
           # Additional dev-shell environment variables can be set directly
           # MY_CUSTOM_DEVELOPMENT_VAR = "something else";

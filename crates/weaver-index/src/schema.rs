@@ -2,21 +2,21 @@
 
 diesel::table! {
     _jetstream (id) {
-        id -> Int4,
-        last_time_us -> Int4,
+        id -> Integer,
+        last_time_us -> Integer,
     }
 }
 
 diesel::table! {
     emails (id) {
-        id -> Int4,
+        id -> Integer,
         did -> Text,
         email -> Text,
-        verified -> Int4,
+        verified -> Bool,
         verification_code -> Text,
-        last_sent -> Timestamptz,
-        is_primary -> Int4,
-        created -> Timestamptz,
+        last_sent -> Timestamp,
+        is_primary -> Bool,
+        created -> Timestamp,
     }
 }
 
@@ -25,49 +25,49 @@ diesel::table! {
         user_did -> Text,
         subject_did -> Text,
         rkey -> Text,
-        followed_at -> Timestamptz,
+        followed_at -> Timestamp,
     }
 }
 
 diesel::table! {
     oauth_auth_requests (id) {
-        id -> Int4,
+        id -> Integer,
         state -> Text,
         account_did -> Nullable<Text>,
         auth_req_data -> Jsonb,
-        created_at -> Timestamptz,
-        expires_at -> Timestamptz,
+        created_at -> Timestamp,
+        expires_at -> Timestamp,
     }
 }
 
 diesel::table! {
     oauth_sessions (id) {
-        id -> Int4,
+        id -> Integer,
         did -> Text,
         session_id -> Text,
         session_data -> Jsonb,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
 diesel::table! {
     profile (id) {
-        id -> Int4,
+        id -> Integer,
         did -> Text,
         avatar -> Nullable<Text>,
         description -> Text,
         include_bluesky -> Bool,
         include_tangled -> Bool,
         location -> Nullable<Text>,
-        pinned_post -> Nullable<Jsonb>,
-        created_at -> Nullable<Timestamptz>,
+        pinned_post -> Nullable<Text>,
+        created_at -> Nullable<Timestamp>,
     }
 }
 
 diesel::table! {
     profile_links (id) {
-        id -> Int4,
+        id -> Integer,
         did -> Text,
         link -> Text,
     }
@@ -75,7 +75,7 @@ diesel::table! {
 
 diesel::table! {
     profile_pronouns (id) {
-        id -> Int4,
+        id -> Integer,
         did -> Text,
         pronoun -> Text,
     }
@@ -83,22 +83,22 @@ diesel::table! {
 
 diesel::table! {
     public_keys (id) {
-        id -> Int4,
+        id -> Integer,
         did -> Text,
         name -> Text,
         key_contents -> Text,
         rkey -> Text,
-        created -> Timestamptz,
+        created -> Timestamp,
     }
 }
 
 diesel::table! {
     registrations (id) {
-        id -> Int4,
+        id -> Integer,
         domain -> Text,
         did -> Text,
         secret -> Text,
-        created -> Timestamptz,
+        created -> Timestamp,
         registered -> Nullable<Text>,
     }
 }

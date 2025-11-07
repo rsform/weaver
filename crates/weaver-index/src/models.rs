@@ -1,5 +1,6 @@
-use chrono::{DateTime, Utc};
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use jacquard::CowStr;
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::profile)]
@@ -12,7 +13,7 @@ pub struct Profile {
     pub include_tangled: bool,
     pub location: Option<String>,
     pub pinned_post: Option<serde_json::Value>,
-    pub created_at: Option<DateTime<Utc>>,
+    pub created_at: Option<NaiveDateTime>,
 }
 
 #[derive(Queryable, Selectable)]
@@ -22,19 +23,19 @@ pub struct Registration {
     pub domain: String,
     pub did: String,
     pub secret: String,
-    pub created: DateTime<Utc>,
+    pub created: NaiveDateTime,
     pub registered: Option<String>,
 }
 
 #[derive(Queryable, Selectable)]
 #[diesel(table_name = crate::schema::public_keys)]
-pub struct PublicKey {
+pub struct PublicKey<'a> {
     pub id: i32,
-    pub did: String,
+    pub did: CowStr<'a>,
     pub name: String,
     pub key_contents: String,
     pub rkey: String,
-    pub created: DateTime<Utc>,
+    pub created: NaiveDateTime,
 }
 
 #[derive(Queryable, Selectable)]
@@ -43,7 +44,7 @@ pub struct Follow {
     pub user_did: String,
     pub subject_did: String,
     pub rkey: String,
-    pub followed_at: DateTime<Utc>,
+    pub followed_at: NaiveDateTime,
 }
 
 #[derive(Queryable, Selectable)]
@@ -59,11 +60,11 @@ pub struct Email {
     pub id: i32,
     pub did: String,
     pub email: String,
-    pub verified: i32,
+    pub verified: bool,
     pub verification_code: String,
-    pub last_sent: DateTime<Utc>,
-    pub is_primary: i32,
-    pub created: DateTime<Utc>,
+    pub last_sent: NaiveDateTime,
+    pub is_primary: bool,
+    pub created: NaiveDateTime,
 }
 
 #[derive(Queryable, Selectable)]
@@ -84,15 +85,15 @@ pub struct ProfilePronoun {
 
 // Jacquard OAuth models
 
-#[derive(Queryable, Selectable)]
-#[diesel(table_name = crate::schema::oauth_sessions)]
+#[derive(Queryable, Selectable, QueryableByName)]
+#[diesel(table_name = crate::schema::oauth_sessions, check_for_backend(diesel::sqlite::Sqlite))]
 pub struct OauthSession {
     pub id: i32,
     pub did: String,
     pub session_id: String,
     pub session_data: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Insertable)]
@@ -103,15 +104,15 @@ pub struct NewOauthSession {
     pub session_data: serde_json::Value,
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = crate::schema::oauth_auth_requests)]
 pub struct OauthAuthRequest {
     pub id: i32,
     pub state: String,
     pub account_did: Option<String>,
     pub auth_req_data: serde_json::Value,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub created_at: NaiveDateTime,
+    pub expires_at: NaiveDateTime,
 }
 
 #[derive(Insertable)]
