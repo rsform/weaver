@@ -100,7 +100,7 @@
           fileset = lib.fileset.unions [
             ./Cargo.toml
             ./Cargo.lock
-            (lib.fileset.maybeMissing ./crates/weaver-server/Dioxus.lock)
+            (lib.fileset.maybeMissing ./crates/weaver-app/Dioxus.lock)
             (craneLib.fileset.commonCargoSources ./crates/weaver-common)
             (craneLib.fileset.commonCargoSources crate)
           ];
@@ -124,7 +124,7 @@
         // {
           pname = "${name}-app";
           cargoExtraArgs = "-p ${name}-app";
-          src = fileSetForCrate ./crates/weaver-server;
+          src = fileSetForCrate ./crates/weaver-app;
         });
       weaver-renderer = craneLib.buildPackage (individualCrateArgs
         // {
