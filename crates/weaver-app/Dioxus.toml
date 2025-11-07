@@ -3,7 +3,7 @@
 [web.app]
 
 # HTML title tag content
-title = "weaver-server"
+title = "Weaver"
 
 # include `assets` in web platform
 [web.resource]

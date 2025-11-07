@@ -201,7 +201,7 @@
         weaver-cli = flake-utils.lib.mkApp {
           drv = weaver-cli;
         };
-        weaver-server = flake-utils.lib.mkApp {
+        weaver-app = flake-utils.lib.mkApp {
           drv = weaver-app;
         };
       };

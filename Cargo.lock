@@ -8548,44 +8548,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "weaver-app-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "clap",
- "dashmap",
- "diesel",
- "diesel-async",
- "diesel_migrations",
- "dotenvy",
- "hyper",
- "jacquard",
- "jacquard-api",
- "jacquard-axum",
- "jose",
- "jose-jwk",
- "miette 7.6.0",
- "minijinja",
- "minijinja-contrib",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "tokio",
- "toml 0.8.23",
- "tower",
- "tower-cookies",
- "tower-http",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
- "uuid",
- "weaver-common",
-]
-
-[[package]]
 name = "weaver-cli"
 version = "0.1.0"
 dependencies = [
@@ -8632,6 +8594,44 @@ dependencies = [
  "tracing",
  "trait-variant",
  "weaver-api",
+]
+
+[[package]]
+name = "weaver-index"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "clap",
+ "dashmap",
+ "diesel",
+ "diesel-async",
+ "diesel_migrations",
+ "dotenvy",
+ "hyper",
+ "jacquard",
+ "jacquard-api",
+ "jacquard-axum",
+ "jose",
+ "jose-jwk",
+ "miette 7.6.0",
+ "minijinja",
+ "minijinja-contrib",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml 0.8.23",
+ "tower",
+ "tower-cookies",
+ "tower-http",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "weaver-common",
 ]
 
 [[package]]

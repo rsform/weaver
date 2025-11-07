@@ -1,5 +1,5 @@
 [package]
-name = "weaver-app-server"
+name = "weaver-index"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
