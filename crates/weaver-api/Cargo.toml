@@ -7,9 +7,9 @@ authors.workspace = true
 
 [dependencies]
 bytes = { workspace = true, features = ["serde"] }
-jacquard-common = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
-jacquard-derive = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
-jacquard-lexicon = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false }
+jacquard-common = { workspace = true }
+jacquard-derive = { workspace = true }
+jacquard-lexicon = { workspace = true }
 miette.workspace = true
 rustversion = "1.0"
 serde.workspace = true

@@ -4,6 +4,7 @@
 use crate::blobcache::BlobCache;
 use crate::{
     components::avatar::{Avatar, AvatarFallback, AvatarImage},
+    data::use_handle,
     fetch,
 };
 
@@ -11,8 +12,7 @@ use crate::Route;
 use dioxus::prelude::*;
 
 const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
-#[cfg(feature = "fullstack-server")]
-use dioxus::{fullstack::extract::Extension, CapturedError};
+
 use jacquard::prelude::*;
 #[allow(unused_imports)]
 use jacquard::smol_str::ToSmolStr;
@@ -30,15 +30,13 @@ use weaver_api::sh_weaver::notebook::{entry, BookEntryView};
 pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) -> Element {
     let ident_clone = ident.clone();
     let book_title_clone = book_title.clone();
-    let entry = use_resource(use_reactive!(|(ident, book_title, title)| async move {
-        let fetcher = use_context::<fetch::CachedFetcher>();
-        let entry = fetcher
-            .get_entry(ident.clone(), book_title.clone(), title)
-            .await
-            .ok()
-            .flatten();
-        if let Some(entry_data) = &entry {
-            let entry_record = &entry_data.1;
+
+    // Use feature-gated hook for SSR support
+    let entry = crate::data::use_entry_data(ident.clone(), book_title.clone(), title.clone())?;
+
+    // Handle blob caching when entry data is available
+    use_effect(move || {
+        if let Some((_book_entry_view, entry_record)) = &*entry.read() {
             if let Some(embeds) = &entry_record.embeds {
                 if let Some(images) = &embeds.images {
                     // Register blob mappings with service worker (client-side only)
@@ -48,46 +46,54 @@ pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) 
                         not(feature = "fullstack-server")
                     ))]
                     {
-                        let _ = crate::service_worker::register_entry_blobs(
-                            &ident,
-                            book_title.as_str(),
-                            images,
-                            &fetcher,
-                        )
-                        .await;
+                        let ident = ident.clone();
+                        let book_title = book_title.clone();
+                        let images = images.clone();
+                        spawn(async move {
+                            let fetcher = use_context::<fetch::CachedFetcher>();
+                            let _ = crate::service_worker::register_entry_blobs(
+                                &ident,
+                                book_title.as_str(),
+                                &images,
+                                &fetcher,
+                            )
+                            .await;
+                        });
                     }
                     #[cfg(feature = "fullstack-server")]
                     {
-                        for image in &images.images {
-                            let cid = image.image.blob().cid();
-                            cache_blob(
-                                ident.to_smolstr(),
-                                cid.to_smolstr(),
-                                image.name.as_ref().map(|n| n.to_smolstr()),
-                            )
-                            .await
-                            .ok();
-                        }
+                        let ident = ident.clone();
+                        let images = images.clone();
+                        spawn(async move {
+                            for image in &images.images {
+                                use crate::data::cache_blob;
+
+                                let cid = image.image.blob().cid();
+                                cache_blob(
+                                    ident.to_smolstr(),
+                                    cid.to_smolstr(),
+                                    image.name.as_ref().map(|n| n.to_smolstr()),
+                                )
+                                .await
+                                .ok();
+                            }
+                        });
                     }
                 }
             }
         }
-        entry
-    }));
+    });
 
     match &*entry.read_unchecked() {
-        Some(Some(entry_data)) => {
+        Some((book_entry_view, entry_record)) => {
             rsx! { EntryPage {
-                book_entry_view: entry_data.0.clone(),
-                entry_record: entry_data.1.clone(),
-                ident: ident_clone,
+                book_entry_view: book_entry_view.clone(),
+                entry_record: entry_record.clone(),
+                ident: use_handle(ident_clone)?(),
                 book_title: book_title_clone
             } }
         }
-        Some(None) => {
-            rsx! { div { class: "error", "Entry not found" } }
-        }
-        None => rsx! { p { "Loading..." } },
+        _ => rsx! { p { "Loading..." } },
     }
 }
 
@@ -170,8 +176,7 @@ pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element 
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
 
-    let ident = entry_view.uri.authority().clone().into_static();
-    let ident_for_avatar = ident.clone();
+    let ident = use_handle(entry_view.uri.authority().clone().into_static())?;
 
     // Format date
     let formatted_date = entry_view
@@ -195,7 +200,7 @@ pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element 
         div { class: "entry-card",
             Link {
                 to: Route::Entry {
-                    ident: ident.clone(),
+                    ident: ident(),
                     book_title: book_title.clone(),
                     title: title.to_string().into()
                 },
@@ -214,12 +219,12 @@ pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element 
                     if let Some(author) = first_author {
                         div { class: "entry-card-author",
                             {
-                                match from_data::<Profile>(author.record.get_at_path(".value").unwrap()) {
-                                    Ok(profile) => {
+                                match author.record.get_at_path(".value").and_then(|v| from_data::<Profile>(v).ok()) {
+                                    Some(profile) => {
                                         let avatar = profile.avatar
                                             .map(|avatar| {
                                                 let cid = avatar.blob().cid();
-                                                format!("https://cdn.bsky.app/img/avatar/plain/{}/{cid}@jpeg", ident_for_avatar.as_ref())
+                                                format!("https://cdn.bsky.app/img/avatar/plain/{}/{cid}@jpeg", entry_view.uri.authority().as_ref())
                                             });
                                         let display_name = profile.display_name
                                             .as_ref()
@@ -235,7 +240,7 @@ pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element 
                                             span { class: "meta-label", "@{ident}" }
                                         }
                                     }
-                                    Err(_) => {
+                                    None => {
                                         rsx! {
                                             span { class: "author-name", "Author {author.index}" }
                                         }
@@ -296,8 +301,8 @@ fn EntryMetadata(
                             if i > 0 { span { ", " } }
                             {
                                 // Parse author profile from the nested value field
-                                match from_data::<Profile>(author.record.get_at_path(".value").unwrap()) {
-                                    Ok(profile) => {
+                                match author.record.get_at_path(".value").and_then(|v| from_data::<Profile>(v).ok()) {
+                                    Some(profile) => {
                                         let avatar = profile.avatar
                                             .map(|avatar| {
                                                 let cid = avatar.blob().cid();
@@ -325,7 +330,7 @@ fn EntryMetadata(
                                             }
                                         }
                                     }
-                                    Err(_) => {
+                                    None => {
                                         rsx! {
                                             span { class: "author-name", "Author {author.index}" }
                                         }
@@ -405,25 +410,33 @@ pub struct EntryMarkdownProps {
     id: Signal<String>,
     #[props(default)]
     class: Signal<String>,
-
     content: ReadSignal<entry::Entry<'static>>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 }
 
 /// Render some text as markdown.
 #[allow(unused)]
 pub fn EntryMarkdown(props: EntryMarkdownProps) -> Element {
-    let content = &*props.content.read();
-    let parser = markdown_weaver::Parser::new(&content.content);
+    let processed = crate::data::use_rendered_markdown(
+        props.content.read().clone(),
+        props.ident.read().clone(),
+    )?;
 
-    let mut html_buf = String::new();
-    markdown_weaver::html::push_html(&mut html_buf, parser);
-
-    rsx! {
-        div {
-            id: "{&*props.id.read()}",
-            class: "{&*props.class.read()}",
-            dangerous_inner_html: "{html_buf}"
-        }
+    match &*processed.read_unchecked() {
+        Some(Some(html_buf)) => rsx! {
+            div {
+                id: "{&*props.id.read()}",
+                class: "{&*props.class.read()}",
+                dangerous_inner_html: "{html_buf}"
+            }
+        },
+        _ => rsx! {
+            div {
+                id: "{&*props.id.read()}",
+                class: "{&*props.class.read()}",
+                "Loading..."
+            }
+        },
     }
 }
 
@@ -435,32 +448,8 @@ fn EntryMarkdownDirect(
     content: entry::Entry<'static>,
     ident: AtIdentifier<'static>,
 ) -> Element {
-    use n0_future::stream::StreamExt;
-    use weaver_renderer::{
-        atproto::{ClientContext, ClientWriter},
-        ContextIterator, NotebookProcessor,
-    };
-
-    let processed = use_resource(use_reactive!(|(content, ident)| async move {
-        // Create client context for link/image/embed handling
-        let fetcher = use_context::<fetch::CachedFetcher>();
-        let did = match ident {
-            AtIdentifier::Did(d) => d,
-            AtIdentifier::Handle(h) => fetcher.client.resolve_handle(&h).await.ok()?,
-        };
-        let ctx = ClientContext::<()>::new(content.clone(), did);
-        let parser = markdown_weaver::Parser::new(&content.content);
-        let iter = ContextIterator::default(parser);
-        let processor = NotebookProcessor::new(ctx, iter);
-
-        // Collect events from the processor stream
-        let events: Vec<_> = StreamExt::collect(processor).await;
-
-        // Render to HTML
-        let mut html_buf = String::new();
-        let _ = ClientWriter::<_, _, ()>::new(events.into_iter(), &mut html_buf).run();
-        Some(html_buf)
-    }));
+    // Use feature-gated hook for SSR support
+    let processed = crate::data::use_rendered_markdown(content, ident)?;
 
     match &*processed.read_unchecked() {
         Some(Some(html_buf)) => rsx! {
@@ -478,12 +467,4 @@ fn EntryMarkdownDirect(
             }
         },
     }
-}
-
-#[cfg(feature = "fullstack-server")]
-#[put("/cache/{ident}/{cid}?name", cache: Extension<Arc<BlobCache>>)]
-pub async fn cache_blob(ident: SmolStr, cid: SmolStr, name: Option<SmolStr>) -> Result<()> {
-    let ident = AtIdentifier::new_owned(ident)?;
-    let cid = Cid::new_owned(cid.as_bytes())?;
-    cache.cache(ident, cid, name).await
 }

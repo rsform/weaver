@@ -9,12 +9,10 @@ const urlMappings = new Map();
 
 // Install and activate immediately
 self.addEventListener("install", (event) => {
-  console.log("[SW] Installing service worker");
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  console.log("[SW] Activating service worker");
   event.waitUntil(clients.claim());
 });
 
@@ -22,13 +20,10 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data.type === "register_mappings") {
     const notebook = event.data.notebook;
-    console.log("[SW] Registering blob mappings for notebook:", notebook);
-
     // Store blob URL mappings
     for (const [name, url] of Object.entries(event.data.blobs)) {
       const key = `${notebook}/image/${name}`;
       urlMappings.set(key, url);
-      console.log("[SW] Registered mapping:", key, "->", url);
     }
   }
 });
@@ -45,15 +40,10 @@ self.addEventListener("fetch", (event) => {
     // Reconstruct the key
     const key = pathParts.join("/");
 
-    console.log("[SW] Intercepted image request:", key);
-
     const mapping = urlMappings.get(key);
     if (mapping) {
-      console.log("[SW] Found mapping for:", key, "->", mapping);
       event.respondWith(handleBlobRequest(mapping, key));
       return;
-    } else {
-      console.log("[SW] No mapping found for:", key);
     }
   }
 
@@ -67,12 +57,10 @@ async function handleBlobRequest(url, key) {
     let response = await cache.match(key);
 
     if (response) {
-      console.log("[SW] Cache hit for:", key);
       return response;
     }
 
     // Fetch from PDS
-    console.log("[SW] Fetching from PDS:", url);
     response = await fetch(url);
 
     if (!response.ok) {
@@ -82,7 +70,6 @@ async function handleBlobRequest(url, key) {
 
     // Cache the response
     await cache.put(key, response.clone());
-    console.log("[SW] Cached blob:", key);
 
     return response;
   } catch (error) {

@@ -22,6 +22,7 @@ mod blobcache;
 mod cache_impl;
 /// Define a components module that contains all shared components for our app.
 mod components;
+mod data;
 mod fetch;
 mod service_worker;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.

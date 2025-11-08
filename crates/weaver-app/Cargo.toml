@@ -5,9 +5,10 @@ authors = ["Orual <orual@nonbinary.computer>"]
 edition = "2021"
 
 [features]
-default = ["web"]
+default = ["web", "fullstack-server", "no-app-index"]
 # Fullstack mode with SSR and server functions
 fullstack-server = ["dioxus/fullstack"]
+no-app-index = []
 
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
@@ -20,8 +21,8 @@ server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum"]
 [dependencies]
 dashmap = "6.1.0"
 
-dioxus = { version = "0.7.0", features = ["router"] }
-#dioxus = { version = "0.7.0", features = ["router", "fullstack"] }
+dioxus = { version = "0.7.1", features = ["router"] }
+#dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
 weaver-common = { path = "../weaver-common" }
 jacquard = { workspace = true, features = ["streaming"] }
 jacquard-axum = { workspace = true, optional = true }

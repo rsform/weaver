@@ -60,7 +60,9 @@ impl CachedFetcher {
     ) -> Result<Option<Arc<(BookEntryView<'static>, Entry<'static>)>>> {
         if let Some(result) = self.get_notebook(ident.clone(), book_title).await? {
             let (notebook, entries) = result.as_ref();
-            if let Some(entry) = cache_impl::get(&self.entry_cache, &(ident.clone(), entry_title.clone())) {
+            if let Some(entry) =
+                cache_impl::get(&self.entry_cache, &(ident.clone(), entry_title.clone()))
+            {
                 Ok(Some(entry))
             } else {
                 if let Some(entry) = entry_by_title(
