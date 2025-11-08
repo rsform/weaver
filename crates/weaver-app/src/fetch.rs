@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 use weaver_api::{
     com_atproto::repo::strong_ref::StrongRef,
-    sh_weaver::notebook::{entry::Entry, BookEntryView, NotebookView},
+    sh_weaver::{
+        actor::ProfileDataView,
+        notebook::{entry::Entry, BookEntryView, NotebookView},
+    },
 };
 use weaver_common::WeaverExt;
 
@@ -30,6 +33,7 @@ pub struct CachedFetcher {
         (AtIdentifier<'static>, SmolStr),
         Arc<(BookEntryView<'static>, Entry<'static>)>,
     >,
+    profile_cache: cache_impl::Cache<AtIdentifier<'static>, Arc<ProfileDataView<'static>>>,
 }
 
 impl CachedFetcher {
@@ -38,6 +42,7 @@ impl CachedFetcher {
             client,
             book_cache: cache_impl::new_cache(100, Duration::from_secs(1200)),
             entry_cache: cache_impl::new_cache(100, Duration::from_secs(600)),
+            profile_cache: cache_impl::new_cache(100, Duration::from_secs(1800)),
         }
     }
 
@@ -234,5 +239,38 @@ impl CachedFetcher {
         } else {
             Ok(None)
         }
+    }
+
+    pub async fn fetch_profile(
+        &self,
+        ident: &AtIdentifier<'_>,
+    ) -> Result<Arc<ProfileDataView<'static>>> {
+        use jacquard::IntoStatic;
+
+        let ident_static = ident.clone().into_static();
+
+        if let Some(cached) = cache_impl::get(&self.profile_cache, &ident_static) {
+            return Ok(cached);
+        }
+
+        let did = match ident {
+            AtIdentifier::Did(d) => d.clone(),
+            AtIdentifier::Handle(h) => self
+                .client
+                .resolve_handle(h)
+                .await
+                .map_err(|e| dioxus::CapturedError::from_display(e))?,
+        };
+
+        let (_uri, profile_view) = self
+            .client
+            .hydrate_profile_view(&did)
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let result = Arc::new(profile_view);
+        cache_impl::insert(&self.profile_cache, ident_static, result.clone());
+
+        Ok(result)
     }
 }

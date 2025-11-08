@@ -236,6 +236,127 @@ async fn render_markdown_impl(content: Entry<'static>, did: Did<'static>) -> Str
     html_buf
 }
 
+/// Fetches profile data for a given identifier
+#[cfg(feature = "fullstack-server")]
+pub fn use_profile_data(
+    ident: AtIdentifier<'static>,
+) -> Result<Memo<Option<weaver_api::sh_weaver::actor::ProfileDataView<'static>>>, RenderError> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let ident = use_signal(|| ident);
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_profile(&ident())
+                .await
+                .ok()
+                .map(|arc| serde_json::to_value(&*arc).ok())
+                .flatten()
+        }
+    })?;
+    Ok(use_memo(move || {
+        if let Some(Some(value)) = &*res.read_unchecked() {
+            jacquard::from_json_value::<weaver_api::sh_weaver::actor::ProfileDataView>(value.clone()).ok()
+        } else {
+            None
+        }
+    }))
+}
+
+/// Fetches profile data client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_profile_data(
+    ident: AtIdentifier<'static>,
+) -> Result<Memo<Option<weaver_api::sh_weaver::actor::ProfileDataView<'static>>>, RenderError> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let r = use_resource(use_reactive!(|ident| {
+        let fetcher = fetcher.clone();
+        async move { fetcher.fetch_profile(&ident).await.ok().map(|arc| (*arc).clone()) }
+    }));
+    Ok(use_memo(move || {
+        r.read_unchecked().as_ref().and_then(|v| v.clone())
+    }))
+}
+
+/// Fetches notebooks for a specific DID
+#[cfg(feature = "fullstack-server")]
+pub fn use_notebooks_for_did(
+    ident: AtIdentifier<'static>,
+) -> Result<
+    Memo<
+        Option<
+            Vec<(
+                weaver_api::sh_weaver::notebook::NotebookView<'static>,
+                Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef<'static>>,
+            )>,
+        >,
+    >,
+    RenderError,
+> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let ident = use_signal(|| ident);
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_notebooks_for_did(&ident())
+                .await
+                .ok()
+                .map(|notebooks| {
+                    notebooks
+                        .iter()
+                        .map(|arc| serde_json::to_value(arc.as_ref()).ok())
+                        .collect::<Option<Vec<_>>>()
+                })
+                .flatten()
+        }
+    })?;
+    Ok(use_memo(move || {
+        if let Some(Some(values)) = &*res.read_unchecked() {
+            values
+                .iter()
+                .map(|v| jacquard::from_json_value::<(
+                    weaver_api::sh_weaver::notebook::NotebookView,
+                    Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef>,
+                )>(v.clone()).ok())
+                .collect::<Option<Vec<_>>>()
+        } else {
+            None
+        }
+    }))
+}
+
+/// Fetches notebooks client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_notebooks_for_did(
+    ident: AtIdentifier<'static>,
+) -> Result<
+    Memo<
+        Option<
+            Vec<(
+                weaver_api::sh_weaver::notebook::NotebookView<'static>,
+                Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef<'static>>,
+            )>,
+        >,
+    >,
+    RenderError,
+> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let r = use_resource(use_reactive!(|ident| {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_notebooks_for_did(&ident)
+                .await
+                .ok()
+                .map(|notebooks| notebooks.iter().map(|arc| (*arc).clone()).collect())
+        }
+    }));
+    Ok(use_memo(move || {
+        r.read_unchecked().as_ref().and_then(|v| v.clone())
+    }))
+}
+
 #[cfg(feature = "fullstack-server")]
 #[put("/cache/{ident}/{cid}?name", cache: Extension<Arc<BlobCache>>)]
 pub async fn cache_blob(ident: SmolStr, cid: SmolStr, name: Option<SmolStr>) -> Result<()> {

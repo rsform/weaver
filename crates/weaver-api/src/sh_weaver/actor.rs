@@ -23,12 +23,9 @@ pub mod profile;
 pub struct Author<'a> {
     #[serde(borrow)]
     pub did: jacquard_common::types::string::Did<'a>,
+    /// signed bytes of the corresponding notebook record in the author's repo
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    #[serde(borrow)]
-    pub display_name: Option<jacquard_common::CowStr<'a>>,
-    #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    #[serde(borrow)]
-    pub handle: Option<jacquard_common::types::string::Handle<'a>>,
+    pub signature: Option<bytes::Bytes>,
 }
 
 pub mod author_state {
@@ -68,8 +65,7 @@ pub struct AuthorBuilder<'a, S: author_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
         ::core::option::Option<jacquard_common::types::string::Did<'a>>,
-        ::core::option::Option<jacquard_common::CowStr<'a>>,
-        ::core::option::Option<jacquard_common::types::string::Handle<'a>>,
+        ::core::option::Option<bytes::Bytes>,
     ),
     _phantom: ::core::marker::PhantomData<&'a ()>,
 }
@@ -86,7 +82,7 @@ impl<'a> AuthorBuilder<'a, author_state::Empty> {
     pub fn new() -> Self {
         AuthorBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None),
+            __unsafe_private_named: (None, None),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -112,39 +108,14 @@ where
 }
 
 impl<'a, S: author_state::State> AuthorBuilder<'a, S> {
-    /// Set the `displayName` field (optional)
-    pub fn display_name(
-        mut self,
-        value: impl Into<Option<jacquard_common::CowStr<'a>>>,
-    ) -> Self {
+    /// Set the `signature` field (optional)
+    pub fn signature(mut self, value: impl Into<Option<bytes::Bytes>>) -> Self {
         self.__unsafe_private_named.1 = value.into();
         self
     }
-    /// Set the `displayName` field to an Option value (optional)
-    pub fn maybe_display_name(
-        mut self,
-        value: Option<jacquard_common::CowStr<'a>>,
-    ) -> Self {
+    /// Set the `signature` field to an Option value (optional)
+    pub fn maybe_signature(mut self, value: Option<bytes::Bytes>) -> Self {
         self.__unsafe_private_named.1 = value;
-        self
-    }
-}
-
-impl<'a, S: author_state::State> AuthorBuilder<'a, S> {
-    /// Set the `handle` field (optional)
-    pub fn handle(
-        mut self,
-        value: impl Into<Option<jacquard_common::types::string::Handle<'a>>>,
-    ) -> Self {
-        self.__unsafe_private_named.2 = value.into();
-        self
-    }
-    /// Set the `handle` field to an Option value (optional)
-    pub fn maybe_handle(
-        mut self,
-        value: Option<jacquard_common::types::string::Handle<'a>>,
-    ) -> Self {
-        self.__unsafe_private_named.2 = value;
         self
     }
 }
@@ -158,8 +129,7 @@ where
     pub fn build(self) -> Author<'a> {
         Author {
             did: self.__unsafe_private_named.0.unwrap(),
-            display_name: self.__unsafe_private_named.1,
-            handle: self.__unsafe_private_named.2,
+            signature: self.__unsafe_private_named.1,
             extra_data: Default::default(),
         }
     }
@@ -173,8 +143,7 @@ where
     ) -> Author<'a> {
         Author {
             did: self.__unsafe_private_named.0.unwrap(),
-            display_name: self.__unsafe_private_named.1,
-            handle: self.__unsafe_private_named.2,
+            signature: self.__unsafe_private_named.1,
             extra_data: Some(extra_data),
         }
     }
@@ -224,36 +193,12 @@ fn lexicon_doc_sh_weaver_actor_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc
                         );
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
-                                "displayName",
+                                "signature",
                             ),
-                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Bytes(::jacquard_lexicon::lexicon::LexBytes {
                                 description: None,
-                                format: None,
-                                default: None,
-                                min_length: None,
-                                max_length: Some(640usize),
-                                min_graphemes: None,
-                                max_graphemes: Some(64usize),
-                                r#enum: None,
-                                r#const: None,
-                                known_values: None,
-                            }),
-                        );
-                        map.insert(
-                            ::jacquard_common::smol_str::SmolStr::new_static("handle"),
-                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
-                                description: None,
-                                format: Some(
-                                    ::jacquard_lexicon::lexicon::LexStringFormat::Handle,
-                                ),
-                                default: None,
-                                min_length: None,
                                 max_length: None,
-                                min_graphemes: None,
-                                max_graphemes: None,
-                                r#enum: None,
-                                r#const: None,
-                                known_values: None,
+                                min_length: None,
                             }),
                         );
                         map
@@ -374,6 +319,14 @@ fn lexicon_doc_sh_weaver_actor_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc
                                 r#enum: None,
                                 r#const: None,
                                 known_values: None,
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static("bluesky"),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Boolean(::jacquard_lexicon::lexicon::LexBoolean {
+                                description: None,
+                                default: None,
+                                r#const: None,
                             }),
                         );
                         map.insert(
@@ -559,6 +512,16 @@ fn lexicon_doc_sh_weaver_actor_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc
                         );
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
+                                "streamplace",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Boolean(::jacquard_lexicon::lexicon::LexBoolean {
+                                description: None,
+                                default: None,
+                                r#const: None,
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
                                 "subscribedCount",
                             ),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Integer(::jacquard_lexicon::lexicon::LexInteger {
@@ -580,6 +543,14 @@ fn lexicon_doc_sh_weaver_actor_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc
                                 minimum: None,
                                 maximum: None,
                                 r#enum: None,
+                                r#const: None,
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static("tangled"),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Boolean(::jacquard_lexicon::lexicon::LexBoolean {
+                                description: None,
+                                default: None,
                                 r#const: None,
                             }),
                         );
@@ -949,36 +920,6 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Author<'a> {
     fn validate(
         &self,
     ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
-        if let Some(ref value) = self.display_name {
-            #[allow(unused_comparisons)]
-            if <str>::len(value.as_ref()) > 640usize {
-                return Err(::jacquard_lexicon::validation::ConstraintError::MaxLength {
-                    path: ::jacquard_lexicon::validation::ValidationPath::from_field(
-                        "display_name",
-                    ),
-                    max: 640usize,
-                    actual: <str>::len(value.as_ref()),
-                });
-            }
-        }
-        if let Some(ref value) = self.display_name {
-            {
-                let count = ::unicode_segmentation::UnicodeSegmentation::graphemes(
-                        value.as_ref(),
-                        true,
-                    )
-                    .count();
-                if count > 64usize {
-                    return Err(::jacquard_lexicon::validation::ConstraintError::MaxGraphemes {
-                        path: ::jacquard_lexicon::validation::ValidationPath::from_field(
-                            "display_name",
-                        ),
-                        max: 64usize,
-                        actual: count,
-                    });
-                }
-            }
-        }
         Ok(())
     }
 }
@@ -1319,6 +1260,9 @@ pub struct ProfileView<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub banner: Option<jacquard_common::types::string::Uri<'a>>,
+    /// Include link to this account on Bluesky.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub bluesky: Option<bool>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     pub created_at: Option<jacquard_common::types::string::Datetime>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
@@ -1351,10 +1295,16 @@ pub struct ProfileView<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub pronouns: Option<crate::sh_weaver::actor::PronounsList<'a>>,
+    /// Include link to this account on stream.place.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub streamplace: Option<bool>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     pub subscribed_count: Option<i64>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     pub subscriber_count: Option<i64>,
+    /// Include link to this account on Tangled.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub tangled: Option<bool>,
 }
 
 pub mod profile_view_state {
@@ -1407,6 +1357,7 @@ pub struct ProfileViewBuilder<'a, S: profile_view_state::State> {
     __unsafe_private_named: (
         ::core::option::Option<jacquard_common::types::string::Uri<'a>>,
         ::core::option::Option<jacquard_common::types::string::Uri<'a>>,
+        ::core::option::Option<bool>,
         ::core::option::Option<jacquard_common::types::string::Datetime>,
         ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<jacquard_common::types::string::Did<'a>>,
@@ -1418,8 +1369,10 @@ pub struct ProfileViewBuilder<'a, S: profile_view_state::State> {
         ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<crate::sh_weaver::actor::PinnedList<'a>>,
         ::core::option::Option<crate::sh_weaver::actor::PronounsList<'a>>,
+        ::core::option::Option<bool>,
         ::core::option::Option<i64>,
         ::core::option::Option<i64>,
+        ::core::option::Option<bool>,
     ),
     _phantom: ::core::marker::PhantomData<&'a ()>,
 }
@@ -1437,6 +1390,9 @@ impl<'a> ProfileViewBuilder<'a, profile_view_state::Empty> {
         ProfileViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: (
+                None,
+                None,
+                None,
                 None,
                 None,
                 None,
@@ -1497,12 +1453,25 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
 }
 
 impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
+    /// Set the `bluesky` field (optional)
+    pub fn bluesky(mut self, value: impl Into<Option<bool>>) -> Self {
+        self.__unsafe_private_named.2 = value.into();
+        self
+    }
+    /// Set the `bluesky` field to an Option value (optional)
+    pub fn maybe_bluesky(mut self, value: Option<bool>) -> Self {
+        self.__unsafe_private_named.2 = value;
+        self
+    }
+}
+
+impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
     /// Set the `createdAt` field (optional)
     pub fn created_at(
         mut self,
         value: impl Into<Option<jacquard_common::types::string::Datetime>>,
     ) -> Self {
-        self.__unsafe_private_named.2 = value.into();
+        self.__unsafe_private_named.3 = value.into();
         self
     }
     /// Set the `createdAt` field to an Option value (optional)
@@ -1510,7 +1479,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::types::string::Datetime>,
     ) -> Self {
-        self.__unsafe_private_named.2 = value;
+        self.__unsafe_private_named.3 = value;
         self
     }
 }
@@ -1521,7 +1490,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::CowStr<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.3 = value.into();
+        self.__unsafe_private_named.4 = value.into();
         self
     }
     /// Set the `description` field to an Option value (optional)
@@ -1529,7 +1498,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::CowStr<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.3 = value;
+        self.__unsafe_private_named.4 = value;
         self
     }
 }
@@ -1544,7 +1513,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::string::Did<'a>>,
     ) -> ProfileViewBuilder<'a, profile_view_state::SetDid<S>> {
-        self.__unsafe_private_named.4 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.5 = ::core::option::Option::Some(value.into());
         ProfileViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -1559,7 +1528,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::CowStr<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value.into();
+        self.__unsafe_private_named.6 = value.into();
         self
     }
     /// Set the `displayName` field to an Option value (optional)
@@ -1567,7 +1536,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::CowStr<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value;
+        self.__unsafe_private_named.6 = value;
         self
     }
 }
@@ -1582,7 +1551,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::string::Handle<'a>>,
     ) -> ProfileViewBuilder<'a, profile_view_state::SetHandle<S>> {
-        self.__unsafe_private_named.6 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.7 = ::core::option::Option::Some(value.into());
         ProfileViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -1597,7 +1566,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::types::string::Datetime>>,
     ) -> Self {
-        self.__unsafe_private_named.7 = value.into();
+        self.__unsafe_private_named.8 = value.into();
         self
     }
     /// Set the `indexedAt` field to an Option value (optional)
@@ -1605,7 +1574,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::types::string::Datetime>,
     ) -> Self {
-        self.__unsafe_private_named.7 = value;
+        self.__unsafe_private_named.8 = value;
         self
     }
 }
@@ -1616,7 +1585,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<Vec<crate::com_atproto::label::Label<'a>>>>,
     ) -> Self {
-        self.__unsafe_private_named.8 = value.into();
+        self.__unsafe_private_named.9 = value.into();
         self
     }
     /// Set the `labels` field to an Option value (optional)
@@ -1624,7 +1593,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: Option<Vec<crate::com_atproto::label::Label<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.8 = value;
+        self.__unsafe_private_named.9 = value;
         self
     }
 }
@@ -1635,7 +1604,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<Vec<jacquard_common::types::string::Uri<'a>>>>,
     ) -> Self {
-        self.__unsafe_private_named.9 = value.into();
+        self.__unsafe_private_named.10 = value.into();
         self
     }
     /// Set the `links` field to an Option value (optional)
@@ -1643,7 +1612,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: Option<Vec<jacquard_common::types::string::Uri<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.9 = value;
+        self.__unsafe_private_named.10 = value;
         self
     }
 }
@@ -1654,12 +1623,12 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::CowStr<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.10 = value.into();
+        self.__unsafe_private_named.11 = value.into();
         self
     }
     /// Set the `location` field to an Option value (optional)
     pub fn maybe_location(mut self, value: Option<jacquard_common::CowStr<'a>>) -> Self {
-        self.__unsafe_private_named.10 = value;
+        self.__unsafe_private_named.11 = value;
         self
     }
 }
@@ -1670,7 +1639,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::actor::PinnedList<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.11 = value.into();
+        self.__unsafe_private_named.12 = value.into();
         self
     }
     /// Set the `pinned` field to an Option value (optional)
@@ -1678,7 +1647,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::actor::PinnedList<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.11 = value;
+        self.__unsafe_private_named.12 = value;
         self
     }
 }
@@ -1689,7 +1658,7 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::actor::PronounsList<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.12 = value.into();
+        self.__unsafe_private_named.13 = value.into();
         self
     }
     /// Set the `pronouns` field to an Option value (optional)
@@ -1697,7 +1666,20 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::actor::PronounsList<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.12 = value;
+        self.__unsafe_private_named.13 = value;
+        self
+    }
+}
+
+impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
+    /// Set the `streamplace` field (optional)
+    pub fn streamplace(mut self, value: impl Into<Option<bool>>) -> Self {
+        self.__unsafe_private_named.14 = value.into();
+        self
+    }
+    /// Set the `streamplace` field to an Option value (optional)
+    pub fn maybe_streamplace(mut self, value: Option<bool>) -> Self {
+        self.__unsafe_private_named.14 = value;
         self
     }
 }
@@ -1705,12 +1687,12 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
 impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
     /// Set the `subscribedCount` field (optional)
     pub fn subscribed_count(mut self, value: impl Into<Option<i64>>) -> Self {
-        self.__unsafe_private_named.13 = value.into();
+        self.__unsafe_private_named.15 = value.into();
         self
     }
     /// Set the `subscribedCount` field to an Option value (optional)
     pub fn maybe_subscribed_count(mut self, value: Option<i64>) -> Self {
-        self.__unsafe_private_named.13 = value;
+        self.__unsafe_private_named.15 = value;
         self
     }
 }
@@ -1718,12 +1700,25 @@ impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
 impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
     /// Set the `subscriberCount` field (optional)
     pub fn subscriber_count(mut self, value: impl Into<Option<i64>>) -> Self {
-        self.__unsafe_private_named.14 = value.into();
+        self.__unsafe_private_named.16 = value.into();
         self
     }
     /// Set the `subscriberCount` field to an Option value (optional)
     pub fn maybe_subscriber_count(mut self, value: Option<i64>) -> Self {
-        self.__unsafe_private_named.14 = value;
+        self.__unsafe_private_named.16 = value;
+        self
+    }
+}
+
+impl<'a, S: profile_view_state::State> ProfileViewBuilder<'a, S> {
+    /// Set the `tangled` field (optional)
+    pub fn tangled(mut self, value: impl Into<Option<bool>>) -> Self {
+        self.__unsafe_private_named.17 = value.into();
+        self
+    }
+    /// Set the `tangled` field to an Option value (optional)
+    pub fn maybe_tangled(mut self, value: Option<bool>) -> Self {
+        self.__unsafe_private_named.17 = value;
         self
     }
 }
@@ -1739,19 +1734,22 @@ where
         ProfileView {
             avatar: self.__unsafe_private_named.0,
             banner: self.__unsafe_private_named.1,
-            created_at: self.__unsafe_private_named.2,
-            description: self.__unsafe_private_named.3,
-            did: self.__unsafe_private_named.4.unwrap(),
-            display_name: self.__unsafe_private_named.5,
-            handle: self.__unsafe_private_named.6.unwrap(),
-            indexed_at: self.__unsafe_private_named.7,
-            labels: self.__unsafe_private_named.8,
-            links: self.__unsafe_private_named.9,
-            location: self.__unsafe_private_named.10,
-            pinned: self.__unsafe_private_named.11,
-            pronouns: self.__unsafe_private_named.12,
-            subscribed_count: self.__unsafe_private_named.13,
-            subscriber_count: self.__unsafe_private_named.14,
+            bluesky: self.__unsafe_private_named.2,
+            created_at: self.__unsafe_private_named.3,
+            description: self.__unsafe_private_named.4,
+            did: self.__unsafe_private_named.5.unwrap(),
+            display_name: self.__unsafe_private_named.6,
+            handle: self.__unsafe_private_named.7.unwrap(),
+            indexed_at: self.__unsafe_private_named.8,
+            labels: self.__unsafe_private_named.9,
+            links: self.__unsafe_private_named.10,
+            location: self.__unsafe_private_named.11,
+            pinned: self.__unsafe_private_named.12,
+            pronouns: self.__unsafe_private_named.13,
+            streamplace: self.__unsafe_private_named.14,
+            subscribed_count: self.__unsafe_private_named.15,
+            subscriber_count: self.__unsafe_private_named.16,
+            tangled: self.__unsafe_private_named.17,
             extra_data: Default::default(),
         }
     }
@@ -1766,19 +1764,22 @@ where
         ProfileView {
             avatar: self.__unsafe_private_named.0,
             banner: self.__unsafe_private_named.1,
-            created_at: self.__unsafe_private_named.2,
-            description: self.__unsafe_private_named.3,
-            did: self.__unsafe_private_named.4.unwrap(),
-            display_name: self.__unsafe_private_named.5,
-            handle: self.__unsafe_private_named.6.unwrap(),
-            indexed_at: self.__unsafe_private_named.7,
-            labels: self.__unsafe_private_named.8,
-            links: self.__unsafe_private_named.9,
-            location: self.__unsafe_private_named.10,
-            pinned: self.__unsafe_private_named.11,
-            pronouns: self.__unsafe_private_named.12,
-            subscribed_count: self.__unsafe_private_named.13,
-            subscriber_count: self.__unsafe_private_named.14,
+            bluesky: self.__unsafe_private_named.2,
+            created_at: self.__unsafe_private_named.3,
+            description: self.__unsafe_private_named.4,
+            did: self.__unsafe_private_named.5.unwrap(),
+            display_name: self.__unsafe_private_named.6,
+            handle: self.__unsafe_private_named.7.unwrap(),
+            indexed_at: self.__unsafe_private_named.8,
+            labels: self.__unsafe_private_named.9,
+            links: self.__unsafe_private_named.10,
+            location: self.__unsafe_private_named.11,
+            pinned: self.__unsafe_private_named.12,
+            pronouns: self.__unsafe_private_named.13,
+            streamplace: self.__unsafe_private_named.14,
+            subscribed_count: self.__unsafe_private_named.15,
+            subscriber_count: self.__unsafe_private_named.16,
+            tangled: self.__unsafe_private_named.17,
             extra_data: Some(extra_data),
         }
     }

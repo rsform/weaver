@@ -1,0 +1,136 @@
+/* Profile display - sidebar on desktop, header on mobile */
+
+.profile-display {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+}
+
+.profile-banner {
+    width: 100%;
+    height: 120px;
+    overflow: hidden;
+    border-radius: 4px 4px 0 0;
+}
+
+.profile-banner img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-content {
+    padding: 1.5rem;
+}
+
+.profile-identity {
+    margin-bottom: 1.5rem;
+}
+
+.profile-identity .avatar {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 1rem;
+}
+
+.profile-name-section {
+    margin-bottom: 0.75rem;
+}
+
+.profile-display-name {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0 0 0.25rem 0;
+    font-family: var(--font-heading);
+}
+
+.profile-pronouns {
+    font-size: 1rem;
+    font-weight: 400;
+    color: var(--color-muted);
+}
+
+.profile-handle {
+    font-size: 0.95rem;
+    color: var(--color-subtle);
+    margin-bottom: 0.5rem;
+}
+
+.profile-location {
+    font-size: 0.9rem;
+    color: var(--color-muted);
+}
+
+.profile-description {
+    color: var(--color-text);
+    line-height: 1.5;
+    margin-top: 0.75rem;
+    white-space: pre-wrap;
+}
+
+.profile-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 1rem;
+    padding: 1rem 0;
+    margin: 1rem 0;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.profile-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.profile-stat-label {
+    font-size: 0.85rem;
+    color: var(--color-subtle);
+}
+
+.profile-stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-primary);
+}
+
+.profile-links {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.profile-link {
+    color: var(--color-link);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.15s ease;
+}
+
+.profile-link:hover {
+    color: var(--color-primary);
+}
+
+.profile-link-platform {
+    font-weight: 500;
+}
+
+.profile-loading {
+    padding: 2rem;
+    text-align: center;
+    color: var(--color-muted);
+}
+
+/* Mobile layout */
+@media (max-width: 768px) {
+    .profile-identity .avatar {
+        width: 80px;
+        height: 80px;
+    }
+
+    .profile-display-name {
+        font-size: 1.25rem;
+    }
+}

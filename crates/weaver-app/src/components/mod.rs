@@ -11,3 +11,6 @@ pub use entry::{Entry, EntryCard};
 pub mod identity;
 pub use identity::{NotebookCard, Repository, RepositoryIndex};
 pub mod avatar;
+
+pub mod profile;
+pub use profile::ProfileDisplay;

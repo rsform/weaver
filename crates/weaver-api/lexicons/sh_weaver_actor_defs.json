@@ -13,14 +13,9 @@
           "type": "string",
           "format": "did"
         },
-        "displayName": {
-          "type": "string",
-          "maxLength": 640,
-          "maxGraphemes": 64
-        },
-        "handle": {
-          "type": "string",
-          "format": "handle"
+        "signature": {
+          "type": "bytes",
+          "description": "signed bytes of the corresponding notebook record in the author's repo"
         }
       }
     },
@@ -77,6 +72,10 @@
         "banner": {
           "type": "string",
           "format": "uri"
+        },
+        "bluesky": {
+          "type": "boolean",
+          "description": "Include link to this account on Bluesky."
         },
         "createdAt": {
           "type": "string",
@@ -137,11 +136,19 @@
           "description": "Pronouns to use in user-generated content.",
           "ref": "#pronounsList"
         },
+        "streamplace": {
+          "type": "boolean",
+          "description": "Include link to this account on stream.place."
+        },
         "subscribedCount": {
           "type": "integer"
         },
         "subscriberCount": {
           "type": "integer"
+        },
+        "tangled": {
+          "type": "boolean",
+          "description": "Include link to this account on Tangled."
         }
       }
     },

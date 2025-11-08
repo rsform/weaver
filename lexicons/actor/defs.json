@@ -43,6 +43,18 @@
           "type": "ref",
           "ref": "#pinnedList"
         },
+        "bluesky": {
+          "type": "boolean",
+          "description": "Include link to this account on Bluesky."
+        },
+        "tangled": {
+          "type": "boolean",
+          "description": "Include link to this account on Tangled."
+        },
+        "streamplace": {
+          "type": "boolean",
+          "description": "Include link to this account on stream.place."
+        },
         "labels": {
           "type": "array",
           "items": { "type": "ref", "ref": "com.atproto.label.defs#label" }
@@ -112,7 +124,7 @@
       "properties": {
         "did": { "type": "string", "format": "did" },
         "signature": {
-          "type": "bytes"
+          "type": "bytes",
           "description": "signed bytes of the corresponding notebook record in the author's repo"
         }
       }
