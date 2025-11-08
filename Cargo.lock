@@ -7242,7 +7242,6 @@ version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54e4348c16a3d2e2a45437eff67efc5462b60443de76f61b5d0ed9111c626d9d"
 dependencies = [
- "cc",
  "indexed_db_futures",
  "js-sys",
  "once_cell",
@@ -8644,6 +8643,7 @@ dependencies = [
  "dioxus-primitives",
  "jacquard",
  "jacquard-axum",
+ "js-sys",
  "markdown-weaver",
  "mime-sniffer",
  "mini-moka",
@@ -8651,9 +8651,12 @@ dependencies = [
  "serde_json",
  "sqlite-wasm-rs",
  "time",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "weaver-api",
  "weaver-common",
  "weaver-renderer",
+ "web-sys",
 ]
 
 [[package]]

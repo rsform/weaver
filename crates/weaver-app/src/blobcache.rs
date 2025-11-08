@@ -1,3 +1,4 @@
+use crate::cache_impl;
 use dioxus::{CapturedError, Result};
 use jacquard::{
     bytes::Bytes,
@@ -15,20 +16,14 @@ use weaver_api::com_atproto::sync::get_blob::GetBlob;
 #[derive(Clone)]
 pub struct BlobCache {
     client: Arc<BasicClient>,
-    cache: mini_moka::sync::Cache<Cid<'static>, Bytes>,
-    map: mini_moka::sync::Cache<SmolStr, Cid<'static>>,
+    cache: cache_impl::Cache<Cid<'static>, Bytes>,
+    map: cache_impl::Cache<SmolStr, Cid<'static>>,
 }
 
 impl BlobCache {
     pub fn new(client: Arc<BasicClient>) -> Self {
-        let cache = mini_moka::sync::Cache::builder()
-            .max_capacity(100)
-            .time_to_idle(Duration::from_secs(1200))
-            .build();
-        let map = mini_moka::sync::Cache::builder()
-            .max_capacity(500)
-            .time_to_idle(Duration::from_secs(1200))
-            .build();
+        let cache = cache_impl::new_cache(100, Duration::from_secs(1200));
+        let map = cache_impl::new_cache(500, Duration::from_secs(1200));
 
         Self { client, cache, map }
     }

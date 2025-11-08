@@ -12,7 +12,7 @@ title = "Weaver"
 style = []
 
 # Additional JavaScript files
-script = []
+script = ["assets/sw.js"]
 
 [web.resource.dev]
 

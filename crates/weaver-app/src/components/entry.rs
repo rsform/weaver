@@ -11,11 +11,12 @@ use crate::Route;
 use dioxus::prelude::*;
 
 const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
-#[allow(unused_imports)]
+#[cfg(feature = "fullstack-server")]
 use dioxus::{fullstack::extract::Extension, CapturedError};
-use jacquard::{
-    from_data, prelude::IdentityResolver, smol_str::ToSmolStr, types::string::Datetime,
-};
+use jacquard::prelude::*;
+#[allow(unused_imports)]
+use jacquard::smol_str::ToSmolStr;
+use jacquard::{from_data, types::string::Datetime};
 #[allow(unused_imports)]
 use jacquard::{
     smol_str::SmolStr,
@@ -32,23 +33,41 @@ pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) 
     let entry = use_resource(use_reactive!(|(ident, book_title, title)| async move {
         let fetcher = use_context::<fetch::CachedFetcher>();
         let entry = fetcher
-            .get_entry(ident.clone(), book_title, title)
+            .get_entry(ident.clone(), book_title.clone(), title)
             .await
             .ok()
             .flatten();
-        if let Some(entry) = &entry {
-            let entry = &entry.1;
-            if let Some(embeds) = &entry.embeds {
+        if let Some(entry_data) = &entry {
+            let entry_record = &entry_data.1;
+            if let Some(embeds) = &entry_record.embeds {
                 if let Some(images) = &embeds.images {
-                    for image in &images.images {
-                        let cid = image.image.blob().cid();
-                        cache_blob(
-                            ident.to_smolstr(),
-                            cid.to_smolstr(),
-                            image.name.as_ref().map(|n| n.to_smolstr()),
+                    // Register blob mappings with service worker (client-side only)
+                    #[cfg(all(
+                        target_family = "wasm",
+                        target_os = "unknown",
+                        not(feature = "fullstack-server")
+                    ))]
+                    {
+                        let _ = crate::service_worker::register_entry_blobs(
+                            &ident,
+                            book_title.as_str(),
+                            images,
+                            &fetcher,
                         )
-                        .await
-                        .ok();
+                        .await;
+                    }
+                    #[cfg(feature = "fullstack-server")]
+                    {
+                        for image in &images.images {
+                            let cid = image.image.blob().cid();
+                            cache_blob(
+                                ident.to_smolstr(),
+                                cid.to_smolstr(),
+                                image.name.as_ref().map(|n| n.to_smolstr()),
+                            )
+                            .await
+                            .ok();
+                        }
                     }
                 }
             }
@@ -461,6 +480,7 @@ fn EntryMarkdownDirect(
     }
 }
 
+#[cfg(feature = "fullstack-server")]
 #[put("/cache/{ident}/{cid}?name", cache: Extension<Arc<BlobCache>>)]
 pub async fn cache_blob(ident: SmolStr, cid: SmolStr, name: Option<SmolStr>) -> Result<()> {
     let ident = AtIdentifier::new_owned(ident)?;

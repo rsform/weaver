@@ -2,11 +2,10 @@
 // need dioxus
 use components::{Entry, Repository, RepositoryIndex};
 #[allow(unused)]
-use dioxus::{
-    fullstack::{response::Extension, FullstackContext},
-    prelude::*,
-    CapturedError,
-};
+use dioxus::{prelude::*, CapturedError};
+
+#[cfg(feature = "fullstack-server")]
+use dioxus::fullstack::{response::Extension, FullstackContext};
 #[allow(unused)]
 use jacquard::{
     client::BasicClient,
@@ -24,6 +23,7 @@ mod cache_impl;
 /// Define a components module that contains all shared components for our app.
 mod components;
 mod fetch;
+mod service_worker;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
 mod views;
 
@@ -62,6 +62,18 @@ const FAVICON: Asset = asset!("/assets/weaver_photo_sm.jpg");
 // The asset macro also minifies some assets like CSS and JS to make bundled smaller
 const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
 
+#[cfg(not(feature = "fullstack-server"))]
+#[cfg(feature = "server")]
+async fn serve_sw() -> impl axum::response::IntoResponse {
+    use axum::response::IntoResponse;
+    let sw_js = include_str!("../assets/sw.js");
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/javascript")],
+        sw_js,
+    )
+        .into_response()
+}
+
 fn main() {
     // Set up better panic messages for wasm
     #[cfg(target_arch = "wasm32")]
@@ -76,31 +88,39 @@ fn main() {
             extract::{Extension, Request},
             middleware,
             middleware::Next,
+            routing::get,
         };
         use std::convert::Infallible;
         use std::sync::Arc;
 
-        // Create shared state
-        let fetcher = Arc::new(CachedFetcher::new(Arc::new(BasicClient::unauthenticated())));
-        let blob_cache = Arc::new(BlobCache::new(Arc::new(BasicClient::unauthenticated())));
+        #[cfg(not(feature = "fullstack-server"))]
+        let router = {
+            axum::Router::new()
+                .route("/sw.js", get(serve_sw))
+                .merge(dioxus::server::router(App))
+        };
 
-        // Create a new router for our app using the `router` function
-        let router = dioxus::server::router(App).layer(middleware::from_fn({
-            let fetcher = fetcher.clone();
-            let blob_cache = blob_cache.clone();
-            move |mut req: Request, next: Next| {
+        #[cfg(feature = "fullstack-server")]
+        let router = {
+            let fetcher = Arc::new(CachedFetcher::new(Arc::new(BasicClient::unauthenticated())));
+            let blob_cache = Arc::new(BlobCache::new(Arc::new(BasicClient::unauthenticated())));
+            dioxus::server::router(App).layer(middleware::from_fn({
                 let fetcher = fetcher.clone();
                 let blob_cache = blob_cache.clone();
-                async move {
-                    // Attach extensions for dioxus server functions
-                    req.extensions_mut().insert(fetcher);
-                    req.extensions_mut().insert(blob_cache);
+                move |mut req: Request, next: Next| {
+                    let fetcher = fetcher.clone();
+                    let blob_cache = blob_cache.clone();
+                    async move {
+                        // Attach extensions for dioxus server functions
+                        req.extensions_mut().insert(fetcher);
+                        req.extensions_mut().insert(blob_cache);
 
-                    // And then return the response with `next.run()
-                    Ok::<_, Infallible>(next.run(req).await)
+                        // And then return the response with `next.run()
+                        Ok::<_, Infallible>(next.run(req).await)
+                    }
                 }
-            }
-        }));
+            }))
+        };
         // And then return the router
         Ok(router)
     });
@@ -118,6 +138,19 @@ fn main() {
 fn App() -> Element {
     // The `rsx!` macro lets us define HTML inside of rust. It expands to an Element with all of our HTML inside.
     use_context_provider(|| fetch::CachedFetcher::new(Arc::new(BasicClient::unauthenticated())));
+
+    // Register service worker on startup (only on web)
+    #[cfg(all(
+        target_family = "wasm",
+        target_os = "unknown",
+        not(feature = "fullstack-server")
+    ))]
+    use_effect(move || {
+        spawn(async move {
+            let _ = service_worker::register_service_worker().await;
+        });
+    });
+
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
@@ -134,10 +167,17 @@ fn ErrorLayout() -> Element {
     rsx! {
         ErrorBoundary {
             handle_error: move |err: ErrorContext| {
-                let http_error = FullstackContext::commit_error_status(err.error().unwrap());
-                match http_error.status {
-                    StatusCode::NOT_FOUND => rsx! { div { "404 - Page not found" } },
-                    _ => rsx! { div { "An unknown error occurred" } },
+                #[cfg(feature = "fullstack-server")]
+                {
+                    let http_error = FullstackContext::commit_error_status(err.error().unwrap());
+                    match http_error.status {
+                        StatusCode::NOT_FOUND => rsx! { div { "404 - Page not found" } },
+                        _ => rsx! { div { "An unknown error occurred" } },
+                    }
+                }
+                #[cfg(not(feature = "fullstack-server"))]
+                {
+                    rsx! { div { "An error occurred" } }
                 }
             },
             Outlet::<Route> {}
@@ -145,38 +185,29 @@ fn ErrorLayout() -> Element {
     }
 }
 
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
 #[get("/{notebook}/image/{name}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
-pub async fn image_named(
-    notebook: SmolStr,
-    name: SmolStr,
-) -> Result<dioxus_fullstack::response::Response> {
-    use axum::response::IntoResponse;
+pub async fn image_named(notebook: SmolStr, name: SmolStr) -> Result<axum::response::Response> {
+    use axum::{http::header::CONTENT_TYPE, response::IntoResponse};
     use mime_sniffer::MimeTypeSniffer;
     if let Some(bytes) = blob_cache.get_named(&name) {
         let blob = bytes.clone();
-        let mime = blob.sniff_mime_type().unwrap_or("application/octet-stream");
-        Ok((
-            [(dioxus_fullstack::http::header::CONTENT_TYPE, mime)],
-            bytes,
-        )
-            .into_response())
+        let mime = blob.sniff_mime_type().unwrap_or("image/jpg");
+        Ok(([(CONTENT_TYPE, mime)], bytes).into_response())
     } else {
         Err(CapturedError::from_display("no image"))
     }
 }
 
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
 #[get("/{notebook}/blob/{cid}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
-pub async fn blob(notebook: SmolStr, cid: SmolStr) -> Result<dioxus_fullstack::response::Response> {
-    use axum::response::IntoResponse;
+pub async fn blob(notebook: SmolStr, cid: SmolStr) -> Result<axum::response::Response> {
+    use axum::{http::header::CONTENT_TYPE, response::IntoResponse};
     use mime_sniffer::MimeTypeSniffer;
     if let Some(bytes) = blob_cache.get_cid(&Cid::new_owned(cid.as_bytes())?) {
         let blob = bytes.clone();
         let mime = blob.sniff_mime_type().unwrap_or("application/octet-stream");
-        Ok((
-            [(dioxus_fullstack::http::header::CONTENT_TYPE, mime)],
-            bytes,
-        )
-            .into_response())
+        Ok(([(CONTENT_TYPE, mime)], bytes).into_response())
     } else {
         Err(CapturedError::from_display("no blob"))
     }

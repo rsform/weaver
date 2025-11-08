@@ -6,18 +6,22 @@ edition = "2021"
 
 [features]
 default = ["web"]
-# The feature that are only required for the web = ["dioxus/web"] build target should be optional and only enabled in the web = ["dioxus/web"] feature
-web = ["dioxus/web", "chrono/wasmbind"]
-# The feature that are only required for the desktop = ["dioxus/desktop"] build target should be optional and only enabled in the desktop = ["dioxus/desktop"] feature
+# Fullstack mode with SSR and server functions
+fullstack-server = ["dioxus/fullstack"]
+
+web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
-# The feature that are only required for the mobile = ["dioxus/mobile"] build target should be optional and only enabled in the mobile = ["dioxus/mobile"] feature
 mobile = ["dioxus/mobile"]
-# The feature that are only required for the server = ["dioxus/server"] build target should be optional and only enabled in the server = ["dioxus/server"] feature
-server = ["dioxus/server", "dep:jacquard-axum", "dep:axum"]
+server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum"]
+
+
+
 
 [dependencies]
 dashmap = "6.1.0"
-dioxus = { version = "0.7.0", features = ["router", "fullstack"] }
+
+dioxus = { version = "0.7.0", features = ["router"] }
+#dioxus = { version = "0.7.0", features = ["router", "fullstack"] }
 weaver-common = { path = "../weaver-common" }
 jacquard = { workspace = true, features = ["streaming"] }
 jacquard-axum = { workspace = true, optional = true }
@@ -37,11 +41,12 @@ diesel_migrations = { version = "2.3", features = ["sqlite"] }
 
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
-sqlite-wasm-rs = { version = "0.4", features = ["relaxed-idb"] }
-
-
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
+sqlite-wasm-rs = { version = "0.4", default-features = false, features = ["precompiled", "relaxed-idb"] }
 time = { version = "0.3", features = ["wasm-bindgen"] }
 console_error_panic_hook = "0.1"
 mini-moka = { git = "https://github.com/moka-rs/mini-moka", rev = "da864e849f5d034f32e02197fee9bb5d5af36d3d", features = ["js"] }
+chrono = { version = "0.4", features = ["wasmbind"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorker", "ServiceWorkerRegistration", "RegistrationOptions", "Window", "Navigator", "MessageEvent", "console"] }
+js-sys = "0.3"
