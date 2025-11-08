@@ -27,7 +27,7 @@ pub mod theme;
 pub struct AuthorListView<'a> {
     pub index: i64,
     #[serde(borrow)]
-    pub record: jacquard_common::types::value::Data<'a>,
+    pub record: crate::sh_weaver::actor::ProfileDataView<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub uri: Option<jacquard_common::types::string::AtUri<'a>>,
@@ -82,7 +82,7 @@ pub struct AuthorListViewBuilder<'a, S: author_list_view_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
         ::core::option::Option<i64>,
-        ::core::option::Option<jacquard_common::types::value::Data<'a>>,
+        ::core::option::Option<crate::sh_weaver::actor::ProfileDataView<'a>>,
         ::core::option::Option<jacquard_common::types::string::AtUri<'a>>,
     ),
     _phantom: ::core::marker::PhantomData<&'a ()>,
@@ -133,7 +133,7 @@ where
     /// Set the `record` field (required)
     pub fn record(
         mut self,
-        value: impl Into<jacquard_common::types::value::Data<'a>>,
+        value: impl Into<crate::sh_weaver::actor::ProfileDataView<'a>>,
     ) -> AuthorListViewBuilder<'a, author_list_view_state::SetRecord<S>> {
         self.__unsafe_private_named.1 = ::core::option::Option::Some(value.into());
         AuthorListViewBuilder {
@@ -232,8 +232,11 @@ fn lexicon_doc_sh_weaver_notebook_defs() -> ::jacquard_lexicon::lexicon::Lexicon
                         );
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("record"),
-                            ::jacquard_lexicon::lexicon::LexObjectProperty::Unknown(::jacquard_lexicon::lexicon::LexUnknown {
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
                                 description: None,
+                                r#ref: ::jacquard_common::CowStr::new_static(
+                                    "sh.weaver.actor.defs#profileDataView",
+                                ),
                             }),
                         );
                         map.insert(

@@ -3,9 +3,8 @@
 #[cfg(feature = "server")]
 use crate::blobcache::BlobCache;
 use crate::{
-    components::avatar::{Avatar, AvatarFallback, AvatarImage},
+    components::avatar::{Avatar, AvatarImage},
     data::use_handle,
-    fetch,
 };
 
 use crate::Route;
@@ -13,10 +12,9 @@ use dioxus::prelude::*;
 
 const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
 
-use jacquard::prelude::*;
 #[allow(unused_imports)]
 use jacquard::smol_str::ToSmolStr;
-use jacquard::{from_data, types::string::Datetime};
+use jacquard::types::string::Datetime;
 #[allow(unused_imports)]
 use jacquard::{
     smol_str::SmolStr,
@@ -166,7 +164,6 @@ fn EntryPage(
 pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element {
     use crate::Route;
     use jacquard::{from_data, IntoStatic};
-    use weaver_api::app_bsky::actor::profile::Profile;
     use weaver_api::sh_weaver::notebook::entry::Entry;
 
     let entry_view = &entry.entry;
@@ -219,30 +216,41 @@ pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element 
                     if let Some(author) = first_author {
                         div { class: "entry-card-author",
                             {
-                                match author.record.get_at_path(".value").and_then(|v| from_data::<Profile>(v).ok()) {
-                                    Some(profile) => {
-                                        let avatar = profile.avatar
-                                            .map(|avatar| {
-                                                let cid = avatar.blob().cid();
-                                                format!("https://cdn.bsky.app/img/avatar/plain/{}/{cid}@jpeg", entry_view.uri.authority().as_ref())
-                                            });
-                                        let display_name = profile.display_name
-                                            .as_ref()
-                                            .map(|n| n.as_ref())
-                                            .unwrap_or("Unknown");
+                                use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+
+                                match &author.record.inner {
+                                    ProfileDataViewInner::ProfileView(profile) => {
+                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
                                         rsx! {
-                                            if let Some(avatar_url) = avatar {
+                                            if let Some(ref avatar_url) = profile.avatar {
                                                 Avatar {
-                                                    AvatarImage { src: avatar_url }
+                                                    AvatarImage { src: avatar_url.as_ref() }
                                                 }
                                             }
                                             span { class: "author-name", "{display_name}" }
                                             span { class: "meta-label", "@{ident}" }
                                         }
                                     }
-                                    None => {
+                                    ProfileDataViewInner::ProfileViewDetailed(profile) => {
+                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
                                         rsx! {
-                                            span { class: "author-name", "Author {author.index}" }
+                                            if let Some(ref avatar_url) = profile.avatar {
+                                                Avatar {
+                                                    AvatarImage { src: avatar_url.as_ref() }
+                                                }
+                                            }
+                                            span { class: "author-name", "{display_name}" }
+                                            span { class: "meta-label", "@{ident}" }
+                                        }
+                                    }
+                                    ProfileDataViewInner::TangledProfileView(profile) => {
+                                        rsx! {
+                                            span { class: "author-name", "@{profile.handle.as_ref()}" }
+                                        }
+                                    }
+                                    _ => {
+                                        rsx! {
+                                            span { class: "author-name", "Unknown" }
                                         }
                                     }
                                 }
@@ -279,8 +287,6 @@ fn EntryMetadata(
     ident: AtIdentifier<'static>,
     created_at: Datetime,
 ) -> Element {
-    use weaver_api::app_bsky::actor::profile::Profile;
-
     let title = entry_view
         .title
         .as_ref()
@@ -300,27 +306,19 @@ fn EntryMetadata(
                         for (i, author) in entry_view.authors.iter().enumerate() {
                             if i > 0 { span { ", " } }
                             {
-                                // Parse author profile from the nested value field
-                                match author.record.get_at_path(".value").and_then(|v| from_data::<Profile>(v).ok()) {
-                                    Some(profile) => {
-                                        let avatar = profile.avatar
-                                            .map(|avatar| {
-                                                let cid = avatar.blob().cid();
-                                                let did = entry_view.uri.authority();
-                                                format!("https://cdn.bsky.app/img/avatar/plain/{did}/{cid}@jpeg")
-                                            });
-                                        let display_name = profile.display_name
-                                            .as_ref()
-                                            .map(|n| n.as_ref())
-                                            .unwrap_or("Unknown");
+                                use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+
+                                match &author.record.inner {
+                                    ProfileDataViewInner::ProfileView(profile) => {
+                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
                                         rsx! {
                                             Link {
                                                 to: Route::RepositoryIndex { ident: ident.clone() },
                                                 div { class: "entry-authors",
-                                                    if let Some(avatar) = avatar {
+                                                    if let Some(ref avatar_url) = profile.avatar {
                                                         Avatar {
                                                             AvatarImage {
-                                                                src: avatar
+                                                                src: avatar_url.as_ref()
                                                             }
                                                         }
                                                     }
@@ -330,9 +328,33 @@ fn EntryMetadata(
                                             }
                                         }
                                     }
-                                    None => {
+                                    ProfileDataViewInner::ProfileViewDetailed(profile) => {
+                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
                                         rsx! {
-                                            span { class: "author-name", "Author {author.index}" }
+                                            Link {
+                                                to: Route::RepositoryIndex { ident: ident.clone() },
+                                                div { class: "entry-authors",
+                                                    if let Some(ref avatar_url) = profile.avatar {
+                                                        Avatar {
+                                                            AvatarImage {
+                                                                src: avatar_url.as_ref()
+                                                            }
+                                                        }
+                                                    }
+                                                    span { class: "author-name", "{display_name}" }
+                                                    span { class: "meta-label", "@{ident}" }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    ProfileDataViewInner::TangledProfileView(profile) => {
+                                        rsx! {
+                                            span { class: "author-name", "@{profile.handle.as_ref()}" }
+                                        }
+                                    }
+                                    _ => {
+                                        rsx! {
+                                            span { class: "author-name", "Unknown" }
                                         }
                                     }
                                 }

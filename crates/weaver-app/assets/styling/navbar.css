@@ -1,16 +1,31 @@
 #navbar {
-  display: flex;
-  flex-direction: row;
+    display: flex;
+    flex-direction: row;
 }
 
-#navbar a {
-  color: var(--color-text);
-  margin-right: 20px;
-  text-decoration: none;
-  transition: color 0.2s ease;
+.breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
-#navbar a:hover {
-  cursor: pointer;
-  color: var(--color-primary);
+.breadcrumb {
+    color: var(--color-text);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.breadcrumb:hover {
+    cursor: pointer;
+    color: var(--color-primary);
+}
+
+.breadcrumb-current {
+    color: var(--color-text-muted, #666);
+    font-weight: 500;
+}
+
+.breadcrumb-separator {
+    color: var(--color-text-muted, #999);
+    user-select: none;
 }

@@ -8,9 +8,10 @@
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["content", "title", "createdAt"],
+        "required": ["content", "title", "path", "createdAt"],
         "properties": {
           "title": { "type": "ref", "ref": "sh.weaver.notebook.defs#title" },
+          "path": { "type": "ref", "ref": "sh.weaver.notebook.defs#path" },
           "tags": { "type": "ref", "ref": "sh.weaver.notebook.defs#tags" },
 
           "content": {

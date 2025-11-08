@@ -101,11 +101,13 @@ fn send_blob_mappings(
     Ok(())
 }
 
+#[allow(unused)]
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub async fn register_service_worker() -> Result<(), String> {
     Ok(())
 }
 
+#[allow(unused)]
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub fn send_blob_mappings(
     _notebook: &str,

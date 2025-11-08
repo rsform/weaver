@@ -4,8 +4,10 @@ use components::{Entry, Repository, RepositoryIndex};
 #[allow(unused)]
 use dioxus::{prelude::*, CapturedError};
 
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+use dioxus::fullstack::response::Extension;
 #[cfg(feature = "fullstack-server")]
-use dioxus::fullstack::{response::Extension, FullstackContext};
+use dioxus::fullstack::FullstackContext;
 #[allow(unused)]
 use jacquard::{
     client::BasicClient,
@@ -101,10 +103,12 @@ fn main() {
                 .merge(dioxus::server::router(App))
         };
 
+        let client = Arc::new(BasicClient::unauthenticated());
+
         #[cfg(feature = "fullstack-server")]
         let router = {
-            let fetcher = Arc::new(CachedFetcher::new(Arc::new(BasicClient::unauthenticated())));
-            let blob_cache = Arc::new(BlobCache::new(Arc::new(BasicClient::unauthenticated())));
+            let fetcher = Arc::new(CachedFetcher::new(client.clone()));
+            let blob_cache = Arc::new(BlobCache::new(client.clone()));
             dioxus::server::router(App).layer(middleware::from_fn({
                 let fetcher = fetcher.clone();
                 let blob_cache = blob_cache.clone();

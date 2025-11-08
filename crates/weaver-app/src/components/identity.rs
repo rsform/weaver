@@ -18,20 +18,36 @@ pub fn Repository(ident: AtIdentifier<'static>) -> Element {
 #[component]
 pub fn RepositoryIndex(ident: AtIdentifier<'static>) -> Element {
     let fetcher = use_context::<fetch::CachedFetcher>();
-    let notebooks = use_signal(|| fetcher.list_recent_notebooks());
+
+    // Fetch notebooks for this specific DID
+    let notebooks = use_resource(use_reactive!(|ident| {
+        let fetcher = fetcher.clone();
+        async move { fetcher.fetch_notebooks_for_did(&ident).await }
+    }));
+
     rsx! {
         document::Link { rel: "stylesheet", href: NOTEBOOK_CARD_CSS }
 
         div { class: "notebooks-list",
-            for notebook in notebooks.iter() {
-                {
-                    let view = &notebook.0;
-                    rsx! {
-                        div {
-                            key: "{view.cid}",
-                            NotebookCard { notebook: view.clone() }
+            match notebooks() {
+                Some(Ok(notebook_list)) => rsx! {
+                    for notebook in notebook_list.iter() {
+                        {
+                            let view = &notebook.0;
+                            rsx! {
+                                div {
+                                    key: "{view.cid}",
+                                    NotebookCard { notebook: view.clone() }
+                                }
+                            }
                         }
                     }
+                },
+                Some(Err(_)) => rsx! {
+                    div { "Error loading notebooks" }
+                },
+                None => rsx! {
+                    div { "Loading notebooks..." }
                 }
             }
         }
@@ -41,9 +57,7 @@ pub fn RepositoryIndex(ident: AtIdentifier<'static>) -> Element {
 #[component]
 pub fn NotebookCard(notebook: NotebookView<'static>) -> Element {
     use crate::components::avatar::{Avatar, AvatarImage};
-    use jacquard::{from_data, prelude::IdentityResolver, IntoStatic};
-    use weaver_api::app_bsky::actor::profile::Profile;
-    use weaver_api::sh_weaver::notebook::book::Book;
+    use jacquard::IntoStatic;
 
     let title = notebook
         .title
@@ -58,8 +72,6 @@ pub fn NotebookCard(notebook: NotebookView<'static>) -> Element {
     let first_author = notebook.authors.first();
 
     let ident = notebook.uri.authority().clone().into_static();
-    let ident_for_avatar = ident.clone();
-
     rsx! {
         div { class: "notebook-card",
             Link {
@@ -78,29 +90,39 @@ pub fn NotebookCard(notebook: NotebookView<'static>) -> Element {
                     if let Some(author) = first_author {
                         div { class: "notebook-card-author",
                             {
-                                match from_data::<Profile>(author.record.get_at_path(".value").unwrap()) {
-                                    Ok(profile) => {
-                                        let avatar = profile.avatar
-                                            .map(|avatar| {
-                                                let cid = avatar.blob().cid();
-                                                format!("https://cdn.bsky.app/img/avatar/plain/{}/{cid}@jpeg", ident_for_avatar.as_ref())
-                                            });
-                                        let display_name = profile.display_name
-                                            .as_ref()
-                                            .map(|n| n.as_ref())
-                                            .unwrap_or("Unknown");
+                                use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+
+                                match &author.record.inner {
+                                    ProfileDataViewInner::ProfileView(profile) => {
+                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
                                         rsx! {
-                                            if let Some(avatar_url) = avatar {
+                                            if let Some(ref avatar_url) = profile.avatar {
                                                 Avatar {
-                                                    AvatarImage { src: avatar_url }
+                                                    AvatarImage { src: avatar_url.as_ref() }
                                                 }
                                             }
                                             span { class: "author-name", "{display_name}" }
                                         }
                                     }
-                                    Err(_) => {
+                                    ProfileDataViewInner::ProfileViewDetailed(profile) => {
+                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
                                         rsx! {
-                                            span { class: "author-name", "Author {author.index}" }
+                                            if let Some(ref avatar_url) = profile.avatar {
+                                                Avatar {
+                                                    AvatarImage { src: avatar_url.as_ref() }
+                                                }
+                                            }
+                                            span { class: "author-name", "{display_name}" }
+                                        }
+                                    }
+                                    ProfileDataViewInner::TangledProfileView(profile) => {
+                                        rsx! {
+                                            span { class: "author-name", "@{profile.handle.as_ref()}" }
+                                        }
+                                    }
+                                    _ => {
+                                        rsx! {
+                                            span { class: "author-name", "Unknown" }
                                         }
                                     }
                                 }

@@ -443,6 +443,7 @@ mod tests {
     fn test_client_context_creation() {
         let entry = Entry::new()
             .title("Test")
+            .path(weaver_common::normalize_title_path("Test"))
             .content("# Test")
             .created_at(Datetime::now())
             .build();

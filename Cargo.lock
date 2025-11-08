@@ -8631,6 +8631,8 @@ dependencies = [
  "mime-sniffer",
  "mini-moka",
  "n0-future",
+ "reqwest",
+ "serde",
  "serde_json",
  "sqlite-wasm-rs",
  "time",

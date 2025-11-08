@@ -12,6 +12,11 @@ pub enum WeaverError {
     #[diagnostic_source]
     Agent(#[from] jacquard::client::error::AgentError),
 
+    /// Jacquard Identity resolution error
+    #[error(transparent)]
+    #[diagnostic_source]
+    Identity(#[from] jacquard::identity::resolver::IdentityError),
+
     /// Invalid notebook structure
     #[error("invalid notebook structure: {0}")]
     InvalidNotebook(String),
@@ -49,8 +54,9 @@ pub enum WeaverError {
 
 /// Parse error with source code location information
 #[derive(thiserror::Error, Debug, Diagnostic)]
-#[error("parse error")]
-#[diagnostic()]
+#[error("parse error: {}",self.kind)]
+#[diagnostic(code(weaver::parse))]
+
 pub struct ParseError {
     #[diagnostic_source]
     kind: ParseErrorKind,

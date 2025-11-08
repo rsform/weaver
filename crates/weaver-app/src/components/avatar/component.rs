@@ -5,7 +5,9 @@ use dioxus_primitives::avatar::{self, AvatarFallbackProps, AvatarImageProps, Ava
 pub enum AvatarImageSize {
     #[default]
     Small,
+    #[allow(dead_code)]
     Medium,
+    #[allow(dead_code)]
     Large,
 }
 

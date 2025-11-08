@@ -63,7 +63,10 @@
       "required": ["record", "index"],
       "properties": {
         "uri": { "type": "string", "format": "at-uri" },
-        "record": { "type": "unknown" },
+        "record": {
+          "type": "ref",
+          "ref": "sh.weaver.actor.defs#profileDataView"
+        },
         "index": { "type": "integer" }
       }
     },

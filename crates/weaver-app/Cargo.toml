@@ -35,7 +35,9 @@ dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version 
 axum = {version = "0.8.6", optional = true}
 mime-sniffer = {version = "^0.1"}
 chrono = { version = "0.4" }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 diesel = { version = "2.3",  features = ["sqlite", "returning_clauses_for_sqlite_3_35", "chrono", "serde_json"] }
 diesel_migrations = { version = "2.3", features = ["sqlite"] }

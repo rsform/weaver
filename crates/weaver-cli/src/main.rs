@@ -9,6 +9,7 @@ use miette::{IntoDiagnostic, Result};
 use std::io::BufRead;
 use std::path::PathBuf;
 use std::sync::Arc;
+use weaver_common::normalize_title_path;
 use weaver_renderer::atproto::AtProtoPreprocessContext;
 use weaver_renderer::static_site::StaticSiteWriter;
 use weaver_renderer::utils::VaultBrokenLinkCallback;
@@ -206,7 +207,7 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug"))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug")),
         )
         .init();
 
@@ -379,6 +380,7 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
         let entry = Entry::new()
             .content(output.as_str())
             .title(entry_title.as_ref())
+            .path(normalize_title_path(entry_title.as_ref()))
             .created_at(Datetime::now())
             .maybe_embeds(embeds)
             .build();

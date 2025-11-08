@@ -7,20 +7,36 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 #[component]
 pub fn Home() -> Element {
     let fetcher = use_context::<fetch::CachedFetcher>();
-    let notebooks = use_signal(|| fetcher.list_recent_notebooks());
+
+    // Fetch notebooks from UFOS
+    let notebooks = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move { fetcher.fetch_notebooks_from_ufos().await }
+    });
+
     rsx! {
         document::Link { rel: "stylesheet", href: NOTEBOOK_CARD_CSS }
 
         div { class: "notebooks-list",
-            for notebook in notebooks.iter() {
-                {
-                    let view = &notebook.0;
-                    rsx! {
-                        div {
-                            key: "{view.cid}",
-                            NotebookCard { notebook: view.clone() }
+            match notebooks() {
+                Some(Ok(notebook_list)) => rsx! {
+                    for notebook in notebook_list.iter() {
+                        {
+                            let view = &notebook.0;
+                            rsx! {
+                                div {
+                                    key: "{view.cid}",
+                                    NotebookCard { notebook: view.clone() }
+                                }
+                            }
                         }
                     }
+                },
+                Some(Err(_)) => rsx! {
+                    div { "Error loading notebooks" }
+                },
+                None => rsx! {
+                    div { "Loading notebooks..." }
                 }
             }
         }
