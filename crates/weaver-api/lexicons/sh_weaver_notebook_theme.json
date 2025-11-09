@@ -57,6 +57,15 @@
             "description": "Reference to a dark colour scheme",
             "ref": "com.atproto.repo.strongRef"
           },
+          "defaultTheme": {
+            "type": "string",
+            "default": "auto",
+            "enum": [
+              "light",
+              "dark",
+              "auto"
+            ]
+          },
           "fonts": {
             "type": "object",
             "required": [

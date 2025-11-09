@@ -9,9 +9,18 @@ use weaver_common::jacquard::client::AgentSession;
 use weaver_common::jacquard::cowstr::ToCowStr;
 use weaver_common::jacquard::prelude::*;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ThemeDefault {
+    #[default]
+    Auto,
+    Light,
+    Dark,
+}
+
 /// A theme with resolved colour schemes (no strongRefs, actual data)
 #[derive(Clone, Debug)]
 pub struct ResolvedTheme<'a> {
+    pub default: ThemeDefault,
     pub dark_scheme: ColourSchemeColours<'a>,
     pub light_scheme: ColourSchemeColours<'a>,
     pub fonts: ThemeFonts<'a>,
@@ -51,7 +60,7 @@ pub fn default_fonts() -> ThemeFonts<'static> {
             "'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         ),
         monospace: CowStr::new_static(
-            "'IBM Plex Mono', 'Berkeley Mono', 'Cascadia Code', 'Roboto Mono', Consolas, monospace",
+            "'Ioskeley Mono', 'IBM Plex Mono', 'Berkeley Mono', 'Cascadia Code', 'Roboto Mono', Consolas, monospace",
         ),
         ..Default::default()
     }
@@ -90,6 +99,7 @@ pub fn default_colour_scheme_light() -> ColourSchemeColours<'static> {
 
 pub fn default_resolved_theme() -> ResolvedTheme<'static> {
     ResolvedTheme {
+        default: ThemeDefault::Auto,
         dark_scheme: default_colour_scheme_dark(),
         light_scheme: default_colour_scheme_light(),
         fonts: default_fonts(),
@@ -123,8 +133,15 @@ pub async fn resolve_theme<A: AgentSession + IdentityResolver>(
         .into_diagnostic()?;
 
     let light_scheme: ColourScheme = light_response.into_output().into_diagnostic()?.into();
+    let default = match theme.default_theme.as_ref().map(|t| t.as_str()) {
+        Some("auto") => ThemeDefault::Auto,
+        Some("dark") => ThemeDefault::Dark,
+        Some("light") => ThemeDefault::Light,
+        _ => ThemeDefault::Auto,
+    };
 
     Ok(ResolvedTheme {
+        default,
         dark_scheme: dark_scheme.colours.into_static(),
         light_scheme: light_scheme.colours.into_static(),
         fonts: theme.fonts.clone().into_static(),

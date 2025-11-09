@@ -1,6 +1,43 @@
 /* Default theme variables for non-notebook pages */
 /* These match the Rose Pine light/dark defaults */
 
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: normal;
+    font-weight: normal;
+    src: url("/assets/IoskeleyMono-Regular.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: normal;
+    font-weight: lighter;
+    src: url("/assets/IoskeleyMono-Light.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: italic;
+    font-weight: lighter;
+    src: url("/assets/IoskeleyMono-LightItalic.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: normal;
+    font-weight: bold;
+    src: url("/assets/IoskeleyMono-Bold.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: italic;
+    font-weight: normal;
+    src: url("/assets/IoskeleyMono-Italic.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: italic;
+    font-weight: bold;
+    src: url("/assets/IoskeleyMono-BoldItalic.woff2") format("woff2");
+}
+
 /* CSS Variables - Light Mode (default) */
 :root {
     --color-base: #faf4ed;
@@ -20,9 +57,9 @@
     --color-link: #d7827e;
     --color-highlight: #cecacd;
 
-    --font-body: IBM Plex, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-heading: IBM Plex Sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-mono: "IBM Plex Mono", "Berkeley Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    --font-body: "IBM Plex", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-heading: "IBM Plex Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "Ioskeley Mono", "IBM Plex Mono", "Berkeley Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
 
     --spacing-base: 16px;
     --spacing-line-height: 1.6;
@@ -49,5 +86,4 @@
         --color-link: #ebbcba;
         --color-highlight: #524f67;
     }
-
 }

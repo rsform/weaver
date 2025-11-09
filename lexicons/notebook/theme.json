@@ -10,6 +10,11 @@
         "type": "object",
         "required": ["darkScheme", "lightScheme", "fonts", "spacing", "darkCodeTheme", "lightCodeTheme"],
         "properties": {
+          "defaultTheme": {
+            "type": "string",
+            "enum": ["light", "dark", "auto"],
+            "default": "auto"
+          },
           "darkScheme": {
             "type": "ref",
             "ref": "com.atproto.repo.strongRef",

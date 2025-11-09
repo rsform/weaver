@@ -338,6 +338,23 @@ fn lexicon_doc_sh_weaver_notebook_theme() -> ::jacquard_lexicon::lexicon::Lexico
                                 }),
                             );
                             map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static(
+                                    "defaultTheme",
+                                ),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                    description: None,
+                                    format: None,
+                                    default: None,
+                                    min_length: None,
+                                    max_length: None,
+                                    min_graphemes: None,
+                                    max_graphemes: None,
+                                    r#enum: None,
+                                    r#const: None,
+                                    known_values: None,
+                                }),
+                            );
+                            map.insert(
                                 ::jacquard_common::smol_str::SmolStr::new_static("fonts"),
                                 ::jacquard_lexicon::lexicon::LexObjectProperty::Object(::jacquard_lexicon::lexicon::LexObject {
                                     description: None,
@@ -546,6 +563,9 @@ pub struct Theme<'a> {
     /// Reference to a dark colour scheme
     #[serde(borrow)]
     pub dark_scheme: crate::com_atproto::repo::strong_ref::StrongRef<'a>,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub default_theme: Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
     pub fonts: ThemeFonts<'a>,
     /// Syntax highlighting theme for light mode
@@ -676,6 +696,7 @@ pub struct ThemeBuilder<'a, S: theme_state::State> {
     __unsafe_private_named: (
         ::core::option::Option<ThemeDarkCodeTheme<'a>>,
         ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
+        ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<ThemeFonts<'a>>,
         ::core::option::Option<ThemeLightCodeTheme<'a>>,
         ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
@@ -696,7 +717,7 @@ impl<'a> ThemeBuilder<'a, theme_state::Empty> {
     pub fn new() -> Self {
         ThemeBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None, None),
+            __unsafe_private_named: (None, None, None, None, None, None, None),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -740,6 +761,25 @@ where
     }
 }
 
+impl<'a, S: theme_state::State> ThemeBuilder<'a, S> {
+    /// Set the `defaultTheme` field (optional)
+    pub fn default_theme(
+        mut self,
+        value: impl Into<Option<jacquard_common::CowStr<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.2 = value.into();
+        self
+    }
+    /// Set the `defaultTheme` field to an Option value (optional)
+    pub fn maybe_default_theme(
+        mut self,
+        value: Option<jacquard_common::CowStr<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.2 = value;
+        self
+    }
+}
+
 impl<'a, S> ThemeBuilder<'a, S>
 where
     S: theme_state::State,
@@ -750,7 +790,7 @@ where
         mut self,
         value: impl Into<ThemeFonts<'a>>,
     ) -> ThemeBuilder<'a, theme_state::SetFonts<S>> {
-        self.__unsafe_private_named.2 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
         ThemeBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -769,7 +809,7 @@ where
         mut self,
         value: impl Into<ThemeLightCodeTheme<'a>>,
     ) -> ThemeBuilder<'a, theme_state::SetLightCodeTheme<S>> {
-        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.4 = ::core::option::Option::Some(value.into());
         ThemeBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -788,7 +828,7 @@ where
         mut self,
         value: impl Into<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     ) -> ThemeBuilder<'a, theme_state::SetLightScheme<S>> {
-        self.__unsafe_private_named.4 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.5 = ::core::option::Option::Some(value.into());
         ThemeBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -807,7 +847,7 @@ where
         mut self,
         value: impl Into<ThemeSpacing<'a>>,
     ) -> ThemeBuilder<'a, theme_state::SetSpacing<S>> {
-        self.__unsafe_private_named.5 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.6 = ::core::option::Option::Some(value.into());
         ThemeBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -831,10 +871,11 @@ where
         Theme {
             dark_code_theme: self.__unsafe_private_named.0.unwrap(),
             dark_scheme: self.__unsafe_private_named.1.unwrap(),
-            fonts: self.__unsafe_private_named.2.unwrap(),
-            light_code_theme: self.__unsafe_private_named.3.unwrap(),
-            light_scheme: self.__unsafe_private_named.4.unwrap(),
-            spacing: self.__unsafe_private_named.5.unwrap(),
+            default_theme: self.__unsafe_private_named.2,
+            fonts: self.__unsafe_private_named.3.unwrap(),
+            light_code_theme: self.__unsafe_private_named.4.unwrap(),
+            light_scheme: self.__unsafe_private_named.5.unwrap(),
+            spacing: self.__unsafe_private_named.6.unwrap(),
             extra_data: Default::default(),
         }
     }
@@ -849,10 +890,11 @@ where
         Theme {
             dark_code_theme: self.__unsafe_private_named.0.unwrap(),
             dark_scheme: self.__unsafe_private_named.1.unwrap(),
-            fonts: self.__unsafe_private_named.2.unwrap(),
-            light_code_theme: self.__unsafe_private_named.3.unwrap(),
-            light_scheme: self.__unsafe_private_named.4.unwrap(),
-            spacing: self.__unsafe_private_named.5.unwrap(),
+            default_theme: self.__unsafe_private_named.2,
+            fonts: self.__unsafe_private_named.3.unwrap(),
+            light_code_theme: self.__unsafe_private_named.4.unwrap(),
+            light_scheme: self.__unsafe_private_named.5.unwrap(),
+            spacing: self.__unsafe_private_named.6.unwrap(),
             extra_data: Some(extra_data),
         }
     }

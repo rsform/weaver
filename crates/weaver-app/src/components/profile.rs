@@ -1,7 +1,10 @@
 #![allow(non_snake_case)]
 
 use crate::{
-    components::avatar::{Avatar, AvatarImage},
+    components::{
+        avatar::{Avatar, AvatarImage},
+        BskyIcon, TangledIcon,
+    },
     data::use_handle,
     Route,
 };
@@ -51,12 +54,16 @@ pub fn ProfileDisplay(ident: AtIdentifier<'static>) -> Element {
                 div { class: "profile-content",
                     // Avatar and identity
                     ProfileIdentity { profile_view: profile_view.clone(), ident: ident.clone() }
+                    div {
+                        class: "profile-extras",
+                        // Stats
+                        ProfileStats { ident: ident.clone() }
 
-                    // Stats
-                    ProfileStats { ident: ident.clone() }
+                        // Links
+                        ProfileLinks { profile_view: profile_view.clone(), ident: ident.clone() }
+                    }
 
-                    // Links
-                    ProfileLinks { profile_view: profile_view.clone(), ident: ident.clone() }
+
                 }
             }
         },
@@ -100,25 +107,29 @@ fn ProfileIdentity(
 
             rsx! {
                 div { class: "profile-identity",
-                    if let Some(ref avatar) = profile.avatar {
-                        Avatar {
-                            AvatarImage { src: avatar.as_ref() }
-                        }
-                    }
-
-                    div { class: "profile-name-section",
-                        h1 { class: "profile-display-name",
-                            "{display_name}"
-                            if let Some(ref pronouns) = pronouns_text {
-                                span { class: "profile-pronouns", " ({pronouns})" }
+                    div {
+                        class: "profile-block",
+                        if let Some(ref avatar) = profile.avatar {
+                            Avatar {
+                                AvatarImage { src: avatar.as_ref() }
                             }
                         }
-                        div { class: "profile-handle", "@{use_handle(ident.clone())?}" }
 
-                        if let Some(ref location) = profile.location {
-                            div { class: "profile-location", "{location}" }
+                        div { class: "profile-name-section",
+                            h1 { class: "profile-display-name",
+                                "{display_name}"
+                                if let Some(ref pronouns) = pronouns_text {
+                                    span { class: "profile-pronouns", " ({pronouns})" }
+                                }
+                            }
+                            div { class: "profile-handle", "@{use_handle(ident.clone())?}" }
+
+                            if let Some(ref location) = profile.location {
+                                div { class: "profile-location", "{location}" }
+                            }
                         }
                     }
+
 
                     if let Some(ref description) = profile.description {
                         div { class: "profile-description", "{description}" }
@@ -135,15 +146,18 @@ fn ProfileIdentity(
 
             rsx! {
                 div { class: "profile-identity",
-                    if let Some(ref avatar) = profile.avatar {
-                        Avatar {
-                            AvatarImage { src: avatar.as_ref() }
+                    div {
+                        class: "profile-block",
+                        if let Some(ref avatar) = profile.avatar {
+                            Avatar {
+                                AvatarImage { src: avatar.as_ref() }
+                            }
                         }
-                    }
 
-                    div { class: "profile-name-section",
-                        h1 { class: "profile-display-name", "{display_name}" }
-                        div { class: "profile-handle", "@{use_handle(ident.clone())?}" }
+                        div { class: "profile-name-section",
+                            h1 { class: "profile-display-name", "{display_name}" }
+                            div { class: "profile-handle", "@{use_handle(ident.clone())?}" }
+                        }
                     }
 
                     if let Some(ref description) = profile.description {
@@ -224,17 +238,19 @@ fn ProfileLinks(
                             target: "_blank",
                             rel: "noopener noreferrer",
                             class: "profile-link profile-link-platform",
-                            "View on Bluesky"
+                            BskyIcon { width: 20, height: 20, style: "vertical-align: text-bottom" }
+                            " Bluesky"
                         }
                     }
 
                     if profile.tangled.unwrap_or(false) {
                         a {
-                            href: "https://tangled.dev/{ident}",
+                            href: "https://tangled.org/@{ident}",
                             target: "_blank",
                             rel: "noopener noreferrer",
                             class: "profile-link profile-link-platform",
-                            "View on Tangled"
+                            TangledIcon { width: 20, height: 20, style: "vertical-align: text-bottom" }
+                            " Tangled"
                         }
                     }
 
@@ -259,8 +275,10 @@ fn ProfileLinks(
                         target: "_blank",
                         rel: "noopener noreferrer",
                         class: "profile-link profile-link-platform",
-                        "View on Bluesky"
+                        BskyIcon { width: 20, height: 20, style: "vertical-align: text-bottom" }
+                        " Bluesky"
                     }
+
                 }
             }
         }
@@ -278,6 +296,14 @@ fn ProfileLinks(
                             }
                         }
                     }
+                    a {
+                        href: "https://tangled.org/@{ident}",
+                        target: "_blank",
+                        rel: "noopener noreferrer",
+                        class: "profile-link profile-link-platform",
+                        TangledIcon { width: 20, height: 20, style: "vertical-align: text-bottom" }
+                        " Tangled"
+                    }
 
                     if profile.bluesky {
                         a {
@@ -285,7 +311,8 @@ fn ProfileLinks(
                             target: "_blank",
                             rel: "noopener noreferrer",
                             class: "profile-link profile-link-platform",
-                            "View on Bluesky"
+                            BskyIcon { width: 20, height: 20, style: "vertical-align: text-bottom" }
+                            " Bluesky"
                         }
                     }
                 }

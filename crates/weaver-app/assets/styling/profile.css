@@ -6,25 +6,9 @@
     /* No background - same plane as page */
 }
 
-/* Desktop: sidebar gets top and right borders */
-@media (min-width: 1400px) {
-    .profile-display {
-        border-top: 1.5px dashed var(--color-border);
-        border-right: 1.5px dashed var(--color-border);
-    }
-}
-
-/* Mobile: header gets top and bottom borders */
-@media (max-width: 1400px) {
-    .profile-display {
-        border-top: 1.5px dashed var(--color-border);
-        border-bottom: 1.5px solid var(--color-border);
-    }
-}
-
 .profile-banner {
     max-width: 100%;
-    height: 120px;
+    height: 200px;
     overflow: hidden;
 }
 
@@ -45,6 +29,7 @@
 .profile-identity .avatar {
     width: 120px;
     height: 120px;
+    margin-top: -5rem;
     margin-bottom: 1rem;
 }
 
@@ -69,7 +54,7 @@
 .profile-handle {
     font-size: 0.95rem;
     color: var(--color-subtle);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0rem;
 }
 
 .profile-location {
@@ -130,6 +115,7 @@
 }
 
 .profile-link-platform {
+    display: inline;
     font-weight: 500;
 }
 
@@ -151,9 +137,58 @@
     }
 }
 
+/* Mobile: header gets top and bottom borders */
+@media (max-width: 1400px) {
+    .profile-display {
+        border-top: 1.5px dashed var(--color-border);
+        border-bottom: 1.5px solid var(--color-border);
+    }
+
+    .profile-content {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .profile-extras {
+        padding-left: 1rem;
+        border-left: 1.5px dashed var(--color-border);
+    }
+
+    .profile-block {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .profile-stats {
+        border-top: none;
+    }
+
+    .profile-identity .avatar {
+        margin-bottom: 0rem;
+    }
+
+    .profile-description {
+        margin-top: 0rem;
+    }
+
+    .profile-name-section {
+        margin-left: 1rem;
+        margin-top: -0.5rem;
+    }
+}
+
 @media (prefers-color-scheme: dark) {
     .profile-display {
         background-color: var(--color-surface);
         border: 1px dashed var(--color-border);
+    }
+}
+
+/* Desktop: sidebar gets top and right borders */
+@media (min-width: 1400px) {
+    .profile-display {
+        border-top: 1.5px dashed var(--color-border);
+        border-right: 1.5px dashed var(--color-border);
     }
 }

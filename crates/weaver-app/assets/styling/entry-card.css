@@ -27,22 +27,23 @@
 /* Mobile layout - sidebar becomes header */
 @media (max-width: 1400px) {
     .notebook-layout {
-        grid-template-columns: 1fr !important;
+        grid-template-columns: minmax(1rem, 1fr) minmax(0, 90ch) minmax(1rem, 1fr) !important;
         gap: 0 !important;
         max-width: 100vw !important;
         box-sizing: border-box !important;
     }
 
     .notebook-sidebar {
-        grid-column: 1;
+        grid-column: 2;
         position: static;
         max-height: none;
         min-width: 0;
+        margin-bottom: 2rem;
     }
 
     .notebook-main {
-        grid-column: 1;
-        padding: 1.25rem;
+        grid-column: 2;
+        padding: 0;
         min-width: 0;
     }
 }

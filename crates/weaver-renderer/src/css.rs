@@ -131,7 +131,7 @@ a {{
     text-decoration: none;
 }}
 
-a:hover {{
+.notebook-content a:hover {{
     color: var(--color-emphasis);
     text-decoration: underline;
 }}
