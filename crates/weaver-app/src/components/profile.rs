@@ -2,6 +2,7 @@
 
 use crate::{
     components::avatar::{Avatar, AvatarImage},
+    data::use_handle,
     Route,
 };
 use dioxus::prelude::*;
@@ -17,12 +18,23 @@ pub fn ProfileDisplay(ident: AtIdentifier<'static>) -> Element {
 
     match profile().as_ref() {
         Some(profile_view) => rsx! {
-            document::Link { rel: "stylesheet", href: PROFILE_CSS }
+            document::Stylesheet { href: PROFILE_CSS }
 
             div { class: "profile-display",
                 // Banner if present
                 {match &profile_view.inner {
                     ProfileDataViewInner::ProfileView(p) => {
+                        if let Some(ref banner) = p.banner {
+                            rsx! {
+                                div { class: "profile-banner",
+                                    img { src: "{banner.as_ref()}", alt: "Profile banner" }
+                                }
+                            }
+                        } else {
+                            rsx! { }
+                        }
+                    }
+                    ProfileDataViewInner::ProfileViewDetailed(p) => {
                         if let Some(ref banner) = p.banner {
                             rsx! {
                                 div { class: "profile-banner",
@@ -101,7 +113,7 @@ fn ProfileIdentity(
                                 span { class: "profile-pronouns", " ({pronouns})" }
                             }
                         }
-                        div { class: "profile-handle", "@{ident}" }
+                        div { class: "profile-handle", "@{use_handle(ident.clone())?}" }
 
                         if let Some(ref location) = profile.location {
                             div { class: "profile-location", "{location}" }
@@ -131,7 +143,7 @@ fn ProfileIdentity(
 
                     div { class: "profile-name-section",
                         h1 { class: "profile-display-name", "{display_name}" }
-                        div { class: "profile-handle", "@{ident}" }
+                        div { class: "profile-handle", "@{use_handle(ident.clone())?}" }
                     }
 
                     if let Some(ref description) = profile.description {
@@ -176,8 +188,7 @@ fn ProfileStats(ident: AtIdentifier<'static>) -> Element {
     rsx! {
         div { class: "profile-stats",
             div { class: "profile-stat",
-                span { class: "profile-stat-label", "Notebooks" }
-                span { class: "profile-stat-value", "{notebook_count}" }
+                span { class: "profile-stat-label", "{notebook_count} notebooks" }
             }
             // TODO: Add entry count, subscriber counts when available
         }

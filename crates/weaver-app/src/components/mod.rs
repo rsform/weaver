@@ -14,3 +14,6 @@ pub mod avatar;
 
 pub mod profile;
 pub use profile::ProfileDisplay;
+
+pub mod notebook_cover;
+pub use notebook_cover::NotebookCover;

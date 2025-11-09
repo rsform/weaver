@@ -23,10 +23,14 @@ pub fn Home() -> Element {
                     for notebook in notebook_list.iter() {
                         {
                             let view = &notebook.0;
+                            let entries = &notebook.1;
                             rsx! {
                                 div {
                                     key: "{view.cid}",
-                                    NotebookCard { notebook: view.clone() }
+                                    NotebookCard {
+                                        notebook: view.clone(),
+                                        entry_refs: entries.clone()
+                                    }
                                 }
                             }
                         }

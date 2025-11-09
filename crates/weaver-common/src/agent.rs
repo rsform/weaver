@@ -548,7 +548,7 @@ impl<A: AgentSession + IdentityResolver> WeaverExt for Agent<A> {
                 .map(|blob| {
                     let cid = blob.blob().cid();
                     jacquard::types::string::Uri::new_owned(format!(
-                        "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}",
+                        "https://cdn.bsky.app/img/banner/plain/{}/{}",
                         did, cid
                     ))
                 })

@@ -155,6 +155,10 @@ pub async fn write_document_head<A: AgentSession>(
 
     writer.write_all(b"</head>\n").await.into_diagnostic()?;
     writer.write_all(b"<body>\n").await.into_diagnostic()?;
+    writer
+        .write_all(b"<div class=\"notebook-content\">\n")
+        .await
+        .into_diagnostic()?;
 
     Ok(())
 }
@@ -164,6 +168,7 @@ pub async fn write_document_footer(
 ) -> miette::Result<()> {
     use tokio::io::AsyncWriteExt;
 
+    writer.write_all(b"</div>\n").await.into_diagnostic()?;
     writer.write_all(b"</body>\n").await.into_diagnostic()?;
     writer.write_all(b"</html>\n").await.into_diagnostic()?;
 

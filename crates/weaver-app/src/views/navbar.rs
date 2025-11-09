@@ -1,3 +1,4 @@
+use crate::data::use_handle;
 use crate::Route;
 use dioxus::prelude::*;
 
@@ -30,14 +31,14 @@ pub fn Navbar() -> Element {
                 match route {
                     Route::RepositoryIndex { ident } => rsx! {
                         span { class: "breadcrumb-separator", " > " }
-                        span { class: "breadcrumb breadcrumb-current", "@{ident}" }
+                        span { class: "breadcrumb breadcrumb-current", "@{use_handle(ident.clone())?}" }
                     },
                     Route::NotebookIndex { ident, book_title } => rsx! {
                         span { class: "breadcrumb-separator", " > " }
                         Link {
                             to: Route::RepositoryIndex { ident: ident.clone() },
                             class: "breadcrumb",
-                            "@{ident}"
+                            "@{use_handle(ident.clone())?}"
                         }
                         span { class: "breadcrumb-separator", " > " }
                         span { class: "breadcrumb breadcrumb-current", "{book_title}" }
@@ -47,7 +48,7 @@ pub fn Navbar() -> Element {
                         Link {
                             to: Route::RepositoryIndex { ident: ident.clone() },
                             class: "breadcrumb",
-                            "@{ident}"
+                            "@{use_handle(ident.clone())?}"
                         }
                         span { class: "breadcrumb-separator", " > " }
                         Link {

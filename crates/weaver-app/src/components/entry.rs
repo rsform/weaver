@@ -130,7 +130,7 @@ fn EntryPage(
             }
 
             // Main content area
-            div { class: "entry-content-main",
+            div { class: "entry-content-main notebook-content",
                 // Metadata header
                 EntryMetadata {
                     entry_view: entry_view.clone(),
@@ -161,7 +161,11 @@ fn EntryPage(
 }
 
 #[component]
-pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element {
+pub fn EntryCard(
+    entry: BookEntryView<'static>,
+    book_title: SmolStr,
+    author_count: usize,
+) -> Element {
     use crate::Route;
     use jacquard::{from_data, IntoStatic};
     use weaver_api::sh_weaver::notebook::entry::Entry;
@@ -182,8 +186,13 @@ pub fn EntryCard(entry: BookEntryView<'static>, book_title: SmolStr) -> Element 
         .format("%B %d, %Y")
         .to_string();
 
-    // Get first author for display
-    let first_author = entry_view.authors.first();
+    // Only show author if notebook has multiple authors
+    let show_author = author_count > 1;
+    let first_author = if show_author {
+        entry_view.authors.first()
+    } else {
+        None
+    };
 
     // Render preview from entry content
     let preview_html = from_data::<Entry>(&entry_view.record).ok().map(|entry| {
@@ -403,12 +412,6 @@ fn NavButton(
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
-
-    let label = if direction == "prev" {
-        "← Previous"
-    } else {
-        "Next →"
-    };
     let arrow = if direction == "prev" { "←" } else { "→" };
 
     rsx! {
@@ -420,7 +423,6 @@ fn NavButton(
             },
             class: "nav-button nav-button-{direction}",
             div { class: "nav-arrow", "{arrow}" }
-            div { class: "nav-label", "{label}" }
             div { class: "nav-title", "{entry_title}" }
         }
     }

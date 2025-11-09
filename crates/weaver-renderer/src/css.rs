@@ -82,7 +82,8 @@ html {{
     line-height: var(--spacing-line-height);
 }}
 
-body {{
+/* Scoped to notebook-content container */
+.notebook-content {{
     font-family: var(--font-body);
     color: var(--color-text);
     background-color: var(--color-base);

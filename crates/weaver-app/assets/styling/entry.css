@@ -1,11 +1,14 @@
 /* Entry page layout with gutter navigation */
 .entry-page-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 90ch) minmax(0, 1fr);
-    gap: 0;
+    grid-template-columns: minmax(200px, 1fr) minmax(0, 90ch) minmax(200px, 1fr);
+    gap: 2rem;
     width: 100%;
     min-height: 100vh;
     background: var(--color-base);
+    max-width: calc(90ch + 400px + 4rem); /* content + gutters + gaps */
+    margin: 0 auto;
+    padding: 0 1rem 0 0;
 }
 
 /* Main content area */
@@ -18,39 +21,49 @@
 .nav-gutter {
     position: sticky;
     top: auto;
-    bottom: calc(2rem * var(--spacing-scale, 1.5));
+    bottom: 2rem;
     height: fit-content;
     align-self: end;
 }
 
 .nav-prev {
     grid-column: 1;
-    padding-left: calc(1rem * var(--spacing-scale, 1.5));
 }
 
 .nav-next {
     grid-column: 3;
-    padding-right: calc(1rem * var(--spacing-scale, 1.5));
 }
 
 /* Navigation buttons */
 .nav-button {
     display: flex;
     flex-direction: column;
-    gap: calc(0.5rem * var(--spacing-scale, 1.5));
-    padding: calc(1rem * var(--spacing-scale, 1.5));
+    gap: 0.5rem;
+    padding: 1rem;
     background: var(--color-surface);
-    border: 2px solid var(--color-border);
-    border-radius: 4px;
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text) 8%, transparent);
     text-decoration: none;
     color: var(--color-text);
-    transition: all 0.2s ease;
+    transition:
+        box-shadow 0.2s ease,
+        border-color 0.2s ease;
 }
 
 .nav-button:hover {
-    background: var(--color-overlay);
-    border-color: var(--color-primary);
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--color-primary) 20%, transparent);
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--color-text) 12%, transparent);
+}
+
+/* Dark mode: borders instead of shadows */
+@media (prefers-color-scheme: dark) {
+    .nav-button {
+        box-shadow: none;
+        border: 1px dashed var(--color-border);
+    }
+
+    .nav-button:hover {
+        box-shadow: none;
+        border-color: var(--color-primary);
+    }
 }
 
 .nav-button-prev {
@@ -74,15 +87,6 @@
     color: var(--color-emphasis);
 }
 
-.nav-label {
-    font-size: 0.875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-subtle);
-    transition: color 0.2s ease;
-}
-
 .nav-button:hover .nav-label {
     color: var(--color-secondary);
 }
@@ -90,10 +94,7 @@
 .nav-title {
     font-size: 0.95rem;
     font-weight: 500;
-    max-width: 20ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.4;
 }
 
 /* Entry metadata header */
@@ -155,20 +156,19 @@
 }
 
 .entry-tag {
-    padding: 0.25rem 0.75rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 3px;
+    padding: 0.25rem 0.5rem 0.25rem 0;
     font-size: 0.85rem;
     color: var(--color-subtle);
+    border-bottom: 1px solid var(--color-border);
     text-decoration: none;
-    transition: all 0.2s ease;
+    transition:
+        color 0.2s ease,
+        border-color 0.2s ease;
 }
 
 .entry-tag:hover {
-    background: var(--color-overlay);
+    color: var(--color-tertiary);
     border-color: var(--color-tertiary);
-    color: var(--color-text);
 }
 
 /* Content styling */
@@ -204,7 +204,7 @@
 }
 
 /* Responsive layout */
-@media (max-width: 1200px) {
+@media (max-width: 1400px) {
     .entry-page-layout {
         grid-template-columns: 1fr;
         gap: 0;
