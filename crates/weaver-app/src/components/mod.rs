@@ -6,7 +6,7 @@ pub mod css;
 pub use css::NotebookCss;
 
 mod entry;
-pub use entry::{Entry, EntryCard};
+pub use entry::{Entry, EntryCard, EntryMarkdown};
 
 pub mod identity;
 pub use identity::{NotebookCard, Repository, RepositoryIndex};

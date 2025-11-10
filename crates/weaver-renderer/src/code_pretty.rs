@@ -47,3 +47,41 @@ where
 }
 
 pub const CSS_PREFIX: &str = "wvc-";
+
+pub fn highlight_code<M>(
+    lang: Option<&str>,
+    code: impl AsRef<str>,
+    writer: &mut M,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>
+where
+    M: StrWrite,
+    <M as StrWrite>::Error: std::error::Error + Send + Sync + 'static,
+{
+    let syn_set = SyntaxSet::load_defaults_newlines();
+    let lang_syn = if let Some(lang) = lang {
+        syn_set
+            .find_syntax_by_token(lang)
+            .unwrap_or_else(|| syn_set.find_syntax_plain_text())
+    } else {
+        syn_set
+            .find_syntax_by_first_line(code.as_ref())
+            .unwrap_or_else(|| syn_set.find_syntax_plain_text())
+    };
+    writer.write_str("<pre><code class=\"wvc-code language-")?;
+    writer.write_str(&lang_syn.name)?;
+    writer.write_str("\">")?;
+
+    let mut html_gen = ClassedHTMLGenerator::new_with_class_style(
+        lang_syn,
+        &syn_set,
+        ClassStyle::SpacedPrefixed { prefix: CSS_PREFIX },
+    );
+    for line in LinesWithEndings::from(code.as_ref()) {
+        html_gen
+            .parse_html_for_line_which_includes_newline(line)
+            .unwrap();
+    }
+    writer.write_str(&html_gen.finalize())?;
+    writer.write_str("</code></pre>")?;
+    Ok(())
+}

@@ -17,7 +17,7 @@ use jacquard::{
 
 use std::sync::Arc;
 #[allow(unused)]
-use views::{Home, Navbar, Notebook, NotebookIndex, NotebookPage};
+use views::{Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordView};
 
 #[cfg(feature = "server")]
 mod blobcache;
@@ -46,6 +46,8 @@ enum Route {
         #[route("/")]
         Home {},
         #[layout(ErrorLayout)]
+        #[route("/record#:uri")]
+        RecordView { uri: SmolStr },
         #[nest("/:ident")]
           #[layout(Repository)]
             #[route("/")]

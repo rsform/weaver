@@ -461,3 +461,51 @@ pub async fn generate_syntax_css(theme: &ResolvedTheme<'_>) -> miette::Result<St
 
     Ok(result)
 }
+
+pub fn generate_default_css() -> miette::Result<String> {
+    let mut theme_set = ThemeSet::load_defaults();
+    let rose_pine = {
+        let mut cursor = Cursor::new(ROSE_PINE_THEME.as_bytes());
+        ThemeSet::load_from_reader(&mut cursor)
+            .into_diagnostic()
+            .map_err(|e| miette::miette!("Failed to load embedded rose-pine theme: {}", e))?
+    };
+    let rose_pine_dawn = {
+        let mut cursor = Cursor::new(ROSE_PINE_DAWN_THEME.as_bytes());
+        ThemeSet::load_from_reader(&mut cursor)
+            .into_diagnostic()
+            .map_err(|e| miette::miette!("Failed to load embedded rose-pine-dawn theme: {}", e))?
+    };
+    theme_set.themes.insert("rose-pine".to_string(), rose_pine);
+    theme_set
+        .themes
+        .insert("rose-pine-dawn".to_string(), rose_pine_dawn);
+    // Generate dark mode CSS (default)
+    let dark_css = css_for_theme_with_class_style(
+        theme_set.themes.get("rose-pine").unwrap(),
+        ClassStyle::SpacedPrefixed {
+            prefix: crate::code_pretty::CSS_PREFIX,
+        },
+    )
+    .into_diagnostic()?;
+
+    // Generate light mode CSS
+    let light_css = css_for_theme_with_class_style(
+        theme_set.themes.get("rose-pine-dawn").unwrap(),
+        ClassStyle::SpacedPrefixed {
+            prefix: crate::code_pretty::CSS_PREFIX,
+        },
+    )
+    .into_diagnostic()?;
+
+    // Combine with media queries
+    let mut result = String::new();
+    result.push_str("/* Syntax highlighting - Light Mode (default) */\n");
+    result.push_str(&light_css);
+    result.push_str("\n\n/* Syntax highlighting - Dark Mode */\n");
+    result.push_str("@media (prefers-color-scheme: dark) {\n");
+    result.push_str(&dark_css);
+    result.push_str("}\n");
+
+    Ok(result)
+}

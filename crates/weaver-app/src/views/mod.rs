@@ -19,3 +19,6 @@ pub use notebookpage::NotebookPage;
 
 mod notebook;
 pub use notebook::{Notebook, NotebookIndex};
+
+mod record;
+pub use record::RecordView;
