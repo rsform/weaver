@@ -128,10 +128,29 @@
     padding-top: 0.5rem;
 }
 
+.path-prefix {
+    color: var(--color-muted);
+    opacity: 0.7;
+}
+
+.path-final {
+    color: var(--color-text);
+    font-weight: 500;
+}
+
+.array-len {
+    font-family: var(--font-mono);
+    color: var(--color-subtle);
+    font-size: 0.9rem;
+    font-weight: 400;
+    padding-left: 0.125rem;
+    padding-top: 0.5rem;
+}
+
 .field-value {
     font-family: var(--font-mono);
     color: var(--color-text);
-    font-size: 1rem;
+    font-size: 0.9rem;
     padding-top: 0.2rem;
     padding-bottom: 0.1rem;
     word-break: break-word;
@@ -198,7 +217,6 @@
     max-width: 600px;
     max-height: 400px;
     margin-top: 0.5rem;
-    border: 1px solid var(--color-border);
     margin-bottom: 0.5rem;
 }
 

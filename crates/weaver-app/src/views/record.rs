@@ -45,7 +45,7 @@ pub fn RecordView(uri: SmolStr) -> Element {
                 class: "record-view-container",
                 div {
                     class: "record-header",
-                    h1 { "Record Inspector" }
+                    h1 { "Record" }
                     div {
                         class: "record-metadata",
                         div { class: "metadata-row",
@@ -95,7 +95,7 @@ pub fn RecordView(uri: SmolStr) -> Element {
         rsx! {
             div {
                 class: "record-view-container",
-                h1 { "Record Inspector" }
+                h1 { "Record" }
                 p { "URI: {uri}" }
                 p { "Loading..." }
             }
@@ -136,23 +136,48 @@ fn get_hex_rep(byte_array: &mut [u8]) -> String {
 }
 
 #[component]
+fn PathLabel(path: String) -> Element {
+    if path.is_empty() {
+        return rsx! {};
+    }
+
+    // Find the last separator
+    let last_sep = path.rfind(|c| c == '.');
+
+    if let Some(idx) = last_sep {
+        let prefix = &path[..idx + 1];
+        let final_segment = &path[idx + 1..];
+        rsx! {
+            span { class: "field-label",
+                span { class: "path-prefix", "{prefix}" }
+                span { class: "path-final", "{final_segment}" }
+            }
+        }
+    } else {
+        rsx! {
+            span { class: "field-label","{path}" }
+        }
+    }
+}
+
+#[component]
 fn DataView(data: Data<'static>, path: String, did: String) -> Element {
     match &data {
         Data::Null => rsx! {
             div { class: "record-field",
-                span { class: "field-label", "{path}" }
+                PathLabel { path: path.clone() }
                 span { class: "field-value muted", "null" }
             }
         },
         Data::Boolean(b) => rsx! {
             div { class: "record-field",
-                span { class: "field-label", "{path}" }
+                PathLabel { path: path.clone() }
                 span { class: "field-value", "{b}" }
             }
         },
         Data::Integer(i) => rsx! {
             div { class: "record-field",
-                span { class: "field-label", "{path}" }
+                PathLabel { path: path.clone() }
                 span { class: "field-value", "{i}" }
             }
         },
@@ -176,7 +201,7 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
 
             rsx! {
                 div { class: "record-field",
-                    span { class: "field-label", "{path}" }
+                    PathLabel { path: path.clone() }
                     span { class: "field-value",
 
                         HighlightedString { string_type: s.clone() }
@@ -196,7 +221,7 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
             };
             rsx! {
                 div { class: "record-field",
-                    span { class: "field-label", "{path}" }
+                    PathLabel { path: path.clone() }
                     pre { class: "field-value bytes", "{hex_string} [{byte_size}]" }
                 }
             }
@@ -209,7 +234,7 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
         },
         Data::Array(arr) => rsx! {
             div { class: "record-section",
-                div { class: "section-label", "{path}" span { class: "field-label", "[{arr.len()}] " } }
+                div { class: "section-label", "{path}" span { class: "array-len", "[{arr.len()}] " } }
 
                 div { class: "section-content",
                     for (idx, item) in arr.iter().enumerate() {
