@@ -1,0 +1,62 @@
+.button {
+    padding: 8px 18px;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease;
+}
+
+.button:focus-visible {
+    box-shadow: 0 0 0 2px var(--color-border);
+}
+
+.button[data-style="primary"] {
+    background-color: var(--color-primary);
+    color: var(--color-base);
+}
+
+.button[data-style="primary"]:hover {
+    background-color: var(--color-link);
+}
+
+.button[data-style="secondary"] {
+    background-color: var(--color-muted);
+    color: var(--color-base);
+}
+
+.button[data-style="secondary"]:hover {
+    background-color: var(--color-subtle);
+}
+
+.button[data-style="ghost"] {
+    background-color: transparent;
+    color: var(--color-text);
+}
+
+.button[data-style="ghost"]:hover {
+    background-color: var(--color-highlight);
+    color: var(--color-emphasis);
+}
+
+.button[data-style="outline"] {
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+    color: var(--color-text);
+}
+
+.button[data-style="outline"]:hover {
+    background-color: var(--color-emphasis);
+}
+
+.button[data-style="destructive"] {
+    background-color: var(--color-error);
+    color: var(--color-base);
+}
+
+.button[data-style="destructive"]:hover {
+    background-color: var(--color-emphasis);
+}

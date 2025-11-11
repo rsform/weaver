@@ -2,7 +2,6 @@
 
 use crate::components::avatar::{Avatar, AvatarImage};
 use dioxus::prelude::*;
-use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::notebook::NotebookView;
 
 const NOTEBOOK_COVER_CSS: Asset = asset!("/assets/styling/notebook-cover.css");

@@ -198,6 +198,7 @@
     font-weight: 600;
     padding-left: 1rem;
     padding-top: 0.5rem;
+    margin-left: -0.01rem;
     border-left: 2px solid var(--color-secondary);
 }
 

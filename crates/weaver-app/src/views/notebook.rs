@@ -1,6 +1,7 @@
 use crate::{
+    Route,
     components::{EntryCard, NotebookCover, NotebookCss},
-    fetch, Route,
+    fetch,
 };
 use dioxus::prelude::*;
 use jacquard::{
@@ -15,7 +16,7 @@ const ENTRY_CARD_CSS: Asset = asset!("/assets/styling/entry-card.css");
 /// The component takes a `id` prop of type `i32` from the route enum. Whenever the id changes, the component function will be
 /// re-run and the rendered HTML will be updated.
 #[component]
-pub fn Notebook(ident: AtIdentifier<'static>, book_title: SmolStr) -> Element {
+pub fn Notebook(ident: ReadSignal<AtIdentifier<'static>>, book_title: SmolStr) -> Element {
     rsx! {
         NotebookCss { ident: ident.to_smolstr(), notebook: book_title }
         Outlet::<Route> {}
@@ -23,40 +24,36 @@ pub fn Notebook(ident: AtIdentifier<'static>, book_title: SmolStr) -> Element {
 }
 
 #[component]
-pub fn NotebookIndex(ident: AtIdentifier<'static>, book_title: SmolStr) -> Element {
+pub fn NotebookIndex(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
+) -> Element {
     let fetcher = use_context::<fetch::CachedFetcher>();
-    let book_title_clone = book_title.clone();
-
     // Fetch full notebook to get author count
-    let ident_for_notebook = ident.clone();
-    let book_title_for_notebook = book_title.clone();
     let data_fetcher = fetcher.clone();
-    let notebook_data = use_resource(use_reactive!(|(
-        ident_for_notebook,
-        book_title_for_notebook,
-    )| {
+    let notebook_data = use_resource(move || {
         let fetcher = data_fetcher.clone();
         async move {
             fetcher
-                .get_notebook(ident_for_notebook, book_title_for_notebook)
+                .get_notebook(ident(), book_title())
                 .await
                 .ok()
                 .flatten()
         }
-    }));
+    });
 
     // Also fetch entries
     let entry_fetcher = fetcher.clone();
-    let entries_resource = use_resource(use_reactive!(|(ident, book_title)| {
+    let entries_resource = use_resource(move || {
         let fetcher = entry_fetcher.clone();
         async move {
             fetcher
-                .list_notebook_entries(ident, book_title)
+                .list_notebook_entries(ident(), book_title())
                 .await
                 .ok()
                 .flatten()
         }
-    }));
+    });
 
     rsx! {
         document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
@@ -71,7 +68,7 @@ pub fn NotebookIndex(ident: AtIdentifier<'static>, book_title: SmolStr) -> Eleme
                         aside { class: "notebook-sidebar",
                             NotebookCover {
                                 notebook: notebook_view.clone(),
-                                title: book_title_clone.to_string()
+                                title: book_title().to_string()
                             }
                         }
 
@@ -80,7 +77,7 @@ pub fn NotebookIndex(ident: AtIdentifier<'static>, book_title: SmolStr) -> Eleme
                                 for entry in entries {
                                     EntryCard {
                                         entry: entry.clone(),
-                                        book_title: book_title_clone.clone(),
+                                        book_title: book_title(),
                                         author_count
                                     }
                                 }

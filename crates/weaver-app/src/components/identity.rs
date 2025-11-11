@@ -1,4 +1,4 @@
-use crate::{fetch, Route};
+use crate::{Route, fetch};
 use dioxus::prelude::*;
 use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
@@ -7,7 +7,7 @@ use weaver_api::sh_weaver::notebook::NotebookView;
 const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 
 #[component]
-pub fn Repository(ident: AtIdentifier<'static>) -> Element {
+pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     rsx! {
         // We can create elements inside the rsx macro with the element name followed by a block of attributes and children.
         div {
@@ -17,16 +17,16 @@ pub fn Repository(ident: AtIdentifier<'static>) -> Element {
 }
 
 #[component]
-pub fn RepositoryIndex(ident: AtIdentifier<'static>) -> Element {
+pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     use crate::components::ProfileDisplay;
 
     let fetcher = use_context::<fetch::CachedFetcher>();
 
     // Fetch notebooks for this specific DID
-    let notebooks = use_resource(use_reactive!(|ident| {
+    let notebooks = use_resource(move || {
         let fetcher = fetcher.clone();
-        async move { fetcher.fetch_notebooks_for_did(&ident).await }
-    }));
+        async move { fetcher.fetch_notebooks_for_did(&ident()).await }
+    });
 
     rsx! {
         document::Stylesheet { href: NOTEBOOK_CARD_CSS }
@@ -34,7 +34,7 @@ pub fn RepositoryIndex(ident: AtIdentifier<'static>) -> Element {
         div { class: "repository-layout",
             // Profile sidebar (desktop) / header (mobile)
             aside { class: "repository-sidebar",
-                ProfileDisplay { ident: ident.clone() }
+                ProfileDisplay { ident: ident() }
             }
 
             // Main content area
@@ -178,7 +178,7 @@ pub fn NotebookCard(
                             if entry_list.len() <= 5 {
                                 // Show all entries if 5 or fewer
                                 rsx! {
-                                    for (i, entry_view) in entry_list.iter().enumerate() {
+                                    for  entry_view in entry_list.iter() {
                                         {
                                             let entry_title = entry_view.entry.title.as_ref()
                                                 .map(|t| t.as_ref())

@@ -1,6 +1,10 @@
 #navbar {
     display: flex;
     flex-direction: row;
+    justify-content: space-between;
+    padding-left: 4rem;
+    padding-top: 1rem;
+    padding-right: 4rem;
 }
 
 .breadcrumbs {
@@ -28,4 +32,13 @@
 .breadcrumb-separator {
     color: var(--color-text-muted, #999);
     user-select: none;
+}
+
+.auth-button {
+    align-self: flex-end;
+}
+
+.auth-handle {
+    color: var(--color-text, #666);
+    font-weight: 500;
 }

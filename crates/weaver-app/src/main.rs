@@ -2,29 +2,39 @@
 // need dioxus
 use components::{Entry, Repository, RepositoryIndex};
 #[allow(unused)]
-use dioxus::{prelude::*, CapturedError};
+use dioxus::{CapturedError, prelude::*};
 
-#[cfg(all(feature = "fullstack-server", feature = "server"))]
-use dioxus::fullstack::response::Extension;
 #[cfg(feature = "fullstack-server")]
 use dioxus::fullstack::FullstackContext;
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+use dioxus::fullstack::response::Extension;
+use dioxus_logger::tracing::Level;
+use jacquard::oauth::{client::OAuthClient, session::ClientData};
 #[allow(unused)]
 use jacquard::{
-    client::BasicClient,
     smol_str::SmolStr,
     types::{cid::Cid, string::AtIdentifier},
 };
-
+#[cfg(feature = "server")]
 use std::sync::Arc;
+use std::sync::{LazyLock, Mutex};
 #[allow(unused)]
-use views::{Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordView};
+use views::{Callback, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordView};
 
+use crate::{
+    auth::{AuthState, AuthStore},
+    config::{Config, OAuthConfig},
+};
+
+mod auth;
 #[cfg(feature = "server")]
 mod blobcache;
 mod cache_impl;
 /// Define a components module that contains all shared components for our app.
 mod components;
+mod config;
 mod data;
+mod env;
 mod fetch;
 mod service_worker;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
@@ -48,6 +58,8 @@ enum Route {
         #[layout(ErrorLayout)]
         #[route("/record#:uri")]
         RecordView { uri: SmolStr },
+        #[route("/callback?:state&:iss&:code")]
+        Callback { state: SmolStr, iss: SmolStr, code: SmolStr },
         #[nest("/:ident")]
           #[layout(Repository)]
             #[route("/")]
@@ -79,7 +91,11 @@ async fn serve_sw() -> impl axum::response::IntoResponse {
         .into_response()
 }
 
+pub static CONFIG: LazyLock<Config> = LazyLock::new(|| Config {
+    oauth: OAuthConfig::from_env().as_metadata(),
+});
 fn main() {
+    dioxus_logger::init(Level::DEBUG).expect("logger failed to init");
     // Set up better panic messages for wasm
     #[cfg(target_arch = "wasm32")]
     console_error_panic_hook::set_once();
@@ -88,7 +104,6 @@ fn main() {
     #[cfg(feature = "server")]
     dioxus::serve(|| async move {
         use crate::blobcache::BlobCache;
-        use crate::fetch::CachedFetcher;
         use axum::{
             extract::{Extension, Request},
             middleware,
@@ -105,22 +120,25 @@ fn main() {
                 .merge(dioxus::server::router(App))
         };
 
-        let client = Arc::new(BasicClient::unauthenticated());
-
         #[cfg(feature = "fullstack-server")]
         let router = {
-            let fetcher = Arc::new(CachedFetcher::new(client.clone()));
-            let blob_cache = Arc::new(BlobCache::new(client.clone()));
+            use jacquard::client::UnauthenticatedSession;
+            let fetcher = Arc::new(fetch::CachedFetcher::new(OAuthClient::new(
+                AuthStore::new(),
+                ClientData::new_public(CONFIG.oauth.clone()),
+            )));
+            let blob_cache = Arc::new(BlobCache::new(Arc::new(
+                UnauthenticatedSession::new_public(),
+            )));
             dioxus::server::router(App).layer(middleware::from_fn({
-                let fetcher = fetcher.clone();
                 let blob_cache = blob_cache.clone();
+                let fetcher = fetcher.clone();
                 move |mut req: Request, next: Next| {
-                    let fetcher = fetcher.clone();
                     let blob_cache = blob_cache.clone();
+                    let fetcher = fetcher.clone();
                     async move {
-                        // Attach extensions for dioxus server functions
-                        req.extensions_mut().insert(fetcher);
                         req.extensions_mut().insert(blob_cache);
+                        req.extensions_mut().insert(fetcher);
 
                         // And then return the response with `next.run()
                         Ok::<_, Infallible>(next.run(req).await)
@@ -137,14 +155,23 @@ fn main() {
     dioxus::launch(App);
 }
 
-/// App is the main component of our app. Components are the building blocks of dioxus apps. Each component is a function
-/// that takes some props and returns an Element. In this case, App takes no props because it is the root of our app.
-///
-/// Components should be annotated with `#[component]` to support props, better error messages, and autocomplete
 #[component]
 fn App() -> Element {
-    // The `rsx!` macro lets us define HTML inside of rust. It expands to an Element with all of our HTML inside.
-    use_context_provider(|| fetch::CachedFetcher::new(Arc::new(BasicClient::unauthenticated())));
+    use_context_provider(|| {
+        fetch::CachedFetcher::new(OAuthClient::new(
+            AuthStore::new(),
+            ClientData::new_public(CONFIG.oauth.clone()),
+        ))
+    });
+    use_context_provider(|| Signal::new(AuthState::default()));
+
+    use_effect(move || {
+        spawn(async move {
+            if let Err(e) = auth::restore_session().await {
+                dioxus_logger::tracing::warn!("Session restoration failed: {}", e);
+            }
+        });
+    });
 
     // Register service worker on startup (only on web)
     #[cfg(all(

@@ -35,6 +35,7 @@ mod native {
         cache.insert(key, value);
     }
 
+    #[allow(dead_code)]
     pub fn iter<K, V>(cache: &Cache<K, V>) -> Vec<V>
     where
         K: std::hash::Hash + Eq + Send + Sync + 'static,
@@ -80,12 +81,18 @@ mod wasm {
         cache.lock().unwrap().insert(key, value);
     }
 
+    #[allow(dead_code)]
     pub fn iter<K, V>(cache: &Cache<K, V>) -> Vec<V>
     where
         K: std::hash::Hash + Eq + 'static,
         V: Clone + 'static,
     {
-        cache.lock().unwrap().iter().map(|(_, v)| v.clone()).collect()
+        cache
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_, v)| v.clone())
+            .collect()
     }
 }
 

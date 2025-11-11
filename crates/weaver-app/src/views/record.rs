@@ -1,6 +1,5 @@
 use crate::fetch::CachedFetcher;
 use dioxus::prelude::*;
-use hex_fmt::HexFmt;
 use humansize::format_size;
 use jacquard::{
     client::AgentSessionExt,
@@ -17,9 +16,9 @@ enum ViewMode {
 }
 
 #[component]
-pub fn RecordView(uri: SmolStr) -> Element {
+pub fn RecordView(uri: ReadSignal<SmolStr>) -> Element {
     let fetcher = use_context::<CachedFetcher>();
-    let at_uri = AtUri::new_owned(uri.clone());
+    let at_uri = AtUri::new_owned(uri());
     if let Err(err) = &at_uri {
         let error = format!("{:?}", err);
         return rsx! {
@@ -33,8 +32,9 @@ pub fn RecordView(uri: SmolStr) -> Element {
     let uri = use_signal(|| at_uri.unwrap());
     let mut view_mode = use_signal(|| ViewMode::Pretty);
     let record = use_resource(move || {
-        let fetcher = fetcher.clone();
-        async move { fetcher.client.fetch_record_slingshot(&uri()).await }
+        let client = fetcher.get_client();
+
+        async move { client.fetch_record_slingshot(&uri()).await }
     });
     if let Some(Ok(record)) = &*record.read_unchecked() {
         let record_value = record.value.clone().into_static();

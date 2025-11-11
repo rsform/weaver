@@ -6,7 +6,6 @@ use crate::{
         BskyIcon, TangledIcon,
     },
     data::use_handle,
-    Route,
 };
 use dioxus::prelude::*;
 use jacquard::types::ident::AtIdentifier;

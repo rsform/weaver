@@ -105,8 +105,9 @@ pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<Response> {
             if let Ok(theme_response) = fetcher.client.get_record::<Theme>(&theme_ref.uri).await {
                 if let Ok(theme_output) = theme_response.into_output() {
                     let theme: Theme = theme_output.into();
+                    let client = fetcher.get_client();
                     // Try to resolve the theme (fetch colour schemes from PDS)
-                    resolve_theme(fetcher.client.as_ref(), &theme)
+                    resolve_theme(client.as_ref(), &theme)
                         .await
                         .unwrap_or_else(|_| default_resolved_theme())
                 } else {

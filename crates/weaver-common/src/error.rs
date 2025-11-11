@@ -56,7 +56,6 @@ pub enum WeaverError {
 #[derive(thiserror::Error, Debug, Diagnostic)]
 #[error("parse error: {}",self.kind)]
 #[diagnostic(code(weaver::parse))]
-
 pub struct ParseError {
     #[diagnostic_source]
     kind: ParseErrorKind,

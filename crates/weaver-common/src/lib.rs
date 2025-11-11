@@ -6,168 +6,20 @@ pub mod error;
 pub mod worker_rt;
 
 // Re-export jacquard for convenience
+pub use agent::WeaverExt;
 pub use error::WeaverError;
 pub use jacquard;
 use jacquard::CowStr;
-use jacquard::bytes::Bytes;
-use jacquard::client::{Agent, AgentSession, AgentSessionExt};
+use jacquard::client::{Agent, AgentSession};
 use jacquard::prelude::*;
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::string::{AtUri, Cid, Did, Handle};
-use jacquard::types::tid::{Ticker, Tid};
-use std::path::Path;
+use jacquard::types::tid::Ticker;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
-use weaver_api::sh_weaver::notebook::entry;
-use weaver_api::sh_weaver::publish::blob::Blob as PublishedBlob;
 
 static W_TICKER: LazyLock<Mutex<Ticker>> = LazyLock::new(|| Mutex::new(Ticker::new()));
-
-/// Extension trait providing weaver-specific multi-step operations on Agent
-///
-/// This trait extends jacquard's Agent with notebook-specific workflows that
-/// involve multiple atproto operations (uploading blobs, creating records, etc.)
-///
-/// For single-step operations, use jacquard's built-in methods directly:
-/// - `agent.create_record()` - Create a single record
-/// - `agent.get_record()` - Get a single record
-/// - `agent.upload_blob()` - Upload a single blob
-///
-/// This trait is for multi-step workflows that coordinate between multiple operations.
-//#[trait_variant::make(Send)]
-pub trait WeaverExt: AgentSessionExt {
-    /// Publish a notebook directory to the user's PDS
-    ///
-    /// Multi-step workflow:
-    /// 1. Parse markdown files in directory
-    /// 2. Extract and upload images/assets → BlobRefs
-    /// 3. Transform markdown refs to point at uploaded blobs
-    /// 4. Create entry records for each file
-    /// 5. Create book record with entry refs
-    ///
-    /// Returns the AT-URI of the published book
-    fn publish_notebook(
-        &self,
-        path: &Path,
-    ) -> impl Future<Output = Result<PublishResult<'_>, WeaverError>>;
-
-    /// Publish a blob to the user's PDS
-    ///
-    /// Multi-step workflow:
-    /// 1. Upload blob to PDS
-    /// 2. Create blob record with CID
-    ///
-    /// Returns the AT-URI of the published blob
-    fn publish_blob<'a>(
-        &self,
-        blob: Bytes,
-        url_path: &'a str,
-        prev: Option<Tid>,
-    ) -> impl Future<Output = Result<(StrongRef<'a>, PublishedBlob<'a>), WeaverError>>;
-
-    fn confirm_record_ref(
-        &self,
-        uri: &AtUri<'_>,
-    ) -> impl Future<Output = Result<StrongRef<'_>, WeaverError>>;
-
-    /// Find or create a notebook by title, returning its URI and entry list
-    ///
-    /// If the notebook doesn't exist, creates it with the given DID as author.
-    fn upsert_notebook(
-        &self,
-        title: &str,
-        author_did: &Did<'_>,
-    ) -> impl Future<Output = Result<(AtUri<'static>, Vec<StrongRef<'static>>), WeaverError>>;
-
-    /// Find or create an entry within a notebook by title
-    ///
-    /// Multi-step workflow:
-    /// 1. Find the notebook by title
-    /// 2. Check notebook's entry_list for entry with matching title
-    /// 3. If found: update the entry with new content
-    /// 4. If not found: create new entry and append to notebook's entry_list
-    ///
-    /// Returns (entry_uri, was_created)
-    fn upsert_entry(
-        &self,
-        notebook_title: &str,
-        entry_title: &str,
-        entry: entry::Entry<'_>,
-    ) -> impl Future<Output = Result<(AtUri<'static>, bool), WeaverError>>;
-
-    /// View functions - generic versions that work with any Agent
-
-    /// Fetch a notebook and construct NotebookView with author profiles
-    fn view_notebook(
-        &self,
-        uri: &AtUri<'_>,
-    ) -> impl Future<Output = Result<(agent::NotebookView<'static>, Vec<StrongRef<'static>>), WeaverError>>;
-
-    /// Fetch an entry and construct EntryView
-    fn fetch_entry_view<'a>(
-        &self,
-        notebook: &agent::NotebookView<'a>,
-        entry_ref: &StrongRef<'_>,
-    ) -> impl Future<Output = Result<agent::EntryView<'a>, WeaverError>>;
-
-    /// Search for an entry by title within a notebook's entry list
-    fn entry_by_title<'a>(
-        &self,
-        notebook: &agent::NotebookView<'a>,
-        entries: &[StrongRef<'_>],
-        title: &str,
-    ) -> impl Future<Output = Result<Option<(agent::BookEntryView<'a>, entry::Entry<'a>)>, WeaverError>>;
-
-    /// Search for a notebook by title for a given DID or handle
-    fn notebook_by_title(
-        &self,
-        ident: &jacquard::types::ident::AtIdentifier<'_>,
-        title: &str,
-    ) -> impl Future<
-        Output = Result<
-            Option<(agent::NotebookView<'static>, Vec<StrongRef<'static>>)>,
-            WeaverError,
-        >,
-    >;
-
-    /// Hydrate a profile view from either weaver or bsky profile
-    fn hydrate_profile_view(
-        &self,
-        did: &Did<'_>,
-    ) -> impl Future<
-        Output = Result<
-            (
-                Option<AtUri<'static>>,
-                weaver_api::sh_weaver::actor::ProfileDataView<'static>,
-            ),
-            WeaverError,
-        >,
-    >;
-
-    /// View an entry at a specific index with prev/next navigation
-    fn view_entry<'a>(
-        &self,
-        notebook: &agent::NotebookView<'a>,
-        entries: &[StrongRef<'_>],
-        index: usize,
-    ) -> impl Future<Output = Result<agent::BookEntryView<'a>, WeaverError>>;
-
-    /// View a page at a specific index with prev/next navigation
-    fn view_page<'a>(
-        &self,
-        notebook: &agent::NotebookView<'a>,
-        pages: &[StrongRef<'_>],
-        index: usize,
-    ) -> impl Future<Output = Result<agent::BookEntryView<'a>, WeaverError>>;
-
-    /// Fetch a page view (like fetch_entry_view but for pages)
-    fn fetch_page_view<'a>(
-        &self,
-        notebook: &agent::NotebookView<'a>,
-        entry_ref: &StrongRef<'_>,
-    ) -> impl Future<Output = Result<agent::EntryView<'a>, WeaverError>>;
-}
 
 /// Result of publishing a notebook
 #[derive(Debug, Clone)]

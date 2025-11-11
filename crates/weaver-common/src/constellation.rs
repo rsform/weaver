@@ -9,6 +9,7 @@ use jacquard::{
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_CURSOR_LIMIT: u64 = 16;
+#[allow(unused)]
 const DEFAULT_CURSOR_LIMIT_MAX: u64 = 100;
 
 fn get_default_cursor_limit() -> u64 {

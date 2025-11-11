@@ -6,9 +6,11 @@ pub mod css;
 pub use css::NotebookCss;
 
 mod entry;
+#[allow(unused_imports)]
 pub use entry::{Entry, EntryCard, EntryMarkdown};
 
 pub mod identity;
+#[allow(unused_imports)]
 pub use identity::{NotebookCard, Repository, RepositoryIndex};
 pub mod avatar;
 
@@ -17,6 +19,8 @@ pub use profile::ProfileDisplay;
 
 pub mod notebook_cover;
 pub use notebook_cover::NotebookCover;
+
+pub mod login;
 
 use dioxus::prelude::*;
 
@@ -117,3 +121,6 @@ static _IOSK_ITAL_BOLD: Asset = asset!(
         .with_hash_suffix(false)
         .into_asset_options()
 );
+pub mod input;
+pub mod dialog;
+pub mod button;

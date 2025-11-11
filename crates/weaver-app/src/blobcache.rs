@@ -2,7 +2,8 @@ use crate::cache_impl;
 use dioxus::{CapturedError, Result};
 use jacquard::{
     bytes::Bytes,
-    client::BasicClient,
+    client::UnauthenticatedSession,
+    identity::JacquardResolver,
     prelude::*,
     smol_str::SmolStr,
     types::{cid::Cid, ident::AtIdentifier},
@@ -15,13 +16,13 @@ use weaver_api::com_atproto::sync::get_blob::GetBlob;
 
 #[derive(Clone)]
 pub struct BlobCache {
-    client: Arc<BasicClient>,
+    client: Arc<UnauthenticatedSession<JacquardResolver>>,
     cache: cache_impl::Cache<Cid<'static>, Bytes>,
     map: cache_impl::Cache<SmolStr, Cid<'static>>,
 }
 
 impl BlobCache {
-    pub fn new(client: Arc<BasicClient>) -> Self {
+    pub fn new(client: Arc<UnauthenticatedSession<JacquardResolver>>) -> Self {
         let cache = cache_impl::new_cache(100, Duration::from_secs(1200));
         let map = cache_impl::new_cache(500, Duration::from_secs(1200));
 

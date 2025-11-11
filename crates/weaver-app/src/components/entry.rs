@@ -22,15 +22,16 @@ use jacquard::{
 };
 #[allow(unused_imports)]
 use std::sync::Arc;
-use weaver_api::sh_weaver::notebook::{entry, BookEntryView};
+use weaver_api::sh_weaver::notebook::{BookEntryView, entry};
 
 #[component]
-pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) -> Element {
-    let ident_clone = ident.clone();
-    let book_title_clone = book_title.clone();
-
+pub fn Entry(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
+    title: ReadSignal<SmolStr>,
+) -> Element {
     // Use feature-gated hook for SSR support
-    let entry = crate::data::use_entry_data(ident.clone(), book_title.clone(), title.clone())?;
+    let entry = crate::data::use_entry_data(ident(), book_title(), title())?;
 
     // Handle blob caching when entry data is available
     use_effect(move || {
@@ -44,14 +45,12 @@ pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) 
                         not(feature = "fullstack-server")
                     ))]
                     {
-                        let ident = ident.clone();
-                        let book_title = book_title.clone();
                         let images = images.clone();
                         spawn(async move {
                             let fetcher = use_context::<fetch::CachedFetcher>();
                             let _ = crate::service_worker::register_entry_blobs(
-                                &ident,
-                                book_title.as_str(),
+                                &ident(),
+                                book_title().as_str(),
                                 &images,
                                 &fetcher,
                             )
@@ -60,7 +59,7 @@ pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) 
                     }
                     #[cfg(feature = "fullstack-server")]
                     {
-                        let ident = ident.clone();
+                        let ident = ident();
                         let images = images.clone();
                         spawn(async move {
                             for image in &images.images {
@@ -87,8 +86,8 @@ pub fn Entry(ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr) 
             rsx! { EntryPage {
                 book_entry_view: book_entry_view.clone(),
                 entry_record: entry_record.clone(),
-                ident: use_handle(ident_clone)?(),
-                book_title: book_title_clone
+                ident: use_handle(ident())?(),
+                book_title: book_title()
             } }
         }
         _ => rsx! { p { "Loading..." } },
@@ -167,7 +166,7 @@ pub fn EntryCard(
     author_count: usize,
 ) -> Element {
     use crate::Route;
-    use jacquard::{from_data, IntoStatic};
+    use jacquard::{IntoStatic, from_data};
     use weaver_api::sh_weaver::notebook::entry::Entry;
 
     let entry_view = &entry.entry;

@@ -130,12 +130,10 @@ pub fn use_handle(
     #[cfg(feature = "fullstack-server")]
     let h_str = {
         use_server_future(move || {
-            let fetcher = fetcher.clone();
+            let client = fetcher.get_client();
             async move {
                 use jacquard::smol_str::ToSmolStr;
-
-                fetcher
-                    .client
+                client
                     .resolve_ident_owned(&ident())
                     .await
                     .map(|doc| doc.handles().first().map(|h| h.to_smolstr()))
@@ -147,12 +145,10 @@ pub fn use_handle(
     #[cfg(not(feature = "fullstack-server"))]
     let h_str = {
         use_resource(move || {
-            let fetcher = fetcher.clone();
+            let client = fetcher.get_client();
             async move {
                 use jacquard::smol_str::ToSmolStr;
-
-                fetcher
-                    .client
+                client
                     .resolve_ident_owned(&ident())
                     .await
                     .map(|doc| doc.handles().first().map(|h| h.to_smolstr()))
@@ -184,11 +180,11 @@ pub fn use_rendered_markdown(
     let content = use_signal(|| content);
     let fetcher = use_context::<crate::fetch::CachedFetcher>();
     Ok(use_server_future(move || {
-        let fetcher = fetcher.clone();
+        let client = fetcher.get_client();
         async move {
             let did = match ident() {
                 AtIdentifier::Did(d) => d,
-                AtIdentifier::Handle(h) => fetcher.client.resolve_handle(&h).await.ok()?,
+                AtIdentifier::Handle(h) => client.resolve_handle(&h).await.ok()?,
             };
             Some(render_markdown_impl(content(), did).await)
         }
@@ -205,11 +201,11 @@ pub fn use_rendered_markdown(
     let content = use_signal(|| content);
     let fetcher = use_context::<crate::fetch::CachedFetcher>();
     Ok(use_resource(move || {
-        let fetcher = fetcher.clone();
+        let client = fetcher.get_client();
         async move {
             let did = match ident() {
                 AtIdentifier::Did(d) => d,
-                AtIdentifier::Handle(h) => fetcher.client.resolve_handle(&h).await.ok()?,
+                AtIdentifier::Handle(h) => client.resolve_handle(&h).await.ok()?,
             };
             Some(render_markdown_impl(content(), did).await)
         }
@@ -256,7 +252,10 @@ pub fn use_profile_data(
     })?;
     Ok(use_memo(move || {
         if let Some(Some(value)) = &*res.read_unchecked() {
-            jacquard::from_json_value::<weaver_api::sh_weaver::actor::ProfileDataView>(value.clone()).ok()
+            jacquard::from_json_value::<weaver_api::sh_weaver::actor::ProfileDataView>(
+                value.clone(),
+            )
+            .ok()
         } else {
             None
         }
@@ -271,7 +270,13 @@ pub fn use_profile_data(
     let fetcher = use_context::<crate::fetch::CachedFetcher>();
     let r = use_resource(use_reactive!(|ident| {
         let fetcher = fetcher.clone();
-        async move { fetcher.fetch_profile(&ident).await.ok().map(|arc| (*arc).clone()) }
+        async move {
+            fetcher
+                .fetch_profile(&ident)
+                .await
+                .ok()
+                .map(|arc| (*arc).clone())
+        }
     }));
     Ok(use_memo(move || {
         r.read_unchecked().as_ref().and_then(|v| v.clone())
@@ -315,10 +320,13 @@ pub fn use_notebooks_for_did(
         if let Some(Some(values)) = &*res.read_unchecked() {
             values
                 .iter()
-                .map(|v| jacquard::from_json_value::<(
-                    weaver_api::sh_weaver::notebook::NotebookView,
-                    Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef>,
-                )>(v.clone()).ok())
+                .map(|v| {
+                    jacquard::from_json_value::<(
+                        weaver_api::sh_weaver::notebook::NotebookView,
+                        Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef>,
+                    )>(v.clone())
+                    .ok()
+                })
                 .collect::<Option<Vec<_>>>()
         } else {
             None
