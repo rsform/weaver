@@ -1,27 +1,29 @@
 use crate::auth::AuthStore;
 use crate::cache_impl;
-use dioxus::prelude::*;
 use dioxus::Result;
+use dioxus::prelude::*;
+use jacquard::AuthorizationToken;
+use jacquard::CowStr;
+use jacquard::IntoStatic;
 use jacquard::client::Agent;
 use jacquard::client::AgentKind;
 use jacquard::error::ClientError;
 use jacquard::error::XrpcResult;
+use jacquard::identity::JacquardResolver;
+use jacquard::identity::lexicon_resolver::{
+    LexiconResolutionError, LexiconSchemaResolver, ResolvedLexiconSchema,
+};
 use jacquard::identity::resolver::DidDocResponse;
 use jacquard::identity::resolver::IdentityError;
 use jacquard::identity::resolver::ResolverOptions;
-use jacquard::identity::lexicon_resolver::{LexiconSchemaResolver, ResolvedLexiconSchema, LexiconResolutionError};
-use jacquard::identity::JacquardResolver;
-use jacquard::types::string::Nsid;
 use jacquard::oauth::client::OAuthClient;
 use jacquard::oauth::client::OAuthSession;
 use jacquard::prelude::*;
 use jacquard::types::string::Did;
 use jacquard::types::string::Handle;
+use jacquard::types::string::Nsid;
 use jacquard::xrpc::XrpcResponse;
 use jacquard::xrpc::*;
-use jacquard::AuthorizationToken;
-use jacquard::CowStr;
-use jacquard::IntoStatic;
 use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -31,7 +33,7 @@ use weaver_api::{
     com_atproto::repo::strong_ref::StrongRef,
     sh_weaver::{
         actor::ProfileDataView,
-        notebook::{entry::Entry, BookEntryView, NotebookView},
+        notebook::{BookEntryView, NotebookView, entry::Entry},
     },
 };
 use weaver_common::WeaverExt;
@@ -366,7 +368,7 @@ impl CachedFetcher {
     pub async fn downgrade_to_unauthenticated(&self) {
         let mut session_slot = self.client.session.write().await;
         if let Some(session) = session_slot.take() {
-            session.inner().logout().await;
+            session.inner().logout().await.ok();
         }
     }
 
@@ -440,7 +442,7 @@ impl CachedFetcher {
     pub async fn fetch_notebooks_from_ufos(
         &self,
     ) -> Result<Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
-        use jacquard::{types::aturi::AtUri, IntoStatic};
+        use jacquard::{IntoStatic, types::aturi::AtUri};
 
         let url = "https://ufos-api.microcosm.blue/records?collection=sh.weaver.notebook.book";
         let response = reqwest::get(url)
@@ -491,9 +493,9 @@ impl CachedFetcher {
         ident: &AtIdentifier<'_>,
     ) -> Result<Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
         use jacquard::{
+            IntoStatic,
             types::{collection::Collection, nsid::Nsid},
             xrpc::XrpcExt,
-            IntoStatic,
         };
         use weaver_api::{
             com_atproto::repo::list_records::ListRecords, sh_weaver::notebook::book::Book,
