@@ -5,6 +5,8 @@ use crate::fetch::CachedFetcher;
 use dioxus::prelude::*;
 use dioxus_logger::tracing::*;
 use humansize::format_size;
+use jacquard::api::com_atproto::repo::get_record::GetRecordOutput;
+use jacquard::client::AgentError;
 use jacquard::prelude::*;
 use jacquard::smol_str::ToSmolStr;
 use jacquard::{
@@ -12,7 +14,7 @@ use jacquard::{
     common::{Data, IntoStatic},
     identity::lexicon_resolver::LexiconSchemaResolver,
     smol_str::SmolStr,
-    types::{aturi::AtUri, ident::AtIdentifier, string::Nsid},
+    types::{aturi::AtUri, cid::Cid, ident::AtIdentifier, string::Nsid},
 };
 use weaver_api::com_atproto::repo::{
     create_record::CreateRecord, delete_record::DeleteRecord, put_record::PutRecord,
@@ -45,7 +47,7 @@ pub fn RecordView(uri: ReadSignal<SmolStr>) -> Element {
     let navigator = use_navigator();
 
     let client = fetcher.get_client();
-    let record = use_resource(move || {
+    let record_resource = use_resource(move || {
         let client = client.clone();
         async move { client.fetch_record_slingshot(&uri()).await }
     });
@@ -67,238 +69,57 @@ pub fn RecordView(uri: ReadSignal<SmolStr>) -> Element {
             }
         }
     });
-    if let Some(Ok(record)) = &*record.read_unchecked() {
-        let record_value = record.value.clone().into_static();
-        let mut edit_data = use_signal(|| record_value.clone());
-        let nsid = use_memo(move || edit_data().type_discriminator().map(|s| s.to_string()));
-        let json = serde_json::to_string_pretty(&record_value).unwrap();
+    if let Some(Ok(record)) = &*record_resource.read_unchecked() {
+        let mut record_value = use_signal(|| record.value.clone().into_static());
+        let json =
+            use_memo(move || serde_json::to_string_pretty(&record_value()).unwrap_or_default());
+
         rsx! {
-            document::Stylesheet { href: asset!("/assets/styling/record-view.css") }
-            div {
-                class: "record-view-container",
-                div {
-                    class: "record-header",
-                    h1 { "Record" }
+            RecordViewLayout {
+                uri: uri().clone(),
+                cid: record.cid.clone(),
+                if edit_mode() {
+                    EditableRecordContent {
+                        record_value: record_value,
+                        uri: uri,
+                        view_mode: view_mode,
+                        edit_mode: edit_mode,
+                        record_resource: record_resource,
+                    }
+                } else {
                     div {
-                        class: "record-metadata",
-                        div { class: "metadata-row",
-                            span { class: "metadata-label", "URI" }
-                            span { class: "metadata-value",
-                                HighlightedUri { uri: uri().clone() }
+                        class: "tab-bar",
+                        button {
+                            class: if view_mode() == ViewMode::Pretty { "tab-button active" } else { "tab-button" },
+                            onclick: move |_| view_mode.set(ViewMode::Pretty),
+                            "View"
+                        }
+                        button {
+                            class: if view_mode() == ViewMode::Json { "tab-button active" } else { "tab-button" },
+                            onclick: move |_| view_mode.set(ViewMode::Json),
+                            "JSON"
+                        }
+                        if is_owner() {
+                            button {
+                                class: "tab-button edit-button",
+                                onclick: move |_| edit_mode.set(true),
+                                "Edit"
                             }
                         }
-                        if let Some(cid) = &record.cid {
-                            div { class: "metadata-row",
-                                span { class: "metadata-label", "CID" }
-                                code { class: "metadata-value", "{cid}" }
-                            }
-                        }
                     }
-                }
-                div {
-                    class: "tab-bar",
-                    button {
-                        class: if view_mode() == ViewMode::Pretty { "tab-button active" } else { "tab-button" },
-                        onclick: move |_| view_mode.set(ViewMode::Pretty),
-                        "View"
-                    }
-                    button {
-                        class: if view_mode() == ViewMode::Json { "tab-button active" } else { "tab-button" },
-                        onclick: move |_| view_mode.set(ViewMode::Json),
-                        "JSON"
-                    }
-                    if is_owner() && !edit_mode() {
-                        {
-                            let record_value_clone = record_value.clone();
-                            rsx! {
-                                button {
-                                    class: "tab-button edit-button",
-                                    onclick: move |_| {
-                                        edit_data.set(record_value_clone.clone());
-                                        edit_mode.set(true);
-                                    },
-                                    "Edit"
+                    div {
+                        class: "tab-content",
+                        match view_mode() {
+                            ViewMode::Pretty => rsx! {
+                                PrettyRecordView { record: record_value(), uri: uri().clone() }
+                            },
+                            ViewMode::Json => rsx! {
+                                CodeView {
+                                    code: use_signal(|| json()),
+                                    lang: Some("json".to_string()),
                                 }
-                            }
+                            },
                         }
-                    }
-                    if edit_mode() {
-                        {
-                            let record_value_clone = record_value.clone();
-                            let update_fetcher = fetcher.clone();
-                            let create_fetcher = fetcher.clone();
-                            let replace_fetcher = fetcher.clone();
-                            rsx! {
-                                ActionButtons {
-                                    on_update: move |_| {
-                                        let fetcher = update_fetcher.clone();
-                                        let uri = uri();
-                                        let data = edit_data();
-                                        spawn(async move {
-                                            if let Some((did, _)) = fetcher.session_info().await {
-                                                if let (Some(collection_str), Some(rkey)) = (uri.collection(), uri.rkey()) {
-                                                    let collection = Nsid::new(collection_str.as_str()).ok();
-                                                    if let Some(collection) = collection {
-                                                        let request = PutRecord::new()
-                                                            .repo(AtIdentifier::Did(did))
-                                                            .collection(collection)
-                                                            .rkey(rkey.clone())
-                                                            .record(data)
-                                                            .build();
-
-                                                        match fetcher.send(request).await {
-                                                            Ok(_) => {
-                                                                dioxus_logger::tracing::info!("Record updated successfully");
-                                                                edit_mode.set(false);
-                                                            }
-                                                            Err(e) => {
-                                                                dioxus_logger::tracing::error!("Failed to update record: {:?}", e);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    },
-                                    on_save_new: move |_| {
-                                        let fetcher = create_fetcher.clone();
-                                        let data = edit_data();
-                                        let nav = navigator.clone();
-                                        spawn(async move {
-                                            if let Some((did, _)) = fetcher.session_info().await {
-                                                if let Some(collection_str) = data.type_discriminator() {
-                                                    let collection = Nsid::new(collection_str).ok();
-                                                    if let Some(collection) = collection {
-                                                        let request = CreateRecord::new()
-                                                            .repo(AtIdentifier::Did(did))
-                                                            .collection(collection)
-                                                            .record(data.clone())
-                                                            .build();
-
-                                                        match fetcher.send(request).await {
-                                                            Ok(response) => {
-                                                                if let Ok(output) = response.into_output() {
-                                                                    dioxus_logger::tracing::info!("Record created: {}", output.uri);
-                                                                    nav.push(Route::RecordView { uri: output.uri.to_smolstr() });
-                                                                }
-                                                            }
-                                                            Err(e) => {
-                                                                dioxus_logger::tracing::error!("Failed to create record: {:?}", e);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    },
-                                    on_replace: move |_| {
-                                        let fetcher = replace_fetcher.clone();
-                                        let uri = uri();
-                                        let data = edit_data();
-                                        let nav = navigator.clone();
-                                        spawn(async move {
-                                            if let Some((did, _)) = fetcher.session_info().await {
-                                                if let Some(new_collection_str) = data.type_discriminator() {
-                                                    let new_collection = Nsid::new(new_collection_str).ok();
-                                                    if let Some(new_collection) = new_collection {
-                                                        // Create new record
-                                                        let create_req = CreateRecord::new()
-                                                            .repo(AtIdentifier::Did(did.clone()))
-                                                            .collection(new_collection)
-                                                            .record(data.clone())
-                                                            .build();
-
-                                                        match fetcher.send(create_req).await {
-                                                            Ok(response) => {
-                                                                if let Ok(create_output) = response.into_output() {
-                                                                    // Delete old record
-                                                                    if let (Some(old_collection_str), Some(old_rkey)) = (uri.collection(), uri.rkey()) {
-                                                                        let old_collection = Nsid::new(old_collection_str.as_str()).ok();
-                                                                        if let Some(old_collection) = old_collection {
-                                                                            let delete_req = DeleteRecord::new()
-                                                                                .repo(AtIdentifier::Did(did))
-                                                                                .collection(old_collection)
-                                                                                .rkey(old_rkey.clone())
-                                                                                .build();
-
-                                                                            if let Err(e) = fetcher.send(delete_req).await {
-                                                                                warn!("Created new record but failed to delete old: {:?}", e);
-                                                                            }
-                                                                        }
-                                                                    }
-
-                                                                    info!("Record replaced: {}", create_output.uri);
-                                                                    nav.push(Route::RecordView { uri: create_output.uri.to_smolstr() });
-                                                                }
-                                                            }
-                                                            Err(e) => {
-                                                                error!("Failed to replace record: {:?}", e);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    },
-                                    on_delete: move |_| {
-                                        let fetcher = fetcher.clone();
-                                        let uri = uri();
-                                        let nav = navigator.clone();
-                                        spawn(async move {
-                                            if let Some((did, _)) = fetcher.session_info().await {
-                                                if let (Some(collection_str), Some(rkey)) = (uri.collection(), uri.rkey()) {
-                                                    let collection = Nsid::new(collection_str.as_str()).ok();
-                                                    if let Some(collection) = collection {
-                                                        let request = DeleteRecord::new()
-                                                            .repo(AtIdentifier::Did(did))
-                                                            .collection(collection)
-                                                            .rkey(rkey.clone())
-                                                            .build();
-
-                                                        match fetcher.send(request).await {
-                                                            Ok(_) => {
-                                                                info!("Record deleted");
-                                                                nav.push(Route::Home {});
-                                                            }
-                                                            Err(e) => {
-                                                                error!("Failed to delete record: {:?}", e);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    },
-                                    on_cancel: move |_| {
-                                        edit_data.set(record_value_clone.clone());
-                                        edit_mode.set(false);
-                                    },
-                                }
-                            }
-                        }
-                    }
-                }
-                div {
-                    class: "tab-content",
-                    match (view_mode(), edit_mode()) {
-                        (ViewMode::Pretty, false) => rsx! {
-                            PrettyRecordView { record: record_value.clone(), uri: uri().clone() }
-                        },
-                        (ViewMode::Json, false) => rsx! {
-                            CodeView {
-                                code: use_signal(|| json.clone()),
-                                lang: Some("json".to_string()),
-                            }
-                        },
-                        (ViewMode::Pretty, true) => rsx! {
-                            div { "Pretty editor not yet implemented" }
-                        },
-                        (ViewMode::Json, true) => rsx! {
-                            JsonEditor {
-                                data: edit_data,
-                                nsid: nsid,
-                            }
-                        },
                     }
                 }
             }
@@ -444,47 +265,88 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                 span { class: "field-value", "{cid}" }
             }
         },
-        Data::Array(arr) => rsx! {
-            div { class: "record-section",
-                div { class: "section-label", "{path}" span { class: "array-len", "[{arr.len()}] " } }
+        Data::Array(arr) => {
+            let label = path.split('.').last().unwrap_or(&path);
+            rsx! {
+                div { class: "record-section",
+                    div { class: "section-label", "{label}" span { class: "array-len", "[{arr.len()}] " } }
 
-                div { class: "section-content",
-                    for (idx, item) in arr.iter().enumerate() {
-                        DataView {
-                            data: item.clone(),
-                            path: format!("{}[{}]", path, idx),
-                            did: did.clone()
-                        }
-                    }
-                }
-            }
-        },
-        Data::Object(obj) => rsx! {
-            for (key, value) in obj.iter() {
-                {
-                    let new_path = if path.is_empty() {
-                        key.to_string()
-                    } else {
-                        format!("{}.{}", path, key)
-                    };
-                    let did_clone = did.clone();
+                    div { class: "section-content",
+                        for (idx, item) in arr.iter().enumerate() {
+                            {
+                                let item_path = format!("{}[{}]", path, idx);
+                                let is_object = matches!(item, Data::Object(_));
 
-                    match value {
-                        Data::Object(_) | Data::Array(_) => rsx! {
-                            div { class: "record-section",
-                                div { class: "section-label", "{key}" }
-                                div { class: "section-content",
-                                    DataView { data: value.clone(), path: new_path, did: did_clone }
+                                if is_object {
+                                    rsx! {
+                                        div { class: "record-section",
+                                            div { class: "section-label", "{item_path}" }
+                                            div { class: "section-content",
+                                                DataView {
+                                                    data: item.clone(),
+                                                    path: item_path.clone(),
+                                                    did: did.clone()
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    rsx! {
+                                        DataView {
+                                            data: item.clone(),
+                                            path: item_path,
+                                            did: did.clone()
+                                        }
+                                    }
                                 }
                             }
-                        },
-                        _ => rsx! {
-                            DataView { data: value.clone(), path: new_path, did: did_clone }
                         }
                     }
                 }
             }
-        },
+        }
+        Data::Object(obj) => {
+            let is_root = path.is_empty();
+            let is_array_item = path.contains('[');
+
+            if is_root || is_array_item {
+                // Root object or array item: just render children (array items already wrapped)
+                rsx! {
+                    for (key, value) in obj.iter() {
+                        {
+                            let new_path = if is_root {
+                                key.to_string()
+                            } else {
+                                format!("{}.{}", path, key)
+                            };
+                            let did_clone = did.clone();
+                            rsx! {
+                                DataView { data: value.clone(), path: new_path, did: did_clone }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Nested object (not array item): wrap in section
+                let label = path.split('.').last().unwrap_or(&path);
+                rsx! {
+                    div { class: "record-section",
+                        div { class: "section-label", "{label}" }
+                        div { class: "section-content",
+                            for (key, value) in obj.iter() {
+                                {
+                                    let new_path = format!("{}.{}", path, key);
+                                    let did_clone = did.clone();
+                                    rsx! {
+                                        DataView { data: value.clone(), path: new_path, did: did_clone }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Data::Blob(blob) => {
             let is_image = blob.mime_type.starts_with("image/");
             let format = blob.mime_type.strip_prefix("image/").unwrap_or("jpeg");
@@ -872,7 +734,831 @@ fn ValidationPanel(
     }
 }
 
+// ============================================================================
+// Pretty Editor: Helper Functions
+// ============================================================================
+
+/// Infer Data type from text input
+fn infer_data_from_text(text: &str) -> Result<Data<'static>, String> {
+    let trimmed = text.trim();
+
+    if trimmed == "true" || trimmed == "false" {
+        Ok(Data::Boolean(trimmed == "true"))
+    } else if trimmed == "{}" {
+        use jacquard::types::value::Object;
+        use std::collections::BTreeMap;
+        Ok(Data::Object(Object(BTreeMap::new())))
+    } else if trimmed == "[]" {
+        use jacquard::types::value::Array;
+        Ok(Data::Array(Array(Vec::new())))
+    } else if trimmed == "null" {
+        Ok(Data::Null)
+    } else if let Ok(num) = trimmed.parse::<i64>() {
+        Ok(Data::Integer(num))
+    } else {
+        // Smart string parsing
+        use jacquard::types::value::parsing;
+        Ok(Data::String(parsing::parse_string(trimmed).into_static()))
+    }
+}
+
+/// Parse text as specific AtprotoStr type, preserving type information
+fn try_parse_as_type(
+    text: &str,
+    string_type: jacquard::types::LexiconStringType,
+) -> Result<jacquard::types::string::AtprotoStr<'static>, String> {
+    use jacquard::types::LexiconStringType;
+    use jacquard::types::string::*;
+    use std::str::FromStr;
+
+    match string_type {
+        LexiconStringType::Datetime => Datetime::from_str(text)
+            .map(AtprotoStr::Datetime)
+            .map_err(|e| format!("Invalid datetime: {}", e)),
+        LexiconStringType::Did => Did::new(text)
+            .map(|v| AtprotoStr::Did(v.into_static()))
+            .map_err(|e| format!("Invalid DID: {}", e)),
+        LexiconStringType::Handle => Handle::new(text)
+            .map(|v| AtprotoStr::Handle(v.into_static()))
+            .map_err(|e| format!("Invalid handle: {}", e)),
+        LexiconStringType::AtUri => AtUri::new(text)
+            .map(|v| AtprotoStr::AtUri(v.into_static()))
+            .map_err(|e| format!("Invalid AT-URI: {}", e)),
+        LexiconStringType::AtIdentifier => AtIdentifier::new(text)
+            .map(|v| AtprotoStr::AtIdentifier(v.into_static()))
+            .map_err(|e| format!("Invalid identifier: {}", e)),
+        LexiconStringType::Nsid => Nsid::new(text)
+            .map(|v| AtprotoStr::Nsid(v.into_static()))
+            .map_err(|e| format!("Invalid NSID: {}", e)),
+        LexiconStringType::Tid => Tid::new(text)
+            .map(|v| AtprotoStr::Tid(v.into_static()))
+            .map_err(|e| format!("Invalid TID: {}", e)),
+        LexiconStringType::RecordKey => Rkey::new(text)
+            .map(|rk| AtprotoStr::RecordKey(RecordKey::from(rk)))
+            .map_err(|e| format!("Invalid record key: {}", e)),
+        LexiconStringType::Cid => Cid::new(text.as_bytes())
+            .map(|v| AtprotoStr::Cid(v.into_static()))
+            .map_err(|_| "Invalid CID".to_string()),
+        LexiconStringType::Language => Language::new(text)
+            .map(AtprotoStr::Language)
+            .map_err(|e| format!("Invalid language: {}", e)),
+        LexiconStringType::Uri(_) => Uri::new(text)
+            .map(|u| AtprotoStr::Uri(u.into_static()))
+            .map_err(|e| format!("Invalid URI: {}", e)),
+        LexiconStringType::String => {
+            // Plain strings: use smart inference
+            use jacquard::types::value::parsing;
+            Ok(parsing::parse_string(text).into_static())
+        }
+    }
+}
+
+// ============================================================================
+// Pretty Editor: Component Hierarchy
+// ============================================================================
+
+/// Main dispatcher - routes to specific field editors based on Data type
+#[component]
+fn EditableDataView(
+    root: Signal<Data<'static>>,
+    path: String,
+    did: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
+    let path_for_memo = path.clone();
+    let root_read = root.read();
+
+    match root_read
+        .get_at_path(&path_for_memo)
+        .map(|d| d.clone().into_static())
+    {
+        Some(Data::Object(_)) => rsx! { EditableObjectField { root, path: path.clone(), did } },
+        Some(Data::String(_)) => {
+            rsx! { EditableStringField { root, path: path.clone(), remove_button } }
+        }
+        Some(Data::Integer(_)) => {
+            rsx! { EditableIntegerField { root, path: path.clone(), remove_button } }
+        }
+        Some(Data::Boolean(_)) => {
+            rsx! { EditableBooleanField { root, path: path.clone(), remove_button } }
+        }
+        Some(Data::Null) => rsx! { EditableNullField { root, path: path.clone(), remove_button } },
+
+        // Not yet implemented - fall back to read-only DataView
+        Some(data) => {
+            rsx! { DataView { data: data.clone(), path: path.clone(), did } }
+        }
+
+        None => rsx! { div { class: "field-error", "❌ Path not found: {path}" } },
+    }
+}
+
+// ============================================================================
+// Primitive Field Editors
+// ============================================================================
+
+/// String field with type preservation
+#[component]
+fn EditableStringField(
+    root: Signal<Data<'static>>,
+    path: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
+    use jacquard::types::LexiconStringType;
+
+    let path_for_text = path.clone();
+    let path_for_type = path.clone();
+
+    // Get current string value
+    let current_text = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_text)
+            .and_then(|d| d.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    });
+
+    // Get string type (Copy, cheap to store)
+    let string_type = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_type)
+            .and_then(|d| match d {
+                Data::String(s) => Some(s.string_type()),
+                _ => None,
+            })
+            .unwrap_or(LexiconStringType::String)
+    });
+
+    // Local state for invalid input
+    let mut input_text = use_signal(|| current_text());
+    let mut parse_error = use_signal(|| None::<String>);
+
+    // Sync input when current changes
+    use_effect(move || {
+        input_text.set(current_text());
+    });
+
+    let path_for_mutation = path.clone();
+    let handle_input = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+        let new_text = evt.value();
+        input_text.set(new_text.clone());
+
+        match try_parse_as_type(&new_text, string_type()) {
+            Ok(new_atproto_str) => {
+                parse_error.set(None);
+                let mut new_data = root.read().clone();
+                new_data.set_at_path(&path_for_mutation, Data::String(new_atproto_str));
+                root.set(new_data);
+            }
+            Err(e) => {
+                parse_error.set(Some(e));
+            }
+        }
+    };
+
+    let type_label = format!("{:?}", string_type()).to_lowercase();
+
+    rsx! {
+        div { class: "record-field",
+            div { class: "field-header",
+                PathLabel { path: path.clone() }
+                if type_label != "string" {
+                    span { class: "string-type-tag", " [{type_label}]" }
+                }
+                {remove_button}
+            }
+            input {
+                r#type: "text",
+                value: "{input_text}",
+                oninput: handle_input,
+                class: if parse_error().is_some() { "invalid" } else { "" },
+            }
+            if let Some(err) = parse_error() {
+                span { class: "field-error", " ❌ {err}" }
+            }
+        }
+    }
+}
+
+/// Integer field with validation
+#[component]
+fn EditableIntegerField(
+    root: Signal<Data<'static>>,
+    path: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
+    let path_for_memo = path.clone();
+    let current_value = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_memo)
+            .and_then(|d| d.as_integer())
+            .unwrap_or(0)
+    });
+
+    let mut input_text = use_signal(|| current_value().to_string());
+    let mut parse_error = use_signal(|| None::<String>);
+
+    use_effect(move || {
+        input_text.set(current_value().to_string());
+    });
+
+    let path_for_mutation = path.clone();
+
+    rsx! {
+        div { class: "record-field",
+            div { class: "field-header",
+                PathLabel { path: path.clone() }
+                {remove_button}
+            }
+            input {
+                r#type: "number",
+                value: "{input_text}",
+                oninput: move |evt| {
+                    let text = evt.value();
+                    input_text.set(text.clone());
+
+                    match text.parse::<i64>() {
+                        Ok(num) => {
+                            parse_error.set(None);
+                            let mut data_edit = root.write_unchecked();
+                             data_edit.set_at_path(&path_for_mutation, Data::Integer(num));
+                        }
+                        Err(_) => {
+                            parse_error.set(Some("Must be a valid integer".to_string()));
+                        }
+                    }
+                }
+            }
+            if let Some(err) = parse_error() {
+                span { class: "field-error", " ❌ {err}" }
+            }
+        }
+    }
+}
+
+/// Boolean field (checkbox)
+#[component]
+fn EditableBooleanField(
+    root: Signal<Data<'static>>,
+    path: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
+    let path_for_memo = path.clone();
+    let current_value = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_memo)
+            .and_then(|d| d.as_boolean())
+            .unwrap_or(false)
+    });
+
+    let path_for_mutation = path.clone();
+    rsx! {
+        div { class: "record-field",
+            div { class: "field-header",
+                PathLabel { path: path.clone() }
+                {remove_button}
+            }
+            input {
+                r#type: "checkbox",
+                checked: current_value(),
+                onchange: move |evt| {
+                    root.with_mut(|data| {
+                        if let Some(target) = data.get_at_path_mut(path_for_mutation.as_str()) {
+                            *target = Data::Boolean(evt.checked());
+                        }
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Null field with type inference
+#[component]
+fn EditableNullField(
+    root: Signal<Data<'static>>,
+    path: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
+    let mut input_text = use_signal(|| String::new());
+    let mut parse_error = use_signal(|| None::<String>);
+
+    let path_for_mutation = path.clone();
+    rsx! {
+        div { class: "record-field",
+            div { class: "field-header",
+                PathLabel { path: path.clone() }
+                span { class: "field-value muted", "null" }
+                {remove_button}
+            }
+            input {
+                r#type: "text",
+                placeholder: "Enter value (or {{}}, [], true, 123)...",
+                value: "{input_text}",
+                oninput: move |evt| {
+                    input_text.set(evt.value());
+                },
+                onkeydown: move |evt| {
+                    use dioxus::prelude::keyboard_types::Key;
+                    if evt.key() == Key::Enter {
+                        let text = input_text();
+                        match infer_data_from_text(&text) {
+                            Ok(new_value) => {
+                                root.with_mut(|data| {
+                                    if let Some(target) = data.get_at_path_mut(path_for_mutation.as_str()) {
+                                        *target = new_value;
+                                    }
+                                });
+                                input_text.set(String::new());
+                                parse_error.set(None);
+                            }
+                            Err(e) => {
+                                parse_error.set(Some(e));
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(err) = parse_error() {
+                span { class: "field-error", " ❌ {err}" }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Field with Remove Button Wrapper
+// ============================================================================
+
+/// Wraps a field with an optional remove button in the header
+#[component]
+fn FieldWithRemove(
+    root: Signal<Data<'static>>,
+    path: String,
+    did: String,
+    is_removable: bool,
+    parent_path: String,
+    field_key: String,
+) -> Element {
+    let remove_button = if is_removable {
+        Some(rsx! {
+            button {
+                class: "field-remove-button",
+                onclick: move |_| {
+                    let mut new_data = root.read().clone();
+                    if let Some(Data::Object(obj)) = new_data.get_at_path_mut(parent_path.as_str()) {
+                        obj.0.remove(field_key.as_str());
+                    }
+                    root.set(new_data);
+                },
+                "Remove"
+            }
+        })
+    } else {
+        None
+    };
+
+    rsx! {
+        EditableDataView {
+            root: root,
+            path: path.clone(),
+            did: did.clone(),
+            remove_button: remove_button,
+        }
+    }
+}
+
+// ============================================================================
+// Object Field Editor (enables recursion)
+// ============================================================================
+
+/// Object field - iterates fields and renders child EditableDataView for each
+#[component]
+fn EditableObjectField(root: Signal<Data<'static>>, path: String, did: String) -> Element {
+    let path_for_memo = path.clone();
+    let field_keys = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_memo)
+            .and_then(|d| d.as_object())
+            .map(|obj| obj.0.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default()
+    });
+
+    let is_root = path.is_empty();
+
+    rsx! {
+        if !is_root {
+            div { class: "record-section object-section",
+                div { class: "section-label",
+                    {
+                        let parts: Vec<&str> = path.split('.').collect();
+                        let final_part = parts.last().unwrap_or(&"");
+                        rsx! { "{final_part}" }
+                    }
+                }
+                div { class: "section-content",
+                    for key in field_keys() {
+                    {
+                        let field_path = if path.is_empty() {
+                            key.to_string()
+                        } else {
+                            format!("{}.{}", path, key)
+                        };
+                        let is_type_field = key == "$type";
+
+                        rsx! {
+                            FieldWithRemove {
+                                key: "{field_path}",
+                                root: root,
+                                path: field_path.clone(),
+                                did: did.clone(),
+                                is_removable: !is_type_field,
+                                parent_path: path.clone(),
+                                field_key: key.clone(),
+                            }
+                        }
+                    }
+                    }
+
+                    AddFieldWidget { root: root, path: path.clone() }
+                }
+            }
+        } else {
+            for key in field_keys() {
+                {
+                    let field_path = key.to_string();
+                    let is_type_field = key == "$type";
+
+                    rsx! {
+                        FieldWithRemove {
+                            key: "{field_path}",
+                            root: root,
+                            path: field_path.clone(),
+                            did: did.clone(),
+                            is_removable: !is_type_field,
+                            parent_path: path.clone(),
+                            field_key: key.clone(),
+                        }
+                    }
+                }
+            }
+
+            AddFieldWidget { root: root, path: path.clone() }
+        }
+    }
+}
+
+/// Widget for adding new fields to objects
+#[component]
+fn AddFieldWidget(root: Signal<Data<'static>>, path: String) -> Element {
+    let mut field_name = use_signal(|| String::new());
+    let mut field_value = use_signal(|| String::new());
+    let mut error = use_signal(|| None::<String>);
+    let mut show_form = use_signal(|| false);
+
+    let path_for_enter = path.clone();
+    let path_for_button = path.clone();
+
+    rsx! {
+        div { class: "add-field-widget",
+            if !show_form() {
+                button {
+                    class: "add-button",
+                    onclick: move |_| show_form.set(true),
+                    "+ Add Field"
+                }
+            } else {
+                div { class: "add-field-form",
+                    input {
+                        r#type: "text",
+                        placeholder: "Field name",
+                        value: "{field_name}",
+                        oninput: move |evt| field_name.set(evt.value()),
+                    }
+                    input {
+                        r#type: "text",
+                        placeholder: r#"Value: {{}}, [], true, 123, "text""#,
+                        value: "{field_value}",
+                        oninput: move |evt| field_value.set(evt.value()),
+                        onkeydown: move |evt| {
+                            use dioxus::prelude::keyboard_types::Key;
+                            if evt.key() == Key::Enter {
+                                let name = field_name();
+                                let value_text = field_value();
+
+                                if name.is_empty() {
+                                    error.set(Some("Field name required".to_string()));
+                                    return;
+                                }
+
+                                let new_value = match infer_data_from_text(&value_text) {
+                                    Ok(data) => data,
+                                    Err(e) => {
+                                        error.set(Some(e));
+                                        return;
+                                    }
+                                };
+
+                                let mut new_data = root.read().clone();
+                                if let Some(Data::Object(obj)) = new_data.get_at_path_mut(path_for_enter.as_str()) {
+                                    obj.0.insert(name.into(), new_value);
+                                }
+                                root.set(new_data);
+
+                                // Reset form
+                                field_name.set(String::new());
+                                field_value.set(String::new());
+                                show_form.set(false);
+                                error.set(None);
+                            }
+                        }
+                    }
+                    button {
+                        class: "add-field-widget-edit",
+                        onclick: move |_| {
+                            let name = field_name();
+                            let value_text = field_value();
+
+                            if name.is_empty() {
+                                error.set(Some("Field name required".to_string()));
+                                return;
+                            }
+
+                            let new_value = match infer_data_from_text(&value_text) {
+                                Ok(data) => data,
+                                Err(e) => {
+                                    error.set(Some(e));
+                                    return;
+                                }
+                            };
+
+                            let mut new_data = root.read().clone();
+                            if let Some(Data::Object(obj)) = new_data.get_at_path_mut(path_for_button.as_str()) {
+                                obj.0.insert(name.into(), new_value);
+                            }
+                            root.set(new_data);
+
+                            // Reset form
+                            field_name.set(String::new());
+                            field_value.set(String::new());
+                            show_form.set(false);
+                            error.set(None);
+                        },
+                        "Add"
+                    }
+                    button {
+                        class: "add-field-widget-edit",
+                        onclick: move |_| {
+                            show_form.set(false);
+                            field_name.set(String::new());
+                            field_value.set(String::new());
+                            error.set(None);
+                        },
+                        "Cancel"
+                    }
+                    if let Some(err) = error() {
+                        div { class: "field-error", "❌ {err}" }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Layout component for record view - handles header, metadata, and wraps children
+#[component]
+fn RecordViewLayout(uri: AtUri<'static>, cid: Option<Cid<'static>>, children: Element) -> Element {
+    rsx! {
+        document::Stylesheet { href: asset!("/assets/styling/record-view.css") }
+        div {
+            class: "record-view-container",
+            div {
+                class: "record-header",
+                h1 { "Record" }
+                div {
+                    class: "record-metadata",
+                    div { class: "metadata-row",
+                        span { class: "metadata-label", "URI" }
+                        span { class: "metadata-value",
+                            HighlightedUri { uri: uri.clone() }
+                        }
+                    }
+                    if let Some(cid) = cid {
+                        div { class: "metadata-row",
+                            span { class: "metadata-label", "CID" }
+                            code { class: "metadata-value", "{cid}" }
+                        }
+                    }
+                }
+            }
+            {children}
+        }
+    }
+}
+
 /// Render some text as markdown.
+#[component]
+fn EditableRecordContent(
+    record_value: Signal<Data<'static>>,
+    uri: ReadSignal<AtUri<'static>>,
+    view_mode: Signal<ViewMode>,
+    edit_mode: Signal<bool>,
+    record_resource: Resource<Result<GetRecordOutput<'static>, AgentError>>,
+) -> Element {
+    let mut edit_data = use_signal(|| record_value());
+    let nsid = use_memo(move || edit_data().type_discriminator().map(|s| s.to_string()));
+    let navigator = use_navigator();
+    let fetcher = use_context::<CachedFetcher>();
+
+    let update_fetcher = fetcher.clone();
+    let create_fetcher = fetcher.clone();
+    let replace_fetcher = fetcher.clone();
+    let delete_fetcher = fetcher.clone();
+
+    rsx! {
+        div {
+            class: "tab-bar",
+            button {
+                class: if view_mode() == ViewMode::Pretty { "tab-button active" } else { "tab-button" },
+                onclick: move |_| view_mode.set(ViewMode::Pretty),
+                "View"
+            }
+            button {
+                class: if view_mode() == ViewMode::Json { "tab-button active" } else { "tab-button" },
+                onclick: move |_| view_mode.set(ViewMode::Json),
+                "JSON"
+            }
+            ActionButtons {
+                on_update: move |_| {
+                    let fetcher = update_fetcher.clone();
+                    let uri = uri();
+                    let data = edit_data();
+                    spawn(async move {
+                        if let Some((did, _)) = fetcher.session_info().await {
+                            if let (Some(collection_str), Some(rkey)) = (uri.collection(), uri.rkey()) {
+                                let collection = Nsid::new(collection_str.as_str()).ok();
+                                if let Some(collection) = collection {
+                                    let request = PutRecord::new()
+                                        .repo(AtIdentifier::Did(did))
+                                        .collection(collection)
+                                        .rkey(rkey.clone())
+                                        .record(data.clone())
+                                        .build();
+
+                                    match fetcher.send(request).await {
+                                        Ok(output) => {
+                                            if output.status() == StatusCode::OK {
+                                                dioxus_logger::tracing::info!("Record updated successfully");
+                                                record_value.set(data);
+                                                edit_mode.set(false);
+                                            } else {
+                                                dioxus_logger::tracing::error!("Unexpected status code: {:?}", output.status());
+                                            }
+                                        }
+                                        Err(e) => {
+                                            dioxus_logger::tracing::error!("Failed to update record: {:?}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+                on_save_new: move |_| {
+                    let fetcher = create_fetcher.clone();
+                    let data = edit_data();
+                    let nav = navigator.clone();
+                    spawn(async move {
+                        if let Some((did, _)) = fetcher.session_info().await {
+                            if let Some(collection_str) = data.type_discriminator() {
+                                let collection = Nsid::new(collection_str).ok();
+                                if let Some(collection) = collection {
+                                    let request = CreateRecord::new()
+                                        .repo(AtIdentifier::Did(did))
+                                        .collection(collection)
+                                        .record(data.clone())
+                                        .build();
+
+                                    match fetcher.send(request).await {
+                                        Ok(response) => {
+                                            if let Ok(output) = response.into_output() {
+                                                dioxus_logger::tracing::info!("Record created: {}", output.uri);
+                                                nav.push(Route::RecordView { uri: output.uri.to_smolstr() });
+                                            }
+                                        }
+                                        Err(e) => {
+                                            dioxus_logger::tracing::error!("Failed to create record: {:?}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+                on_replace: move |_| {
+                    let fetcher = replace_fetcher.clone();
+                    let uri = uri();
+                    let data = edit_data();
+                    let nav = navigator.clone();
+                    spawn(async move {
+                        if let Some((did, _)) = fetcher.session_info().await {
+                            if let Some(new_collection_str) = data.type_discriminator() {
+                                let new_collection = Nsid::new(new_collection_str).ok();
+                                if let Some(new_collection) = new_collection {
+                                    // Create new record
+                                    let create_req = CreateRecord::new()
+                                        .repo(AtIdentifier::Did(did.clone()))
+                                        .collection(new_collection)
+                                        .record(data.clone())
+                                        .build();
+
+                                    match fetcher.send(create_req).await {
+                                        Ok(response) => {
+                                            if let Ok(create_output) = response.into_output() {
+                                                // Delete old record
+                                                if let (Some(old_collection_str), Some(old_rkey)) = (uri.collection(), uri.rkey()) {
+                                                    let old_collection = Nsid::new(old_collection_str.as_str()).ok();
+                                                    if let Some(old_collection) = old_collection {
+                                                        let delete_req = DeleteRecord::new()
+                                                            .repo(AtIdentifier::Did(did))
+                                                            .collection(old_collection)
+                                                            .rkey(old_rkey.clone())
+                                                            .build();
+
+                                                        if let Err(e) = fetcher.send(delete_req).await {
+                                                            dioxus_logger::tracing::warn!("Created new record but failed to delete old: {:?}", e);
+                                                        }
+                                                    }
+                                                }
+
+                                                dioxus_logger::tracing::info!("Record replaced: {}", create_output.uri);
+                                                nav.push(Route::RecordView { uri: create_output.uri.to_smolstr() });
+                                            }
+                                        }
+                                        Err(e) => {
+                                            dioxus_logger::tracing::error!("Failed to replace record: {:?}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+                on_delete: move |_| {
+                    let fetcher = delete_fetcher.clone();
+                    let uri = uri();
+                    let nav = navigator.clone();
+                    spawn(async move {
+                        if let Some((did, _)) = fetcher.session_info().await {
+                            if let (Some(collection_str), Some(rkey)) = (uri.collection(), uri.rkey()) {
+                                let collection = Nsid::new(collection_str.as_str()).ok();
+                                if let Some(collection) = collection {
+                                    let request = DeleteRecord::new()
+                                        .repo(AtIdentifier::Did(did))
+                                        .collection(collection)
+                                        .rkey(rkey.clone())
+                                        .build();
+
+                                    match fetcher.send(request).await {
+                                        Ok(_) => {
+                                            dioxus_logger::tracing::info!("Record deleted");
+                                            nav.push(Route::Home {});
+                                        }
+                                        Err(e) => {
+                                            dioxus_logger::tracing::error!("Failed to delete record: {:?}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+                on_cancel: move |_| {
+                    edit_data.set(record_value());
+                    edit_mode.set(false);
+                },
+            }
+        }
+        div {
+            class: "tab-content",
+            match view_mode() {
+                ViewMode::Pretty => rsx! {
+                    div { class: "pretty-record",
+                        EditableDataView {
+                            root: edit_data,
+                            path: String::new(),
+                            did: uri().authority().to_string(),
+                        }
+                    }
+                },
+                ViewMode::Json => rsx! {
+                    JsonEditor { data: edit_data, nsid }
+                },
+            }
+        }
+    }
+}
+
 #[component]
 pub fn CodeView(props: CodeViewProps) -> Element {
     let code = &*props.code.read();
