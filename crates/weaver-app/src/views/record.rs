@@ -1,11 +1,21 @@
+use crate::Route;
+use crate::auth::AuthState;
+use crate::components::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 use crate::fetch::CachedFetcher;
 use dioxus::prelude::*;
+use dioxus_logger::tracing::*;
 use humansize::format_size;
+use jacquard::prelude::*;
+use jacquard::smol_str::ToSmolStr;
 use jacquard::{
     client::AgentSessionExt,
     common::{Data, IntoStatic},
+    identity::lexicon_resolver::LexiconSchemaResolver,
     smol_str::SmolStr,
-    types::aturi::AtUri,
+    types::{aturi::AtUri, ident::AtIdentifier, string::Nsid},
+};
+use weaver_api::com_atproto::repo::{
+    create_record::CreateRecord, delete_record::DeleteRecord, put_record::PutRecord,
 };
 use weaver_renderer::{code_pretty::highlight_code, css::generate_default_css};
 
@@ -31,13 +41,36 @@ pub fn RecordView(uri: ReadSignal<SmolStr>) -> Element {
     }
     let uri = use_signal(|| at_uri.unwrap());
     let mut view_mode = use_signal(|| ViewMode::Pretty);
-    let record = use_resource(move || {
-        let client = fetcher.get_client();
+    let mut edit_mode = use_signal(|| false);
+    let navigator = use_navigator();
 
+    let client = fetcher.get_client();
+    let record = use_resource(move || {
+        let client = client.clone();
         async move { client.fetch_record_slingshot(&uri()).await }
+    });
+
+    // Check ownership for edit access
+    let auth_state = use_context::<Signal<AuthState>>();
+    let is_owner = use_memo(move || {
+        let auth = auth_state();
+        if !auth.is_authenticated() {
+            return false;
+        }
+
+        // authority() returns &AtIdentifier which can be Did or Handle
+        match uri().authority() {
+            AtIdentifier::Did(record_did) => auth.did.as_ref() == Some(record_did),
+            AtIdentifier::Handle(_) => {
+                // Can't easily check ownership for handles without async resolution
+                false
+            }
+        }
     });
     if let Some(Ok(record)) = &*record.read_unchecked() {
         let record_value = record.value.clone().into_static();
+        let mut edit_data = use_signal(|| record_value.clone());
+        let nsid = use_memo(move || edit_data().type_discriminator().map(|s| s.to_string()));
         let json = serde_json::to_string_pretty(&record_value).unwrap();
         rsx! {
             document::Stylesheet { href: asset!("/assets/styling/record-view.css") }
@@ -74,17 +107,196 @@ pub fn RecordView(uri: ReadSignal<SmolStr>) -> Element {
                         onclick: move |_| view_mode.set(ViewMode::Json),
                         "JSON"
                     }
+                    if is_owner() && !edit_mode() {
+                        {
+                            let record_value_clone = record_value.clone();
+                            rsx! {
+                                button {
+                                    class: "tab-button edit-button",
+                                    onclick: move |_| {
+                                        edit_data.set(record_value_clone.clone());
+                                        edit_mode.set(true);
+                                    },
+                                    "Edit"
+                                }
+                            }
+                        }
+                    }
+                    if edit_mode() {
+                        {
+                            let record_value_clone = record_value.clone();
+                            let update_fetcher = fetcher.clone();
+                            let create_fetcher = fetcher.clone();
+                            let replace_fetcher = fetcher.clone();
+                            rsx! {
+                                ActionButtons {
+                                    on_update: move |_| {
+                                        let fetcher = update_fetcher.clone();
+                                        let uri = uri();
+                                        let data = edit_data();
+                                        spawn(async move {
+                                            if let Some((did, _)) = fetcher.session_info().await {
+                                                if let (Some(collection_str), Some(rkey)) = (uri.collection(), uri.rkey()) {
+                                                    let collection = Nsid::new(collection_str.as_str()).ok();
+                                                    if let Some(collection) = collection {
+                                                        let request = PutRecord::new()
+                                                            .repo(AtIdentifier::Did(did))
+                                                            .collection(collection)
+                                                            .rkey(rkey.clone())
+                                                            .record(data)
+                                                            .build();
+
+                                                        match fetcher.send(request).await {
+                                                            Ok(_) => {
+                                                                dioxus_logger::tracing::info!("Record updated successfully");
+                                                                edit_mode.set(false);
+                                                            }
+                                                            Err(e) => {
+                                                                dioxus_logger::tracing::error!("Failed to update record: {:?}", e);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    },
+                                    on_save_new: move |_| {
+                                        let fetcher = create_fetcher.clone();
+                                        let data = edit_data();
+                                        let nav = navigator.clone();
+                                        spawn(async move {
+                                            if let Some((did, _)) = fetcher.session_info().await {
+                                                if let Some(collection_str) = data.type_discriminator() {
+                                                    let collection = Nsid::new(collection_str).ok();
+                                                    if let Some(collection) = collection {
+                                                        let request = CreateRecord::new()
+                                                            .repo(AtIdentifier::Did(did))
+                                                            .collection(collection)
+                                                            .record(data.clone())
+                                                            .build();
+
+                                                        match fetcher.send(request).await {
+                                                            Ok(response) => {
+                                                                if let Ok(output) = response.into_output() {
+                                                                    dioxus_logger::tracing::info!("Record created: {}", output.uri);
+                                                                    nav.push(Route::RecordView { uri: output.uri.to_smolstr() });
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                dioxus_logger::tracing::error!("Failed to create record: {:?}", e);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    },
+                                    on_replace: move |_| {
+                                        let fetcher = replace_fetcher.clone();
+                                        let uri = uri();
+                                        let data = edit_data();
+                                        let nav = navigator.clone();
+                                        spawn(async move {
+                                            if let Some((did, _)) = fetcher.session_info().await {
+                                                if let Some(new_collection_str) = data.type_discriminator() {
+                                                    let new_collection = Nsid::new(new_collection_str).ok();
+                                                    if let Some(new_collection) = new_collection {
+                                                        // Create new record
+                                                        let create_req = CreateRecord::new()
+                                                            .repo(AtIdentifier::Did(did.clone()))
+                                                            .collection(new_collection)
+                                                            .record(data.clone())
+                                                            .build();
+
+                                                        match fetcher.send(create_req).await {
+                                                            Ok(response) => {
+                                                                if let Ok(create_output) = response.into_output() {
+                                                                    // Delete old record
+                                                                    if let (Some(old_collection_str), Some(old_rkey)) = (uri.collection(), uri.rkey()) {
+                                                                        let old_collection = Nsid::new(old_collection_str.as_str()).ok();
+                                                                        if let Some(old_collection) = old_collection {
+                                                                            let delete_req = DeleteRecord::new()
+                                                                                .repo(AtIdentifier::Did(did))
+                                                                                .collection(old_collection)
+                                                                                .rkey(old_rkey.clone())
+                                                                                .build();
+
+                                                                            if let Err(e) = fetcher.send(delete_req).await {
+                                                                                warn!("Created new record but failed to delete old: {:?}", e);
+                                                                            }
+                                                                        }
+                                                                    }
+
+                                                                    info!("Record replaced: {}", create_output.uri);
+                                                                    nav.push(Route::RecordView { uri: create_output.uri.to_smolstr() });
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                error!("Failed to replace record: {:?}", e);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    },
+                                    on_delete: move |_| {
+                                        let fetcher = fetcher.clone();
+                                        let uri = uri();
+                                        let nav = navigator.clone();
+                                        spawn(async move {
+                                            if let Some((did, _)) = fetcher.session_info().await {
+                                                if let (Some(collection_str), Some(rkey)) = (uri.collection(), uri.rkey()) {
+                                                    let collection = Nsid::new(collection_str.as_str()).ok();
+                                                    if let Some(collection) = collection {
+                                                        let request = DeleteRecord::new()
+                                                            .repo(AtIdentifier::Did(did))
+                                                            .collection(collection)
+                                                            .rkey(rkey.clone())
+                                                            .build();
+
+                                                        match fetcher.send(request).await {
+                                                            Ok(_) => {
+                                                                info!("Record deleted");
+                                                                nav.push(Route::Home {});
+                                                            }
+                                                            Err(e) => {
+                                                                error!("Failed to delete record: {:?}", e);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    },
+                                    on_cancel: move |_| {
+                                        edit_data.set(record_value_clone.clone());
+                                        edit_mode.set(false);
+                                    },
+                                }
+                            }
+                        }
+                    }
                 }
                 div {
                     class: "tab-content",
-                    match view_mode() {
-                        ViewMode::Pretty => rsx! {
+                    match (view_mode(), edit_mode()) {
+                        (ViewMode::Pretty, false) => rsx! {
                             PrettyRecordView { record: record_value.clone(), uri: uri().clone() }
                         },
-                        ViewMode::Json => rsx! {
+                        (ViewMode::Json, false) => rsx! {
                             CodeView {
                                 code: use_signal(|| json.clone()),
                                 lang: Some("json".to_string()),
+                            }
+                        },
+                        (ViewMode::Pretty, true) => rsx! {
+                            div { "Pretty editor not yet implemented" }
+                        },
+                        (ViewMode::Json, true) => rsx! {
+                            JsonEditor {
+                                data: edit_data,
+                                nsid: nsid,
                             }
                         },
                     }
@@ -440,6 +652,224 @@ pub struct CodeViewProps {
     class: Signal<String>,
     code: ReadSignal<String>,
     lang: Option<String>,
+}
+
+#[component]
+fn JsonEditor(data: Signal<Data<'static>>, nsid: ReadSignal<Option<String>>) -> Element {
+    let mut json_text =
+        use_signal(|| serde_json::to_string_pretty(&*data.read()).unwrap_or_default());
+    let mut parse_error = use_signal(|| None::<String>);
+
+    let height = use_memo(move || {
+        let line_count = json_text().lines().count();
+        let min_lines = 10;
+        let lines = line_count.max(min_lines);
+        // line-height is 1.5, font-size is 0.9rem (approx 14.4px), so each line is ~21.6px
+        // Add padding (1rem top + 1rem bottom = 2rem = 32px)
+        format!("{}px", lines * 22 + 32)
+    });
+
+    let fetcher = use_context::<CachedFetcher>();
+
+    let validation = use_resource(move || {
+        let text = json_text();
+        let nsid_val = nsid();
+        let fetcher = fetcher.clone();
+
+        async move {
+            // Only validate if we have an NSID
+            let nsid_str = nsid_val?;
+
+            // Parse JSON to Data
+            let parsed = match serde_json::from_str::<Data>(&text) {
+                Ok(val) => val.into_static(),
+                Err(e) => {
+                    return Some((None, Some(e.to_string())));
+                }
+            };
+
+            // Resolve lexicon if needed
+            let registry = jacquard_lexicon::schema::SchemaRegistry::from_inventory();
+            if registry.get(&nsid_str).is_none() {
+                let nsid_str = nsid_str.split('#').next();
+                if let Some(Ok(nsid_parsed)) = nsid_str.map(|s| Nsid::new(s)) {
+                    if let Ok(schema) = fetcher.resolve_lexicon_schema(&nsid_parsed).await {
+                        registry.insert(nsid_parsed.to_smolstr(), schema.doc);
+                    }
+                }
+            }
+
+            // Validate
+            let validator = jacquard_lexicon::validation::SchemaValidator::from_registry(registry);
+            let result = validator.validate_by_nsid(&nsid_str, &parsed);
+
+            Some((Some(result), None))
+        }
+    });
+
+    rsx! {
+        div { class: "json-editor",
+            textarea {
+                class: "json-textarea",
+                style: "height: {height};",
+                value: "{json_text}",
+                oninput: move |evt| {
+                    json_text.set(evt.value());
+                    // Update data signal on successful parse
+                    if let Ok(parsed) = serde_json::from_str::<Data>(&evt.value()) {
+                        data.set(parsed.into_static());
+                    }
+                },
+            }
+
+            ValidationPanel {
+                validation: validation,
+            }
+        }
+    }
+}
+
+#[component]
+fn ActionButtons(
+    on_update: EventHandler<()>,
+    on_save_new: EventHandler<()>,
+    on_replace: EventHandler<()>,
+    on_delete: EventHandler<()>,
+    on_cancel: EventHandler<()>,
+) -> Element {
+    let mut show_save_dropdown = use_signal(|| false);
+    let mut show_replace_warning = use_signal(|| false);
+    let mut show_delete_confirm = use_signal(|| false);
+
+    rsx! {
+        div { class: "action-buttons-group",
+            button {
+                class: "tab-button action-button",
+                onclick: move |_| on_update.call(()),
+                "Update"
+            }
+
+            div { class: "dropdown-wrapper",
+                button {
+                    class: "tab-button action-button",
+                    onclick: move |_| show_save_dropdown.toggle(),
+                    "Save as New ▼"
+                }
+                if show_save_dropdown() {
+                    div { class: "dropdown-menu",
+                        button {
+                            onclick: move |_| {
+                                show_save_dropdown.set(false);
+                                on_save_new.call(());
+                            },
+                            "Save as New"
+                        }
+                        button {
+                            onclick: move |_| {
+                                show_save_dropdown.set(false);
+                                show_replace_warning.set(true);
+                            },
+                            "Replace"
+                        }
+                    }
+                }
+            }
+
+            if show_replace_warning() {
+                div { class: "inline-warning",
+                    "⚠️ This will delete the current record and create a new one with a different rkey. "
+                    button {
+                        onclick: move |_| {
+                            show_replace_warning.set(false);
+                            on_replace.call(());
+                        },
+                        "Yes"
+                    }
+                    button {
+                        onclick: move |_| show_replace_warning.set(false),
+                        "No"
+                    }
+                }
+            }
+
+            button {
+                class: "tab-button action-button action-button-danger",
+                onclick: move |_| show_delete_confirm.set(true),
+                "Delete"
+            }
+
+            DialogRoot {
+                open: Some(show_delete_confirm()),
+                on_open_change: move |open: bool| {
+                    show_delete_confirm.set(open);
+                },
+                DialogContent {
+                    DialogTitle { "Delete Record?" }
+                    DialogDescription {
+                        "This action cannot be undone."
+                    }
+                    div { class: "dialog-actions",
+                        button {
+                            onclick: move |_| {
+                                show_delete_confirm.set(false);
+                                on_delete.call(());
+                            },
+                            "Delete"
+                        }
+                        button {
+                            onclick: move |_| show_delete_confirm.set(false),
+                            "Cancel"
+                        }
+                    }
+                }
+            }
+
+            button {
+                class: "tab-button action-button",
+                onclick: move |_| on_cancel.call(()),
+                "Cancel"
+            }
+        }
+    }
+}
+
+#[component]
+fn ValidationPanel(
+    validation: Resource<
+        Option<(
+            Option<jacquard_lexicon::validation::ValidationResult>,
+            Option<String>,
+        )>,
+    >,
+) -> Element {
+    rsx! {
+        div { class: "validation-panel",
+            if let Some(Some((result_opt, parse_error_opt))) = validation.read().as_ref() {
+                if let Some(parse_err) = parse_error_opt {
+                    div { class: "parse-error",
+                        "❌ Invalid JSON: {parse_err}"
+                    }
+                } else {
+                    div { class: "parse-success", "✓ Valid JSON syntax" }
+                }
+
+                if let Some(result) = result_opt {
+                    if result.is_valid() {
+                        div { class: "validation-success", "✓ Record is valid" }
+                    } else {
+                        div { class: "validation-errors",
+                            h4 { "Validation Errors:" }
+                            for error in result.all_errors() {
+                                div { class: "error", "❌ {error}" }
+                            }
+                        }
+                    }
+                }
+            } else {
+                div { "Validating..." }
+            }
+        }
+    }
 }
 
 /// Render some text as markdown.

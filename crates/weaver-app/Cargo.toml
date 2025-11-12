@@ -23,6 +23,7 @@ dioxus = { version = "0.7.1", features = ["router"] }
 #dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
 weaver-common = { path = "../weaver-common" }
 jacquard = { workspace = true, features = ["streaming"] }
+jacquard-lexicon = { workspace = true }
 jacquard-axum = { workspace = true, optional = true }
 weaver-api = { path = "../weaver-api", features = ["streaming"] }
 markdown-weaver = { workspace = true }

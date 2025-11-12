@@ -9,7 +9,9 @@ use jacquard::error::XrpcResult;
 use jacquard::identity::resolver::DidDocResponse;
 use jacquard::identity::resolver::IdentityError;
 use jacquard::identity::resolver::ResolverOptions;
+use jacquard::identity::lexicon_resolver::{LexiconSchemaResolver, ResolvedLexiconSchema, LexiconResolutionError};
 use jacquard::identity::JacquardResolver;
+use jacquard::types::string::Nsid;
 use jacquard::oauth::client::OAuthClient;
 use jacquard::oauth::client::OAuthSession;
 use jacquard::prelude::*;
@@ -253,6 +255,24 @@ impl IdentityResolver for Client {
         did: &Did<'_>,
     ) -> impl Future<Output = core::result::Result<DidDocResponse, IdentityError>> {
         self.oauth_client.client.resolve_did_doc(did)
+    }
+}
+
+impl LexiconSchemaResolver for Client {
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn resolve_lexicon_schema(
+        &self,
+        nsid: &Nsid<'_>,
+    ) -> std::result::Result<ResolvedLexiconSchema<'static>, LexiconResolutionError> {
+        self.oauth_client.client.resolve_lexicon_schema(nsid).await
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn resolve_lexicon_schema(
+        &self,
+        nsid: &Nsid<'_>,
+    ) -> std::result::Result<ResolvedLexiconSchema<'static>, LexiconResolutionError> {
+        self.oauth_client.client.resolve_lexicon_schema(nsid).await
     }
 }
 
@@ -741,6 +761,24 @@ impl IdentityResolver for CachedFetcher {
         did: &Did<'_>,
     ) -> impl Future<Output = core::result::Result<DidDocResponse, IdentityError>> {
         self.client.resolve_did_doc(did)
+    }
+}
+
+impl LexiconSchemaResolver for CachedFetcher {
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn resolve_lexicon_schema(
+        &self,
+        nsid: &Nsid<'_>,
+    ) -> std::result::Result<ResolvedLexiconSchema<'static>, LexiconResolutionError> {
+        self.client.resolve_lexicon_schema(nsid).await
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn resolve_lexicon_schema(
+        &self,
+        nsid: &Nsid<'_>,
+    ) -> std::result::Result<ResolvedLexiconSchema<'static>, LexiconResolutionError> {
+        self.client.resolve_lexicon_schema(nsid).await
     }
 }
 
