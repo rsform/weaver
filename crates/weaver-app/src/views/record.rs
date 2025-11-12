@@ -892,7 +892,9 @@ fn EditableDataView(
         .get_at_path(&path_for_memo)
         .map(|d| d.clone().into_static())
     {
-        Some(Data::Object(_)) => rsx! { EditableObjectField { root, path: path.clone(), did, remove_button } },
+        Some(Data::Object(_)) => {
+            rsx! { EditableObjectField { root, path: path.clone(), did, remove_button } }
+        }
         Some(Data::Array(_)) => rsx! { EditableArrayField { root, path: path.clone(), did } },
         Some(Data::String(_)) => {
             rsx! { EditableStringField { root, path: path.clone(), remove_button } }
@@ -904,11 +906,14 @@ fn EditableDataView(
             rsx! { EditableBooleanField { root, path: path.clone(), remove_button } }
         }
         Some(Data::Null) => rsx! { EditableNullField { root, path: path.clone(), remove_button } },
-        Some(Data::Blob(_)) => rsx! { EditableBlobField { root, path: path.clone(), did, remove_button } },
-
-        // Not yet implemented - fall back to read-only DataView
-        Some(data) => {
-            rsx! { DataView { data: data.clone(), path: path.clone(), did } }
+        Some(Data::Blob(_)) => {
+            rsx! { EditableBlobField { root, path: path.clone(), did, remove_button } }
+        }
+        Some(Data::Bytes(_)) => {
+            rsx! { EditableBytesField { root, path: path.clone(), remove_button } }
+        }
+        Some(Data::CidLink(_)) => {
+            rsx! { EditableCidLinkField { root, path: path.clone(), remove_button } }
         }
 
         None => rsx! { div { class: "field-error", "❌ Path not found: {path}" } },
@@ -981,6 +986,19 @@ fn EditableStringField(
     let type_label = format!("{:?}", string_type()).to_lowercase();
     let is_plain_string = string_type() == LexiconStringType::String;
 
+    // Dynamic width based on content length
+    let input_width = use_memo(move || {
+        let len = input_text().len();
+        let min_width = match string_type() {
+            LexiconStringType::Cid => 60,
+            LexiconStringType::Nsid => 40,
+            LexiconStringType::Did => 50,
+            LexiconStringType::AtUri => 50,
+            _ => 20,
+        };
+        format!("{}ch", len.max(min_width))
+    });
+
     rsx! {
         div { class: "record-field",
             div { class: "field-header",
@@ -1001,6 +1019,7 @@ fn EditableStringField(
                 input {
                     r#type: "text",
                     value: "{input_text}",
+                    style: "width: {input_width}",
                     oninput: handle_input,
                     class: if parse_error().is_some() { "invalid" } else { "" },
                 }
@@ -1246,9 +1265,7 @@ fn EditableBlobField(
             let format = mime.strip_prefix("image/").unwrap_or("jpeg");
             format!(
                 "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@{}",
-                did,
-                cid,
-                format
+                did, cid, format
             )
         })
     } else {
@@ -1305,6 +1322,227 @@ fn EditableBlobField(
                         "File upload coming soon"
                     }
                 }
+            }
+        }
+    }
+}
+
+/// Bytes field with hex/base64 auto-detection
+#[component]
+fn EditableBytesField(
+    root: Signal<Data<'static>>,
+    path: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
+    let path_for_memo = path.clone();
+    let current_bytes = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_memo)
+            .and_then(|d| match d {
+                Data::Bytes(b) => Some(bytes_to_hex(b)),
+                _ => None,
+            })
+    });
+
+    let mut input_text = use_signal(|| String::new());
+    let mut parse_error = use_signal(|| None::<String>);
+    let mut detected_format = use_signal(|| None::<String>);
+
+    // Sync input when bytes change
+    use_effect(move || {
+        if let Some(hex) = current_bytes() {
+            input_text.set(hex);
+        }
+    });
+
+    let path_for_mutation = path.clone();
+    let handle_input = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+        let text = evt.value();
+        input_text.set(text.clone());
+
+        match parse_bytes_input(&text) {
+            Ok((bytes, format)) => {
+                parse_error.set(None);
+                detected_format.set(Some(format));
+                root.with_mut(|data| {
+                    if let Some(target) = data.get_at_path_mut(&path_for_mutation) {
+                        *target = Data::Bytes(bytes);
+                    }
+                });
+            }
+            Err(e) => {
+                parse_error.set(Some(e));
+                detected_format.set(None);
+            }
+        }
+    };
+
+    let byte_count = current_bytes()
+        .map(|hex| hex.chars().filter(|c| c.is_ascii_hexdigit()).count() / 2)
+        .unwrap_or(0);
+    let size_label = if byte_count > 128 {
+        format_size(byte_count, humansize::BINARY)
+    } else {
+        format!("{} bytes", byte_count)
+    };
+
+    rsx! {
+        div { class: "record-field bytes-field",
+            div { class: "field-header",
+                PathLabel { path: path.clone() }
+                span { class: "string-type-tag", " [bytes: {size_label}]" }
+                if let Some(format) = detected_format() {
+                    span { class: "bytes-format-tag", " ({format})" }
+                }
+                {remove_button}
+            }
+            textarea {
+                value: "{input_text}",
+                placeholder: "Paste hex (1a2b3c...) or base64 (YWJj...)",
+                oninput: handle_input,
+                class: if parse_error().is_some() { "invalid" } else { "" },
+                rows: "3",
+            }
+            if let Some(err) = parse_error() {
+                span { class: "field-error", " ❌ {err}" }
+            }
+        }
+    }
+}
+
+/// Parse bytes from hex or base64, auto-detecting format
+fn parse_bytes_input(text: &str) -> Result<(jacquard::bytes::Bytes, String), String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("Input is empty".to_string());
+    }
+
+    // Remove common whitespace/separators
+    let cleaned: String = trimmed
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != ':' && *c != '-')
+        .collect();
+
+    // Try hex first (more restrictive)
+    if cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
+        parse_hex_bytes(&cleaned).map(|b| (b, "hex".to_string()))
+    } else {
+        // Try base64
+        parse_base64_bytes(&cleaned).map(|b| (b, "base64".to_string()))
+    }
+}
+
+/// Parse hex string to bytes
+fn parse_hex_bytes(hex: &str) -> Result<jacquard::bytes::Bytes, String> {
+    if hex.len() % 2 != 0 {
+        return Err("Hex string must have even length".to_string());
+    }
+
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    for chunk in hex.as_bytes().chunks(2) {
+        let hex_byte = std::str::from_utf8(chunk).map_err(|e| format!("Invalid UTF-8: {}", e))?;
+        let byte =
+            u8::from_str_radix(hex_byte, 16).map_err(|e| format!("Invalid hex digit: {}", e))?;
+        bytes.push(byte);
+    }
+
+    Ok(jacquard::bytes::Bytes::from(bytes))
+}
+
+/// Parse base64 string to bytes
+fn parse_base64_bytes(b64: &str) -> Result<jacquard::bytes::Bytes, String> {
+    use base64::Engine;
+    let engine = base64::engine::general_purpose::STANDARD;
+
+    engine
+        .decode(b64)
+        .map(jacquard::bytes::Bytes::from)
+        .map_err(|e| format!("Invalid base64: {}", e))
+}
+
+/// Convert bytes to hex display string (with spacing every 4 chars)
+fn bytes_to_hex(bytes: &jacquard::bytes::Bytes) -> String {
+    bytes
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            let hex = format!("{:02x}", b);
+            if i > 0 && i % 2 == 0 {
+                format!(" {}", hex)
+            } else {
+                hex
+            }
+        })
+        .collect()
+}
+
+/// CidLink field with validation
+#[component]
+fn EditableCidLinkField(
+    root: Signal<Data<'static>>,
+    path: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
+    let path_for_memo = path.clone();
+    let current_cid = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_memo)
+            .map(|d| match d {
+                Data::CidLink(cid) => cid.to_string(),
+                _ => String::new(),
+            })
+            .unwrap_or_default()
+    });
+
+    let mut input_text = use_signal(|| String::new());
+    let mut parse_error = use_signal(|| None::<String>);
+
+    use_effect(move || {
+        input_text.set(current_cid());
+    });
+
+    let input_width = use_memo(move || {
+        let len = input_text().len();
+        format!("{}ch", len.max(60))
+    });
+
+    let path_for_mutation = path.clone();
+    let handle_input = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+        let text = evt.value();
+        input_text.set(text.clone());
+
+        match jacquard::types::cid::Cid::new_owned(text.as_bytes()) {
+            Ok(new_cid) => {
+                parse_error.set(None);
+                root.with_mut(|data| {
+                    if let Some(target) = data.get_at_path_mut(&path_for_mutation) {
+                        *target = Data::CidLink(new_cid);
+                    }
+                });
+            }
+            Err(_) => {
+                parse_error.set(Some("Invalid CID format".to_string()));
+            }
+        }
+    };
+
+    rsx! {
+        div { class: "record-field cidlink-field",
+            div { class: "field-header",
+                PathLabel { path: path.clone() }
+                span { class: "string-type-tag", " [cid-link]" }
+                {remove_button}
+            }
+            input {
+                r#type: "text",
+                value: "{input_text}",
+                style: "width: {input_width}",
+                placeholder: "bafyrei...",
+                oninput: handle_input,
+                class: if parse_error().is_some() { "invalid" } else { "" },
+            }
+            if let Some(err) = parse_error() {
+                span { class: "field-error", " ❌ {err}" }
             }
         }
     }
@@ -1417,19 +1655,22 @@ fn EditableArrayField(root: Signal<Data<'static>>, path: String, did: String) ->
                     }
                 }
                 div {
-                     class: "add-field-widget",
-                     button {
+                    class: "array-item",
+                    div {
+                        class: "add-field-widget",
+                        button {
 
-                         onclick: move |_| {
-                             root.with_mut(|data| {
-                                 if let Some(Data::Array(arr)) = data.get_at_path_mut(&path_for_add) {
-                                     let new_item = create_array_item_default(arr);
-                                     arr.0.push(new_item);
-                                 }
-                             });
-                         },
-                         "+ Add Item"
-                     }
+                            onclick: move |_| {
+                                root.with_mut(|data| {
+                                    if let Some(Data::Array(arr)) = data.get_at_path_mut(&path_for_add) {
+                                        let new_item = create_array_item_default(arr);
+                                        arr.0.push(new_item);
+                                    }
+                                });
+                            },
+                            "+ Add Item"
+                        }
+                    }
                 }
 
 

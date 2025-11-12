@@ -8654,6 +8654,7 @@ name = "weaver-app"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "console_error_panic_hook",
  "dashmap",

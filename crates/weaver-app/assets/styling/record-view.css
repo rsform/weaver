@@ -259,6 +259,7 @@
     flex-direction: column;
     align-items: flex-start;
     padding-right: 1rem;
+    margin-left: -0.02rem;
 }
 
 .section-content .record-field {
@@ -471,7 +472,14 @@
 }
 
 .array-item .section-header {
-    margin-left: -1.52rem;
+    margin-left: -1.53rem;
+}
+.array-item .section-content .record-field {
+    margin-left: 0rem;
+}
+
+.array-item .record-field {
+    margin-left: -1.5rem;
 }
 
 .array-length {
@@ -485,6 +493,7 @@
     width: 100%;
     display: flex;
     flex-direction: column;
+    margin-left: 1.49rem;
 }
 
 /* Pretty Editor Input Fields */
@@ -649,20 +658,25 @@
     gap: 0.5rem;
 }
 
+/* Bytes fields need wider inputs */
+.bytes-field input,
+.bytes-field textarea {
+    min-width: 80ch;
+}
+
 .field-remove-button {
     font-family: var(--font-mono);
     font-size: 0.7rem;
-    color: var(--color-subtle);
+    color: var(--color-error);
     background: transparent;
     border: none;
     padding: 0.2rem 0.4rem;
     cursor: pointer;
-    margin-left: auto;
     transition: color 0.2s;
 }
 
 .field-remove-button:hover {
-    color: var(--color-error, #ff6b6b);
+    color: var(--color-warning, #ff6b6b);
 }
 
 /* Blob Field Styling */
