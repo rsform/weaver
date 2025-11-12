@@ -274,11 +274,14 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                     div { class: "section-content",
                         for (idx, item) in arr.iter().enumerate() {
                             {
-                                let item_path = format!("{}[{}]", path, idx);
+                                let item_path = format!("{}[{}]", label, idx);
                                 let is_object = matches!(item, Data::Object(_));
 
                                 if is_object {
                                     rsx! {
+
+                                        div {
+                                            class: "array-item",
                                         div { class: "record-section",
                                             div { class: "section-label", "{item_path}" }
                                             div { class: "section-content",
@@ -289,13 +292,19 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                                                 }
                                             }
                                         }
+                                        }
                                     }
                                 } else {
+
                                     rsx! {
+
+                                        div {
+                                            class: "array-item",
                                         DataView {
                                             data: item.clone(),
                                             path: item_path,
                                             did: did.clone()
+                                        }
                                         }
                                     }
                                 }
@@ -307,21 +316,23 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
         }
         Data::Object(obj) => {
             let is_root = path.is_empty();
-            let is_array_item = path.contains('[');
+            let is_array_item = path.split('.').last().unwrap_or(&path).contains('[');
 
             if is_root || is_array_item {
                 // Root object or array item: just render children (array items already wrapped)
                 rsx! {
-                    for (key, value) in obj.iter() {
-                        {
-                            let new_path = if is_root {
-                                key.to_string()
-                            } else {
-                                format!("{}.{}", path, key)
-                            };
-                            let did_clone = did.clone();
-                            rsx! {
-                                DataView { data: value.clone(), path: new_path, did: did_clone }
+                    div { class: if !is_root { "record-section" } else {""},
+                        for (key, value) in obj.iter() {
+                            {
+                                let new_path = if is_root {
+                                    key.to_string()
+                                } else {
+                                    format!("{}.{}", path, key)
+                                };
+                                let did_clone = did.clone();
+                                rsx! {
+                                    DataView { data: value.clone(), path: new_path, did: did_clone }
+                                }
                             }
                         }
                     }
@@ -330,8 +341,9 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                 // Nested object (not array item): wrap in section
                 let label = path.split('.').last().unwrap_or(&path);
                 rsx! {
+
+                    div { class: "section-label", "{label}" }
                     div { class: "record-section",
-                        div { class: "section-label", "{label}" }
                         div { class: "section-content",
                             for (key, value) in obj.iter() {
                                 {
