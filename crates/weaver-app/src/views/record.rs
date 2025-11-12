@@ -813,6 +813,66 @@ fn try_parse_as_type(
     }
 }
 
+/// Create default value for new array item by cloning structure of existing items
+fn create_array_item_default(arr: &jacquard::types::value::Array) -> Data<'static> {
+    if let Some(existing) = arr.0.first() {
+        clone_structure(existing)
+    } else {
+        // Empty array, default to null (user can change type)
+        Data::Null
+    }
+}
+
+/// Clone structure of Data, setting sensible defaults for leaf values
+fn clone_structure(data: &Data) -> Data<'static> {
+    use jacquard::types::string::*;
+    use jacquard::types::value::{Array, Object};
+    use jacquard::types::{LexiconStringType, blob::*};
+    use std::collections::BTreeMap;
+
+    match data {
+        Data::Object(obj) => {
+            let mut new_obj = BTreeMap::new();
+            for (key, value) in obj.0.iter() {
+                new_obj.insert(key.clone(), clone_structure(value));
+            }
+            Data::Object(Object(new_obj))
+        }
+
+        Data::Array(_) => Data::Array(Array(Vec::new())),
+
+        Data::String(s) => match s.string_type() {
+            LexiconStringType::Datetime => {
+                // Sensible default: now
+                Data::String(AtprotoStr::Datetime(Datetime::now()))
+            }
+            _ => {
+                // Empty string, type inference will handle it
+                Data::String(AtprotoStr::String("".into()))
+            }
+        },
+
+        Data::Integer(_) => Data::Integer(0),
+        Data::Boolean(_) => Data::Boolean(false),
+
+        Data::Blob(blob) => {
+            // Placeholder blob
+            Data::Blob(
+                Blob {
+                    r#ref: CidLink::str(
+                        "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    ),
+                    mime_type: blob.mime_type.clone(),
+                    size: 0,
+                }
+                .into_static(),
+            )
+        }
+
+        Data::Bytes(_) | Data::CidLink(_) | Data::Null => Data::Null,
+    }
+}
+
 // ============================================================================
 // Pretty Editor: Component Hierarchy
 // ============================================================================
@@ -832,7 +892,8 @@ fn EditableDataView(
         .get_at_path(&path_for_memo)
         .map(|d| d.clone().into_static())
     {
-        Some(Data::Object(_)) => rsx! { EditableObjectField { root, path: path.clone(), did } },
+        Some(Data::Object(_)) => rsx! { EditableObjectField { root, path: path.clone(), did, remove_button } },
+        Some(Data::Array(_)) => rsx! { EditableArrayField { root, path: path.clone(), did } },
         Some(Data::String(_)) => {
             rsx! { EditableStringField { root, path: path.clone(), remove_button } }
         }
@@ -843,6 +904,7 @@ fn EditableDataView(
             rsx! { EditableBooleanField { root, path: path.clone(), remove_button } }
         }
         Some(Data::Null) => rsx! { EditableNullField { root, path: path.clone(), remove_button } },
+        Some(Data::Blob(_)) => rsx! { EditableBlobField { root, path: path.clone(), did, remove_button } },
 
         // Not yet implemented - fall back to read-only DataView
         Some(data) => {
@@ -917,6 +979,7 @@ fn EditableStringField(
     };
 
     let type_label = format!("{:?}", string_type()).to_lowercase();
+    let is_plain_string = string_type() == LexiconStringType::String;
 
     rsx! {
         div { class: "record-field",
@@ -927,11 +990,20 @@ fn EditableStringField(
                 }
                 {remove_button}
             }
-            input {
-                r#type: "text",
-                value: "{input_text}",
-                oninput: handle_input,
-                class: if parse_error().is_some() { "invalid" } else { "" },
+            if is_plain_string {
+                textarea {
+                    value: "{input_text}",
+                    oninput: handle_input,
+                    class: if parse_error().is_some() { "invalid" } else { "" },
+                    rows: "1",
+                }
+            } else {
+                input {
+                    r#type: "text",
+                    value: "{input_text}",
+                    oninput: handle_input,
+                    class: if parse_error().is_some() { "invalid" } else { "" },
+                }
             }
             if let Some(err) = parse_error() {
                 span { class: "field-error", " ❌ {err}" }
@@ -1086,6 +1158,158 @@ fn EditableNullField(
     }
 }
 
+/// Blob field - shows CID, size (editable), mime type (read-only)
+#[component]
+fn EditableBlobField(
+    root: Signal<Data<'static>>,
+    path: String,
+    did: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
+    let path_for_memo = path.clone();
+    let blob_data = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_memo)
+            .and_then(|d| match d {
+                Data::Blob(blob) => Some((
+                    blob.r#ref.to_string(),
+                    blob.size,
+                    blob.mime_type.as_str().to_string(),
+                )),
+                _ => None,
+            })
+    });
+
+    let mut cid_input = use_signal(|| String::new());
+    let mut size_input = use_signal(|| String::new());
+    let mut cid_error = use_signal(|| None::<String>);
+    let mut size_error = use_signal(|| None::<String>);
+
+    // Sync inputs when blob data changes
+    use_effect(move || {
+        if let Some((cid, size, _)) = blob_data() {
+            cid_input.set(cid);
+            size_input.set(size.to_string());
+        }
+    });
+
+    let path_for_cid = path.clone();
+    let handle_cid_change = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+        let text = evt.value();
+        cid_input.set(text.clone());
+
+        match jacquard::types::cid::CidLink::new_owned(text.as_bytes()) {
+            Ok(new_cid_link) => {
+                cid_error.set(None);
+                root.with_mut(|data| {
+                    if let Some(Data::Blob(blob)) = data.get_at_path_mut(&path_for_cid) {
+                        blob.r#ref = new_cid_link;
+                    }
+                });
+            }
+            Err(_) => {
+                cid_error.set(Some("Invalid CID format".to_string()));
+            }
+        }
+    };
+
+    let path_for_size = path.clone();
+    let handle_size_change = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+        let text = evt.value();
+        size_input.set(text.clone());
+
+        match text.parse::<usize>() {
+            Ok(new_size) => {
+                size_error.set(None);
+                root.with_mut(|data| {
+                    if let Some(Data::Blob(blob)) = data.get_at_path_mut(&path_for_size) {
+                        blob.size = new_size;
+                    }
+                });
+            }
+            Err(_) => {
+                size_error.set(Some("Must be a non-negative integer".to_string()));
+            }
+        }
+    };
+
+    let placeholder_cid = "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let is_placeholder = blob_data()
+        .map(|(cid, _, _)| cid == placeholder_cid)
+        .unwrap_or(true);
+    let is_image = blob_data()
+        .map(|(_, _, mime)| mime.starts_with("image/"))
+        .unwrap_or(false);
+
+    let image_url = if !is_placeholder && is_image {
+        blob_data().map(|(cid, _, mime)| {
+            let format = mime.strip_prefix("image/").unwrap_or("jpeg");
+            format!(
+                "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@{}",
+                did,
+                cid,
+                format
+            )
+        })
+    } else {
+        None
+    };
+
+    rsx! {
+        div { class: "record-field blob-field",
+            div { class: "field-header",
+                PathLabel { path: path.clone() }
+                span { class: "string-type-tag", " [blob]" }
+                {remove_button}
+            }
+            div { class: "blob-fields",
+                div { class: "blob-field-row blob-field-cid",
+                    label { "CID:" }
+                    input {
+                        r#type: "text",
+                        value: "{cid_input}",
+                        oninput: handle_cid_change,
+                        class: if cid_error().is_some() { "invalid" } else { "" },
+                    }
+                    if let Some(err) = cid_error() {
+                        span { class: "field-error", " ❌ {err}" }
+                    }
+                }
+                div { class: "blob-field-row",
+                    label { "Size:" }
+                    input {
+                        r#type: "number",
+                        value: "{size_input}",
+                        oninput: handle_size_change,
+                        class: if size_error().is_some() { "invalid" } else { "" },
+                    }
+                    if let Some(err) = size_error() {
+                        span { class: "field-error", " ❌ {err}" }
+                    }
+                }
+                div { class: "blob-field-row",
+                    label { "MIME Type:" }
+                    span { class: "readonly",
+                        "{blob_data().map(|(_, _, mime)| mime).unwrap_or_default()}"
+                    }
+                }
+                if let Some(url) = image_url {
+                    img {
+                        src: "{url}",
+                        alt: "Blob preview",
+                        class: "blob-image",
+                    }
+                }
+                if is_placeholder {
+                    div { class: "muted blob-upload-note",
+                        "File upload coming soon"
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ============================================================================
 // Field with Remove Button Wrapper
 // ============================================================================
@@ -1129,12 +1353,103 @@ fn FieldWithRemove(
 }
 
 // ============================================================================
+// Array Field Editor (enables recursion)
+// ============================================================================
+
+/// Array field - iterates items and renders child EditableDataView for each
+#[component]
+fn EditableArrayField(root: Signal<Data<'static>>, path: String, did: String) -> Element {
+    let path_for_memo = path.clone();
+    let array_len = use_memo(move || {
+        root.read()
+            .get_at_path(&path_for_memo)
+            .and_then(|d| d.as_array())
+            .map(|arr| arr.0.len())
+            .unwrap_or(0)
+    });
+
+    let path_for_add = path.clone();
+
+    rsx! {
+        div { class: "record-section array-section",
+            div { class: "section-header",
+                div { class: "section-label",
+                    {
+                        let parts: Vec<&str> = path.split('.').collect();
+                        let final_part = parts.last().unwrap_or(&"");
+                        rsx! { "{final_part}" }
+                    }
+                }
+                span { class: "array-length", "[{array_len}]" }
+            }
+
+            div { class: "section-content",
+                for idx in 0..array_len() {
+                    {
+                        let item_path = format!("{}[{}]", path, idx);
+                        let path_for_remove = path.clone();
+
+                        rsx! {
+                            div {
+                                class: "array-item",
+                                key: "{item_path}",
+
+                                EditableDataView {
+                                    root: root,
+                                    path: item_path.clone(),
+                                    did: did.clone(),
+                                    remove_button: rsx! {
+                                        button {
+                                            class: "field-remove-button",
+                                            onclick: move |_| {
+                                                root.with_mut(|data| {
+                                                    if let Some(Data::Array(arr)) = data.get_at_path_mut(&path_for_remove) {
+                                                        arr.0.remove(idx);
+                                                    }
+                                                });
+                                            },
+                                            "Remove"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                div {
+                     class: "add-field-widget",
+                     button {
+
+                         onclick: move |_| {
+                             root.with_mut(|data| {
+                                 if let Some(Data::Array(arr)) = data.get_at_path_mut(&path_for_add) {
+                                     let new_item = create_array_item_default(arr);
+                                     arr.0.push(new_item);
+                                 }
+                             });
+                         },
+                         "+ Add Item"
+                     }
+                }
+
+
+            }
+        }
+    }
+}
+
+// ============================================================================
 // Object Field Editor (enables recursion)
 // ============================================================================
 
 /// Object field - iterates fields and renders child EditableDataView for each
 #[component]
-fn EditableObjectField(root: Signal<Data<'static>>, path: String, did: String) -> Element {
+fn EditableObjectField(
+    root: Signal<Data<'static>>,
+    path: String,
+    did: String,
+    #[props(default)] remove_button: Option<Element>,
+) -> Element {
     let path_for_memo = path.clone();
     let field_keys = use_memo(move || {
         root.read()
@@ -1149,12 +1464,15 @@ fn EditableObjectField(root: Signal<Data<'static>>, path: String, did: String) -
     rsx! {
         if !is_root {
             div { class: "record-section object-section",
-                div { class: "section-label",
-                    {
-                        let parts: Vec<&str> = path.split('.').collect();
-                        let final_part = parts.last().unwrap_or(&"");
-                        rsx! { "{final_part}" }
+                div { class: "section-header",
+                    div { class: "section-label",
+                        {
+                            let parts: Vec<&str> = path.split('.').collect();
+                            let final_part = parts.last().unwrap_or(&"");
+                            rsx! { "{final_part}" }
+                        }
                     }
+                    {remove_button}
                 }
                 div { class: "section-content",
                     for key in field_keys() {
