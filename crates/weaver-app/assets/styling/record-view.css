@@ -94,11 +94,14 @@
 }
 
 .tab-button:hover {
-    color: var(--color-text);
+    color: var(--color-secondary);
+    font-weight: 550;
+    border-bottom-color: var(--color-secondary);
 }
 
 .tab-button.active {
-    color: var(--color-text);
+    color: var(--color-primary);
+    font-weight: 600;
     border-bottom-color: var(--color-primary);
 }
 
@@ -172,6 +175,7 @@
     padding-right: 1rem;
     border-left: 2px solid var(--color-secondary);
     border-bottom: 1px dashed var(--color-subtle);
+    z-index: 1;
 }
 
 .field-label {
@@ -272,8 +276,13 @@
 .blob-image {
     max-width: 600px;
     max-height: 400px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
     margin-top: 0.5rem;
     margin-bottom: 0.5rem;
+    align-self: flex-start;
 }
 
 .string-type-tag {
@@ -645,6 +654,8 @@
 
 .add-field-widget button:hover {
     border: 1px solid var(--color-primary);
+    background-color: var(--color-primary);
+    color: var(--color-surface);
 }
 
 .add-field-widget button:disabled {
@@ -662,6 +673,61 @@
 .bytes-field input,
 .bytes-field textarea {
     min-width: 80ch;
+}
+
+/* Blob upload section */
+.blob-upload-section {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    width: 100%;
+    z-index: 2;
+}
+
+.blob-upload-section input[type="file"] {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--color-text);
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.blob-upload-section input[type="file"]::file-selector-button {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px dashed var(--color-border);
+    padding: 0.25rem 0.5rem;
+    margin-right: 0.5rem;
+    margin-bottom: -0.2rem;
+    cursor: pointer;
+    transition:
+        background-color 0.2s,
+        border-color 0.2s;
+}
+
+.blob-upload-section input[type="file"]::file-selector-button:hover {
+    border: 1px solid var(--color-primary);
+    background-color: var(--color-primary);
+    color: var(--color-surface);
+}
+
+.blob-upload-section input[type="file"]:disabled::file-selector-button {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.upload-status {
+    font-size: 0.85rem;
+    color: var(--color-subtle);
+    font-style: italic;
 }
 
 .field-remove-button {

@@ -3,7 +3,6 @@ use crate::auth::AuthState;
 use crate::components::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 use crate::fetch::CachedFetcher;
 use dioxus::prelude::*;
-use dioxus_logger::tracing::*;
 use humansize::format_size;
 use jacquard::api::com_atproto::repo::get_record::GetRecordOutput;
 use jacquard::client::AgentError;
@@ -16,6 +15,7 @@ use jacquard::{
     smol_str::SmolStr,
     types::{aturi::AtUri, cid::Cid, ident::AtIdentifier, string::Nsid},
 };
+use mime_sniffer::MimeTypeSniffer;
 use weaver_api::com_atproto::repo::{
     create_record::CreateRecord, delete_record::DeleteRecord, put_record::PutRecord,
 };
@@ -1177,7 +1177,7 @@ fn EditableNullField(
     }
 }
 
-/// Blob field - shows CID, size (editable), mime type (read-only)
+/// Blob field - shows CID, size (editable), mime type (read-only), file upload
 #[component]
 fn EditableBlobField(
     root: Signal<Data<'static>>,
@@ -1203,6 +1203,9 @@ fn EditableBlobField(
     let mut size_input = use_signal(|| String::new());
     let mut cid_error = use_signal(|| None::<String>);
     let mut size_error = use_signal(|| None::<String>);
+    let mut uploading = use_signal(|| false);
+    let mut upload_error = use_signal(|| None::<String>);
+    let mut preview_data_url = use_signal(|| None::<String>);
 
     // Sync inputs when blob data changes
     use_effect(move || {
@@ -1211,6 +1214,84 @@ fn EditableBlobField(
             size_input.set(size.to_string());
         }
     });
+
+    let fetcher = use_context::<CachedFetcher>();
+    let path_for_upload = path.clone();
+    let handle_file = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+        let fetcher = fetcher.clone();
+        let path_upload_clone = path_for_upload.clone();
+        spawn(async move {
+            uploading.set(true);
+            upload_error.set(None);
+
+            let files = evt.files();
+            for file_data in files {
+                match file_data.read_bytes().await {
+                    Ok(bytes_data) => {
+                        // Convert to jacquard Bytes and sniff MIME type
+                        let bytes = jacquard::bytes::Bytes::from(bytes_data.to_vec());
+                        let mime_str = bytes
+                            .sniff_mime_type()
+                            .unwrap_or("application/octet-stream");
+                        let mime_type = jacquard::types::blob::MimeType::new_owned(mime_str);
+
+                        // Create data URL for immediate preview if it's an image
+                        if mime_str.starts_with("image/") {
+                            let base64_data = base64::Engine::encode(
+                                &base64::engine::general_purpose::STANDARD,
+                                &bytes,
+                            );
+                            let data_url = format!("data:{};base64,{}", mime_str, base64_data);
+                            preview_data_url.set(Some(data_url.clone()));
+
+                            // Try to decode dimensions and populate aspectRatio field
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                let path_clone = path_upload_clone.clone();
+                                spawn(async move {
+                                    if let Some((width, height)) =
+                                        decode_image_dimensions(&data_url).await
+                                    {
+                                        populate_aspect_ratio(
+                                            root,
+                                            &path_clone,
+                                            width as i64,
+                                            height as i64,
+                                        );
+                                    }
+                                });
+                            }
+                        }
+
+                        // Upload blob
+                        let client = fetcher.get_client();
+                        match client.upload_blob(bytes, mime_type).await {
+                            Ok(new_blob) => {
+                                // Update blob in record
+                                let path_ref = path_upload_clone.clone();
+                                root.with_mut(|record_data| {
+                                    if let Some(Data::Blob(blob)) =
+                                        record_data.get_at_path_mut(&path_ref)
+                                    {
+                                        *blob = new_blob;
+                                    }
+                                });
+                                upload_error.set(None);
+                            }
+                            Err(e) => {
+                                upload_error.set(Some(format!("Upload failed: {:?}", e)));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        upload_error.set(Some(format!("Failed to read file: {}", e)));
+                    }
+                }
+            }
+
+            uploading.set(false);
+        });
+    };
 
     let path_for_cid = path.clone();
     let handle_cid_change = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
@@ -1260,7 +1341,10 @@ fn EditableBlobField(
         .map(|(_, _, mime)| mime.starts_with("image/"))
         .unwrap_or(false);
 
-    let image_url = if !is_placeholder && is_image {
+    // Use preview data URL if available (fresh upload), otherwise CDN
+    let image_url = if let Some(data_url) = preview_data_url() {
+        Some(data_url)
+    } else if !is_placeholder && is_image {
         blob_data().map(|(cid, _, mime)| {
             let format = mime.strip_prefix("image/").unwrap_or("jpeg");
             format!(
@@ -1317,13 +1401,99 @@ fn EditableBlobField(
                         class: "blob-image",
                     }
                 }
-                if is_placeholder {
-                    div { class: "muted blob-upload-note",
-                        "File upload coming soon"
+                div { class: "blob-upload-section",
+                    input {
+                        r#type: "file",
+                        accept: if is_image { "image/*" } else { "*/*" },
+                        onchange: handle_file,
+                        disabled: uploading(),
+                    }
+                    if uploading() {
+                        span { class: "upload-status", "Uploading..." }
+                    }
+                    if let Some(err) = upload_error() {
+                        div { class: "field-error", "❌ {err}" }
                     }
                 }
             }
         }
+    }
+}
+
+/// Decode image dimensions from data URL using browser Image API
+#[cfg(target_arch = "wasm32")]
+async fn decode_image_dimensions(data_url: &str) -> Option<(u32, u32)> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen_futures::JsFuture;
+
+    let window = web_sys::window()?;
+    let document = window.document()?;
+
+    let img = document.create_element("img").ok()?;
+    let img = img.dyn_into::<web_sys::HtmlImageElement>().ok()?;
+
+    img.set_src(data_url);
+
+    // Wait for image to load
+    let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+        let onload = Closure::wrap(Box::new(move || {
+            resolve.call0(&JsValue::NULL).ok();
+        }) as Box<dyn FnMut()>);
+
+        img.set_onload(Some(onload.as_ref().unchecked_ref()));
+        onload.forget();
+    });
+
+    JsFuture::from(promise).await.ok()?;
+
+    Some((img.natural_width(), img.natural_height()))
+}
+
+/// Find and populate aspectRatio field for a blob
+#[allow(unused)]
+fn populate_aspect_ratio(
+    mut root: Signal<Data<'static>>,
+    blob_path: &str,
+    width: i64,
+    height: i64,
+) {
+    // Query for all aspectRatio fields and collect the path we want
+    let aspect_path_to_update = {
+        let data = root.read();
+        let query_result = data.query("...aspectRatio");
+
+        query_result.multiple().and_then(|matches| {
+            // Find aspectRatio that's a sibling of our blob
+            // e.g. blob at "embed.images[0].image" -> look for "embed.images[0].aspectRatio"
+            let blob_parent = blob_path.rsplit_once('.').map(|(parent, _)| parent);
+
+            matches.iter().find_map(|query_match| {
+                let aspect_path = query_match.path.as_str();
+                let aspect_parent = aspect_path.rsplit_once('.').map(|(parent, _)| parent);
+
+                // Check if they share the same parent
+                if blob_parent == aspect_parent {
+                    Some(aspect_path.to_string())
+                } else {
+                    None
+                }
+            })
+        })
+    };
+
+    // Update the aspectRatio if we found a matching field
+    if let Some(aspect_path) = aspect_path_to_update {
+        use jacquard::types::value::Object;
+        use std::collections::BTreeMap;
+
+        let mut aspect_obj = BTreeMap::new();
+        aspect_obj.insert("width".into(), Data::Integer(width));
+        aspect_obj.insert("height".into(), Data::Integer(height));
+
+        root.with_mut(|record_data| {
+            record_data.set_at_path(&aspect_path, Data::Object(Object(aspect_obj)));
+        });
     }
 }
 
