@@ -65,7 +65,7 @@ enum Route {
           #[layout(RecordIndex)]
             #[route("/:..uri")]
             RecordView { uri: Vec<String> },
-          #[end_layout]
+                     #[end_layout]
         #[end_nest]
         #[route("/callback?:state&:iss&:code")]
         Callback { state: SmolStr, iss: SmolStr, code: SmolStr },

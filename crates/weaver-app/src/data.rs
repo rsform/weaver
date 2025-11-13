@@ -8,7 +8,7 @@ use crate::blobcache::BlobCache;
 use dioxus::prelude::*;
 #[cfg(feature = "fullstack-server")]
 #[allow(unused_imports)]
-use dioxus::{fullstack::extract::Extension, CapturedError};
+use dioxus::{CapturedError, fullstack::extract::Extension};
 use jacquard::types::{did::Did, string::Handle};
 #[allow(unused_imports)]
 use jacquard::{
@@ -18,7 +18,7 @@ use jacquard::{
 };
 #[allow(unused_imports)]
 use std::sync::Arc;
-use weaver_api::sh_weaver::notebook::{entry::Entry, BookEntryView};
+use weaver_api::sh_weaver::notebook::{BookEntryView, entry::Entry};
 // ============================================================================
 // Wrapper Hooks (feature-gated)
 // ============================================================================
@@ -216,8 +216,8 @@ pub fn use_rendered_markdown(
 async fn render_markdown_impl(content: Entry<'static>, did: Did<'static>) -> String {
     use n0_future::stream::StreamExt;
     use weaver_renderer::{
-        atproto::{ClientContext, ClientWriter},
         ContextIterator, NotebookProcessor,
+        atproto::{ClientContext, ClientWriter},
     };
 
     let ctx = ClientContext::<()>::new(content.clone(), did);

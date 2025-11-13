@@ -1,5 +1,4 @@
 .record-view-container {
-    font-family: var(--font-mono);
     max-width: 1200px;
     margin: 2rem auto;
     padding: 0 1rem;
@@ -8,6 +7,8 @@
 .record-header {
     margin-bottom: 2rem;
     padding-bottom: 0.5rem;
+
+    font-family: var(--font-mono);
     border-bottom: 1px solid var(--color-border);
 }
 
@@ -62,6 +63,7 @@
 }
 
 .metadata-label {
+    font-family: var(--font-mono);
     color: var(--color-subtle);
     font-size: 0.85rem;
     text-transform: uppercase;
@@ -612,13 +614,34 @@
     border-bottom-color: var(--color-error, #ff6b6b);
 }
 
-.record-field input[type="checkbox"] {
-    width: 1.1rem;
-    height: 1.1rem;
-    margin-top: 0.3rem;
-    margin-bottom: 0.3rem;
+.boolean-toggle {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 0.25rem 0.25rem;
+    margin-right: 0.5rem;
+    margin-bottom: 0.2rem;
     cursor: pointer;
-    accent-color: var(--color-primary);
+    transition:
+        background-color 0.2s,
+        border-color 0.2s;
+}
+
+.boolean-toggle-false {
+    color: var(--color-error);
+    border: 1px solid var(--color-error);
+}
+
+.boolean-toggle-true {
+    border: 1px solid var(--color-success);
+}
+
+.boolean-toggle:hover {
+    border: 1px solid var(--color-primary);
+    background-color: var(--color-primary);
+    color: var(--color-surface);
 }
 
 .field-error {

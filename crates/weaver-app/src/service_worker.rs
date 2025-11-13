@@ -3,7 +3,6 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen_futures::JsFuture;
-
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use web_sys::{RegistrationOptions, ServiceWorkerContainer, Window};
 

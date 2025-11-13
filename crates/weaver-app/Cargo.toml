@@ -20,6 +20,7 @@ server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum"]
 dashmap = "6.1.0"
 
 dioxus = { version = "0.7.1", features = ["router"] }
+#dioxus-router = { version = "0.7.1", features = ["wasm-split"] }
 weaver-common = { path = "../weaver-common" }
 jacquard = { workspace = true, features = ["streaming"] }
 jacquard-lexicon = { workspace = true }
@@ -48,8 +49,6 @@ dioxus-logger = "0.7.1"
 serde_html_form = "0.2.8"
 webbrowser = "1.0.6"
 tracing.workspace = true
-
-
 
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]

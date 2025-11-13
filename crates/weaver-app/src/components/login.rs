@@ -37,7 +37,7 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
             use crate::Route;
             use gloo_storage::Storage;
             let full_route = use_route::<Route>();
-            gloo_storage::LocalStorage::set("cached_route", format!("{}", full_route));
+            gloo_storage::LocalStorage::set("cached_route", format!("{}", full_route)).ok();
         }
 
         use_effect(move || {

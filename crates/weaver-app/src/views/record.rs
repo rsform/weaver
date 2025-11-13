@@ -6,6 +6,7 @@ use dioxus::{CapturedError, prelude::*};
 use humansize::format_size;
 use jacquard::api::com_atproto::repo::get_record::GetRecordOutput;
 use jacquard::client::AgentError;
+use jacquard::common::to_data;
 use jacquard::prelude::*;
 use jacquard::smol_str::ToSmolStr;
 use jacquard::{
@@ -14,6 +15,7 @@ use jacquard::{
     identity::lexicon_resolver::LexiconSchemaResolver,
     types::{aturi::AtUri, cid::Cid, ident::AtIdentifier, string::Nsid},
 };
+use jacquard_lexicon::lexicon::LexiconDoc;
 use mime_sniffer::MimeTypeSniffer;
 use weaver_api::com_atproto::repo::{
     create_record::CreateRecord, delete_record::DeleteRecord, put_record::PutRecord,
@@ -24,13 +26,13 @@ use weaver_renderer::{code_pretty::highlight_code, css::generate_default_css};
 enum ViewMode {
     Pretty,
     Json,
+    Schema,
 }
 
 #[component]
 pub fn RecordIndex() -> Element {
     let navigator = use_navigator();
     let mut uri_input = use_signal(|| String::new());
-
     let handle_uri_submit = move || {
         let input_uri = uri_input.read().clone();
         if !input_uri.is_empty() {
@@ -85,6 +87,47 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
         async move { client.fetch_record_slingshot(&*uri.read()).await }
     });
 
+    // Fetch schema for the record
+    let schema_resource = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            let record_read = record_resource.read();
+            let record = record_read.as_ref()?.as_ref().ok()?;
+
+            let validator = jacquard_lexicon::validation::SchemaValidator::global();
+            let main_type = record.value.type_discriminator();
+            let mut main_schema = None;
+
+            // Find and resolve all schemas (including main and nested)
+            for type_val in record.value.query("...$type").values() {
+                if let Some(type_str) = type_val.as_str() {
+                    // Skip non-NSID types (like "blob")
+                    if !type_str.contains('.') {
+                        continue;
+                    }
+
+                    if let Ok(nsid) = Nsid::new(type_str) {
+                        // Fetch and register schema
+                        if let Ok(schema) = fetcher.resolve_lexicon_schema(&nsid).await {
+                            validator
+                                .registry()
+                                .insert(nsid.to_smolstr(), schema.doc.clone());
+
+                            // Keep the main record schema
+                            if Some(type_str) == main_type {
+                                main_schema = Some(schema.doc);
+                            }
+                        }
+                    }
+                }
+            }
+
+            main_schema
+        }
+    });
+
+    let schema_signal = use_memo(move || schema_resource.read().clone().flatten());
+
     // Check ownership for edit access
     let auth_state = use_context::<Signal<AuthState>>();
     let is_owner = use_memo(move || {
@@ -119,6 +162,7 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
                             view_mode: view_mode,
                             edit_mode: edit_mode,
                             record_resource: record_resource,
+                            schema: schema_signal,
                         }
                     } else {
                         div {
@@ -132,6 +176,11 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
                                 class: if view_mode() == ViewMode::Json { "tab-button active" } else { "tab-button" },
                                 onclick: move |_| view_mode.set(ViewMode::Json),
                                 "JSON"
+                            }
+                            button {
+                                class: if view_mode() == ViewMode::Schema { "tab-button active" } else { "tab-button" },
+                                onclick: move |_| view_mode.set(ViewMode::Schema),
+                                "Schema"
                             }
                             if is_owner() {
                                 button {
@@ -159,6 +208,9 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
                                         }
                                     }
                                 },
+                                ViewMode::Schema => rsx! {
+                                    SchemaView { schema: schema_signal }
+                                },
                             }
                         }
                     }
@@ -177,6 +229,31 @@ fn PrettyRecordView(record: Data<'static>, uri: AtUri<'static>) -> Element {
         div {
             class: "pretty-record",
             DataView { data: record, path: String::new(), did }
+        }
+    }
+}
+
+#[component]
+fn SchemaView(schema: ReadSignal<Option<LexiconDoc<'static>>>) -> Element {
+    if let Some(schema_doc) = schema() {
+        // Convert LexiconDoc to Data for display
+        let schema_data = use_memo(move || to_data(&schema_doc).ok().map(|d| d.into_static()));
+
+        if let Some(data) = schema_data() {
+            rsx! {
+                div {
+                    class: "pretty-record",
+                    DataView { data: data, path: String::new(), did: String::new() }
+                }
+            }
+        } else {
+            rsx! {
+                div { class: "schema-error", "Failed to convert schema to displayable format" }
+            }
+        }
+    } else {
+        rsx! {
+            div { class: "schema-loading", "Loading schema..." }
         }
     }
 }
@@ -563,10 +640,13 @@ pub struct CodeViewProps {
 }
 
 #[component]
-fn JsonEditor(data: Signal<Data<'static>>, nsid: ReadSignal<Option<String>>) -> Element {
+fn JsonEditor(
+    data: Signal<Data<'static>>,
+    nsid: ReadSignal<Option<String>>,
+    schema: ReadSignal<Option<LexiconDoc<'static>>>,
+) -> Element {
     let mut json_text =
         use_signal(|| serde_json::to_string_pretty(&*data.read()).unwrap_or_default());
-    let mut parse_error = use_signal(|| None::<String>);
 
     let height = use_memo(move || {
         let line_count = json_text().lines().count();
@@ -577,12 +657,10 @@ fn JsonEditor(data: Signal<Data<'static>>, nsid: ReadSignal<Option<String>>) -> 
         format!("{}px", lines * 22 + 32)
     });
 
-    let fetcher = use_context::<CachedFetcher>();
-
     let validation = use_resource(move || {
         let text = json_text();
         let nsid_val = nsid();
-        let fetcher = fetcher.clone();
+        let _ = schema(); // Track schema changes
 
         async move {
             // Only validate if we have an NSID
@@ -596,19 +674,8 @@ fn JsonEditor(data: Signal<Data<'static>>, nsid: ReadSignal<Option<String>>) -> 
                 }
             };
 
-            // Resolve lexicon if needed
-            let registry = jacquard_lexicon::schema::SchemaRegistry::from_inventory();
-            if registry.get(&nsid_str).is_none() {
-                let nsid_str = nsid_str.split('#').next();
-                if let Some(Ok(nsid_parsed)) = nsid_str.map(|s| Nsid::new(s)) {
-                    if let Ok(schema) = fetcher.resolve_lexicon_schema(&nsid_parsed).await {
-                        registry.insert(nsid_parsed.to_smolstr(), schema.doc);
-                    }
-                }
-            }
-
-            // Validate
-            let validator = jacquard_lexicon::validation::SchemaValidator::from_registry(registry);
+            // Use global validator (schema already registered)
+            let validator = jacquard_lexicon::validation::SchemaValidator::global();
             let result = validator.validate_by_nsid(&nsid_str, &parsed);
 
             Some((Some(result), None))
@@ -1133,7 +1200,7 @@ fn EditableIntegerField(
     }
 }
 
-/// Boolean field (checkbox)
+/// Boolean field (toggle button)
 #[component]
 fn EditableBooleanField(
     root: Signal<Data<'static>>,
@@ -1155,16 +1222,18 @@ fn EditableBooleanField(
                 PathLabel { path: path.clone() }
                 {remove_button}
             }
-            input {
-                r#type: "checkbox",
-                checked: current_value(),
-                onchange: move |evt| {
+            button {
+                class: if current_value() { "boolean-toggle boolean-toggle-true" } else { "boolean-toggle boolean-toggle-false" },
+                onclick: move |_| {
                     root.with_mut(|data| {
                         if let Some(target) = data.get_at_path_mut(path_for_mutation.as_str()) {
-                            *target = Data::Boolean(evt.checked());
+                            if let Some(bool_val) = target.as_boolean() {
+                                *target = Data::Boolean(!bool_val);
+                            }
                         }
                     });
-                }
+                },
+                "{current_value()}"
             }
         }
     }
@@ -2133,6 +2202,7 @@ fn EditableRecordContent(
     view_mode: Signal<ViewMode>,
     edit_mode: Signal<bool>,
     record_resource: Resource<Result<GetRecordOutput<'static>, AgentError>>,
+    schema: ReadSignal<Option<LexiconDoc<'static>>>,
 ) -> Element {
     let mut edit_data = use_signal(use_reactive!(|record_value| record_value.clone()));
     let nsid = use_memo(move || edit_data().type_discriminator().map(|s| s.to_string()));
@@ -2156,6 +2226,11 @@ fn EditableRecordContent(
                 class: if view_mode() == ViewMode::Json { "tab-button active" } else { "tab-button" },
                 onclick: move |_| view_mode.set(ViewMode::Json),
                 "JSON"
+            }
+            button {
+                class: if view_mode() == ViewMode::Schema { "tab-button active" } else { "tab-button" },
+                onclick: move |_| view_mode.set(ViewMode::Schema),
+                "Schema"
             }
             ActionButtons {
                 on_update: move |_| {
@@ -2323,7 +2398,10 @@ fn EditableRecordContent(
                     }
                 },
                 ViewMode::Json => rsx! {
-                    JsonEditor { data: edit_data, nsid }
+                    JsonEditor { data: edit_data, nsid, schema }
+                },
+                ViewMode::Schema => rsx! {
+                    SchemaView { schema }
                 },
             }
         }
