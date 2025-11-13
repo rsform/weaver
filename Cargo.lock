@@ -8692,6 +8692,7 @@ dependencies = [
  "sqlite-wasm-rs",
  "time",
  "tokio",
+ "tracing",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "weaver-api",

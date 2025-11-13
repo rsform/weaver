@@ -7,3 +7,36 @@ body {
 #header {
     max-width: 1200px;
 }
+
+.record-view-container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+
+.uri-input-section {
+    margin-bottom: 2.5rem;
+}
+
+.uri-input {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-surface, rgba(0, 0, 0, 0.2));
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.uri-input:focus {
+    border-color: var(--color-primary);
+}
+
+.uri-input::placeholder {
+    color: var(--color-subtle);
+    opacity: 0.5;
+}

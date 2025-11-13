@@ -9,7 +9,10 @@ use dioxus::fullstack::FullstackContext;
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 use dioxus::fullstack::response::Extension;
 use dioxus_logger::tracing::Level;
-use jacquard::oauth::{client::OAuthClient, session::ClientData};
+use jacquard::{
+    oauth::{client::OAuthClient, session::ClientData},
+    types::aturi::AtUri,
+};
 #[allow(unused)]
 use jacquard::{
     smol_str::SmolStr,
@@ -19,7 +22,9 @@ use jacquard::{
 use std::sync::Arc;
 use std::sync::{LazyLock, Mutex};
 #[allow(unused)]
-use views::{Callback, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordView};
+use views::{
+    Callback, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordIndex, RecordView,
+};
 
 use crate::{
     auth::{AuthState, AuthStore},
@@ -56,8 +61,12 @@ enum Route {
         #[route("/")]
         Home {},
         #[layout(ErrorLayout)]
-        #[route("/record#:uri")]
-        RecordView { uri: SmolStr },
+        #[nest("/record")]
+          #[layout(RecordIndex)]
+            #[route("/:..uri")]
+            RecordView { uri: Vec<String> },
+          #[end_layout]
+        #[end_nest]
         #[route("/callback?:state&:iss&:code")]
         Callback { state: SmolStr, iss: SmolStr, code: SmolStr },
         #[nest("/:ident")]

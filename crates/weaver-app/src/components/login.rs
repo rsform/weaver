@@ -44,12 +44,16 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
             let handle = handle.clone();
             let fetcher = fetcher.clone();
             spawn(async move {
-                if let Err(e) = start_oauth_flow(handle, fetcher).await {
-                    error!("Authentication failed: {}", e);
-                    error.set(Some(format!("Authentication failed: {}", e)));
-                    is_loading.set(false);
+                match start_oauth_flow(handle, fetcher).await {
+                    Ok(_) => {
+                        open.set(false);
+                    }
+                    Err(e) => {
+                        error!("Authentication failed: {}", e);
+                        error.set(Some(format!("Authentication failed: {}", e)));
+                        is_loading.set(false);
+                    }
                 }
-                open.set(false);
             });
         });
     };

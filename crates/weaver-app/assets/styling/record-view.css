@@ -21,6 +21,33 @@
     letter-spacing: 0.15em;
 }
 
+.uri-input-section {
+    margin-bottom: 1rem;
+}
+
+.uri-input {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0.5rem 0.75rem;
+    background: var(--color-surface, rgba(0, 0, 0, 0.2));
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.uri-input:focus {
+    border-color: var(--color-primary);
+}
+
+.uri-input::placeholder {
+    color: var(--color-subtle);
+    opacity: 0.5;
+}
+
 .record-metadata {
     display: flex-wrap;
     flex-direction: column;
@@ -806,4 +833,41 @@
     font-size: 0.75rem;
     font-style: italic;
     padding-top: 0.25rem;
+}
+
+/* Dialog Actions for Delete Confirmation */
+.dialog-actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: 0;
+    margin-top: 8px;
+}
+
+.dialog-actions button {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-subtle);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.dialog-actions button:hover {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+}
+
+.dialog-actions button:first-child {
+    color: var(--color-error, #ff6b6b);
+}
+
+.dialog-actions button:first-child:hover {
+    color: var(--color-error, #ff5252);
+    border-bottom-color: var(--color-error, #ff6b6b);
 }

@@ -21,7 +21,7 @@ mod notebook;
 pub use notebook::{Notebook, NotebookIndex};
 
 mod record;
-pub use record::RecordView;
+pub use record::{RecordIndex, RecordView};
 
 mod callback;
 pub use callback::Callback;

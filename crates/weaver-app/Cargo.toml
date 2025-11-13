@@ -47,6 +47,7 @@ tokio = { version = "1.28", features = ["sync"] }
 dioxus-logger = "0.7.1"
 serde_html_form = "0.2.8"
 webbrowser = "1.0.6"
+tracing.workspace = true
 
 
 

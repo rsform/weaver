@@ -2,7 +2,7 @@ use crate::Route;
 use crate::auth::AuthState;
 use crate::components::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 use crate::fetch::CachedFetcher;
-use dioxus::prelude::*;
+use dioxus::{CapturedError, prelude::*};
 use humansize::format_size;
 use jacquard::api::com_atproto::repo::get_record::GetRecordOutput;
 use jacquard::client::AgentError;
@@ -12,7 +12,6 @@ use jacquard::{
     client::AgentSessionExt,
     common::{Data, IntoStatic},
     identity::lexicon_resolver::LexiconSchemaResolver,
-    smol_str::SmolStr,
     types::{aturi::AtUri, cid::Cid, ident::AtIdentifier, string::Nsid},
 };
 use mime_sniffer::MimeTypeSniffer;
@@ -28,28 +27,62 @@ enum ViewMode {
 }
 
 #[component]
-pub fn RecordView(uri: ReadSignal<SmolStr>) -> Element {
-    let fetcher = use_context::<CachedFetcher>();
-    let at_uri = AtUri::new_owned(uri());
-    if let Err(err) = &at_uri {
-        let error = format!("{:?}", err);
-        return rsx! {
-            div {
-                h1 { "Record View" }
-                p { "URI: {uri}" }
-                p { "Error: {error}" }
+pub fn RecordIndex() -> Element {
+    let navigator = use_navigator();
+    let mut uri_input = use_signal(|| String::new());
+
+    let handle_uri_submit = move || {
+        let input_uri = uri_input.read().clone();
+        if !input_uri.is_empty() {
+            if let Ok(parsed) = AtUri::new(&input_uri) {
+                let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, parsed);
+                navigator.push(link);
             }
-        };
+        }
+    };
+    rsx! {
+        document::Stylesheet { href: asset!("/assets/styling/record-view.css") }
+        div {
+            class: "record-view-container",
+            div { class: "record-header",
+                h1 { "Record View" }
+                div { class: "uri-input-section",
+                    input {
+                        r#type: "text",
+                        class: "uri-input",
+                        placeholder: "at://did:plc:.../collection/rkey",
+                        value: "{uri_input}",
+                        oninput: move |evt| uri_input.set(evt.value()),
+                        onkeydown: move |evt| {
+                            if evt.key() == Key::Enter {
+                                handle_uri_submit();
+                            }
+                        },
+                    }
+                }
+            }
+
+            Outlet::<Route> {}
+        }
     }
-    let uri = use_signal(|| at_uri.unwrap());
+}
+
+#[component]
+pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
+    let fetcher = use_context::<CachedFetcher>();
+    info!("Uri:{:?}", uri().join("/"));
+    let at_uri = AtUri::new_owned(&*uri.read().join("/"));
+    if at_uri.is_err() {
+        return rsx! {};
+    }
+    let uri = use_signal(move || AtUri::new_owned(&*uri.read().join("/")).unwrap());
     let mut view_mode = use_signal(|| ViewMode::Pretty);
     let mut edit_mode = use_signal(|| false);
-    let navigator = use_navigator();
 
     let client = fetcher.get_client();
     let record_resource = use_resource(move || {
         let client = client.clone();
-        async move { client.fetch_record_slingshot(&uri()).await }
+        async move { client.fetch_record_slingshot(&*uri.read()).await }
     });
 
     // Check ownership for edit access
@@ -61,7 +94,7 @@ pub fn RecordView(uri: ReadSignal<SmolStr>) -> Element {
         }
 
         // authority() returns &AtIdentifier which can be Did or Handle
-        match uri().authority() {
+        match &*uri.read().authority() {
             AtIdentifier::Did(record_did) => auth.did.as_ref() == Some(record_did),
             AtIdentifier::Handle(_) => {
                 // Can't easily check ownership for handles without async resolution
@@ -69,70 +102,71 @@ pub fn RecordView(uri: ReadSignal<SmolStr>) -> Element {
             }
         }
     });
-    if let Some(Ok(record)) = &*record_resource.read_unchecked() {
-        let mut record_value = use_signal(|| record.value.clone().into_static());
-        let json =
-            use_memo(move || serde_json::to_string_pretty(&record_value()).unwrap_or_default());
+    if let Some(Ok(record)) = &*record_resource.read() {
+        let record_value = record.value.clone().into_static();
+        let record = record.clone();
 
         rsx! {
-            RecordViewLayout {
-                uri: uri().clone(),
-                cid: record.cid.clone(),
-                if edit_mode() {
-                    EditableRecordContent {
-                        record_value: record_value,
-                        uri: uri,
-                        view_mode: view_mode,
-                        edit_mode: edit_mode,
-                        record_resource: record_resource,
-                    }
-                } else {
-                    div {
-                        class: "tab-bar",
-                        button {
-                            class: if view_mode() == ViewMode::Pretty { "tab-button active" } else { "tab-button" },
-                            onclick: move |_| view_mode.set(ViewMode::Pretty),
-                            "View"
+            Fragment {  key: "{uri()}",
+                RecordViewLayout {
+                    uri: uri().clone(),
+                    cid: record.cid.clone(),
+                    if edit_mode() {
+
+                        EditableRecordContent {
+                            record_value: record_value,
+                            uri: uri,
+                            view_mode: view_mode,
+                            edit_mode: edit_mode,
+                            record_resource: record_resource,
                         }
-                        button {
-                            class: if view_mode() == ViewMode::Json { "tab-button active" } else { "tab-button" },
-                            onclick: move |_| view_mode.set(ViewMode::Json),
-                            "JSON"
-                        }
-                        if is_owner() {
+                    } else {
+                        div {
+                            class: "tab-bar",
                             button {
-                                class: "tab-button edit-button",
-                                onclick: move |_| edit_mode.set(true),
-                                "Edit"
+                                class: if view_mode() == ViewMode::Pretty { "tab-button active" } else { "tab-button" },
+                                onclick: move |_| view_mode.set(ViewMode::Pretty),
+                                "View"
+                            }
+                            button {
+                                class: if view_mode() == ViewMode::Json { "tab-button active" } else { "tab-button" },
+                                onclick: move |_| view_mode.set(ViewMode::Json),
+                                "JSON"
+                            }
+                            if is_owner() {
+                                button {
+                                    class: "tab-button edit-button",
+                                    onclick: move |_| edit_mode.set(true),
+                                    "Edit"
+                                }
                             }
                         }
-                    }
-                    div {
-                        class: "tab-content",
-                        match view_mode() {
-                            ViewMode::Pretty => rsx! {
-                                PrettyRecordView { record: record_value(), uri: uri().clone() }
-                            },
-                            ViewMode::Json => rsx! {
-                                CodeView {
-                                    code: use_signal(|| json()),
-                                    lang: Some("json".to_string()),
-                                }
-                            },
+                        div {
+                            class: "tab-content",
+                            match view_mode() {
+                                ViewMode::Pretty => rsx! {
+                                    PrettyRecordView { record: record_value, uri: uri().clone() }
+                                },
+                                ViewMode::Json => {
+                                    let json = use_memo(use_reactive!(|record| serde_json::to_string_pretty(
+                                        &record.value
+                                    )
+                                    .unwrap_or_default()));
+                                    rsx! {
+                                        CodeView {
+                                            code: json,
+                                            lang: Some("json".to_string()),
+                                        }
+                                    }
+                                },
+                            }
                         }
                     }
                 }
             }
         }
     } else {
-        rsx! {
-            div {
-                class: "record-view-container",
-                h1 { "Record" }
-                p { "URI: {uri}" }
-                p { "Loading..." }
-            }
-        }
+        rsx! {}
     }
 }
 
@@ -390,13 +424,13 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
 #[component]
 fn HighlightedUri(uri: AtUri<'static>) -> Element {
     let s = uri.as_str();
-    let link = format!("/record#{}", s);
+    let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, s);
 
     if let Some(rest) = s.strip_prefix("at://") {
         let parts: Vec<&str> = rest.splitn(3, '/').collect();
         return rsx! {
             a {
-                href: "{link}",
+                href: link,
                 class: "uri-link",
                 span { class: "string-at-uri",
                     span { class: "aturi-scheme", "at://" }
@@ -419,7 +453,7 @@ fn HighlightedUri(uri: AtUri<'static>) -> Element {
         };
     }
 
-    rsx! { span { class: "string-at-uri", "{s}" } }
+    rsx! { a { class: "string-at-uri", href: s } }
 }
 
 #[component]
@@ -2070,43 +2104,37 @@ fn AddFieldWidget(root: Signal<Data<'static>>, path: String) -> Element {
 #[component]
 fn RecordViewLayout(uri: AtUri<'static>, cid: Option<Cid<'static>>, children: Element) -> Element {
     rsx! {
-        document::Stylesheet { href: asset!("/assets/styling/record-view.css") }
         div {
-            class: "record-view-container",
-            div {
-                class: "record-header",
-                h1 { "Record" }
-                div {
-                    class: "record-metadata",
-                    div { class: "metadata-row",
-                        span { class: "metadata-label", "URI" }
-                        span { class: "metadata-value",
-                            HighlightedUri { uri: uri.clone() }
-                        }
-                    }
-                    if let Some(cid) = cid {
-                        div { class: "metadata-row",
-                            span { class: "metadata-label", "CID" }
-                            code { class: "metadata-value", "{cid}" }
-                        }
-                    }
+            class: "record-metadata",
+            div { class: "metadata-row",
+                span { class: "metadata-label", "URI" }
+                span { class: "metadata-value",
+                    HighlightedUri { uri: uri.clone() }
                 }
             }
-            {children}
+            if let Some(cid) = cid {
+                div { class: "metadata-row",
+                    span { class: "metadata-label", "CID" }
+                    code { class: "metadata-value", "{cid}" }
+                }
+            }
         }
+
+        {children}
+
     }
 }
 
 /// Render some text as markdown.
 #[component]
 fn EditableRecordContent(
-    record_value: Signal<Data<'static>>,
+    record_value: Data<'static>,
     uri: ReadSignal<AtUri<'static>>,
     view_mode: Signal<ViewMode>,
     edit_mode: Signal<bool>,
     record_resource: Resource<Result<GetRecordOutput<'static>, AgentError>>,
 ) -> Element {
-    let mut edit_data = use_signal(|| record_value());
+    let mut edit_data = use_signal(use_reactive!(|record_value| record_value.clone()));
     let nsid = use_memo(move || edit_data().type_discriminator().map(|s| s.to_string()));
     let navigator = use_navigator();
     let fetcher = use_context::<CachedFetcher>();
@@ -2150,7 +2178,7 @@ fn EditableRecordContent(
                                         Ok(output) => {
                                             if output.status() == StatusCode::OK {
                                                 dioxus_logger::tracing::info!("Record updated successfully");
-                                                record_value.set(data);
+                                                edit_data.set(data.clone());
                                                 edit_mode.set(false);
                                             } else {
                                                 dioxus_logger::tracing::error!("Unexpected status code: {:?}", output.status());
@@ -2184,7 +2212,8 @@ fn EditableRecordContent(
                                         Ok(response) => {
                                             if let Ok(output) = response.into_output() {
                                                 dioxus_logger::tracing::info!("Record created: {}", output.uri);
-                                                nav.push(Route::RecordView { uri: output.uri.to_smolstr() });
+                                                let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, output.uri);
+                                                nav.push(link);
                                             }
                                         }
                                         Err(e) => {
@@ -2233,7 +2262,8 @@ fn EditableRecordContent(
                                                 }
 
                                                 dioxus_logger::tracing::info!("Record replaced: {}", create_output.uri);
-                                                nav.push(Route::RecordView { uri: create_output.uri.to_smolstr() });
+                                                let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, create_output.uri);
+                                                nav.push(link);
                                             }
                                         }
                                         Err(e) => {
@@ -2275,7 +2305,7 @@ fn EditableRecordContent(
                     });
                 },
                 on_cancel: move |_| {
-                    edit_data.set(record_value());
+                    edit_data.set(record_value.clone());
                     edit_mode.set(false);
                 },
             }
