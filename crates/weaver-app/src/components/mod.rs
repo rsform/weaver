@@ -124,3 +124,4 @@ static _IOSK_ITAL_BOLD: Asset = asset!(
 pub mod input;
 pub mod dialog;
 pub mod button;
+pub mod accordion;

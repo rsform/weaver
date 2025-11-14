@@ -16,6 +16,9 @@ use jacquard::{
     types::{aturi::AtUri, cid::Cid, ident::AtIdentifier, string::Nsid},
 };
 use jacquard_lexicon::lexicon::LexiconDoc;
+use jacquard_lexicon::validation::{
+    ConstraintError, StructuralError, ValidationError, ValidationPath, ValidationResult,
+};
 use mime_sniffer::MimeTypeSniffer;
 use weaver_api::com_atproto::repo::{
     create_record::CreateRecord, delete_record::DeleteRecord, put_record::PutRecord,
@@ -97,6 +100,49 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
             let validator = jacquard_lexicon::validation::SchemaValidator::global();
             let main_type = record.value.type_discriminator();
             let mut main_schema = None;
+            let mut resolved = std::collections::HashSet::new();
+
+            // Helper to recursively resolve a schema and its refs
+            fn resolve_schema_with_refs<'a>(
+                fetcher: &'a CachedFetcher,
+                type_str: &'a str,
+                validator: &'a jacquard_lexicon::validation::SchemaValidator,
+                resolved: &'a mut std::collections::HashSet<String>,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Option<LexiconDoc<'static>>> + 'a>,
+            > {
+                Box::pin(async move {
+                    if resolved.contains(type_str) {
+                        return None;
+                    }
+                    resolved.insert(type_str.to_string());
+
+                    let mut split = type_str.split('#');
+                    let nsid_str = split.next().unwrap_or_default();
+                    let nsid = Nsid::new(nsid_str).ok()?;
+
+                    let schema = fetcher.resolve_lexicon_schema(&nsid).await.ok()?;
+
+                    // Register by base NSID only (validator handles fragment lookup)
+                    validator
+                        .registry()
+                        .insert(nsid_str.to_smolstr(), schema.doc.clone());
+
+                    // Find refs in the schema and resolve them
+                    if let Ok(schema_data) = to_data(&schema.doc) {
+                        for ref_val in schema_data.query("..ref").values() {
+                            if let Some(ref_str) = ref_val.as_str() {
+                                if ref_str.contains('.') {
+                                    resolve_schema_with_refs(fetcher, ref_str, validator, resolved)
+                                        .await;
+                                }
+                            }
+                        }
+                    }
+
+                    Some(schema.doc)
+                })
+            }
 
             // Find and resolve all schemas (including main and nested)
             for type_val in record.value.query("...$type").values() {
@@ -106,17 +152,13 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
                         continue;
                     }
 
-                    if let Ok(nsid) = Nsid::new(type_str) {
-                        // Fetch and register schema
-                        if let Ok(schema) = fetcher.resolve_lexicon_schema(&nsid).await {
-                            validator
-                                .registry()
-                                .insert(nsid.to_smolstr(), schema.doc.clone());
-
-                            // Keep the main record schema
-                            if Some(type_str) == main_type {
-                                main_schema = Some(schema.doc);
-                            }
+                    if let Some(schema) =
+                        resolve_schema_with_refs(&fetcher, type_str, &validator, &mut resolved)
+                            .await
+                    {
+                        // Keep the main record schema
+                        if Some(type_str) == main_type {
+                            main_schema = Some(schema);
                         }
                     }
                 }
@@ -154,6 +196,8 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
                 RecordViewLayout {
                     uri: uri().clone(),
                     cid: record.cid.clone(),
+                    schema: schema_signal,
+                    record_value: record_value.clone(),
                     if edit_mode() {
 
                         EditableRecordContent {
@@ -194,7 +238,7 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
                             class: "tab-content",
                             match view_mode() {
                                 ViewMode::Pretty => rsx! {
-                                    PrettyRecordView { record: record_value, uri: uri().clone() }
+                                    PrettyRecordView { record: record_value, uri: uri().clone(), schema: schema_signal }
                                 },
                                 ViewMode::Json => {
                                     let json = use_memo(use_reactive!(|record| serde_json::to_string_pretty(
@@ -223,12 +267,32 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
 }
 
 #[component]
-fn PrettyRecordView(record: Data<'static>, uri: AtUri<'static>) -> Element {
+fn PrettyRecordView(
+    record: Data<'static>,
+    uri: AtUri<'static>,
+    schema: ReadSignal<Option<LexiconDoc<'static>>>,
+) -> Element {
     let did = uri.authority().to_string();
+    let root_data = use_signal(|| record.clone());
+
+    // Validate the record and provide via context - only after schema is loaded
+    let mut validation_result = use_signal(|| None);
+    use_effect(move || {
+        // Wait for schema to be loaded
+        if schema().is_some() {
+            if let Some(nsid_str) = root_data.read().type_discriminator() {
+                let validator = jacquard_lexicon::validation::SchemaValidator::global();
+                let result = validator.validate_by_nsid(nsid_str, &*root_data.read());
+                validation_result.set(Some(result));
+            }
+        }
+    });
+    use_context_provider(|| validation_result);
+
     rsx! {
         div {
             class: "pretty-record",
-            DataView { data: record, path: String::new(), did }
+            DataView { data: record, root_data, path: String::new(), did }
         }
     }
 }
@@ -240,10 +304,11 @@ fn SchemaView(schema: ReadSignal<Option<LexiconDoc<'static>>>) -> Element {
         let schema_data = use_memo(move || to_data(&schema_doc).ok().map(|d| d.into_static()));
 
         if let Some(data) = schema_data() {
+            let root_data = use_signal(|| data.clone());
             rsx! {
                 div {
                     class: "pretty-record",
-                    DataView { data: data, path: String::new(), did: String::new() }
+                    DataView { data: data, root_data, path: String::new(), did: String::new() }
                 }
             }
         } else {
@@ -304,31 +369,148 @@ fn PathLabel(path: String) -> Element {
     }
 }
 
+/// Get expected string format from schema by navigating path
+fn get_expected_string_format(
+    root_data: &Data<'_>,
+    current_path: &str,
+) -> Option<jacquard_lexicon::lexicon::LexStringFormat> {
+    use jacquard_lexicon::lexicon::*;
+
+    // Get root type discriminator
+    let root_nsid = root_data.type_discriminator()?;
+
+    // Look up schema in global registry
+    let validator = jacquard_lexicon::validation::SchemaValidator::global();
+    let registry = validator.registry();
+    let schema = registry.get(root_nsid)?;
+
+    // Navigate to the property at this path
+    let segments: Vec<&str> = if current_path.is_empty() {
+        vec![]
+    } else {
+        current_path.split('.').collect()
+    };
+
+    // Start with the record's main object definition
+    let main_obj = match schema.defs.get("main")? {
+        LexUserType::Record(rec) => match &rec.record {
+            LexRecordRecord::Object(obj) => obj,
+        },
+        _ => return None,
+    };
+
+    // Track current position in schema
+    enum SchemaType<'a> {
+        ObjectProp(&'a LexObjectProperty<'a>),
+        ArrayItem(&'a LexArrayItem<'a>),
+    }
+
+    let mut current_type: Option<SchemaType> = None;
+    let mut current_obj = Some(main_obj);
+
+    for segment in segments {
+        // Handle array indices - strip them to get field name
+        let field_name = segment.trim_end_matches(|c: char| c.is_numeric() || c == '[' || c == ']');
+
+        if field_name.is_empty() {
+            continue; // Pure array index like [0], skip
+        }
+
+        if let Some(obj) = current_obj.take() {
+            if let Some(prop) = obj.properties.get(field_name) {
+                current_type = Some(SchemaType::ObjectProp(prop));
+            }
+        }
+
+        // Process current type
+        match current_type {
+            Some(SchemaType::ObjectProp(LexObjectProperty::Array(arr))) => {
+                // Array - unwrap to item type
+                current_type = Some(SchemaType::ArrayItem(&arr.items));
+            }
+            Some(SchemaType::ObjectProp(LexObjectProperty::Object(obj))) => {
+                // Nested object - descend into it
+                current_obj = Some(obj);
+                current_type = None;
+            }
+            Some(SchemaType::ArrayItem(LexArrayItem::Object(obj))) => {
+                // Array of objects - descend into object
+                current_obj = Some(obj);
+                current_type = None;
+            }
+            _ => {}
+        }
+    }
+
+    // Check if final type is a string with format
+    match current_type? {
+        SchemaType::ObjectProp(LexObjectProperty::String(lex_string)) => lex_string.format,
+        SchemaType::ArrayItem(LexArrayItem::String(lex_string)) => lex_string.format,
+        _ => None,
+    }
+}
+
 #[component]
-fn DataView(data: Data<'static>, path: String, did: String) -> Element {
+fn DataView(
+    data: Data<'static>,
+    root_data: ReadSignal<Data<'static>>,
+    path: String,
+    did: String,
+) -> Element {
+    // Try to get validation result from context and get errors exactly at this path
+    let validation_result = try_use_context::<Signal<Option<ValidationResult>>>();
+
+    let errors = if let Some(vr_signal) = validation_result {
+        get_errors_at_exact_path(&*vr_signal.read(), &path)
+    } else {
+        Vec::new()
+    };
+
+    let has_errors = !errors.is_empty();
+
     match &data {
         Data::Null => rsx! {
-            div { class: "record-field",
+            div { class: if has_errors { "record-field field-error" } else { "record-field" },
                 PathLabel { path: path.clone() }
                 span { class: "field-value muted", "null" }
+                if has_errors {
+                    for error in &errors {
+                        div { class: "field-error-message", "{error}" }
+                    }
+                }
             }
         },
         Data::Boolean(b) => rsx! {
-            div { class: "record-field",
+            div { class: if has_errors { "record-field field-error" } else { "record-field" },
                 PathLabel { path: path.clone() }
                 span { class: "field-value", "{b}" }
+                if has_errors {
+                    for error in &errors {
+                        div { class: "field-error-message", "{error}" }
+                    }
+                }
             }
         },
         Data::Integer(i) => rsx! {
-            div { class: "record-field",
+            div { class: if has_errors { "record-field field-error" } else { "record-field" },
                 PathLabel { path: path.clone() }
                 span { class: "field-value", "{i}" }
+                if has_errors {
+                    for error in &errors {
+                        div { class: "field-error-message", "{error}" }
+                    }
+                }
             }
         },
         Data::String(s) => {
             use jacquard::types::string::AtprotoStr;
+            use jacquard_lexicon::lexicon::LexStringFormat;
 
-            let type_label = match s {
+            // Get expected format from schema
+            let expected_format = get_expected_string_format(&*root_data.read(), &path);
+
+            // Get actual type from data
+            let actual_type_label = match s {
                 AtprotoStr::Datetime(_) => "datetime",
                 AtprotoStr::Language(_) => "language",
                 AtprotoStr::Tid(_) => "tid",
@@ -343,14 +525,38 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                 AtprotoStr::String(_) => "string",
             };
 
+            // Prefer schema format if available, otherwise use actual type
+            let type_label = if let Some(fmt) = expected_format {
+                match fmt {
+                    LexStringFormat::Datetime => "datetime",
+                    LexStringFormat::Uri => "uri",
+                    LexStringFormat::AtUri => "at-uri",
+                    LexStringFormat::Did => "did",
+                    LexStringFormat::Handle => "handle",
+                    LexStringFormat::AtIdentifier => "at-identifier",
+                    LexStringFormat::Nsid => "nsid",
+                    LexStringFormat::Cid => "cid",
+                    LexStringFormat::Language => "language",
+                    LexStringFormat::Tid => "tid",
+                    LexStringFormat::RecordKey => "record-key",
+                }
+            } else {
+                actual_type_label
+            };
+
             rsx! {
-                div { class: "record-field",
+                div { class: if has_errors { "record-field field-error" } else { "record-field" },
                     PathLabel { path: path.clone() }
                     span { class: "field-value",
 
                         HighlightedString { string_type: s.clone() }
                         if type_label != "string" {
                             span { class: "string-type-tag", " [{type_label}]" }
+                        }
+                    }
+                    if has_errors {
+                        for error in &errors {
+                            div { class: "field-error-message", "{error}" }
                         }
                     }
                 }
@@ -364,16 +570,26 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                 format!("{} bytes", b.len())
             };
             rsx! {
-                div { class: "record-field",
+                div { class: if has_errors { "record-field field-error" } else { "record-field" },
                     PathLabel { path: path.clone() }
                     pre { class: "field-value bytes", "{hex_string} [{byte_size}]" }
+                    if has_errors {
+                        for error in &errors {
+                            div { class: "field-error-message", "{error}" }
+                        }
+                    }
                 }
             }
         }
         Data::CidLink(cid) => rsx! {
-            div { class: "record-field",
+            div { class: if has_errors { "record-field field-error" } else { "record-field" },
                 span { class: "field-label", "{path}" }
                 span { class: "field-value", "{cid}" }
+                if has_errors {
+                    for error in &errors {
+                        div { class: "field-error-message", "{error}" }
+                    }
+                }
             }
         },
         Data::Array(arr) => {
@@ -381,7 +597,11 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
             rsx! {
                 div { class: "record-section",
                     div { class: "section-label", "{label}" span { class: "array-len", "[{arr.len()}] " } }
-
+                    if has_errors {
+                        for error in &errors {
+                            div { class: "field-error-message", "{error}" }
+                        }
+                    }
                     div { class: "section-content",
                         for (idx, item) in arr.iter().enumerate() {
                             {
@@ -398,6 +618,7 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                                             div { class: "section-content",
                                                 DataView {
                                                     data: item.clone(),
+                                                    root_data,
                                                     path: item_path.clone(),
                                                     did: did.clone()
                                                 }
@@ -413,6 +634,7 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                                             class: "array-item",
                                         DataView {
                                             data: item.clone(),
+                                            root_data,
                                             path: item_path,
                                             did: did.clone()
                                         }
@@ -433,6 +655,11 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                 // Root object or array item: just render children (array items already wrapped)
                 rsx! {
                     div { class: if !is_root { "record-section" } else {""},
+                        if has_errors {
+                            for error in &errors {
+                                div { class: "field-error-message", "{error}" }
+                            }
+                        }
                         for (key, value) in obj.iter() {
                             {
                                 let new_path = if is_root {
@@ -442,7 +669,7 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                                 };
                                 let did_clone = did.clone();
                                 rsx! {
-                                    DataView { data: value.clone(), path: new_path, did: did_clone }
+                                    DataView { data: value.clone(), root_data, path: new_path, did: did_clone }
                                 }
                             }
                         }
@@ -454,6 +681,11 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                 rsx! {
 
                     div { class: "section-label", "{label}" }
+                    if has_errors {
+                        for error in &errors {
+                            div { class: "field-error-message", "{error}" }
+                        }
+                    }
                     div { class: "record-section",
                         div { class: "section-content",
                             for (key, value) in obj.iter() {
@@ -461,7 +693,7 @@ fn DataView(data: Data<'static>, path: String, did: String) -> Element {
                                     let new_path = format!("{}.{}", path, key);
                                     let did_clone = did.clone();
                                     rsx! {
-                                        DataView { data: value.clone(), path: new_path, did: did_clone }
+                                        DataView { data: value.clone(), root_data, path: new_path, did: did_clone }
                                     }
                                 }
                             }
@@ -810,12 +1042,7 @@ fn ActionButtons(
 
 #[component]
 fn ValidationPanel(
-    validation: Resource<
-        Option<(
-            Option<jacquard_lexicon::validation::ValidationResult>,
-            Option<String>,
-        )>,
-    >,
+    validation: Resource<Option<(Option<ValidationResult>, Option<String>)>>,
 ) -> Element {
     rsx! {
         div { class: "validation-panel",
@@ -824,18 +1051,29 @@ fn ValidationPanel(
                     div { class: "parse-error",
                         "❌ Invalid JSON: {parse_err}"
                     }
-                } else {
-                    div { class: "parse-success", "✓ Valid JSON syntax" }
                 }
 
                 if let Some(result) = result_opt {
-                    if result.is_valid() {
-                        div { class: "validation-success", "✓ Record is valid" }
+                    // Structural validity
+                    if result.is_structurally_valid() {
+                        div { class: "validation-success", "✓ Structurally valid" }
                     } else {
+                        div { class: "parse-error", "❌ Structurally invalid" }
+                    }
+
+                    // Overall validity
+                    if result.is_valid() {
+                        div { class: "validation-success", "✓ Fully valid" }
+                    } else {
+                        div { class: "validation-warning", "⚠ Has errors" }
+                    }
+
+                    // Show errors if any
+                    if !result.is_valid() {
                         div { class: "validation-errors",
                             h4 { "Validation Errors:" }
                             for error in result.all_errors() {
-                                div { class: "error", "❌ {error}" }
+                                div { class: "error", "{error}" }
                             }
                         }
                     }
@@ -844,6 +1082,148 @@ fn ValidationPanel(
                 div { "Validating..." }
             }
         }
+    }
+}
+
+// ============================================================================
+// Validation Helper Functions
+// ============================================================================
+
+/// Parse UI path into segments (fields and indices only)
+fn parse_ui_path(ui_path: &str) -> Vec<UiPathSegment> {
+    if ui_path.is_empty() {
+        return vec![];
+    }
+
+    let mut segments = Vec::new();
+    let mut current = String::new();
+
+    for ch in ui_path.chars() {
+        match ch {
+            '.' => {
+                if !current.is_empty() {
+                    segments.push(UiPathSegment::Field(current.clone()));
+                    current.clear();
+                }
+            }
+            '[' => {
+                if !current.is_empty() {
+                    segments.push(UiPathSegment::Field(current.clone()));
+                    current.clear();
+                }
+            }
+            ']' => {
+                if !current.is_empty() {
+                    if let Ok(idx) = current.parse::<usize>() {
+                        segments.push(UiPathSegment::Index(idx));
+                    }
+                    current.clear();
+                }
+            }
+            c => current.push(c),
+        }
+    }
+
+    if !current.is_empty() {
+        segments.push(UiPathSegment::Field(current));
+    }
+
+    segments
+}
+
+#[derive(Debug, PartialEq)]
+enum UiPathSegment {
+    Field(String),
+    Index(usize),
+}
+
+/// Check if a validation path matches or is a child of the given UI path
+/// Filters out UnionVariant segments from validation path for comparison
+fn validation_path_matches_ui(validation_path: &ValidationPath, ui_path: &str) -> bool {
+    use jacquard_lexicon::validation::PathSegment;
+
+    let ui_segments = parse_ui_path(ui_path);
+
+    // Convert validation path to UI segments by filtering out UnionVariant
+    let validation_ui_segments: Vec<_> = validation_path
+        .segments()
+        .iter()
+        .filter_map(|seg| match seg {
+            PathSegment::Field(name) => Some(UiPathSegment::Field(name.to_string())),
+            PathSegment::Index(idx) => Some(UiPathSegment::Index(*idx)),
+            PathSegment::UnionVariant(_) => None, // Skip union discriminators
+        })
+        .collect();
+
+    // Check if validation path matches or is a child of UI path
+    if validation_ui_segments.len() < ui_segments.len() {
+        return false; // Validation path can't be shorter than UI path
+    }
+
+    // Check if all UI segments match the start of validation segments
+    ui_segments
+        .iter()
+        .zip(validation_ui_segments.iter())
+        .all(|(a, b)| a == b)
+}
+
+/// Get all validation errors at exactly this path (not children)
+fn get_errors_at_exact_path(
+    validation_result: &Option<ValidationResult>,
+    ui_path: &str,
+) -> Vec<String> {
+    use jacquard_lexicon::validation::PathSegment;
+
+    if let Some(result) = validation_result {
+        let ui_segments = parse_ui_path(ui_path);
+
+        result
+            .all_errors()
+            .filter_map(|err| {
+                let validation_path = match &err {
+                    ValidationError::Structural(s) => match s {
+                        StructuralError::TypeMismatch { path, .. } => Some(path),
+                        StructuralError::MissingRequiredField { path, .. } => Some(path),
+                        StructuralError::MissingUnionDiscriminator { path } => Some(path),
+                        StructuralError::UnionNoMatch { path, .. } => Some(path),
+                        StructuralError::UnresolvedRef { path, .. } => Some(path),
+                        StructuralError::RefCycle { path, .. } => Some(path),
+                        StructuralError::MaxDepthExceeded { path, .. } => Some(path),
+                    },
+                    ValidationError::Constraint(c) => match c {
+                        ConstraintError::MaxLength { path, .. } => Some(path),
+                        ConstraintError::MaxGraphemes { path, .. } => Some(path),
+                        ConstraintError::MinLength { path, .. } => Some(path),
+                        ConstraintError::MinGraphemes { path, .. } => Some(path),
+                        ConstraintError::Maximum { path, .. } => Some(path),
+                        ConstraintError::Minimum { path, .. } => Some(path),
+                    },
+                };
+
+                if let Some(path) = validation_path {
+                    // Convert validation path to UI segments
+                    let validation_ui_segments: Vec<_> = path
+                        .segments()
+                        .iter()
+                        .filter_map(|seg| match seg {
+                            PathSegment::Field(name) => {
+                                Some(UiPathSegment::Field(name.to_string()))
+                            }
+                            PathSegment::Index(idx) => Some(UiPathSegment::Index(*idx)),
+                            PathSegment::UnionVariant(_) => None,
+                        })
+                        .collect();
+
+                    // Exact match only
+                    if validation_ui_segments == ui_segments {
+                        return Some(err.to_string());
+                    }
+                }
+                None
+            })
+            .collect()
+    } else {
+        Vec::new()
     }
 }
 
@@ -2171,7 +2551,24 @@ fn AddFieldWidget(root: Signal<Data<'static>>, path: String) -> Element {
 
 /// Layout component for record view - handles header, metadata, and wraps children
 #[component]
-fn RecordViewLayout(uri: AtUri<'static>, cid: Option<Cid<'static>>, children: Element) -> Element {
+fn RecordViewLayout(
+    uri: AtUri<'static>,
+    cid: Option<Cid<'static>>,
+    schema: ReadSignal<Option<LexiconDoc<'static>>>,
+    record_value: Data<'static>,
+    children: Element,
+) -> Element {
+    // Validate the record if schema is available
+    let validation_status = use_memo(move || {
+        let _schema_doc = schema()?;
+        let nsid_str = record_value.type_discriminator()?;
+
+        let validator = jacquard_lexicon::validation::SchemaValidator::global();
+        let result = validator.validate_by_nsid(nsid_str, &record_value);
+
+        Some(result.is_valid())
+    });
+
     rsx! {
         div {
             class: "record-metadata",
@@ -2185,6 +2582,15 @@ fn RecordViewLayout(uri: AtUri<'static>, cid: Option<Cid<'static>>, children: El
                 div { class: "metadata-row",
                     span { class: "metadata-label", "CID" }
                     code { class: "metadata-value", "{cid}" }
+                }
+            }
+            if let Some(is_valid) = validation_status() {
+                div { class: "metadata-row",
+                    span { class: "metadata-label", "Schema" }
+                    span {
+                        class: if is_valid { "metadata-value schema-valid" } else { "metadata-value schema-invalid" },
+                        if is_valid { "Valid" } else { "Invalid" }
+                    }
                 }
             }
         }
@@ -2208,6 +2614,19 @@ fn EditableRecordContent(
     let nsid = use_memo(move || edit_data().type_discriminator().map(|s| s.to_string()));
     let navigator = use_navigator();
     let fetcher = use_context::<CachedFetcher>();
+
+    // Validate edit_data whenever it changes and provide via context
+    let mut validation_result = use_signal(|| None);
+    use_effect(move || {
+        let _ = schema(); // Track schema changes
+        if let Some(nsid_str) = nsid() {
+            let data = edit_data();
+            let validator = jacquard_lexicon::validation::SchemaValidator::global();
+            let result = validator.validate_by_nsid(&nsid_str, &data);
+            validation_result.set(Some(result));
+        }
+    });
+    use_context_provider(|| validation_result);
 
     let update_fetcher = fetcher.clone();
     let create_fetcher = fetcher.clone();
