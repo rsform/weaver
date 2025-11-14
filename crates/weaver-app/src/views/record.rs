@@ -1,5 +1,6 @@
 use crate::Route;
 use crate::auth::AuthState;
+use crate::components::accordion::{Accordion, AccordionContent, AccordionItem, AccordionTrigger};
 use crate::components::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 use crate::fetch::CachedFetcher;
 use dioxus::{CapturedError, prelude::*};
@@ -130,7 +131,15 @@ pub fn RecordView(uri: ReadSignal<Vec<String>>) -> Element {
 
                     // Find refs in the schema and resolve them
                     if let Ok(schema_data) = to_data(&schema.doc) {
-                        for ref_val in schema_data.query("..ref").values() {
+                        for ref_val in schema_data.query("...ref").values() {
+                            if let Some(ref_str) = ref_val.as_str() {
+                                if ref_str.contains('.') {
+                                    resolve_schema_with_refs(fetcher, ref_str, validator, resolved)
+                                        .await;
+                                }
+                            }
+                        }
+                        for ref_val in schema_data.query("...refs").values() {
                             if let Some(ref_str) = ref_val.as_str() {
                                 if ref_str.contains('.') {
                                     resolve_schema_with_refs(fetcher, ref_str, validator, resolved)
@@ -596,48 +605,57 @@ fn DataView(
             let label = path.split('.').last().unwrap_or(&path);
             rsx! {
                 div { class: "record-section",
-                    div { class: "section-label", "{label}" span { class: "array-len", "[{arr.len()}] " } }
-                    if has_errors {
-                        for error in &errors {
-                            div { class: "field-error-message", "{error}" }
-                        }
-                    }
-                    div { class: "section-content",
-                        for (idx, item) in arr.iter().enumerate() {
-                            {
-                                let item_path = format!("{}[{}]", label, idx);
-                                let is_object = matches!(item, Data::Object(_));
+                    Accordion {
+                        id: "array-{path}",
+                        collapsible: true,
+                        AccordionItem {
+                            default_open: true,
+                            index: 0,
+                            AccordionTrigger {
+                                div { class: "section-label", "{label}" span { class: "array-len", "[{arr.len()}]" } }
+                            }
+                            AccordionContent {
+                                if has_errors {
+                                    for error in &errors {
+                                        div { class: "field-error-message", "{error}" }
+                                    }
+                                }
+                                div { class: "section-content",
+                                    for (idx, item) in arr.iter().enumerate() {
+                                        {
+                                            let item_path = format!("{}[{}]", label, idx);
+                                            let is_object = matches!(item, Data::Object(_));
 
-                                if is_object {
-                                    rsx! {
-
-                                        div {
-                                            class: "array-item",
-                                        div { class: "record-section",
-                                            div { class: "section-label", "{item_path}" }
-                                            div { class: "section-content",
-                                                DataView {
-                                                    data: item.clone(),
-                                                    root_data,
-                                                    path: item_path.clone(),
-                                                    did: did.clone()
+                                            if is_object {
+                                                rsx! {
+                                                    div {
+                                                        class: "array-item",
+                                                    div { class: "record-section",
+                                                        div { class: "section-label", "{item_path}" }
+                                                        div { class: "section-content",
+                                                            DataView {
+                                                                data: item.clone(),
+                                                                root_data,
+                                                                path: item_path.clone(),
+                                                                did: did.clone()
+                                                            }
+                                                        }
+                                                    }
+                                                    }
+                                                }
+                                            } else {
+                                                rsx! {
+                                                    div {
+                                                        class: "array-item",
+                                                    DataView {
+                                                        data: item.clone(),
+                                                        root_data,
+                                                        path: item_path,
+                                                        did: did.clone()
+                                                    }
+                                                    }
                                                 }
                                             }
-                                        }
-                                        }
-                                    }
-                                } else {
-
-                                    rsx! {
-
-                                        div {
-                                            class: "array-item",
-                                        DataView {
-                                            data: item.clone(),
-                                            root_data,
-                                            path: item_path,
-                                            did: did.clone()
-                                        }
                                         }
                                     }
                                 }
@@ -679,21 +697,32 @@ fn DataView(
                 // Nested object (not array item): wrap in section
                 let label = path.split('.').last().unwrap_or(&path);
                 rsx! {
-
-                    div { class: "section-label", "{label}" }
-                    if has_errors {
-                        for error in &errors {
-                            div { class: "field-error-message", "{error}" }
-                        }
-                    }
                     div { class: "record-section",
-                        div { class: "section-content",
-                            for (key, value) in obj.iter() {
-                                {
-                                    let new_path = format!("{}.{}", path, key);
-                                    let did_clone = did.clone();
-                                    rsx! {
-                                        DataView { data: value.clone(), root_data, path: new_path, did: did_clone }
+                        Accordion {
+                            id: "object-{path}",
+                            collapsible: true,
+                            AccordionItem {
+                                default_open: true,
+                                index: 0,
+                                AccordionTrigger {
+                                    div { class: "section-label", "{label}" }
+                                }
+                                AccordionContent {
+                                    if has_errors {
+                                        for error in &errors {
+                                            div { class: "field-error-message", "{error}" }
+                                        }
+                                    }
+                                    div { class: "section-content",
+                                        for (key, value) in obj.iter() {
+                                            {
+                                                let new_path = format!("{}.{}", path, key);
+                                                let did_clone = did.clone();
+                                                rsx! {
+                                                    DataView { data: value.clone(), root_data, path: new_path, did: did_clone }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1815,6 +1844,7 @@ fn EditableBlobField(
 
         match text.parse::<usize>() {
             Ok(new_size) => {
+                size_input.set(format_size(new_size, humansize::BINARY));
                 size_error.set(None);
                 root.with_mut(|data| {
                     if let Some(Data::Blob(blob)) = data.get_at_path_mut(&path_for_size) {
@@ -2275,70 +2305,78 @@ fn EditableArrayField(root: Signal<Data<'static>>, path: String, did: String) ->
 
     rsx! {
         div { class: "record-section array-section",
-            div { class: "section-header",
-                div { class: "section-label",
-                    {
-                        let parts: Vec<&str> = path.split('.').collect();
-                        let final_part = parts.last().unwrap_or(&"");
-                        rsx! { "{final_part}" }
+            Accordion {
+                id: "edit-array-{path}",
+                collapsible: true,
+                AccordionItem {
+                    default_open: true,
+                    index: 0,
+                    AccordionTrigger {
+                        div { class: "section-header",
+                            div { class: "section-label",
+                                {
+                                    let parts: Vec<&str> = path.split('.').collect();
+                                    let final_part = parts.last().unwrap_or(&"");
+                                    rsx! { "{final_part}" }
+                                }
+                            }
+                            span { class: "array-length", "[{array_len}]" }
+                        }
                     }
-                }
-                span { class: "array-length", "[{array_len}]" }
-            }
+                    AccordionContent {
+                        div { class: "section-content",
+                            for idx in 0..array_len() {
+                                {
+                                    let item_path = format!("{}[{}]", path, idx);
+                                    let path_for_remove = path.clone();
 
-            div { class: "section-content",
-                for idx in 0..array_len() {
-                    {
-                        let item_path = format!("{}[{}]", path, idx);
-                        let path_for_remove = path.clone();
+                                    rsx! {
+                                        div {
+                                            class: "array-item",
+                                            key: "{item_path}",
 
-                        rsx! {
+                                            EditableDataView {
+                                                root: root,
+                                                path: item_path.clone(),
+                                                did: did.clone(),
+                                                remove_button: rsx! {
+                                                    button {
+                                                        class: "field-remove-button",
+                                                        onclick: move |_| {
+                                                            root.with_mut(|data| {
+                                                                if let Some(Data::Array(arr)) = data.get_at_path_mut(&path_for_remove) {
+                                                                    arr.0.remove(idx);
+                                                                }
+                                                            });
+                                                        },
+                                                        "Remove"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             div {
                                 class: "array-item",
-                                key: "{item_path}",
-
-                                EditableDataView {
-                                    root: root,
-                                    path: item_path.clone(),
-                                    did: did.clone(),
-                                    remove_button: rsx! {
-                                        button {
-                                            class: "field-remove-button",
-                                            onclick: move |_| {
-                                                root.with_mut(|data| {
-                                                    if let Some(Data::Array(arr)) = data.get_at_path_mut(&path_for_remove) {
-                                                        arr.0.remove(idx);
-                                                    }
-                                                });
-                                            },
-                                            "Remove"
-                                        }
+                                div {
+                                    class: "add-field-widget",
+                                    button {
+                                        onclick: move |_| {
+                                            root.with_mut(|data| {
+                                                if let Some(Data::Array(arr)) = data.get_at_path_mut(&path_for_add) {
+                                                    let new_item = create_array_item_default(arr);
+                                                    arr.0.push(new_item);
+                                                }
+                                            });
+                                        },
+                                        "+ Add Item"
                                     }
                                 }
                             }
                         }
                     }
                 }
-                div {
-                    class: "array-item",
-                    div {
-                        class: "add-field-widget",
-                        button {
-
-                            onclick: move |_| {
-                                root.with_mut(|data| {
-                                    if let Some(Data::Array(arr)) = data.get_at_path_mut(&path_for_add) {
-                                        let new_item = create_array_item_default(arr);
-                                        arr.0.push(new_item);
-                                    }
-                                });
-                            },
-                            "+ Add Item"
-                        }
-                    }
-                }
-
-
             }
         }
     }
@@ -2370,41 +2408,53 @@ fn EditableObjectField(
     rsx! {
         if !is_root {
             div { class: "record-section object-section",
-                div { class: "section-header",
-                    div { class: "section-label",
-                        {
-                            let parts: Vec<&str> = path.split('.').collect();
-                            let final_part = parts.last().unwrap_or(&"");
-                            rsx! { "{final_part}" }
+                Accordion {
+                    id: "edit-object-{path}",
+                    collapsible: true,
+                    AccordionItem {
+                        default_open: true,
+                        index: 0,
+                        AccordionTrigger {
+                            div { class: "section-header",
+                                div { class: "section-label",
+                                    {
+                                        let parts: Vec<&str> = path.split('.').collect();
+                                        let final_part = parts.last().unwrap_or(&"");
+                                        rsx! { "{final_part}" }
+                                    }
+                                }
+                                {remove_button}
+                            }
                         }
-                    }
-                    {remove_button}
-                }
-                div { class: "section-content",
-                    for key in field_keys() {
-                    {
-                        let field_path = if path.is_empty() {
-                            key.to_string()
-                        } else {
-                            format!("{}.{}", path, key)
-                        };
-                        let is_type_field = key == "$type";
+                        AccordionContent {
+                            div { class: "section-content",
+                                for key in field_keys() {
+                                {
+                                    let field_path = if path.is_empty() {
+                                        key.to_string()
+                                    } else {
+                                        format!("{}.{}", path, key)
+                                    };
+                                    let is_type_field = key == "$type";
 
-                        rsx! {
-                            FieldWithRemove {
-                                key: "{field_path}",
-                                root: root,
-                                path: field_path.clone(),
-                                did: did.clone(),
-                                is_removable: !is_type_field,
-                                parent_path: path.clone(),
-                                field_key: key.clone(),
+                                    rsx! {
+                                        FieldWithRemove {
+                                            key: "{field_path}",
+                                            root: root,
+                                            path: field_path.clone(),
+                                            did: did.clone(),
+                                            is_removable: !is_type_field,
+                                            parent_path: path.clone(),
+                                            field_key: key.clone(),
+                                        }
+                                    }
+                                }
+                                }
+
+                                AddFieldWidget { root: root, path: path.clone() }
                             }
                         }
                     }
-                    }
-
-                    AddFieldWidget { root: root, path: path.clone() }
                 }
             }
         } else {

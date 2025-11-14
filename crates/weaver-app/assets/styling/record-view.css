@@ -7,7 +7,6 @@
 .record-header {
     margin-bottom: 2rem;
     padding-bottom: 0.5rem;
-
     font-family: var(--font-mono);
     border-bottom: 1px solid var(--color-border);
 }
@@ -930,4 +929,45 @@
 .dialog-actions button:first-child:hover {
     color: var(--color-error, #ff5252);
     border-bottom-color: var(--color-error, #ff6b6b);
+}
+
+.accordion-content {
+    grid-template-rows: 1fr;
+    padding-left: 2.8rem;
+}
+
+.accordion-content .section-content {
+    margin-left: -1px;
+}
+
+.accordion-content .record-field {
+    margin-left: 0px;
+}
+
+.accordion-content .array-item {
+    margin-left: 0px;
+}
+
+.accordion-content .array-item .section-content {
+    border-collapse: collapse;
+}
+
+.accordion-content .array-item .record-section {
+    margin-left: 1.5rem;
+}
+
+.accordion-content .array-item .record-section .record-field {
+    margin-left: -1px;
+}
+
+.accordion-content .array-item .record-section .accordion-trigger .section-label {
+    margin-left: -2px;
+}
+
+.accordion-trigger {
+    background-color: var(--color-base) !important;
+}
+
+.accordion {
+    margin-left: -2.8rem;
 }
