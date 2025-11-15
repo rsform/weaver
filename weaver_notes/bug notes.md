@@ -1,0 +1,3 @@
+- renderer/processor doesn't add http(s):// to urls without them (or handle autolinks currently)
+- mobile view doesn't narrow correctly
+- 

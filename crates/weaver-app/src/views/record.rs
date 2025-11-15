@@ -3,13 +3,17 @@ use crate::auth::AuthState;
 use crate::components::accordion::{Accordion, AccordionContent, AccordionItem, AccordionTrigger};
 use crate::components::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 use crate::fetch::CachedFetcher;
+use dioxus::prelude::Event;
 use dioxus::{CapturedError, prelude::*};
 use humansize::format_size;
 use jacquard::api::com_atproto::repo::get_record::GetRecordOutput;
+use jacquard::bytes::Bytes;
 use jacquard::client::AgentError;
 use jacquard::common::to_data;
-use jacquard::prelude::*;
 use jacquard::smol_str::ToSmolStr;
+use jacquard::types::LexiconStringType;
+use jacquard::types::string::AtprotoStr;
+use jacquard::{atproto, prelude::*};
 use jacquard::{
     client::AgentSessionExt,
     common::{Data, IntoStatic},
@@ -795,7 +799,7 @@ fn HighlightedUri(uri: AtUri<'static>) -> Element {
 }
 
 #[component]
-fn HighlightedString(string_type: jacquard::types::string::AtprotoStr<'static>) -> Element {
+fn HighlightedString(string_type: AtprotoStr<'static>) -> Element {
     use jacquard::types::string::AtprotoStr;
 
     match &string_type {
@@ -1166,36 +1170,6 @@ enum UiPathSegment {
     Index(usize),
 }
 
-/// Check if a validation path matches or is a child of the given UI path
-/// Filters out UnionVariant segments from validation path for comparison
-fn validation_path_matches_ui(validation_path: &ValidationPath, ui_path: &str) -> bool {
-    use jacquard_lexicon::validation::PathSegment;
-
-    let ui_segments = parse_ui_path(ui_path);
-
-    // Convert validation path to UI segments by filtering out UnionVariant
-    let validation_ui_segments: Vec<_> = validation_path
-        .segments()
-        .iter()
-        .filter_map(|seg| match seg {
-            PathSegment::Field(name) => Some(UiPathSegment::Field(name.to_string())),
-            PathSegment::Index(idx) => Some(UiPathSegment::Index(*idx)),
-            PathSegment::UnionVariant(_) => None, // Skip union discriminators
-        })
-        .collect();
-
-    // Check if validation path matches or is a child of UI path
-    if validation_ui_segments.len() < ui_segments.len() {
-        return false; // Validation path can't be shorter than UI path
-    }
-
-    // Check if all UI segments match the start of validation segments
-    ui_segments
-        .iter()
-        .zip(validation_ui_segments.iter())
-        .all(|(a, b)| a == b)
-}
-
 /// Get all validation errors at exactly this path (not children)
 fn get_errors_at_exact_path(
     validation_result: &Option<ValidationResult>,
@@ -1287,9 +1261,8 @@ fn infer_data_from_text(text: &str) -> Result<Data<'static>, String> {
 /// Parse text as specific AtprotoStr type, preserving type information
 fn try_parse_as_type(
     text: &str,
-    string_type: jacquard::types::LexiconStringType,
-) -> Result<jacquard::types::string::AtprotoStr<'static>, String> {
-    use jacquard::types::LexiconStringType;
+    string_type: LexiconStringType,
+) -> Result<AtprotoStr<'static>, String> {
     use jacquard::types::string::*;
     use std::str::FromStr;
 
@@ -1360,23 +1333,20 @@ fn clone_structure(data: &Data) -> Data<'static> {
             }
             Data::Object(Object(new_obj))
         }
-
         Data::Array(_) => Data::Array(Array(Vec::new())),
-
         Data::String(s) => match s.string_type() {
             LexiconStringType::Datetime => {
                 // Sensible default: now
                 Data::String(AtprotoStr::Datetime(Datetime::now()))
             }
+            LexiconStringType::Tid => Data::String(AtprotoStr::Tid(Tid::now_0())),
             _ => {
                 // Empty string, type inference will handle it
                 Data::String(AtprotoStr::String("".into()))
             }
         },
-
         Data::Integer(_) => Data::Integer(0),
         Data::Boolean(_) => Data::Boolean(false),
-
         Data::Blob(blob) => {
             // Placeholder blob
             Data::Blob(
@@ -1390,8 +1360,11 @@ fn clone_structure(data: &Data) -> Data<'static> {
                 .into_static(),
             )
         }
-
-        Data::Bytes(_) | Data::CidLink(_) | Data::Null => Data::Null,
+        Data::CidLink(_) => Data::CidLink(Cid::str(
+            "bafkreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )),
+        Data::Bytes(_) => Data::Bytes(Bytes::new()),
+        Data::Null => Data::Null,
     }
 }
 
@@ -1488,7 +1461,7 @@ fn EditableStringField(
     });
 
     let path_for_mutation = path.clone();
-    let handle_input = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+    let handle_input = move |evt: Event<FormData>| {
         let new_text = evt.value();
         input_text.set(new_text.clone());
 
@@ -1741,7 +1714,7 @@ fn EditableBlobField(
 
     let fetcher = use_context::<CachedFetcher>();
     let path_for_upload = path.clone();
-    let handle_file = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+    let handle_file = move |evt: Event<dioxus::prelude::FormData>| {
         let fetcher = fetcher.clone();
         let path_upload_clone = path_for_upload.clone();
         spawn(async move {
@@ -1818,7 +1791,7 @@ fn EditableBlobField(
     };
 
     let path_for_cid = path.clone();
-    let handle_cid_change = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+    let handle_cid_change = move |evt: Event<dioxus::prelude::FormData>| {
         let text = evt.value();
         cid_input.set(text.clone());
 
@@ -1838,7 +1811,7 @@ fn EditableBlobField(
     };
 
     let path_for_size = path.clone();
-    let handle_size_change = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+    let handle_size_change = move |evt: Event<dioxus::prelude::FormData>| {
         let text = evt.value();
         size_input.set(text.clone());
 
@@ -1992,14 +1965,12 @@ fn populate_aspect_ratio(
             // Find aspectRatio that's a sibling of our blob
             // e.g. blob at "embed.images[0].image" -> look for "embed.images[0].aspectRatio"
             let blob_parent = blob_path.rsplit_once('.').map(|(parent, _)| parent);
-
             matches.iter().find_map(|query_match| {
-                let aspect_path = query_match.path.as_str();
-                let aspect_parent = aspect_path.rsplit_once('.').map(|(parent, _)| parent);
+                let aspect_parent = query_match.path.rsplit_once('.').map(|(parent, _)| parent);
 
                 // Check if they share the same parent
                 if blob_parent == aspect_parent {
-                    Some(aspect_path.to_string())
+                    Some(query_match.path.clone())
                 } else {
                     None
                 }
@@ -2009,15 +1980,13 @@ fn populate_aspect_ratio(
 
     // Update the aspectRatio if we found a matching field
     if let Some(aspect_path) = aspect_path_to_update {
-        use jacquard::types::value::Object;
-        use std::collections::BTreeMap;
-
-        let mut aspect_obj = BTreeMap::new();
-        aspect_obj.insert("width".into(), Data::Integer(width));
-        aspect_obj.insert("height".into(), Data::Integer(height));
+        let aspect_obj = atproto! {{
+            "width": width,
+            "height": height
+        }};
 
         root.with_mut(|record_data| {
-            record_data.set_at_path(&aspect_path, Data::Object(Object(aspect_obj)));
+            record_data.set_at_path(&aspect_path, aspect_obj);
         });
     }
 }
@@ -2051,7 +2020,7 @@ fn EditableBytesField(
     });
 
     let path_for_mutation = path.clone();
-    let handle_input = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+    let handle_input = move |evt: Event<dioxus::prelude::FormData>| {
         let text = evt.value();
         input_text.set(text.clone());
 
@@ -2202,7 +2171,7 @@ fn EditableCidLinkField(
     });
 
     let path_for_mutation = path.clone();
-    let handle_input = move |evt: dioxus::prelude::Event<dioxus::prelude::FormData>| {
+    let handle_input = move |evt: Event<dioxus::prelude::FormData>| {
         let text = evt.value();
         input_text.set(text.clone());
 
@@ -2721,15 +2690,15 @@ fn EditableRecordContent(
                                     match fetcher.send(request).await {
                                         Ok(output) => {
                                             if output.status() == StatusCode::OK {
-                                                dioxus_logger::tracing::info!("Record updated successfully");
+                                                tracing::info!("Record updated successfully");
                                                 edit_data.set(data.clone());
                                                 edit_mode.set(false);
                                             } else {
-                                                dioxus_logger::tracing::error!("Unexpected status code: {:?}", output.status());
+                                                tracing::error!("Unexpected status code: {:?}", output.status());
                                             }
                                         }
                                         Err(e) => {
-                                            dioxus_logger::tracing::error!("Failed to update record: {:?}", e);
+                                            tracing::error!("Failed to update record: {:?}", e);
                                         }
                                     }
                                 }
@@ -2755,13 +2724,13 @@ fn EditableRecordContent(
                                     match fetcher.send(request).await {
                                         Ok(response) => {
                                             if let Ok(output) = response.into_output() {
-                                                dioxus_logger::tracing::info!("Record created: {}", output.uri);
+                                                tracing::info!("Record created: {}", output.uri);
                                                 let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, output.uri);
                                                 nav.push(link);
                                             }
                                         }
                                         Err(e) => {
-                                            dioxus_logger::tracing::error!("Failed to create record: {:?}", e);
+                                            tracing::error!("Failed to create record: {:?}", e);
                                         }
                                     }
                                 }
@@ -2800,18 +2769,18 @@ fn EditableRecordContent(
                                                             .build();
 
                                                         if let Err(e) = fetcher.send(delete_req).await {
-                                                            dioxus_logger::tracing::warn!("Created new record but failed to delete old: {:?}", e);
+                                                            tracing::warn!("Created new record but failed to delete old: {:?}", e);
                                                         }
                                                     }
                                                 }
 
-                                                dioxus_logger::tracing::info!("Record replaced: {}", create_output.uri);
+                                                tracing::info!("Record replaced: {}", create_output.uri);
                                                 let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, create_output.uri);
                                                 nav.push(link);
                                             }
                                         }
                                         Err(e) => {
-                                            dioxus_logger::tracing::error!("Failed to replace record: {:?}", e);
+                                            tracing::error!("Failed to replace record: {:?}", e);
                                         }
                                     }
                                 }
@@ -2836,11 +2805,11 @@ fn EditableRecordContent(
 
                                     match fetcher.send(request).await {
                                         Ok(_) => {
-                                            dioxus_logger::tracing::info!("Record deleted");
+                                            tracing::info!("Record deleted");
                                             nav.push(Route::Home {});
                                         }
                                         Err(e) => {
-                                            dioxus_logger::tracing::error!("Failed to delete record: {:?}", e);
+                                            tracing::error!("Failed to delete record: {:?}", e);
                                         }
                                     }
                                 }

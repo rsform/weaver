@@ -1,7 +1,6 @@
 use crate::auth::AuthStore;
 use crate::cache_impl;
 use dioxus::Result;
-use dioxus::prelude::*;
 use jacquard::AuthorizationToken;
 use jacquard::CowStr;
 use jacquard::IntoStatic;
@@ -372,6 +371,7 @@ impl CachedFetcher {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn current_did(&self) -> Option<Did<'static>> {
         let session_slot = self.client.session.read().await;
         if let Some(session) = session_slot.as_ref() {

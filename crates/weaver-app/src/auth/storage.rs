@@ -102,7 +102,7 @@ impl ClientAuthStore for AuthStore {
                     Ok(Some(data))
                 }
                 Err(gloo_storage::errors::StorageError::KeyNotFound(err)) => {
-                    dioxus_logger::tracing::debug!("gloo error: {}", err);
+                    tracing::debug!("gloo error: {}", err);
                     Ok(None)
                 }
                 Err(e) => Err(SessionStoreError::Other(

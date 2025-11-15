@@ -90,6 +90,8 @@ html {{
     max-width: 90ch;
     margin: 0 auto;
     padding: 2rem 1rem;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }}
 
 /* Typography */
@@ -124,6 +126,8 @@ h6 {{ font-size: 1rem; }}
 
 p {{
     margin-bottom: 1rem;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }}
 
 a {{
@@ -209,6 +213,9 @@ table {{
     border-collapse: collapse;
     width: 100%;
     margin-bottom: 1rem;
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
 }}
 
 th, td {{
@@ -259,6 +266,39 @@ hr {{
     border: none;
     border-top: 2px solid var(--color-border);
     margin: 2rem 0;
+}}
+
+/* Tablet and mobile responsiveness */
+@media (max-width: 900px) {{
+    .notebook-content {{
+        padding: 1.5rem 1rem;
+        max-width: 100%;
+    }}
+
+    h1 {{ font-size: 1.85rem; }}
+    h2 {{ font-size: 1.4rem; }}
+    h3 {{ font-size: 1.2rem; }}
+
+    blockquote {{
+        margin-left: 0;
+        margin-right: 0;
+    }}
+}}
+
+/* Small mobile phones */
+@media (max-width: 480px) {{
+    .notebook-content {{
+        padding: 1rem 0.75rem;
+    }}
+
+    h1 {{ font-size: 1.65rem; }}
+    h2 {{ font-size: 1.3rem; }}
+    h3 {{ font-size: 1.1rem; }}
+
+    blockquote {{
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }}
 }}
 "#,
         // Light mode colours

@@ -8,11 +8,7 @@ use dioxus::{CapturedError, prelude::*};
 use dioxus::fullstack::FullstackContext;
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 use dioxus::fullstack::response::Extension;
-use dioxus_logger::tracing::Level;
-use jacquard::{
-    oauth::{client::OAuthClient, session::ClientData},
-    types::aturi::AtUri,
-};
+use jacquard::oauth::{client::OAuthClient, session::ClientData};
 #[allow(unused)]
 use jacquard::{
     smol_str::SmolStr,
@@ -20,7 +16,7 @@ use jacquard::{
 };
 #[cfg(feature = "server")]
 use std::sync::Arc;
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 #[allow(unused)]
 use views::{
     Callback, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordIndex, RecordView,
@@ -45,19 +41,18 @@ mod service_worker;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
 mod views;
 
-/// The Route enum is used to define the structure of internal routes in our app. All route enums need to derive
-/// the [`Routable`] trait, which provides the necessary methods for the router to work.
-///
-/// Each variant represents a different URL pattern that can be matched by the router. If that pattern is matched,
-/// the components for that route will be rendered.
+#[cfg(target_arch = "wasm32")]
+use lol_alloc::{FreeListAllocator, LockedAllocator};
+
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOCATOR: LockedAllocator<FreeListAllocator> =
+    LockedAllocator::new(FreeListAllocator::new());
+
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
-    // The layout attribute defines a wrapper for all routes under the layout. Layouts are great for wrapping
-    // many routes with a common UI like a navbar.
     #[layout(Navbar)]
-        // The route attribute defines the URL pattern that a specific route matches. If that pattern matches the URL,
-        // the component for that route will be rendered. The component name that is rendered defaults to the variant name.
         #[route("/")]
         Home {},
         #[layout(ErrorLayout)]
@@ -81,11 +76,7 @@ enum Route {
                 Entry { ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr }
 
 }
-
-// We can import assets in dioxus with the `asset!` macro. This macro takes a path to an asset relative to the crate root.
-// The macro returns an `Asset` type that will display as the path to the asset in the browser or a local path in desktop bundles.
 const FAVICON: Asset = asset!("/assets/weaver_photo_sm.jpg");
-// The asset macro also minifies some assets like CSS and JS to make bundled smaller
 const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
 
 #[cfg(not(feature = "fullstack-server"))]
@@ -104,7 +95,6 @@ pub static CONFIG: LazyLock<Config> = LazyLock::new(|| Config {
     oauth: OAuthConfig::from_env().as_metadata(),
 });
 fn main() {
-    dioxus_logger::init(Level::DEBUG).expect("logger failed to init");
     // Set up better panic messages for wasm
     #[cfg(target_arch = "wasm32")]
     console_error_panic_hook::set_once();
@@ -148,18 +138,14 @@ fn main() {
                     async move {
                         req.extensions_mut().insert(blob_cache);
                         req.extensions_mut().insert(fetcher);
-
-                        // And then return the response with `next.run()
                         Ok::<_, Infallible>(next.run(req).await)
                     }
                 }
             }))
         };
-        // And then return the router
         Ok(router)
     });
 
-    // When not on the server, just run `launch()` like normal
     #[cfg(not(feature = "server"))]
     dioxus::launch(App);
 }
@@ -177,12 +163,11 @@ fn App() -> Element {
     use_effect(move || {
         spawn(async move {
             if let Err(e) = auth::restore_session().await {
-                dioxus_logger::tracing::warn!("Session restoration failed: {}", e);
+                tracing::warn!("Session restoration failed: {}", e);
             }
         });
     });
 
-    // Register service worker on startup (only on web)
     #[cfg(all(
         target_family = "wasm",
         target_os = "unknown",

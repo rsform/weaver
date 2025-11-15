@@ -933,7 +933,7 @@
 
 .accordion-content {
     grid-template-rows: 1fr;
-    padding-left: 2.8rem;
+    padding-left: 46px;
 }
 
 .accordion-content .section-content {
@@ -969,5 +969,5 @@
 }
 
 .accordion {
-    margin-left: -2.8rem;
+    margin-left: -46px;
 }

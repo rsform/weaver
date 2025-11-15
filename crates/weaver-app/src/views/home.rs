@@ -1,6 +1,6 @@
 use crate::{Route, components::identity::NotebookCard, fetch};
 use dioxus::prelude::*;
-use jacquard::{IntoStatic, smol_str::ToSmolStr, types::aturi::AtUri};
+use jacquard::types::aturi::AtUri;
 
 const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 

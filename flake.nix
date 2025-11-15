@@ -262,6 +262,7 @@
             diesel-cli
             postgresql
             cargo-insta
+            cargo-bloat
             jq
             dioxus-cli
             wasm-bindgen-cli

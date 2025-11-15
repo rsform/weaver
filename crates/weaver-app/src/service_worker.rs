@@ -1,3 +1,4 @@
+use dioxus::prelude::*;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen::prelude::*;
 
@@ -114,3 +115,6 @@ pub fn send_blob_mappings(
 ) -> Result<(), String> {
     Ok(())
 }
+
+// #[used]
+// static BINDINGS_JS: Asset = asset!("/assets/sw.js", AssetOptions::js().with_hash_suffix(false));

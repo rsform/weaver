@@ -1,13 +1,13 @@
 use crate::auth::AuthState;
 use crate::fetch::CachedFetcher;
-use dioxus::logger::tracing::{Level, error, info};
-use dioxus::{CapturedError, prelude::*};
+use dioxus::prelude::*;
 use jacquard::{
     IntoStatic,
     cowstr::ToCowStr,
     oauth::{error::OAuthError, types::CallbackParams},
     smol_str::SmolStr,
 };
+use tracing::{error, info};
 
 #[component]
 pub fn Callback(
@@ -46,18 +46,12 @@ pub fn Callback(
 
     match &*result.read_unchecked() {
         Some(Ok(())) => {
-            // #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-            // {
-            //     if let Some(window) = web_sys::window() {
-            //         window.close().ok();
-            //     }
-            // }
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
             {
                 use gloo_storage::Storage;
                 let mut prev = gloo_storage::LocalStorage::get::<String>("cached_route").ok();
                 if let Some(prev) = prev.take() {
-                    dioxus_logger::tracing::info!("Navigating to previous page");
+                    tracing::info!("Navigating to previous page");
                     let nav = use_navigator();
                     gloo_storage::LocalStorage::delete("cached_route");
                     nav.replace(prev);

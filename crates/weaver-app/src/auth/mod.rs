@@ -34,6 +34,7 @@ pub async fn restore_session() -> Result<(), CapturedError> {
     use crate::fetch::CachedFetcher;
     use dioxus::prelude::*;
     use gloo_storage::{LocalStorage, Storage};
+    use jacquard::types::string::Did;
     // Look for session keys in localStorage (format: oauth_session_{did}_{session_id})
     let keys = LocalStorage::get_all::<serde_json::Value>()?;
     let mut found_session: Option<(String, String)> = None;
@@ -57,7 +58,7 @@ pub async fn restore_session() -> Result<(), CapturedError> {
 
     let (did_str, session_id) =
         found_session.ok_or(CapturedError::from_display("No saved session found"))?;
-    let did = jacquard::types::string::Did::new_owned(did_str)?;
+    let did = Did::new_owned(did_str)?;
     let fetcher = use_context::<CachedFetcher>();
 
     let session = fetcher
@@ -77,6 +78,6 @@ pub async fn restore_session() -> Result<(), CapturedError> {
         .set_authenticated(restored_did, session_id);
     fetcher.upgrade_to_authenticated(session).await;
 
-    dioxus_logger::tracing::debug!("session restored");
+    tracing::debug!("session restored");
     Ok(())
 }

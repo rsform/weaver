@@ -614,9 +614,114 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                         AgentError::from(ClientError::invalid_request("Invalid weaver profile URI"))
                     },
                 )?;
-            if let Ok(weaver_record) = self.fetch_record(&weaver_uri).await {
-                // Convert blobs to CDN URLs
-                let avatar = weaver_record
+            let weaver_future = async {
+                if let Ok(weaver_record) = self.fetch_record(&weaver_uri).await {
+                    // Convert blobs to CDN URLs
+                    let avatar = weaver_record
+                        .value
+                        .avatar
+                        .as_ref()
+                        .map(|blob| {
+                            let cid = blob.blob().cid();
+                            jacquard::types::string::Uri::new_owned(format!(
+                                "https://cdn.bsky.app/img/avatar/plain/{}/{}",
+                                did, cid
+                            ))
+                        })
+                        .transpose()
+                        .map_err(|_| {
+                            AgentError::from(ClientError::invalid_request("Invalid avatar URI"))
+                        })?;
+                    let banner = weaver_record
+                        .value
+                        .banner
+                        .as_ref()
+                        .map(|blob| {
+                            let cid = blob.blob().cid();
+                            jacquard::types::string::Uri::new_owned(format!(
+                                "https://cdn.bsky.app/img/banner/plain/{}/{}",
+                                did, cid
+                            ))
+                        })
+                        .transpose()
+                        .map_err(|_| {
+                            AgentError::from(ClientError::invalid_request("Invalid banner URI"))
+                        })?;
+
+                    let profile_view = ProfileView::new()
+                        .did(did.clone())
+                        .handle(handle.clone())
+                        .maybe_display_name(weaver_record.value.display_name.clone())
+                        .maybe_description(weaver_record.value.description.clone())
+                        .maybe_avatar(avatar)
+                        .maybe_banner(banner)
+                        .maybe_bluesky(weaver_record.value.bluesky)
+                        .maybe_tangled(weaver_record.value.tangled)
+                        .maybe_streamplace(weaver_record.value.streamplace)
+                        .maybe_location(weaver_record.value.location.clone())
+                        .maybe_links(weaver_record.value.links.clone())
+                        .maybe_pronouns(weaver_record.value.pronouns.clone())
+                        .maybe_pinned(weaver_record.value.pinned.clone())
+                        .indexed_at(jacquard::types::string::Datetime::now())
+                        .maybe_created_at(weaver_record.value.created_at)
+                        .build();
+
+                    Ok((
+                        Some(weaver_uri.as_uri().clone().into_static()),
+                        ProfileDataView::new()
+                            .inner(ProfileDataViewInner::ProfileView(Box::new(profile_view)))
+                            .build()
+                            .into_static(),
+                    ))
+                } else {
+                    Err(WeaverError::Agent(
+                        ClientError::invalid_request("Invalid weaver profile URI").into(),
+                    ))
+                }
+            };
+            let bsky_appview_future = async {
+                if let Ok(bsky_resp) = self
+                    .send(GetProfile::new().actor(did.clone()).build())
+                    .await
+                {
+                    if let Ok(output) = bsky_resp.parse() {
+                        let bsky_uri =
+                            BskyProfile::uri(format!("at://{}/app.bsky.actor.profile/self", did))
+                                .map_err(|_| {
+                                AgentError::from(ClientError::invalid_request(
+                                    "Invalid bsky profile URI",
+                                ))
+                            })?;
+                        Ok((
+                            Some(bsky_uri.as_uri().clone().into_static()),
+                            ProfileDataView::new()
+                                .inner(ProfileDataViewInner::ProfileViewDetailed(Box::new(
+                                    output.value.into_static(),
+                                )))
+                                .build()
+                                .into_static(),
+                        ))
+                    } else {
+                        Err(WeaverError::Agent(
+                            ClientError::invalid_request("Invalid bsky profile URI").into(),
+                        ))
+                    }
+                } else {
+                    Err(WeaverError::Agent(
+                        ClientError::invalid_request("Invalid bsky profile URI").into(),
+                    ))
+                }
+            };
+            // Fallback: fetch bsky profile record directly and construct minimal ProfileViewDetailed
+            let bsky_uri = BskyProfile::uri(format!("at://{}/app.bsky.actor.profile/self", did))
+                .map_err(|_| {
+                    AgentError::from(ClientError::invalid_request("Invalid bsky profile URI"))
+                })?;
+
+            let bsky_future = async {
+                let bsky_record = self.fetch_record(&bsky_uri).await?;
+
+                let avatar = bsky_record
                     .value
                     .avatar
                     .as_ref()
@@ -631,14 +736,14 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                     .map_err(|_| {
                         AgentError::from(ClientError::invalid_request("Invalid avatar URI"))
                     })?;
-                let banner = weaver_record
+                let banner = bsky_record
                     .value
                     .banner
                     .as_ref()
                     .map(|blob| {
                         let cid = blob.blob().cid();
                         jacquard::types::string::Uri::new_owned(format!(
-                            "https://cdn.bsky.app/img/banner/plain/{}/{}",
+                            "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}",
                             did, cid
                         ))
                     })
@@ -647,115 +752,33 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                         AgentError::from(ClientError::invalid_request("Invalid banner URI"))
                     })?;
 
-                let profile_view = ProfileView::new()
+                let profile_detailed = ProfileViewDetailed::new()
                     .did(did.clone())
                     .handle(handle.clone())
-                    .maybe_display_name(weaver_record.value.display_name.clone())
-                    .maybe_description(weaver_record.value.description.clone())
+                    .maybe_display_name(bsky_record.value.display_name.clone())
+                    .maybe_description(bsky_record.value.description.clone())
                     .maybe_avatar(avatar)
                     .maybe_banner(banner)
-                    .maybe_bluesky(weaver_record.value.bluesky)
-                    .maybe_tangled(weaver_record.value.tangled)
-                    .maybe_streamplace(weaver_record.value.streamplace)
-                    .maybe_location(weaver_record.value.location.clone())
-                    .maybe_links(weaver_record.value.links.clone())
-                    .maybe_pronouns(weaver_record.value.pronouns.clone())
-                    .maybe_pinned(weaver_record.value.pinned.clone())
                     .indexed_at(jacquard::types::string::Datetime::now())
-                    .maybe_created_at(weaver_record.value.created_at)
+                    .maybe_created_at(bsky_record.value.created_at)
                     .build();
 
-                return Ok((
-                    Some(weaver_uri.as_uri().clone().into_static()),
+                Ok((
+                    Some(bsky_uri.as_uri().clone().into_static()),
                     ProfileDataView::new()
-                        .inner(ProfileDataViewInner::ProfileView(Box::new(profile_view)))
+                        .inner(ProfileDataViewInner::ProfileViewDetailed(Box::new(
+                            profile_detailed,
+                        )))
                         .build()
                         .into_static(),
-                ));
-            }
+                ))
+            };
 
-            if let Ok(bsky_resp) = self
-                .send(GetProfile::new().actor(did.clone()).build())
-                .await
-            {
-                if let Ok(output) = bsky_resp.parse() {
-                    let bsky_uri =
-                        BskyProfile::uri(format!("at://{}/app.bsky.actor.profile/self", did))
-                            .map_err(|_| {
-                                AgentError::from(ClientError::invalid_request(
-                                    "Invalid bsky profile URI",
-                                ))
-                            })?;
-                    return Ok((
-                        Some(bsky_uri.as_uri().clone().into_static()),
-                        ProfileDataView::new()
-                            .inner(ProfileDataViewInner::ProfileViewDetailed(Box::new(
-                                output.value.into_static(),
-                            )))
-                            .build()
-                            .into_static(),
-                    ));
-                }
-            }
-
-            // Fallback: fetch bsky profile record directly and construct minimal ProfileViewDetailed
-            let bsky_uri = BskyProfile::uri(format!("at://{}/app.bsky.actor.profile/self", did))
-                .map_err(|_| {
-                    AgentError::from(ClientError::invalid_request("Invalid bsky profile URI"))
-                })?;
-            let bsky_record = self.fetch_record(&bsky_uri).await?;
-
-            let avatar = bsky_record
-                .value
-                .avatar
-                .as_ref()
-                .map(|blob| {
-                    let cid = blob.blob().cid();
-                    jacquard::types::string::Uri::new_owned(format!(
-                        "https://cdn.bsky.app/img/avatar/plain/{}/{}",
-                        did, cid
-                    ))
-                })
-                .transpose()
-                .map_err(|_| {
-                    AgentError::from(ClientError::invalid_request("Invalid avatar URI"))
-                })?;
-            let banner = bsky_record
-                .value
-                .banner
-                .as_ref()
-                .map(|blob| {
-                    let cid = blob.blob().cid();
-                    jacquard::types::string::Uri::new_owned(format!(
-                        "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}",
-                        did, cid
-                    ))
-                })
-                .transpose()
-                .map_err(|_| {
-                    AgentError::from(ClientError::invalid_request("Invalid banner URI"))
-                })?;
-
-            let profile_detailed = ProfileViewDetailed::new()
-                .did(did.clone())
-                .handle(handle.clone())
-                .maybe_display_name(bsky_record.value.display_name.clone())
-                .maybe_description(bsky_record.value.description.clone())
-                .maybe_avatar(avatar)
-                .maybe_banner(banner)
-                .indexed_at(jacquard::types::string::Datetime::now())
-                .maybe_created_at(bsky_record.value.created_at)
-                .build();
-
-            Ok((
-                Some(bsky_uri.as_uri().clone().into_static()),
-                ProfileDataView::new()
-                    .inner(ProfileDataViewInner::ProfileViewDetailed(Box::new(
-                        profile_detailed,
-                    )))
-                    .build()
-                    .into_static(),
-            ))
+            n0_future::future::or(
+                weaver_future,
+                n0_future::future::or(bsky_appview_future, bsky_future),
+            )
+            .await
         }
     }
 
