@@ -18,7 +18,7 @@ use jacquard::{
 };
 #[allow(unused_imports)]
 use std::sync::Arc;
-use weaver_api::sh_weaver::notebook::{BookEntryView, entry::Entry};
+use weaver_api::sh_weaver::notebook::{BookEntryView, NotebookView, entry::Entry};
 // ============================================================================
 // Wrapper Hooks (feature-gated)
 // ============================================================================
@@ -358,6 +358,192 @@ pub fn use_notebooks_for_did(
                 .await
                 .ok()
                 .map(|notebooks| notebooks.iter().map(|arc| (*arc).clone()).collect())
+        }
+    }));
+    Ok(use_memo(move || {
+        r.read_unchecked().as_ref().and_then(|v| v.clone())
+    }))
+}
+
+/// Fetches notebooks from UFOS with SSR support in fullstack mode
+#[cfg(feature = "fullstack-server")]
+pub fn use_notebooks_from_ufos() -> Result<
+    Memo<Option<Vec<(NotebookView<'static>, Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef<'static>>)>>>,
+    RenderError,
+> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_notebooks_from_ufos()
+                .await
+                .ok()
+                .map(|notebooks| {
+                    notebooks
+                        .iter()
+                        .map(|arc| serde_json::to_value(arc.as_ref()).ok())
+                        .collect::<Option<Vec<_>>>()
+                })
+                .flatten()
+        }
+    })?;
+    Ok(use_memo(move || {
+        if let Some(Some(values)) = &*res.read_unchecked() {
+            values
+                .iter()
+                .map(|v| {
+                    jacquard::from_json_value::<(
+                        NotebookView,
+                        Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef>,
+                    )>(v.clone())
+                    .ok()
+                })
+                .collect::<Option<Vec<_>>>()
+        } else {
+            None
+        }
+    }))
+}
+
+/// Fetches notebooks from UFOS client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_notebooks_from_ufos() -> Result<
+    Memo<Option<Vec<(NotebookView<'static>, Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef<'static>>)>>>,
+    RenderError,
+> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let r = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_notebooks_from_ufos()
+                .await
+                .ok()
+                .map(|notebooks| notebooks.iter().map(|arc| (*arc).clone()).collect())
+        }
+    });
+    Ok(use_memo(move || {
+        r.read_unchecked().as_ref().and_then(|v| v.clone())
+    }))
+}
+
+/// Fetches notebook metadata with SSR support in fullstack mode
+#[cfg(feature = "fullstack-server")]
+pub fn use_notebook(
+    ident: AtIdentifier<'static>,
+    book_title: SmolStr,
+) -> Result<
+    Memo<Option<(NotebookView<'static>, Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef<'static>>)>>,
+    RenderError,
+> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let ident = use_signal(|| ident);
+    let book_title = use_signal(|| book_title);
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .get_notebook(ident(), book_title())
+                .await
+                .ok()
+                .flatten()
+                .map(|arc| serde_json::to_value(arc.as_ref()).ok())
+                .flatten()
+        }
+    })?;
+    Ok(use_memo(move || {
+        if let Some(Some(value)) = &*res.read_unchecked() {
+            jacquard::from_json_value::<(
+                NotebookView,
+                Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef>,
+            )>(value.clone())
+            .ok()
+        } else {
+            None
+        }
+    }))
+}
+
+/// Fetches notebook metadata client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_notebook(
+    ident: AtIdentifier<'static>,
+    book_title: SmolStr,
+) -> Result<
+    Memo<Option<(NotebookView<'static>, Vec<weaver_api::com_atproto::repo::strong_ref::StrongRef<'static>>)>>,
+    RenderError,
+> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let r = use_resource(use_reactive!(|(ident, book_title)| {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .get_notebook(ident, book_title)
+                .await
+                .ok()
+                .flatten()
+                .map(|arc| (*arc).clone())
+        }
+    }));
+    Ok(use_memo(move || {
+        r.read_unchecked().as_ref().and_then(|v| v.clone())
+    }))
+}
+
+/// Fetches notebook entries with SSR support in fullstack mode
+#[cfg(feature = "fullstack-server")]
+pub fn use_notebook_entries(
+    ident: AtIdentifier<'static>,
+    book_title: SmolStr,
+) -> Result<Memo<Option<Vec<BookEntryView<'static>>>>, RenderError> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let ident = use_signal(|| ident);
+    let book_title = use_signal(|| book_title);
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .list_notebook_entries(ident(), book_title())
+                .await
+                .ok()
+                .flatten()
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .map(|e| serde_json::to_value(e).ok())
+                        .collect::<Option<Vec<_>>>()
+                })
+                .flatten()
+        }
+    })?;
+    Ok(use_memo(move || {
+        if let Some(Some(values)) = &*res.read_unchecked() {
+            values
+                .iter()
+                .map(|v| jacquard::from_json_value::<BookEntryView>(v.clone()).ok())
+                .collect::<Option<Vec<_>>>()
+        } else {
+            None
+        }
+    }))
+}
+
+/// Fetches notebook entries client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_notebook_entries(
+    ident: AtIdentifier<'static>,
+    book_title: SmolStr,
+) -> Result<Memo<Option<Vec<BookEntryView<'static>>>>, RenderError> {
+    let fetcher = use_context::<crate::fetch::CachedFetcher>();
+    let r = use_resource(use_reactive!(|(ident, book_title)| {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .list_notebook_entries(ident, book_title)
+                .await
+                .ok()
+                .flatten()
         }
     }));
     Ok(use_memo(move || {

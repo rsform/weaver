@@ -136,13 +136,7 @@ fn main() {
                         // Enable incremental rendering
                         .incremental(
                             dioxus::server::IncrementalRendererConfig::new()
-                                .static_dir(
-                                    std::env::current_exe()
-                                        .unwrap()
-                                        .parent()
-                                        .unwrap()
-                                        .join("public"),
-                                )
+                                .pre_render(true)
                                 .clear_cache(false),
                         )
                         .enable_out_of_order_streaming(),
@@ -260,11 +254,11 @@ pub async fn blob(notebook: SmolStr, cid: SmolStr) -> Result<axum::response::Res
     }
 }
 
-#[server(endpoint = "static_routes", output = server_fn::codec::Json)]
-async fn static_routes() -> Result<Vec<String>, ServerFnError> {
-    // The `Routable` trait has a `static_routes` method that returns all static routes in the enum
-    Ok(Route::static_routes()
-        .iter()
-        .map(ToString::to_string)
-        .collect())
-}
+// #[server(endpoint = "static_routes", output = server_fn::codec::Json)]
+// async fn static_routes() -> Result<Vec<String>, ServerFnError> {
+//     // The `Routable` trait has a `static_routes` method that returns all static routes in the enum
+//     Ok(Route::static_routes()
+//         .iter()
+//         .map(ToString::to_string)
+//         .collect())
+// }

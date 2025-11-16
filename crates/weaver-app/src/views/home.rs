@@ -1,4 +1,4 @@
-use crate::{Route, components::identity::NotebookCard, fetch};
+use crate::{Route, components::identity::NotebookCard, data};
 use dioxus::prelude::*;
 use jacquard::types::aturi::AtUri;
 
@@ -7,13 +7,8 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 /// The Home page component that will be rendered when the current route is `[Route::Home]`
 #[component]
 pub fn Home() -> Element {
-    let fetcher = use_context::<fetch::CachedFetcher>();
-
-    // Fetch notebooks from UFOS
-    let notebooks = use_resource(move || {
-        let fetcher = fetcher.clone();
-        async move { fetcher.fetch_notebooks_from_ufos().await }
-    });
+    // Fetch notebooks from UFOS with SSR support
+    let notebooks = data::use_notebooks_from_ufos().ok();
     let navigator = use_navigator();
     let mut uri_input = use_signal(|| String::new());
 
@@ -49,30 +44,31 @@ pub fn Home() -> Element {
                 }
             }
             div { class: "notebooks-list",
-                match notebooks() {
-                    Some(Ok(notebook_list)) => rsx! {
-                        for notebook in notebook_list.iter() {
-                            {
-                                let view = &notebook.0;
-                                let entries = &notebook.1;
-                                rsx! {
-                                    div {
-                                        key: "{view.cid}",
-                                        NotebookCard {
-                                            notebook: view.clone(),
-                                            entry_refs: entries.clone()
+                if let Some(notebooks_memo) = &notebooks {
+                    match &*notebooks_memo.read_unchecked() {
+                        Some(notebook_list) => rsx! {
+                            for notebook in notebook_list.iter() {
+                                {
+                                    let view = &notebook.0;
+                                    let entries = &notebook.1;
+                                    rsx! {
+                                        div {
+                                            key: "{view.cid}",
+                                            NotebookCard {
+                                                notebook: view.clone(),
+                                                entry_refs: entries.clone()
+                                            }
                                         }
                                     }
                                 }
                             }
+                        },
+                        None => rsx! {
+                            div { "Loading notebooks..." }
                         }
-                    },
-                    Some(Err(_)) => rsx! {
-                        div { "Error loading notebooks" }
-                    },
-                    None => rsx! {
-                        div { "Loading notebooks..." }
                     }
+                } else {
+                    div { "Loading notebooks..." }
                 }
             }
         }

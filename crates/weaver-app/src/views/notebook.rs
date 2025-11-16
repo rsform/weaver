@@ -1,7 +1,7 @@
 use crate::{
     Route,
     components::{EntryCard, NotebookCover, NotebookCss},
-    fetch,
+    data,
 };
 use dioxus::prelude::*;
 use jacquard::{
@@ -28,66 +28,48 @@ pub fn NotebookIndex(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
 ) -> Element {
-    let fetcher = use_context::<fetch::CachedFetcher>();
-    // Fetch full notebook to get author count
-    let data_fetcher = fetcher.clone();
-    let notebook_data = use_resource(move || {
-        let fetcher = data_fetcher.clone();
-        async move {
-            fetcher
-                .get_notebook(ident(), book_title())
-                .await
-                .ok()
-                .flatten()
-        }
-    });
+    // Fetch full notebook metadata with SSR support
+    let notebook_data = data::use_notebook(ident(), book_title()).ok();
 
-    // Also fetch entries
-    let entry_fetcher = fetcher.clone();
-    let entries_resource = use_resource(move || {
-        let fetcher = entry_fetcher.clone();
-        async move {
-            fetcher
-                .list_notebook_entries(ident(), book_title())
-                .await
-                .ok()
-                .flatten()
-        }
-    });
+    // Fetch entries with SSR support
+    let entries_resource = data::use_notebook_entries(ident(), book_title()).ok();
 
     rsx! {
         document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
 
-        match (&*notebook_data.read_unchecked(), &*entries_resource.read_unchecked()) {
-            (Some(Some(data)), Some(Some(entries))) => {
-                let (notebook_view, _) = data.as_ref();
-                let author_count = notebook_view.authors.len();
+        if let (Some(notebook_memo), Some(entries_memo)) = (&notebook_data, &entries_resource) {
+            match (&*notebook_memo.read_unchecked(), &*entries_memo.read_unchecked()) {
+                (Some(data), Some(entries)) => {
+                    let (notebook_view, _) = data;
+                    let author_count = notebook_view.authors.len();
 
-                rsx! {
-                    div { class: "notebook-layout",
-                        aside { class: "notebook-sidebar",
-                            NotebookCover {
-                                notebook: notebook_view.clone(),
-                                title: book_title().to_string()
+                    rsx! {
+                        div { class: "notebook-layout",
+                            aside { class: "notebook-sidebar",
+                                NotebookCover {
+                                    notebook: notebook_view.clone(),
+                                    title: book_title().to_string()
+                                }
                             }
-                        }
 
-                        main { class: "notebook-main",
-                            div { class: "entries-list",
-                                for entry in entries {
-                                    EntryCard {
-                                        entry: entry.clone(),
-                                        book_title: book_title(),
-                                        author_count
+                            main { class: "notebook-main",
+                                div { class: "entries-list",
+                                    for entry in entries {
+                                        EntryCard {
+                                            entry: entry.clone(),
+                                            book_title: book_title(),
+                                            author_count
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            },
-            (Some(None), _) | (_, Some(None)) => rsx! { div { class: "error", "Notebook or entries not found" } },
-            _ => rsx! { div { class: "loading", "Loading..." } }
+                },
+                _ => rsx! { div { class: "loading", "Loading..." } }
+            }
+        } else {
+            div { class: "loading", "Loading..." }
         }
     }
 }

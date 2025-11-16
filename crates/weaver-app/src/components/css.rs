@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use crate::fetch;
 #[allow(unused_imports)]
-use dioxus::{prelude::*, CapturedError};
+use dioxus::{CapturedError, prelude::*};
 
 #[cfg(feature = "fullstack-server")]
 use dioxus::fullstack::response::Response;
@@ -20,7 +20,7 @@ pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
     use dioxus::fullstack::get_server_url;
     rsx! {
         document::Stylesheet {
-            href: "{get_server_url()}/{ident}/{notebook}/css"
+            href: "{get_server_url()}/css/{ident}/{notebook}"
         }
     }
 }
@@ -30,7 +30,7 @@ pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
 pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
     use jacquard::client::AgentSessionExt;
     use jacquard::types::ident::AtIdentifier;
-    use jacquard::{from_data, CowStr};
+    use jacquard::{CowStr, from_data};
     use weaver_api::sh_weaver::notebook::book::Book;
     use weaver_renderer::css::{generate_base_css, generate_syntax_css};
     use weaver_renderer::theme::{default_resolved_theme, resolve_theme};
@@ -87,12 +87,12 @@ pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
 }
 
 #[cfg(feature = "fullstack-server")]
-#[get("/{ident}/{notebook}/css", fetcher: Extension<Arc<fetch::CachedFetcher>>)]
+#[get("/css/{ident}/{notebook}", fetcher: Extension<Arc<fetch::CachedFetcher>>)]
 pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<Response> {
     use dioxus::fullstack::http::header::CONTENT_TYPE;
     use jacquard::client::AgentSessionExt;
     use jacquard::types::ident::AtIdentifier;
-    use jacquard::{from_data, CowStr};
+    use jacquard::{CowStr, from_data};
 
     use weaver_api::sh_weaver::notebook::book::Book;
     use weaver_renderer::css::{generate_base_css, generate_syntax_css};

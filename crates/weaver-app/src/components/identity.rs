@@ -1,4 +1,4 @@
-use crate::{Route, fetch};
+use crate::{Route, data, fetch};
 use dioxus::prelude::*;
 use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
@@ -20,13 +20,8 @@ pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     use crate::components::ProfileDisplay;
 
-    let fetcher = use_context::<fetch::CachedFetcher>();
-
-    // Fetch notebooks for this specific DID
-    let notebooks = use_resource(move || {
-        let fetcher = fetcher.clone();
-        async move { fetcher.fetch_notebooks_for_did(&ident()).await }
-    });
+    // Fetch notebooks for this specific DID with SSR support
+    let notebooks = data::use_notebooks_for_did(ident()).ok();
 
     rsx! {
         document::Stylesheet { href: NOTEBOOK_CARD_CSS }
@@ -40,30 +35,31 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
             // Main content area
             main { class: "repository-main",
                 div { class: "notebooks-list",
-                    match notebooks() {
-                        Some(Ok(notebook_list)) => rsx! {
-                            for notebook in notebook_list.iter() {
-                                {
-                                    let view = &notebook.0;
-                                    let entries = &notebook.1;
-                                    rsx! {
-                                        div {
-                                            key: "{view.cid}",
-                                            NotebookCard {
-                                                notebook: view.clone(),
-                                                entry_refs: entries.clone()
+                    if let Some(notebooks_memo) = &notebooks {
+                        match &*notebooks_memo.read_unchecked() {
+                            Some(notebook_list) => rsx! {
+                                for notebook in notebook_list.iter() {
+                                    {
+                                        let view = &notebook.0;
+                                        let entries = &notebook.1;
+                                        rsx! {
+                                            div {
+                                                key: "{view.cid}",
+                                                NotebookCard {
+                                                    notebook: view.clone(),
+                                                    entry_refs: entries.clone()
+                                                }
                                             }
                                         }
                                     }
                                 }
+                            },
+                            None => rsx! {
+                                div { "Loading notebooks..." }
                             }
-                        },
-                        Some(Err(_)) => rsx! {
-                            div { "Error loading notebooks" }
-                        },
-                        None => rsx! {
-                            div { "Loading notebooks..." }
                         }
+                    } else {
+                        div { "Loading notebooks..." }
                     }
                 }
             }
