@@ -129,19 +129,38 @@ fn main() {
             let blob_cache = Arc::new(BlobCache::new(Arc::new(
                 UnauthenticatedSession::new_public(),
             )));
-            dioxus::server::router(App).layer(middleware::from_fn({
-                let blob_cache = blob_cache.clone();
-                let fetcher = fetcher.clone();
-                move |mut req: Request, next: Next| {
+            axum::Router::new()
+                // Server side render the application, serve static assets, and register server functions
+                .serve_dioxus_application(
+                    ServeConfig::builder()
+                        // Enable incremental rendering
+                        .incremental(
+                            dioxus::server::IncrementalRendererConfig::new()
+                                .static_dir(
+                                    std::env::current_exe()
+                                        .unwrap()
+                                        .parent()
+                                        .unwrap()
+                                        .join("public"),
+                                )
+                                .clear_cache(false),
+                        )
+                        .enable_out_of_order_streaming(),
+                    App,
+                )
+                .layer(middleware::from_fn({
                     let blob_cache = blob_cache.clone();
                     let fetcher = fetcher.clone();
-                    async move {
-                        req.extensions_mut().insert(blob_cache);
-                        req.extensions_mut().insert(fetcher);
-                        Ok::<_, Infallible>(next.run(req).await)
+                    move |mut req: Request, next: Next| {
+                        let blob_cache = blob_cache.clone();
+                        let fetcher = fetcher.clone();
+                        async move {
+                            req.extensions_mut().insert(blob_cache);
+                            req.extensions_mut().insert(fetcher);
+                            Ok::<_, Infallible>(next.run(req).await)
+                        }
                     }
-                }
-            }))
+                }))
         };
         Ok(router)
     });
@@ -239,4 +258,13 @@ pub async fn blob(notebook: SmolStr, cid: SmolStr) -> Result<axum::response::Res
     } else {
         Err(CapturedError::from_display("no blob"))
     }
+}
+
+#[server(endpoint = "static_routes", output = server_fn::codec::Json)]
+async fn static_routes() -> Result<Vec<String>, ServerFnError> {
+    // The `Routable` trait has a `static_routes` method that returns all static routes in the enum
+    Ok(Route::static_routes()
+        .iter()
+        .map(ToString::to_string)
+        .collect())
 }

@@ -84,7 +84,7 @@ impl HttpClient for Client {
 
 impl XrpcClient for Client {
     #[doc = " Get the base URI for the client."]
-    fn base_uri(&self) -> impl Future<Output = jacquard::url::Url> + Send {
+    fn base_uri(&self) -> impl Future<Output = CowStr<'static>> + Send {
         async {
             let guard = self.session.read().await;
             if let Some(session) = guard.clone() {
@@ -294,7 +294,7 @@ impl AgentSession for Client {
     }
 
     #[doc = " Current base endpoint."]
-    async fn endpoint(&self) -> jacquard::url::Url {
+    async fn endpoint(&self) -> CowStr<'static> {
         let guard = self.session.read().await;
         if let Some(session) = guard.clone() {
             session.endpoint().await
@@ -647,7 +647,7 @@ impl HttpClient for CachedFetcher {
 
 impl XrpcClient for CachedFetcher {
     #[doc = " Get the base URI for the client."]
-    fn base_uri(&self) -> impl Future<Output = jacquard::url::Url> + Send {
+    fn base_uri(&self) -> impl Future<Output = CowStr<'static>> + Send {
         self.client.base_uri()
     }
 
@@ -795,7 +795,7 @@ impl AgentSession for CachedFetcher {
         self.client.session_info().await
     }
 
-    async fn endpoint(&self) -> jacquard::url::Url {
+    async fn endpoint(&self) -> CowStr<'static> {
         self.client.endpoint().await
     }
 

@@ -11,7 +11,7 @@ use dioxus::prelude::*;
 use jacquard::oauth::types::OAuthClientMetadata;
 
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
-#[get("/client-metadata.json")]
+#[get("/oauth-client-metadata.json")]
 pub async fn client_metadata() -> Result<axum::Json<serde_json::Value>> {
     use jacquard::oauth::atproto::atproto_client_metadata;
 

@@ -130,7 +130,7 @@ impl OAuthConfig {
             )
         } else {
             let host = env::WEAVER_APP_HOST;
-            let client_id = format!("{host}/client-metadata.json");
+            let client_id = format!("{host}/oauth-client-metadata.json");
             let redirect_uri = format!("{host}/callback");
             let logo_uri = if env::WEAVER_LOGO_URI.is_empty() {
                 None
