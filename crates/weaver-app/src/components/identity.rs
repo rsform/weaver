@@ -8,9 +8,10 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 
 #[component]
 pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
-    // Fetch notebooks for this specific DID with SSR support
-    let notebooks = data::use_notebooks_for_did(ident)?;
-    use_context_provider(|| notebooks);
+    tracing::debug!("Repository component rendering for ident: {:?}", ident());
+    // Fetch notebooks for this specific DID with SSR support;
+    tracing::debug!("Repository component context set up");
+
     rsx! {
         div {
             Outlet::<Route> {}
@@ -18,52 +19,50 @@ pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     }
 }
 
-pub fn use_repo_notebook_context()
--> Option<Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>> {
-    try_use_context::<Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>>()
-}
-
 #[component]
 pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
+    tracing::debug!(
+        "RepositoryIndex component rendering for ident: {:?}",
+        ident()
+    );
     use crate::components::ProfileDisplay;
-    let notebooks = use_repo_notebook_context();
-    let profile = crate::data::use_profile_data(ident)?;
+    let notebooks = data::use_notebooks_for_did(ident);
+    let profile = crate::data::use_profile_data(ident);
+    tracing::debug!("RepositoryIndex got profile and notebooks");
     rsx! {
         document::Stylesheet { href: NOTEBOOK_CARD_CSS }
 
         div { class: "repository-layout",
             // Profile sidebar (desktop) / header (mobile)
             aside { class: "repository-sidebar",
-                ProfileDisplay { profile }
+                ProfileDisplay { profile, notebooks }
             }
 
             // Main content area
             main { class: "repository-main",
                 div { class: "notebooks-list",
-                   if let Some(notebooks) = notebooks {
-                       match &*notebooks.read() {
-                           Some(notebook_list) => rsx! {
-                               for notebook in notebook_list.iter() {
-                                   {
-                                       let view = &notebook.0;
-                                       let entries = &notebook.1;
-                                       rsx! {
-                                           div {
-                                               key: "{view.cid}",
-                                               NotebookCard {
-                                                   notebook: view.clone(),
-                                                   entry_refs: entries.clone()
-                                               }
-                                           }
-                                       }
-                                   }
-                               }
-                           },
-                           None => rsx! {
-                               div { "Loading notebooks..." }
-                           }
-                       }
-                   }
+                    match &*notebooks.read() {
+                        Some(notebook_list) => rsx! {
+                            for notebook in notebook_list.iter() {
+                                {
+                                    let view = &notebook.0;
+                                    let entries = &notebook.1;
+                                    rsx! {
+                                        div {
+                                            key: "{view.cid}",
+                                            NotebookCard {
+                                                notebook: view.clone(),
+                                                entry_refs: entries.clone()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        None => rsx! {
+                            div { "Loading notebooks..." }
+                        }
+                    }
                 }
             }
         }

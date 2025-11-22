@@ -203,7 +203,6 @@ impl<'a, R: EmbedResolver> ClientContext<'a, R> {
         if let Some(embeds) = &entry.embeds {
             if let Some(images) = &embeds.images {
                 for img in &images.images {
-                    tracing::info!("Image: {:?}", img);
                     if let Some(name) = &img.name {
                         let blob_name = BlobName::from_filename(name.as_ref());
                         map.insert(blob_name, img.image.blob().cid().clone().into_static());

@@ -12,9 +12,10 @@ pub async fn register_service_worker() -> Result<(), JsValue> {
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let navigator = window.navigator();
     let sw_container = navigator.service_worker();
-
+    tracing::debug!("Registering service worker");
     let promise = sw_container.register("/sw.js");
     JsFuture::from(promise).await?;
+    tracing::debug!("Service worker registered");
 
     Ok(())
 }
@@ -30,6 +31,7 @@ pub async fn register_entry_blobs(
     use jacquard::prelude::IdentityResolver;
     use std::collections::HashMap;
 
+    tracing::debug!("registering blobs for {}", book_title);
     let mut blob_mappings = HashMap::new();
 
     // Resolve DID and PDS URL
@@ -61,12 +63,13 @@ pub async fn register_entry_blobs(
                 blob_mappings.insert(name.as_ref().to_string(), blob_url);
             }
         }
-
-        // Send mappings to service worker
-        if !blob_mappings.is_empty() {
-            send_blob_mappings(book_title, blob_mappings)?;
-        }
     }
+
+    // Send mappings to service worker
+    if !blob_mappings.is_empty() {
+        send_blob_mappings(book_title, blob_mappings)?;
+    }
+    //}
 
     Ok(())
 }
@@ -80,6 +83,7 @@ fn send_blob_mappings(
     let navigator = window.navigator();
     let sw_container = navigator.service_worker();
 
+    tracing::debug!("sending blob mappings for {}", notebook);
     let controller = sw_container
         .controller()
         .ok_or_else(|| JsValue::from_str("no service worker controller"))?;
@@ -97,6 +101,7 @@ fn send_blob_mappings(
     js_sys::Reflect::set(&msg, &"blobs".into(), &blobs_obj)?;
 
     controller.post_message(&msg)?;
+    tracing::debug!("sent blob mappings for {}", notebook);
 
     Ok(())
 }
@@ -117,4 +122,10 @@ pub fn send_blob_mappings(
 }
 
 // #[used]
-// static BINDINGS_JS: Asset = asset!("/assets/sw.js", AssetOptions::js().with_hash_suffix(false));
+// static BINDINGS_JS: Asset = asset!(
+//     "/sw.js",
+//     AssetOptions::js()
+//         .with_hash_suffix(false)
+//         .with_minify(false)
+//         .with_preload(true)
+// );

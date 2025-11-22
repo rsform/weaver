@@ -4,7 +4,7 @@
 use crate::blobcache::BlobCache;
 use crate::{
     components::avatar::{Avatar, AvatarImage},
-    data::{NotebookHandle, use_handle},
+    data::use_handle,
 };
 
 use crate::Route;
@@ -30,6 +30,12 @@ pub fn EntryPage(
     book_title: ReadSignal<SmolStr>,
     title: ReadSignal<SmolStr>,
 ) -> Element {
+    tracing::debug!(
+        "EntryPage component rendering for ident: {:?}, book: {}, title: {}",
+        ident(),
+        book_title(),
+        title()
+    );
     rsx! {
         {std::iter::once(rsx! {Entry {ident, book_title, title}})}
     }
@@ -41,62 +47,64 @@ pub fn Entry(
     book_title: ReadSignal<SmolStr>,
     title: ReadSignal<SmolStr>,
 ) -> Element {
+    tracing::debug!(
+        "Entry component rendering for ident: {:?}, book: {}, title: {}",
+        ident(),
+        book_title(),
+        title()
+    );
     // Use feature-gated hook for SSR support
     let entry = crate::data::use_entry_data(ident, book_title, title);
-    let handle = use_context::<NotebookHandle>();
     let fetcher = use_context::<crate::fetch::Fetcher>();
+    tracing::debug!("Entry component got entry data");
 
     // Handle blob caching when entry data is available
-    if let Ok(entry) = entry {
-        match &*entry.read() {
-            Some((book_entry_view, entry_record)) => {
-                if let Some(embeds) = &entry_record.embeds {
-                    if let Some(images) = &embeds.images {
-                        // Register blob mappings with service worker (client-side only)
-                        #[cfg(all(
-                            target_family = "wasm",
-                            target_os = "unknown",
-                            not(feature = "fullstack-server")
-                        ))]
-                        {
-                            let fetcher = fetcher.clone();
-                            let images = images.clone();
-                            spawn(async move {
-                                let _ = crate::service_worker::register_entry_blobs(
-                                    &ident(),
-                                    book_title().as_str(),
-                                    &images,
-                                    &fetcher,
-                                )
-                                .await;
-                            });
-                        }
+    match &*entry.read() {
+        Some((book_entry_view, entry_record)) => {
+            if let Some(embeds) = &entry_record.embeds {
+                if let Some(images) = &embeds.images {
+                    // Register blob mappings with service worker (client-side only)
+                    #[cfg(all(
+                        target_family = "wasm",
+                        target_os = "unknown",
+                        not(feature = "fullstack-server")
+                    ))]
+                    {
+                        let fetcher = fetcher.clone();
+                        let images = images.clone();
+                        spawn(async move {
+                            let _ = crate::service_worker::register_entry_blobs(
+                                &ident(),
+                                book_title().as_str(),
+                                &images,
+                                &fetcher,
+                            )
+                            .await;
+                        });
                     }
                 }
-                rsx! { EntryPageView {
-                    book_entry_view: book_entry_view.clone(),
-                    entry_record: entry_record.clone(),
-                    ident: handle.as_ref().unwrap().clone(),
-                    book_title: book_title()
-                } }
             }
-            _ => rsx! { p { "Loading..." } },
+            rsx! { EntryPageView {
+                book_entry_view: book_entry_view.clone(),
+                entry_record: entry_record.clone(),
+                ident: ident(),
+                book_title: book_title()
+            } }
         }
-    } else {
-        rsx! { p { "Loading..." } }
+        _ => rsx! { p { "Loading..." } },
     }
 }
 
 /// Full entry page with metadata, content, and navigation
 #[component]
 fn EntryPageView(
-    book_entry_view: BookEntryView<'static>,
-    entry_record: entry::Entry<'static>,
-    ident: AtIdentifier<'static>,
-    book_title: SmolStr,
+    book_entry_view: ReadSignal<BookEntryView<'static>>,
+    entry_record: ReadSignal<entry::Entry<'static>>,
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
 ) -> Element {
     // Extract metadata
-    let entry_view = &book_entry_view.entry;
+    let entry_view = &book_entry_view().entry;
     let title = entry_view
         .title
         .as_ref()
@@ -110,13 +118,13 @@ fn EntryPageView(
 
         div { class: "entry-page-layout",
             // Left gutter with prev button
-            if let Some(ref prev) = book_entry_view.prev {
+            if let Some(ref prev) = book_entry_view().prev {
                 div { class: "nav-gutter nav-prev",
                     NavButton {
                         direction: "prev",
                         entry: prev.entry.clone(),
-                        ident: ident.clone(),
-                        book_title: book_title.clone()
+                        ident: ident(),
+                        book_title: book_title()
                     }
                 }
             }
@@ -126,25 +134,24 @@ fn EntryPageView(
                 // Metadata header
                 EntryMetadata {
                     entry_view: entry_view.clone(),
-                    ident: ident.clone(),
-                    created_at: entry_record.created_at.clone()
+                    created_at: entry_record().created_at.clone()
                 }
 
                 // Rendered markdown
-                EntryMarkdownDirect {
+                EntryMarkdown {
                     content: entry_record,
-                    ident: ident.clone()
+                    ident
                 }
             }
 
             // Right gutter with next button
-            if let Some(ref next) = book_entry_view.next {
+            if let Some(ref next) = book_entry_view().next {
                 div { class: "nav-gutter nav-next",
                     NavButton {
                         direction: "next",
                         entry: next.entry.clone(),
-                        ident: ident.clone(),
-                        book_title: book_title.clone()
+                        ident: ident(),
+                        book_title: book_title()
                     }
                 }
             }
@@ -157,6 +164,7 @@ pub fn EntryCard(
     entry: BookEntryView<'static>,
     book_title: SmolStr,
     author_count: usize,
+    ident: AtIdentifier<'static>,
 ) -> Element {
     use crate::Route;
     use jacquard::from_data;
@@ -168,8 +176,6 @@ pub fn EntryCard(
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
-
-    let ident = use_context::<NotebookHandle>();
     // Format date
     let formatted_date = entry_view
         .indexed_at
@@ -197,7 +203,7 @@ pub fn EntryCard(
         div { class: "entry-card",
             Link {
                 to: Route::EntryPage {
-                    ident: ident.as_ref().unwrap().clone(),
+                    ident: ident,
                     book_title: book_title.clone(),
                     title: title.to_string().into()
                 },
@@ -221,6 +227,7 @@ pub fn EntryCard(
                                 match &author.record.inner {
                                     ProfileDataViewInner::ProfileView(profile) => {
                                         let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
+                                         let handle = profile.handle.clone();
                                         rsx! {
                                             if let Some(ref avatar_url) = profile.avatar {
                                                 Avatar {
@@ -228,11 +235,12 @@ pub fn EntryCard(
                                                 }
                                             }
                                             span { class: "author-name", "{display_name}" }
-                                            span { class: "meta-label", "@{ident.as_ref().unwrap()}" }
+                                            span { class: "meta-label", "@{handle}" }
                                         }
                                     }
                                     ProfileDataViewInner::ProfileViewDetailed(profile) => {
                                         let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
+                                         let handle = profile.handle.clone();
                                         rsx! {
                                             if let Some(ref avatar_url) = profile.avatar {
                                                 Avatar {
@@ -240,7 +248,7 @@ pub fn EntryCard(
                                                 }
                                             }
                                             span { class: "author-name", "{display_name}" }
-                                            span { class: "meta-label", "@{ident.as_ref().unwrap()}" }
+                                            span { class: "meta-label", "@{handle}" }
                                         }
                                     }
                                     ProfileDataViewInner::TangledProfileView(profile) => {
@@ -282,11 +290,7 @@ pub fn EntryCard(
 
 /// Metadata header showing title, authors, date, tags
 #[component]
-fn EntryMetadata(
-    entry_view: EntryView<'static>,
-    ident: AtIdentifier<'static>,
-    created_at: Datetime,
-) -> Element {
+fn EntryMetadata(entry_view: EntryView<'static>, created_at: Datetime) -> Element {
     let title = entry_view
         .title
         .as_ref()
@@ -311,9 +315,11 @@ fn EntryMetadata(
                                 match &author.record.inner {
                                     ProfileDataViewInner::ProfileView(profile) => {
                                         let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
+                                        let handle = profile.handle.clone();
+
                                         rsx! {
                                             Link {
-                                                to: Route::RepositoryIndex { ident: ident.clone() },
+                                                to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
                                                 div { class: "entry-authors",
                                                     if let Some(ref avatar_url) = profile.avatar {
                                                         Avatar {
@@ -323,16 +329,17 @@ fn EntryMetadata(
                                                         }
                                                     }
                                                     span { class: "author-name", "{display_name}" }
-                                                    span { class: "meta-label", "@{ident}" }
+                                                    span { class: "meta-label", "@{handle}" }
                                                 }
                                             }
                                         }
                                     }
                                     ProfileDataViewInner::ProfileViewDetailed(profile) => {
                                         let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
+                                        let handle = profile.handle.clone();
                                         rsx! {
                                             Link {
-                                                to: Route::RepositoryIndex { ident: ident.clone() },
+                                                to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
                                                 div { class: "entry-authors",
                                                     if let Some(ref avatar_url) = profile.avatar {
                                                         Avatar {
@@ -342,7 +349,7 @@ fn EntryMetadata(
                                                         }
                                                     }
                                                     span { class: "author-name", "{display_name}" }
-                                                    span { class: "meta-label", "@{ident}" }
+                                                    span { class: "meta-label", "@{handle}" }
                                                 }
                                             }
                                         }
@@ -423,22 +430,18 @@ fn NavButton(
 pub struct EntryMarkdownProps {
     #[props(default)]
     id: Signal<String>,
-    #[props(default)]
+    #[props(default = use_signal(||"entry".to_string()))]
     class: Signal<String>,
     content: ReadSignal<entry::Entry<'static>>,
     ident: ReadSignal<AtIdentifier<'static>>,
 }
 
 /// Render some text as markdown.
-#[allow(unused)]
 pub fn EntryMarkdown(props: EntryMarkdownProps) -> Element {
-    let processed = crate::data::use_rendered_markdown(
-        props.content,
-        props.ident,
-    )?;
+    let processed = crate::data::use_rendered_markdown(props.content, props.ident);
 
     match &*processed.read() {
-        Some(Some(html_buf)) => rsx! {
+        Some(html_buf) => rsx! {
             div {
                 id: "{&*props.id.read()}",
                 class: "{&*props.class.read()}",
@@ -466,10 +469,10 @@ fn EntryMarkdownDirect(
     // Use feature-gated hook for SSR support
     let content = use_signal(|| content);
     let ident = use_signal(|| ident);
-    let processed = crate::data::use_rendered_markdown(content.into(), ident.into())?;
+    let processed = crate::data::use_rendered_markdown(content.into(), ident.into());
 
     match &*processed.read() {
-        Some(Some(html_buf)) => rsx! {
+        Some(html_buf) => rsx! {
             div {
                 id: "{id}",
                 class: "{class}",

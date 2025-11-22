@@ -17,6 +17,11 @@ const ENTRY_CARD_CSS: Asset = asset!("/assets/styling/entry-card.css");
 /// re-run and the rendered HTML will be updated.
 #[component]
 pub fn Notebook(ident: ReadSignal<AtIdentifier<'static>>, book_title: SmolStr) -> Element {
+    tracing::debug!(
+        "Notebook component rendering for ident: {:?}, book: {}",
+        ident(),
+        book_title
+    );
     rsx! {
         NotebookCss { ident: ident.to_smolstr(), notebook: book_title }
         Outlet::<Route> {}
@@ -28,14 +33,16 @@ pub fn NotebookIndex(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
 ) -> Element {
+    tracing::debug!(
+        "NotebookIndex component rendering for ident: {:?}, book: {}",
+        ident(),
+        book_title()
+    );
     // Fetch full notebook metadata with SSR support
     // IMPORTANT: Call ALL hooks before any ? early returns to maintain hook order
     let notebook_data = data::use_notebook(ident, book_title);
     let entries_resource = data::use_notebook_entries(ident, book_title);
-
-    // Now check for errors
-    let notebook_data = notebook_data?;
-    let entries_resource = entries_resource?;
+    tracing::debug!("NotebookIndex got notebook data and entries");
 
     rsx! {
         document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
@@ -60,7 +67,8 @@ pub fn NotebookIndex(
                                     EntryCard {
                                         entry: entry.clone(),
                                         book_title: book_title(),
-                                        author_count
+                                        author_count,
+                                        ident: ident(),
                                     }
                                 }
                             }

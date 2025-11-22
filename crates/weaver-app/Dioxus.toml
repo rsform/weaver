@@ -5,6 +5,9 @@
 # HTML title tag content
 title = "Weaver"
 
+out_dir = "dist"
+asset_dir = "public"
+
 # include `assets` in web platform
 [web.resource]
 

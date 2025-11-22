@@ -6,7 +6,6 @@ mod state;
 pub use state::AuthState;
 
 use crate::fetch::Fetcher;
-#[cfg(all(feature = "fullstack-server", feature = "server"))]
 use dioxus::prelude::*;
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 use jacquard::oauth::types::OAuthClientMetadata;
@@ -26,12 +25,18 @@ pub async fn client_metadata() -> Result<axum::Json<serde_json::Value>> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn restore_session(_fetcher: Fetcher) -> Result<(), String> {
+pub async fn restore_session(
+    _fetcher: Fetcher,
+    _auth_state: Signal<AuthState>,
+) -> Result<(), String> {
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn restore_session(fetcher: Fetcher) -> Result<(), CapturedError> {
+pub async fn restore_session(
+    fetcher: Fetcher,
+    mut auth_state: Signal<AuthState>,
+) -> Result<(), CapturedError> {
     use dioxus::prelude::*;
     use gloo_storage::{LocalStorage, Storage};
     use jacquard::types::string::Did;
@@ -70,8 +75,6 @@ pub async fn restore_session(fetcher: Fetcher) -> Result<(), CapturedError> {
     let (restored_did, session_id) = session.session_info().await;
 
     // Update auth state
-    let mut auth_state = try_consume_context::<Signal<AuthState>>()
-        .ok_or(CapturedError::from_display("AuthState not in context"))?;
     auth_state
         .write()
         .set_authenticated(restored_did, session_id);

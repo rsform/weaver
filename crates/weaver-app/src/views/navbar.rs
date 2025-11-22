@@ -1,12 +1,11 @@
 use crate::Route;
+use crate::auth::AuthState;
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::login::LoginModal;
-use crate::data::{use_get_handle, use_notebook_handle};
+use crate::data::{use_get_handle, use_load_handle};
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
-use jacquard::types::did::Did;
 
-const THEME_DEFAULTS_CSS: Asset = asset!("/assets/styling/theme-defaults.css");
 const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
 
 /// The Navbar component that will be rendered on all pages of our app since every page is under the layout.
@@ -16,20 +15,25 @@ const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
 /// routes will be rendered under the outlet inside this component
 #[component]
 pub fn Navbar() -> Element {
+    tracing::debug!("Navbar component rendering");
     let route = use_route::<Route>();
+    tracing::debug!("Route: {:?}", route);
 
-    let route_handle = use_signal(|| match &route {
+    let mut auth_state = use_context::<Signal<crate::auth::AuthState>>();
+    let route_handle = use_load_handle(match &route {
         Route::EntryPage { ident, .. } => Some(ident.clone()),
         Route::RepositoryIndex { ident } => Some(ident.clone()),
         Route::NotebookIndex { ident, .. } => Some(ident.clone()),
         _ => None,
     });
-    let notebook_handle = use_notebook_handle(route_handle);
+    let fetcher = use_context::<Fetcher>();
+    let mut show_login_modal = use_signal(|| false);
+
+    tracing::debug!("Navbar got route_handle: {:?}", route_handle);
 
     rsx! {
-        document::Link { rel: "stylesheet", href: THEME_DEFAULTS_CSS }
         document::Link { rel: "stylesheet", href: NAVBAR_CSS }
-
+        document::Link { rel: "stylesheet", href: asset!("/assets/styling/button.css") }
         div {
             id: "navbar",
             nav { class: "breadcrumbs",
@@ -41,15 +45,17 @@ pub fn Navbar() -> Element {
 
                 // Show repository breadcrumb if we're on a repository page
                 match route {
-                    Route::RepositoryIndex { .. } => {
-                        let handle = notebook_handle.as_ref().unwrap();
+                    Route::RepositoryIndex { ident } => {
+                        let route_handle = route_handle.read().clone();
+                        let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
                             span { class: "breadcrumb-separator", " > " }
                             span { class: "breadcrumb breadcrumb-current", "@{handle}" }
                         }
                     },
                     Route::NotebookIndex { ident, book_title } => {
-                        let handle = notebook_handle.as_ref().unwrap();
+                        let route_handle = route_handle.read().clone();
+                        let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
                             span { class: "breadcrumb-separator", " > " }
                             Link {
@@ -62,7 +68,8 @@ pub fn Navbar() -> Element {
                         }
                     },
                     Route::EntryPage { ident, book_title, .. } => {
-                        let handle = notebook_handle.as_ref().unwrap();
+                        let route_handle = route_handle.read().clone();
+                        let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
                             span { class: "breadcrumb-separator", " > " }
                             Link {
@@ -81,50 +88,36 @@ pub fn Navbar() -> Element {
                     _ => rsx! {}
                 }
             }
-            LoginButton {}
+            if auth_state.read().is_authenticated() {
+                if let Some(did) = &auth_state.read().did {
+                    Button {
+                        variant: ButtonVariant::Ghost,
+                        onclick: move |_| {
+                            let fetcher = fetcher.clone();
+                            auth_state.write().clear();
+                            async move {
+                                fetcher.downgrade_to_unauthenticated().await;
+                            }
+                        },
+                        span { class: "auth-handle", "@{use_get_handle(did.clone())}" }
+                    }
+                }
+            } else {
+                div {
+                    class: "auth-button",
+                    Button {
+                        variant: ButtonVariant::Ghost,
+                        onclick: move |_| show_login_modal.set(true),
+                        span { class: "auth-handle", "Sign In" }
+                    }
 
+                }
+                LoginModal {
+                    open: show_login_modal
+                }
+            }
         }
 
         Outlet::<Route> {}
-    }
-}
-
-#[component]
-fn LoginButton() -> Element {
-    let fetcher = use_context::<Fetcher>();
-    let mut show_login_modal = use_signal(|| false);
-    let mut auth_state = use_context::<Signal<crate::auth::AuthState>>();
-    let did_signal = use_signal(|| auth_state.read().did.clone());
-    if let Some(did) = &*did_signal.read() {
-        rsx! {
-            Button {
-                variant: ButtonVariant::Ghost,
-                onclick: move |_| {
-                    let fetcher = fetcher.clone();
-                    auth_state.write().clear();
-                    async move {
-                        fetcher.downgrade_to_unauthenticated().await;
-                    }
-                },
-                span { class: "auth-handle", "@{use_get_handle(did.clone())}" }
-            }
-            LoginModal {
-                open: show_login_modal
-            }
-        }
-    } else {
-        rsx! {
-            div {
-                class: "auth-button",
-                Button {
-                    variant: ButtonVariant::Ghost,
-                    onclick: move |_| show_login_modal.set(true),
-                    span { class: "auth-handle", "Sign In" }
-                }
-            }
-            LoginModal {
-                open: show_login_modal
-            }
-        }
     }
 }

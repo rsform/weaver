@@ -5,7 +5,6 @@ use std::sync::Arc;
 use crate::components::{
     BskyIcon, TangledIcon,
     avatar::{Avatar, AvatarImage},
-    identity::use_repo_notebook_context,
 };
 use dioxus::prelude::*;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
@@ -15,8 +14,10 @@ use weaver_common::agent::NotebookView;
 const PROFILE_CSS: Asset = asset!("/assets/styling/profile.css");
 
 #[component]
-pub fn ProfileDisplay(profile: Memo<Option<ProfileDataView<'static>>>) -> Element {
-    let notebooks = use_repo_notebook_context();
+pub fn ProfileDisplay(
+    profile: Memo<Option<ProfileDataView<'static>>>,
+    notebooks: Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+) -> Element {
     match &*profile.read() {
         Some(profile_view) => {
             let profile_view = Arc::new(profile_view.clone());
@@ -57,7 +58,7 @@ pub fn ProfileDisplay(profile: Memo<Option<ProfileDataView<'static>>>) -> Elemen
                         div {
                             class: "profile-extras",
                             // Stats
-                            ProfileStats { notebooks: notebooks.unwrap() }
+                            ProfileStats { notebooks: notebooks }
 
                             // Links
                             ProfileLinks { profile_view }

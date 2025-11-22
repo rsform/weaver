@@ -1,9 +1,6 @@
 #![allow(non_snake_case)]
 
-use crate::{
-    components::avatar::{Avatar, AvatarImage},
-    data::NotebookHandle,
-};
+use crate::components::avatar::{Avatar, AvatarImage};
 use dioxus::prelude::*;
 use weaver_api::sh_weaver::notebook::NotebookView;
 

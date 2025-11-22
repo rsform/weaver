@@ -36,6 +36,7 @@
 
 .auth-button {
     align-self: flex-end;
+    background-color: var(--color-base);
 }
 
 .auth-handle {

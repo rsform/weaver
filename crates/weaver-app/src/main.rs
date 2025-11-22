@@ -112,11 +112,7 @@ fn main() {
         use std::sync::Arc;
 
         #[cfg(not(feature = "fullstack-server"))]
-        let router = {
-            axum::Router::new()
-                .route("/sw.js", get(serve_sw))
-                .merge(dioxus::server::router(App))
-        };
+        let router = { axum::Router::new().merge(dioxus::server::router(App)) };
 
         #[cfg(feature = "fullstack-server")]
         let router = {
@@ -160,33 +156,69 @@ fn main() {
     #[cfg(not(feature = "server"))]
     dioxus::launch(App);
 }
+const THEME_DEFAULTS_CSS: Asset = asset!("/assets/styling/theme-defaults.css");
 
 #[component]
 fn App() -> Element {
+    tracing::debug!("App component rendering");
+    #[allow(unused)]
     let fetcher = use_context_provider(|| {
         fetch::Fetcher::new(OAuthClient::new(
             AuthStore::new(),
             ClientData::new_public(CONFIG.oauth.clone()),
         ))
     });
-    use_context_provider(|| Signal::new(AuthState::default()));
-    use_effect(move || {
+    let auth_state = use_signal(|| AuthState::default());
+    #[allow(unused)]
+    let auth_state = use_context_provider(|| auth_state);
+    #[cfg(all(
+        target_family = "wasm",
+        target_os = "unknown",
+        feature = "fullstack-server"
+    ))]
+    {
         let fetcher = fetcher.clone();
-        spawn(async move {
-            if let Err(e) = auth::restore_session(fetcher).await {
-                tracing::debug!("Session restoration failed: {}", e);
+        use_future(move || {
+            let fetcher = fetcher.clone();
+            async move {
+                if let Err(e) = auth::restore_session(fetcher, auth_state).await {
+                    tracing::debug!("Session restoration failed: {}", e);
+                }
             }
         });
-    });
+    }
 
     #[cfg(all(
         target_family = "wasm",
         target_os = "unknown",
         not(feature = "fullstack-server")
     ))]
-    spawn(async move {
-        let _ = service_worker::register_service_worker().await;
-    });
+    {
+        let fetcher = fetcher.clone();
+        use_future(move || {
+            let fetcher = fetcher.clone();
+            async move {
+                if let Err(e) = auth::restore_session(fetcher, auth_state).await {
+                    tracing::debug!("Session restoration failed: {}", e);
+                }
+            }
+        });
+    }
+
+    #[cfg(all(
+        target_family = "wasm",
+        target_os = "unknown",
+        not(feature = "fullstack-server")
+    ))]
+    {
+        use_effect(move || {
+            let fetcher = fetcher.clone();
+            spawn(async move {
+                tracing::info!("Registering service worker");
+                let _ = service_worker::register_service_worker().await;
+            });
+        });
+    }
 
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
@@ -194,6 +226,8 @@ fn App() -> Element {
         document::Link { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=IBM+Plex+Serif:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;1,200;1,300;1,400;1,500;1,600;1,700&display=swap" }
         document::Link { rel: "preconnect", href: "https://fonts.googleapis.com" }
         document::Link { rel: "preconnect", href: "https://fonts.gstatic.com" }
+
+        document::Link { rel: "stylesheet", href: THEME_DEFAULTS_CSS }
         Router::<Route> {}
     }
 }
@@ -203,10 +237,10 @@ fn App() -> Element {
 fn ErrorLayout() -> Element {
     rsx! {
         ErrorBoundary {
-            handle_error: move |err: ErrorContext| {
+            handle_error: move |_err: ErrorContext| {
                 #[cfg(feature = "fullstack-server")]
                 {
-                    let http_error = FullstackContext::commit_error_status(err.error().unwrap());
+                    let http_error = FullstackContext::commit_error_status(_err.error().unwrap());
                     match http_error.status {
                         StatusCode::NOT_FOUND => rsx! { div { "404 - Page not found" } },
                         _ => rsx! { div { "An unknown error occurred" } },
