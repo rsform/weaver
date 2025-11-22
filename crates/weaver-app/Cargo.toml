@@ -5,7 +5,7 @@ authors = ["Orual <orual@nonbinary.computer>"]
 edition = "2024"
 
 [features]
-default = ["web", "fullstack-server", "no-app-index"]
+default = ["web", "no-app-index"]
 # Fullstack mode with SSR and server functions
 fullstack-server = ["dioxus/fullstack"]
 wasm-split = ["dioxus/wasm-split"]

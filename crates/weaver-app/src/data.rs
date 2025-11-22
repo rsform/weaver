@@ -21,7 +21,6 @@ use jacquard::{
     smol_str::SmolStr,
     types::{cid::Cid, string::AtIdentifier},
 };
-use std::cell::Ref;
 #[allow(unused_imports)]
 use std::sync::Arc;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
@@ -34,20 +33,17 @@ use weaver_api::sh_weaver::notebook::{BookEntryView, NotebookView, entry::Entry}
 /// Fetches entry data with SSR support in fullstack mode.
 #[cfg(feature = "fullstack-server")]
 pub fn use_entry_data(
-    ident: AtIdentifier<'static>,
-    book_title: SmolStr,
-    title: SmolStr,
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
+    title: ReadSignal<SmolStr>,
 ) -> Result<Memo<Option<(BookEntryView<'static>, Entry<'static>)>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
-    let ident = use_signal(|| ident);
-    let book_title = use_signal(|| book_title);
-    let entry_title = use_signal(|| title);
     let res = use_server_future(move || {
         let fetcher = fetcher.clone();
         async move {
             if let Some(entry) = fetcher
-                .get_entry(ident(), book_title(), entry_title())
+                .get_entry(ident(), book_title(), title())
                 .await
                 .ok()
                 .flatten()
@@ -55,14 +51,14 @@ pub fn use_entry_data(
                 let (_book_entry_view, entry_record) = (&entry.0, &entry.1);
                 if let Some(embeds) = &entry_record.embeds {
                     if let Some(images) = &embeds.images {
-                        let ident = ident.clone();
+                        let ident_val = ident();
                         let images = images.clone();
                         for image in &images.images {
                             use jacquard::smol_str::ToSmolStr;
 
                             let cid = image.image.blob().cid();
                             cache_blob(
-                                ident.to_smolstr(),
+                                ident_val.to_smolstr(),
                                 cid.to_smolstr(),
                                 image.name.as_ref().map(|n| n.to_smolstr()),
                             )
@@ -79,84 +75,76 @@ pub fn use_entry_data(
                 None
             }
         }
-    });
-    res.map(|r| {
-        use_memo(move || {
-            if let Some(Some((ev, e))) = &*r.read_unchecked() {
-                use jacquard::from_json_value;
+    })?; // Handle the Result first to avoid calling use_memo in a closure
+    Ok(use_memo(move || {
+        if let Some(Some((ev, e))) = &*res.read() {
+            use jacquard::from_json_value;
 
-                let book_entry = from_json_value::<BookEntryView>(ev.clone()).unwrap();
-                let entry = from_json_value::<Entry>(e.clone()).unwrap();
+            let book_entry = from_json_value::<BookEntryView>(ev.clone()).unwrap();
+            let entry = from_json_value::<Entry>(e.clone()).unwrap();
 
-                Some((book_entry, entry))
-            } else {
-                None
-            }
-        })
-    })
+            Some((book_entry, entry))
+        } else {
+            None
+        }
+    }))
 }
 /// Fetches entry data client-side only (no SSR).
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_entry_data(
-    ident: AtIdentifier<'static>,
-    book_title: SmolStr,
-    title: SmolStr,
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
+    title: ReadSignal<SmolStr>,
 ) -> Result<Memo<Option<(BookEntryView<'static>, Entry<'static>)>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
-    let ident = use_signal(|| ident);
-    let book_title = use_signal(|| book_title);
-    let entry_title = use_signal(|| title);
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
         async move {
             fetcher
-                .get_entry(ident(), book_title(), entry_title())
+                .get_entry(ident(), book_title(), title())
                 .await
                 .ok()
                 .flatten()
                 .map(|arc| {
                     (
-                        serde_json::to_value(entry.0.clone()).unwrap(),
-                        serde_json::to_value(entry.1.clone()).unwrap(),
+                        serde_json::to_value(arc.0.clone()).unwrap(),
+                        serde_json::to_value(arc.1.clone()).unwrap(),
                     )
                 })
         }
     });
-    res.map(|r| {
-        use_memo(move || {
-            if let Some(Some((ev, e))) = &*r.read_unchecked() {
-                use jacquard::from_json_value;
+    res.suspend()?;
+    Ok(use_memo(move || {
+        if let Some(Some((ev, e))) = &*res.read() {
+            use jacquard::from_json_value;
 
-                let book_entry = from_json_value::<BookEntryView>(ev.clone()).unwrap();
-                let entry = from_json_value::<Entry>(e.clone()).unwrap();
+            let book_entry = from_json_value::<BookEntryView>(ev.clone()).unwrap();
+            let entry = from_json_value::<Entry>(e.clone()).unwrap();
 
-                Some((book_entry, entry))
-            } else {
-                None
-            }
-        })
-    })
+            Some((book_entry, entry))
+        } else {
+            None
+        }
+    }))
 }
 
-pub fn get_handle(did: Did<'static>) -> AtIdentifier<'static> {
-    let ident = AtIdentifier::Did(did);
-    use_handle(ident.clone())
+pub fn use_get_handle(did: Did<'static>) -> AtIdentifier<'static> {
+    let ident = use_signal(use_reactive!(|did| AtIdentifier::Did(did.clone())));
+    use_handle(ident.into())
         .read()
         .as_ref()
-        .unwrap_or(&Ok(ident))
+        .unwrap_or(&Ok(ident.read().clone()))
         .as_ref()
         .unwrap()
         .clone()
 }
 
 pub fn use_handle(
-    ident: AtIdentifier<'static>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Resource<Result<AtIdentifier<'static>, IdentityError>> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
-    let ident = use_signal(|| ident);
-
     use_resource(move || {
         let client = fetcher.get_client();
         async move {
@@ -184,7 +172,8 @@ impl NotebookHandle {
 
 pub fn use_notebook_handle(ident: Signal<Option<AtIdentifier<'static>>>) -> NotebookHandle {
     let ident = if let Some(ident) = &*ident.read() {
-        if let Some(Ok(handle)) = &*use_handle(ident.clone()).read() {
+        let _ident = Signal::new(ident.clone());
+        if let Some(Ok(handle)) = &*use_handle(_ident.into()).read() {
             Some(handle.clone())
         } else {
             Some(ident.clone())
@@ -195,14 +184,12 @@ pub fn use_notebook_handle(ident: Signal<Option<AtIdentifier<'static>>>) -> Note
     use_context_provider(|| NotebookHandle(Arc::new(ident)))
 }
 
-/// Hook to render markdown client-side only (no SSR).
+/// Hook to render markdown with SSR support.
 #[cfg(feature = "fullstack-server")]
 pub fn use_rendered_markdown(
-    content: Entry<'static>,
-    ident: AtIdentifier<'static>,
+    content: ReadSignal<Entry<'static>>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Result<Resource<Option<String>>, RenderError> {
-    let ident = use_signal(|| ident);
-    let content = use_signal(|| content);
     let fetcher = use_context::<crate::fetch::Fetcher>();
     Ok(use_server_future(move || {
         let client = fetcher.get_client();
@@ -219,11 +206,9 @@ pub fn use_rendered_markdown(
 /// Hook to render markdown client-side only (no SSR).
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_rendered_markdown(
-    content: Entry<'static>,
-    ident: AtIdentifier<'static>,
+    content: ReadSignal<Entry<'static>>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Result<Resource<Option<String>>, RenderError> {
-    let ident = use_signal(|| ident);
-    let content = use_signal(|| content);
     let fetcher = use_context::<crate::fetch::Fetcher>();
     Ok(use_resource(move || {
         let client = fetcher.get_client();
@@ -261,10 +246,9 @@ async fn render_markdown_impl(content: Entry<'static>, did: Did<'static>) -> Str
 /// Fetches profile data for a given identifier
 #[cfg(feature = "fullstack-server")]
 pub fn use_profile_data(
-    ident: AtIdentifier<'static>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Result<Memo<Option<ProfileDataView<'static>>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let ident = use_signal(|| ident);
     let res = use_server_future(move || {
         let fetcher = fetcher.clone();
         async move {
@@ -277,7 +261,7 @@ pub fn use_profile_data(
         }
     })?;
     Ok(use_memo(move || {
-        if let Some(Some(value)) = &*res.read_unchecked() {
+        if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<ProfileDataView>(value.clone()).ok()
         } else {
             None
@@ -288,10 +272,9 @@ pub fn use_profile_data(
 /// Fetches profile data client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_profile_data(
-    ident: AtIdentifier<'static>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Result<Memo<Option<ProfileDataView<'static>>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let ident = use_signal(|| ident);
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
         async move {
@@ -303,8 +286,9 @@ pub fn use_profile_data(
                 .flatten()
         }
     });
+    res.suspend()?;
     Ok(use_memo(move || {
-        if let Some(Some(value)) = &*res.read_unchecked() {
+        if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<ProfileDataView>(value.clone()).ok()
         } else {
             None
@@ -315,10 +299,9 @@ pub fn use_profile_data(
 /// Fetches notebooks for a specific DID
 #[cfg(feature = "fullstack-server")]
 pub fn use_notebooks_for_did(
-    ident: AtIdentifier<'static>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Result<Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let ident = use_signal(|| ident);
     let res = use_server_future(move || {
         let fetcher = fetcher.clone();
         async move {
@@ -336,7 +319,7 @@ pub fn use_notebooks_for_did(
         }
     })?;
     Ok(use_memo(move || {
-        if let Some(Some(values)) = &*res.read_unchecked() {
+        if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
                 .map(|v| {
@@ -352,10 +335,9 @@ pub fn use_notebooks_for_did(
 /// Fetches notebooks client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_notebooks_for_did(
-    ident: AtIdentifier<'static>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Result<Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let ident = use_signal(|| ident);
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
         async move {
@@ -372,8 +354,9 @@ pub fn use_notebooks_for_did(
                 .flatten()
         }
     });
+    res.suspend()?;
     Ok(use_memo(move || {
-        if let Some(Some(values)) = &*res.read_unchecked() {
+        if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
                 .map(|v| {
@@ -408,7 +391,7 @@ pub fn use_notebooks_from_ufos()
         }
     })?;
     Ok(use_memo(move || {
-        if let Some(Some(values)) = &*res.read_unchecked() {
+        if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
                 .map(|v| {
@@ -442,8 +425,9 @@ pub fn use_notebooks_from_ufos()
                 .flatten()
         }
     });
+    res.suspend()?;
     Ok(use_memo(move || {
-        if let Some(Some(values)) = &*res.read_unchecked() {
+        if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
                 .map(|v| {
@@ -459,12 +443,10 @@ pub fn use_notebooks_from_ufos()
 /// Fetches notebook metadata with SSR support in fullstack mode
 #[cfg(feature = "fullstack-server")]
 pub fn use_notebook(
-    ident: AtIdentifier<'static>,
-    book_title: SmolStr,
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
 ) -> Result<Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let ident = use_signal(|| ident);
-    let book_title = use_signal(|| book_title);
     let res = use_server_future(move || {
         let fetcher = fetcher.clone();
         async move {
@@ -478,7 +460,7 @@ pub fn use_notebook(
         }
     })?;
     Ok(use_memo(move || {
-        if let Some(Some(value)) = &*res.read_unchecked() {
+        if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<(NotebookView, Vec<StrongRef>)>(value.clone()).ok()
         } else {
             None
@@ -489,12 +471,10 @@ pub fn use_notebook(
 /// Fetches notebook metadata client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_notebook(
-    ident: AtIdentifier<'static>,
-    book_title: SmolStr,
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
 ) -> Result<Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let ident = use_signal(|| ident);
-    let book_title = use_signal(|| book_title);
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
         async move {
@@ -507,8 +487,9 @@ pub fn use_notebook(
                 .flatten()
         }
     });
+    res.suspend()?;
     Ok(use_memo(move || {
-        if let Some(Some(value)) = &*res.read_unchecked() {
+        if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<(NotebookView, Vec<StrongRef>)>(value.clone()).ok()
         } else {
             None
@@ -519,12 +500,10 @@ pub fn use_notebook(
 /// Fetches notebook entries with SSR support in fullstack mode
 #[cfg(feature = "fullstack-server")]
 pub fn use_notebook_entries(
-    ident: AtIdentifier<'static>,
-    book_title: SmolStr,
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
 ) -> Result<Memo<Option<Vec<BookEntryView<'static>>>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let ident = use_signal(|| ident);
-    let book_title = use_signal(|| book_title);
     let res = use_server_future(move || {
         let fetcher = fetcher.clone();
         async move {
@@ -542,8 +521,9 @@ pub fn use_notebook_entries(
                 .flatten()
         }
     })?;
+    res.suspend()?;
     Ok(use_memo(move || {
-        if let Some(Some(values)) = &*res.read_unchecked() {
+        if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
                 .map(|v| jacquard::from_json_value::<BookEntryView>(v.clone()).ok())
@@ -557,23 +537,22 @@ pub fn use_notebook_entries(
 /// Fetches notebook entries client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_notebook_entries(
-    ident: AtIdentifier<'static>,
-    book_title: SmolStr,
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
 ) -> Result<Memo<Option<Vec<BookEntryView<'static>>>>, RenderError> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let r = use_resource(use_reactive!(|(ident, book_title)| {
+    let r = use_resource(move || {
         let fetcher = fetcher.clone();
         async move {
             fetcher
-                .list_notebook_entries(ident, book_title)
+                .list_notebook_entries(ident(), book_title())
                 .await
                 .ok()
                 .flatten()
         }
-    }));
-    Ok(use_memo(move || {
-        r.read_unchecked().as_ref().and_then(|v| v.clone())
-    }))
+    });
+    r.suspend()?;
+    Ok(use_memo(move || r.read().as_ref().and_then(|v| v.clone())))
 }
 
 #[cfg(feature = "fullstack-server")]

@@ -4156,6 +4156,7 @@ dependencies = [
  "n0-future",
  "ouroboros",
  "p256",
+ "postcard",
  "rand 0.9.2",
  "regex",
  "regex-lite",

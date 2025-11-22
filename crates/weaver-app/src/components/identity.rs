@@ -9,7 +9,7 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 #[component]
 pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     // Fetch notebooks for this specific DID with SSR support
-    let notebooks = data::use_notebooks_for_did(ident())?;
+    let notebooks = data::use_notebooks_for_did(ident)?;
     use_context_provider(|| notebooks);
     rsx! {
         div {
@@ -19,21 +19,22 @@ pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 }
 
 pub fn use_repo_notebook_context()
--> Option<Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>> {
-    try_use_context::<Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>>()
+-> Option<Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>> {
+    try_use_context::<Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>>()
 }
 
 #[component]
 pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     use crate::components::ProfileDisplay;
     let notebooks = use_repo_notebook_context();
+    let profile = crate::data::use_profile_data(ident)?;
     rsx! {
         document::Stylesheet { href: NOTEBOOK_CARD_CSS }
 
         div { class: "repository-layout",
             // Profile sidebar (desktop) / header (mobile)
             aside { class: "repository-sidebar",
-                ProfileDisplay { ident: ident() }
+                ProfileDisplay { profile }
             }
 
             // Main content area
@@ -41,7 +42,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                 div { class: "notebooks-list",
                    if let Some(notebooks) = notebooks {
                        match &*notebooks.read() {
-                           Some(Some(notebook_list)) => rsx! {
+                           Some(notebook_list) => rsx! {
                                for notebook in notebook_list.iter() {
                                    {
                                        let view = &notebook.0;
@@ -58,7 +59,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                    }
                                }
                            },
-                           _ => rsx! {
+                           None => rsx! {
                                div { "Loading notebooks..." }
                            }
                        }

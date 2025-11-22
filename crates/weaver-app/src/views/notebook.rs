@@ -29,10 +29,13 @@ pub fn NotebookIndex(
     book_title: ReadSignal<SmolStr>,
 ) -> Element {
     // Fetch full notebook metadata with SSR support
-    let notebook_data = data::use_notebook(ident(), book_title())?;
+    // IMPORTANT: Call ALL hooks before any ? early returns to maintain hook order
+    let notebook_data = data::use_notebook(ident, book_title);
+    let entries_resource = data::use_notebook_entries(ident, book_title);
 
-    // Fetch entries with SSR support
-    let entries_resource = data::use_notebook_entries(ident(), book_title())?;
+    // Now check for errors
+    let notebook_data = notebook_data?;
+    let entries_resource = entries_resource?;
 
     rsx! {
         document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }

@@ -1,30 +1,31 @@
 #![allow(non_snake_case)]
 
+use std::sync::Arc;
+
 use crate::components::{
     BskyIcon, TangledIcon,
     avatar::{Avatar, AvatarImage},
     identity::use_repo_notebook_context,
 };
 use dioxus::prelude::*;
-use jacquard::types::ident::AtIdentifier;
-use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+use weaver_api::com_atproto::repo::strong_ref::StrongRef;
+use weaver_api::sh_weaver::actor::{ProfileDataView, ProfileDataViewInner};
+use weaver_common::agent::NotebookView;
 
 const PROFILE_CSS: Asset = asset!("/assets/styling/profile.css");
 
 #[component]
-pub fn ProfileDisplay(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
-    // Fetch profile data
-    let profile = crate::data::use_profile_data(ident());
-
-    match &*profile?.read() {
+pub fn ProfileDisplay(profile: Memo<Option<ProfileDataView<'static>>>) -> Element {
+    let notebooks = use_repo_notebook_context();
+    match &*profile.read() {
         Some(profile_view) => {
-            let profile_view = use_signal(|| profile_view.clone());
+            let profile_view = Arc::new(profile_view.clone());
             rsx! {
                 document::Stylesheet { href: PROFILE_CSS }
 
                 div { class: "profile-display",
                     // Banner if present
-                    {match &profile_view.read().inner {
+                    {match &profile_view.inner {
                         ProfileDataViewInner::ProfileView(p) => {
                             if let Some(ref banner) = p.banner {
                                 rsx! {
@@ -52,14 +53,14 @@ pub fn ProfileDisplay(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
                     div { class: "profile-content",
                         // Avatar and identity
-                        ProfileIdentity { profile_view, ident }
+                        ProfileIdentity { profile_view: profile_view.clone() }
                         div {
                             class: "profile-extras",
                             // Stats
-                            ProfileStats { ident }
+                            ProfileStats { notebooks: notebooks.unwrap() }
 
                             // Links
-                            ProfileLinks { profile_view, ident }
+                            ProfileLinks { profile_view }
                         }
 
 
@@ -76,11 +77,8 @@ pub fn ProfileDisplay(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 }
 
 #[component]
-fn ProfileIdentity(
-    profile_view: ReadSignal<weaver_api::sh_weaver::actor::ProfileDataView<'static>>,
-    ident: ReadSignal<AtIdentifier<'static>>,
-) -> Element {
-    match &profile_view.read().inner {
+fn ProfileIdentity(profile_view: Arc<ProfileDataView<'static>>) -> Element {
+    match &profile_view.inner {
         ProfileDataViewInner::ProfileView(profile) => {
             let display_name = profile
                 .display_name
@@ -171,7 +169,7 @@ fn ProfileIdentity(
                 div { class: "profile-identity",
                     div { class: "profile-name-section",
                         h1 { class: "profile-display-name", "@{profile.handle.as_ref()}" }
-                        div { class: "profile-handle", "{ident}" }
+                        //div { class: "profile-handle", "{profile.handle.as_ref()}" }
 
                         if let Some(ref location) = profile.location {
                             div { class: "profile-location", "{location}" }
@@ -193,16 +191,12 @@ fn ProfileIdentity(
 }
 
 #[component]
-fn ProfileStats(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
+fn ProfileStats(
+    notebooks: Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+) -> Element {
     // Fetch notebook count
-    let notebooks = use_repo_notebook_context();
-
-    let notebook_count = if let Some(notebooks) = notebooks {
-        if let Some(Some(notebooks)) = &*notebooks.read() {
-            notebooks.len()
-        } else {
-            0
-        }
+    let notebook_count = if let Some(notebooks) = &*notebooks.read() {
+        notebooks.len()
     } else {
         0
     };
@@ -218,12 +212,8 @@ fn ProfileStats(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 }
 
 #[component]
-fn ProfileLinks(
-    profile_view: ReadSignal<weaver_api::sh_weaver::actor::ProfileDataView<'static>>,
-
-    ident: ReadSignal<AtIdentifier<'static>>,
-) -> Element {
-    match &profile_view.read().inner {
+fn ProfileLinks(profile_view: Arc<ProfileDataView<'static>>) -> Element {
+    match &profile_view.inner {
         ProfileDataViewInner::ProfileView(profile) => {
             rsx! {
                 div { class: "profile-links",
@@ -243,7 +233,7 @@ fn ProfileLinks(
                     // Platform-specific links
                     if profile.bluesky.unwrap_or(false) {
                         a {
-                            href: "https://bsky.app/profile/{ident}",
+                            href: "https://bsky.app/profile/{profile.did}",
                             target: "_blank",
                             rel: "noopener noreferrer",
                             class: "profile-link profile-link-platform",
@@ -254,7 +244,7 @@ fn ProfileLinks(
 
                     if profile.tangled.unwrap_or(false) {
                         a {
-                            href: "https://tangled.org/@{ident}",
+                            href: "https://tangled.org/{profile.did}",
                             target: "_blank",
                             rel: "noopener noreferrer",
                             class: "profile-link profile-link-platform",
@@ -265,7 +255,7 @@ fn ProfileLinks(
 
                     if profile.streamplace.unwrap_or(false) {
                         a {
-                            href: "https://stream.place/{ident}",
+                            href: "https://stream.place/{profile.did}",
                             target: "_blank",
                             rel: "noopener noreferrer",
                             class: "profile-link profile-link-platform",
@@ -275,12 +265,12 @@ fn ProfileLinks(
                 }
             }
         }
-        ProfileDataViewInner::ProfileViewDetailed(_profile) => {
+        ProfileDataViewInner::ProfileViewDetailed(profile) => {
             // Bluesky ProfileViewDetailed - doesn't have weaver platform flags
             rsx! {
                 div { class: "profile-links",
                     a {
-                        href: "https://bsky.app/profile/{ident}",
+                        href: "https://bsky.app/profile/{profile.did}",
                         target: "_blank",
                         rel: "noopener noreferrer",
                         class: "profile-link profile-link-platform",
@@ -306,7 +296,7 @@ fn ProfileLinks(
                         }
                     }
                     a {
-                        href: "https://tangled.org/@{ident}",
+                        href: "https://tangled.org/{profile.did}",
                         target: "_blank",
                         rel: "noopener noreferrer",
                         class: "profile-link profile-link-platform",
@@ -316,7 +306,7 @@ fn ProfileLinks(
 
                     if profile.bluesky {
                         a {
-                            href: "https://bsky.app/profile/{ident}",
+                            href: "https://bsky.app/profile/{profile.did}",
                             target: "_blank",
                             rel: "noopener noreferrer",
                             class: "profile-link profile-link-platform",

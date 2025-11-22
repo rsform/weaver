@@ -42,7 +42,7 @@ pub fn Entry(
     title: ReadSignal<SmolStr>,
 ) -> Element {
     // Use feature-gated hook for SSR support
-    let entry = crate::data::use_entry_data(ident(), book_title(), title());
+    let entry = crate::data::use_entry_data(ident, book_title, title);
     let handle = use_context::<NotebookHandle>();
     let fetcher = use_context::<crate::fetch::Fetcher>();
 
@@ -433,11 +433,11 @@ pub struct EntryMarkdownProps {
 #[allow(unused)]
 pub fn EntryMarkdown(props: EntryMarkdownProps) -> Element {
     let processed = crate::data::use_rendered_markdown(
-        props.content.read().clone(),
-        props.ident.read().clone(),
+        props.content,
+        props.ident,
     )?;
 
-    match &*processed.read_unchecked() {
+    match &*processed.read() {
         Some(Some(html_buf)) => rsx! {
             div {
                 id: "{&*props.id.read()}",
@@ -464,9 +464,11 @@ fn EntryMarkdownDirect(
     ident: AtIdentifier<'static>,
 ) -> Element {
     // Use feature-gated hook for SSR support
-    let processed = crate::data::use_rendered_markdown(content, ident)?;
+    let content = use_signal(|| content);
+    let ident = use_signal(|| ident);
+    let processed = crate::data::use_rendered_markdown(content.into(), ident.into())?;
 
-    match &*processed.read_unchecked() {
+    match &*processed.read() {
         Some(Some(html_buf)) => rsx! {
             div {
                 id: "{id}",
