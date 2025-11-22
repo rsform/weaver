@@ -4,58 +4,85 @@ use jacquard::oauth::client::OAuthClient;
 use jacquard::oauth::session::ClientData;
 use jacquard::{oauth::types::AuthorizeOptions, smol_str::SmolStr};
 
-use crate::CONFIG;
+use crate::{CONFIG, Route};
 use crate::{
     components::{
         button::{Button, ButtonVariant},
         dialog::{DialogContent, DialogRoot, DialogTitle},
         input::Input,
     },
-    fetch::CachedFetcher,
+    fetch::Fetcher,
 };
+
+fn handle_submit(
+    full_route: Route,
+    fetcher: Fetcher,
+    mut error: Signal<Option<String>>,
+    mut is_loading: Signal<bool>,
+    handle_input: Signal<String>,
+    mut open: Signal<bool>,
+) {
+    let handle = handle_input.read().clone();
+    if handle.is_empty() {
+        error.set(Some("Please enter a handle".to_string()));
+        return;
+    }
+
+    is_loading.set(true);
+    error.set(None);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use gloo_storage::Storage;
+        gloo_storage::LocalStorage::set("cached_route", format!("{}", full_route)).ok();
+        spawn(async move {
+            match start_oauth_flow(handle, fetcher).await {
+                Ok(_) => {
+                    open.set(false);
+                }
+                Err(e) => {
+                    error!("Authentication failed: {}", e);
+                    error.set(Some(format!("Authentication failed: {}", e)));
+                    is_loading.set(false);
+                }
+            }
+        });
+    }
+}
 
 #[component]
 pub fn LoginModal(open: Signal<bool>) -> Element {
     let mut handle_input = use_signal(|| String::new());
-    let mut error = use_signal(|| Option::<String>::None);
-    let mut is_loading = use_signal(|| false);
+    let error = use_signal(|| Option::<String>::None);
+    let is_loading = use_signal(|| false);
+    let full_route = use_route::<Route>();
+    let fetcher = use_context::<Fetcher>();
+    let submit_route = full_route.clone();
+    let submit_fetcher = fetcher.clone();
+    let submit_closure1 = move || {
+        let submit_route = submit_route.clone();
+        let submit_fetcher = submit_fetcher.clone();
+        handle_submit(
+            submit_route,
+            submit_fetcher,
+            error,
+            is_loading,
+            handle_input,
+            open,
+        );
+    };
 
-    let mut handle_submit = move || {
-        let handle = handle_input.read().clone();
-        if handle.is_empty() {
-            error.set(Some("Please enter a handle".to_string()));
-            return;
-        }
-
-        is_loading.set(true);
-        error.set(None);
-
-        let fetcher = use_context::<CachedFetcher>();
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            use crate::Route;
-            use gloo_storage::Storage;
-            let full_route = use_route::<Route>();
-            gloo_storage::LocalStorage::set("cached_route", format!("{}", full_route)).ok();
-        }
-
-        use_effect(move || {
-            let handle = handle.clone();
-            let fetcher = fetcher.clone();
-            spawn(async move {
-                match start_oauth_flow(handle, fetcher).await {
-                    Ok(_) => {
-                        open.set(false);
-                    }
-                    Err(e) => {
-                        error!("Authentication failed: {}", e);
-                        error.set(Some(format!("Authentication failed: {}", e)));
-                        is_loading.set(false);
-                    }
-                }
-            });
-        });
+    let submit_closure2 = move || {
+        let submit_route = full_route.clone();
+        let submit_fetcher = fetcher.clone();
+        handle_submit(
+            submit_route,
+            submit_fetcher,
+            error,
+            is_loading,
+            handle_input,
+            open,
+        );
     };
 
     rsx! {
@@ -76,7 +103,7 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
                         oninput: move |e: FormEvent| handle_input.set(e.value()),
                         onkeypress: move |k: KeyboardEvent| {
                             if k.key() == Key::Enter {
-                                handle_submit();
+                                submit_closure1();
                             }
                         },
                         placeholder: "Enter your handle",
@@ -98,7 +125,7 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
                         r#type: "submit",
                         disabled: is_loading(),
                         onclick: move |_| {
-                            handle_submit();
+                            submit_closure2();
                         },
                         if is_loading() { "Authenticating..." } else { "Sign In" }
                     }
@@ -108,7 +135,7 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
     }
 }
 
-async fn start_oauth_flow(handle: String, fetcher: CachedFetcher) -> Result<(), SmolStr> {
+async fn start_oauth_flow(handle: String, fetcher: Fetcher) -> Result<(), SmolStr> {
     info!("Starting OAuth flow for handle: {}", handle);
 
     let client_data = ClientData {

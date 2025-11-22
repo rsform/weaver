@@ -25,7 +25,7 @@ pub async fn register_entry_blobs(
     ident: &jacquard::types::ident::AtIdentifier<'_>,
     book_title: &str,
     images: &weaver_api::sh_weaver::embed::images::Images<'_>,
-    fetcher: &crate::fetch::CachedFetcher,
+    fetcher: &crate::fetch::Fetcher,
 ) -> Result<(), JsValue> {
     use jacquard::prelude::IdentityResolver;
     use std::collections::HashMap;

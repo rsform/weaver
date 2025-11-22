@@ -8,7 +8,7 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 #[component]
 pub fn Home() -> Element {
     // Fetch notebooks from UFOS with SSR support
-    let notebooks = data::use_notebooks_from_ufos().ok();
+    let notebooks = data::use_notebooks_from_ufos()?;
     let navigator = use_navigator();
     let mut uri_input = use_signal(|| String::new());
 
@@ -16,7 +16,7 @@ pub fn Home() -> Element {
         let input_uri = uri_input.read().clone();
         if !input_uri.is_empty() {
             if let Ok(parsed) = AtUri::new(&input_uri) {
-                navigator.push(Route::RecordView {
+                navigator.push(Route::RecordPage {
                     uri: vec![parsed.to_string()],
                 });
             }
@@ -44,31 +44,27 @@ pub fn Home() -> Element {
                 }
             }
             div { class: "notebooks-list",
-                if let Some(notebooks_memo) = &notebooks {
-                    match &*notebooks_memo.read_unchecked() {
-                        Some(notebook_list) => rsx! {
-                            for notebook in notebook_list.iter() {
-                                {
-                                    let view = &notebook.0;
-                                    let entries = &notebook.1;
-                                    rsx! {
-                                        div {
-                                            key: "{view.cid}",
-                                            NotebookCard {
-                                                notebook: view.clone(),
-                                                entry_refs: entries.clone()
-                                            }
+                match &*notebooks.read() {
+                    Some(notebook_list) => rsx! {
+                        for notebook in notebook_list.iter() {
+                            {
+                                let view = &notebook.0;
+                                let entries = &notebook.1;
+                                rsx! {
+                                    div {
+                                        key: "{view.cid}",
+                                        NotebookCard {
+                                            notebook: view.clone(),
+                                            entry_refs: entries.clone()
                                         }
                                     }
                                 }
                             }
-                        },
-                        None => rsx! {
-                            div { "Loading notebooks..." }
                         }
+                    },
+                    _ => rsx! {
+                        div { "Loading notebooks..." }
                     }
-                } else {
-                    div { "Loading notebooks..." }
                 }
             }
         }

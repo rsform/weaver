@@ -1,10 +1,9 @@
 use crate::Route;
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::login::LoginModal;
-use crate::data::use_handle;
-use crate::fetch::CachedFetcher;
+use crate::data::{get_handle, use_notebook_handle};
+use crate::fetch::Fetcher;
 use dioxus::prelude::*;
-use jacquard::types::string::AtIdentifier;
 
 const THEME_DEFAULTS_CSS: Asset = asset!("/assets/styling/theme-defaults.css");
 const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
@@ -19,7 +18,14 @@ pub fn Navbar() -> Element {
     let route = use_route::<Route>();
     let mut auth_state = use_context::<Signal<crate::auth::AuthState>>();
     let mut show_login_modal = use_signal(|| false);
-    let fetcher = use_context::<CachedFetcher>();
+    let fetcher = use_context::<Fetcher>();
+    let route_handle = use_signal(|| match &route {
+        Route::EntryPage { ident, .. } => Some(ident.clone()),
+        Route::RepositoryIndex { ident } => Some(ident.clone()),
+        Route::NotebookIndex { ident, .. } => Some(ident.clone()),
+        _ => None,
+    });
+    let notebook_handle = use_notebook_handle(route_handle);
 
     rsx! {
         document::Link { rel: "stylesheet", href: THEME_DEFAULTS_CSS }
@@ -36,32 +42,41 @@ pub fn Navbar() -> Element {
 
                 // Show repository breadcrumb if we're on a repository page
                 match route {
-                    Route::RepositoryIndex { ident } => rsx! {
-                        span { class: "breadcrumb-separator", " > " }
-                        span { class: "breadcrumb breadcrumb-current", "@{use_handle(ident.clone())?}" }
-                    },
-                    Route::NotebookIndex { ident, book_title } => rsx! {
-                        span { class: "breadcrumb-separator", " > " }
-                        Link {
-                            to: Route::RepositoryIndex { ident: ident.clone() },
-                            class: "breadcrumb",
-                            "@{use_handle(ident.clone())?}"
+                    Route::RepositoryIndex { .. } => {
+                        let handle = notebook_handle.as_ref().unwrap();
+                        rsx! {
+                            span { class: "breadcrumb-separator", " > " }
+                            span { class: "breadcrumb breadcrumb-current", "@{handle}" }
                         }
-                        span { class: "breadcrumb-separator", " > " }
-                        span { class: "breadcrumb breadcrumb-current", "{book_title}" }
                     },
-                    Route::Entry { ident, book_title, .. } => rsx! {
-                        span { class: "breadcrumb-separator", " > " }
-                        Link {
-                            to: Route::RepositoryIndex { ident: ident.clone() },
-                            class: "breadcrumb",
-                            "@{use_handle(ident.clone())?}"
+                    Route::NotebookIndex { ident, book_title } => {
+                        let handle = notebook_handle.as_ref().unwrap();
+                        rsx! {
+                            span { class: "breadcrumb-separator", " > " }
+                            Link {
+                                to: Route::RepositoryIndex { ident: ident.clone() },
+                                class: "breadcrumb",
+                                "@{handle}"
+                            }
+                            span { class: "breadcrumb-separator", " > " }
+                            span { class: "breadcrumb breadcrumb-current", "{book_title}" }
                         }
-                        span { class: "breadcrumb-separator", " > " }
-                        Link {
-                            to: Route::NotebookIndex { ident: ident.clone(), book_title: book_title.clone() },
-                            class: "breadcrumb",
-                            "{book_title}"
+                    },
+                    Route::EntryPage { ident, book_title, .. } => {
+                        let handle = notebook_handle.as_ref().unwrap();
+                        rsx! {
+                            span { class: "breadcrumb-separator", " > " }
+                            Link {
+                                to: Route::RepositoryIndex { ident: ident.clone() },
+                                class: "breadcrumb",
+                                "@{handle}"
+                            }
+                            span { class: "breadcrumb-separator", " > " }
+                            Link {
+                                to: Route::NotebookIndex { ident: ident.clone(), book_title: book_title.clone() },
+                                class: "breadcrumb",
+                                "{book_title}"
+                            }
                         }
                     },
                     _ => rsx! {}
@@ -78,9 +93,10 @@ pub fn Navbar() -> Element {
                                 fetcher.downgrade_to_unauthenticated().await;
                             }
                         },
-                        span { class: "auth-handle", "@{use_handle(AtIdentifier::Did(did.clone()))?}" }
+                        span { class: "auth-handle", "@{get_handle(did.clone())}" }
                     }
                 }
+
             } else {
                 div {
                     class: "auth-button",
@@ -97,8 +113,6 @@ pub fn Navbar() -> Element {
             }
         }
 
-        // The `Outlet` component is used to render the next component inside the layout. In this case, it will render either
-        // the [`Home`] or [`Blog`] component depending on the current route.
         Outlet::<Route> {}
     }
 }

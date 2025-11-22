@@ -1,5 +1,5 @@
-use compact_string::CompactString;
 use http::Uri;
+use smol_str::SmolStr;
 use weaver_common::jacquard::types::string::{Cid, Did};
 
 pub struct Link<'a> {
@@ -7,7 +7,7 @@ pub struct Link<'a> {
     pub blob: BlobLink<'a>,
 }
 
-pub type MimeType = CompactString;
+pub type MimeType = SmolStr;
 
 pub enum BlobLink<'a> {
     PDS {

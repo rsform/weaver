@@ -6,14 +6,14 @@ version = "0.1.0"
 authors.workspace = true
 
 [dependencies]
-bytes = { workspace = true, features = ["serde"] }
+bytes = { workspace = true }
 jacquard-common = { workspace = true }
 jacquard-derive = { workspace = true }
 jacquard-lexicon = { workspace = true }
 miette.workspace = true
 rustversion = "1.0"
 serde.workspace = true
-serde_ipld_dagcbor = "0.6"
+serde_ipld_dagcbor = { version = "0.6", optional = true }
 thiserror.workspace = true
 unicode-segmentation = "1.12"
 
@@ -23,8 +23,10 @@ unicode-segmentation = "1.12"
 non_snake_case = "allow"
 
 [features]
-default = ["sh_weaver", "com_atproto"]
+default = ["sh_weaver", "com_atproto",  "serde"]
 streaming = ["jacquard-common/websocket"]
+serde = ["bytes/serde", "dep:serde_ipld_dagcbor"]
+
 
 # --- generated ---
 # Generated namespace features

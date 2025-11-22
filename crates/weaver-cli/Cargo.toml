@@ -17,7 +17,6 @@ weaver-api = { path = "../weaver-api" }
 miette = { workspace = true, features = ["fancy"] }
 
 jacquard = { workspace = true, features = ["loopback", "dns"] }
-jacquard-api = { workspace = true, features = ["sh_weaver"] }
 
 markdown-weaver = { workspace = true }
 markdown-weaver-escape = { workspace = true }

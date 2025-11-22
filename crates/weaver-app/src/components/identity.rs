@@ -8,21 +8,25 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 
 #[component]
 pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
+    // Fetch notebooks for this specific DID with SSR support
+    let notebooks = data::use_notebooks_for_did(ident())?;
+    use_context_provider(|| notebooks);
     rsx! {
-        // We can create elements inside the rsx macro with the element name followed by a block of attributes and children.
         div {
             Outlet::<Route> {}
         }
     }
 }
 
+pub fn use_repo_notebook_context()
+-> Option<Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>> {
+    try_use_context::<Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>>()
+}
+
 #[component]
 pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     use crate::components::ProfileDisplay;
-
-    // Fetch notebooks for this specific DID with SSR support
-    let notebooks = data::use_notebooks_for_did(ident()).ok();
-
+    let notebooks = use_repo_notebook_context();
     rsx! {
         document::Stylesheet { href: NOTEBOOK_CARD_CSS }
 
@@ -35,32 +39,30 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
             // Main content area
             main { class: "repository-main",
                 div { class: "notebooks-list",
-                    if let Some(notebooks_memo) = &notebooks {
-                        match &*notebooks_memo.read_unchecked() {
-                            Some(notebook_list) => rsx! {
-                                for notebook in notebook_list.iter() {
-                                    {
-                                        let view = &notebook.0;
-                                        let entries = &notebook.1;
-                                        rsx! {
-                                            div {
-                                                key: "{view.cid}",
-                                                NotebookCard {
-                                                    notebook: view.clone(),
-                                                    entry_refs: entries.clone()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            None => rsx! {
-                                div { "Loading notebooks..." }
-                            }
-                        }
-                    } else {
-                        div { "Loading notebooks..." }
-                    }
+                   if let Some(notebooks) = notebooks {
+                       match &*notebooks.read() {
+                           Some(Some(notebook_list)) => rsx! {
+                               for notebook in notebook_list.iter() {
+                                   {
+                                       let view = &notebook.0;
+                                       let entries = &notebook.1;
+                                       rsx! {
+                                           div {
+                                               key: "{view.cid}",
+                                               NotebookCard {
+                                                   notebook: view.clone(),
+                                                   entry_refs: entries.clone()
+                                               }
+                                           }
+                                       }
+                                   }
+                               }
+                           },
+                           _ => rsx! {
+                               div { "Loading notebooks..." }
+                           }
+                       }
+                   }
                 }
             }
         }
@@ -74,7 +76,7 @@ pub fn NotebookCard(
 ) -> Element {
     use jacquard::IntoStatic;
 
-    let fetcher = use_context::<fetch::CachedFetcher>();
+    let fetcher = use_context::<fetch::Fetcher>();
 
     let title = notebook
         .title
@@ -109,7 +111,7 @@ pub fn NotebookCard(
             div { class: "notebook-card-container",
 
                 Link {
-                    to: Route::Entry {
+                    to: Route::EntryPage {
                         ident: ident.clone(),
                         book_title: title.to_string().into(),
                         title: "".into() // Will redirect to first entry
@@ -192,7 +194,7 @@ pub fn NotebookCard(
 
                                             rsx! {
                                                 Link {
-                                                    to: Route::Entry {
+                                                    to: Route::EntryPage {
                                                         ident: ident.clone(),
                                                         book_title: book_title.clone(),
                                                         title: entry_title.to_string().into()
@@ -236,7 +238,7 @@ pub fn NotebookCard(
 
                                             rsx! {
                                                 Link {
-                                                    to: Route::Entry {
+                                                    to: Route::EntryPage {
                                                         ident: ident.clone(),
                                                         book_title: book_title.clone(),
                                                         title: entry_title.to_string().into()
@@ -289,7 +291,7 @@ pub fn NotebookCard(
 
                                             rsx! {
                                                 Link {
-                                                    to: Route::Entry {
+                                                    to: Route::EntryPage {
                                                         ident: ident.clone(),
                                                         book_title: book_title.clone(),
                                                         title: entry_title.to_string().into()

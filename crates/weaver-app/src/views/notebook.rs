@@ -29,47 +29,43 @@ pub fn NotebookIndex(
     book_title: ReadSignal<SmolStr>,
 ) -> Element {
     // Fetch full notebook metadata with SSR support
-    let notebook_data = data::use_notebook(ident(), book_title()).ok();
+    let notebook_data = data::use_notebook(ident(), book_title())?;
 
     // Fetch entries with SSR support
-    let entries_resource = data::use_notebook_entries(ident(), book_title()).ok();
+    let entries_resource = data::use_notebook_entries(ident(), book_title())?;
 
     rsx! {
         document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
 
-        if let (Some(notebook_memo), Some(entries_memo)) = (&notebook_data, &entries_resource) {
-            match (&*notebook_memo.read_unchecked(), &*entries_memo.read_unchecked()) {
-                (Some(data), Some(entries)) => {
-                    let (notebook_view, _) = data;
-                    let author_count = notebook_view.authors.len();
+        match (&*notebook_data.read(), &*entries_resource.read()) {
+            (Some(data), Some(entries)) => {
+                let (notebook_view, _) = data;
+                let author_count = notebook_view.authors.len();
 
-                    rsx! {
-                        div { class: "notebook-layout",
-                            aside { class: "notebook-sidebar",
-                                NotebookCover {
-                                    notebook: notebook_view.clone(),
-                                    title: book_title().to_string()
-                                }
+                rsx! {
+                    div { class: "notebook-layout",
+                        aside { class: "notebook-sidebar",
+                            NotebookCover {
+                                notebook: notebook_view.clone(),
+                                title: book_title().to_string()
                             }
+                        }
 
-                            main { class: "notebook-main",
-                                div { class: "entries-list",
-                                    for entry in entries {
-                                        EntryCard {
-                                            entry: entry.clone(),
-                                            book_title: book_title(),
-                                            author_count
-                                        }
+                        main { class: "notebook-main",
+                            div { class: "entries-list",
+                                for entry in entries {
+                                    EntryCard {
+                                        entry: entry.clone(),
+                                        book_title: book_title(),
+                                        author_count
                                     }
                                 }
                             }
                         }
                     }
-                },
-                _ => rsx! { div { class: "loading", "Loading..." } }
-            }
-        } else {
-            div { class: "loading", "Loading..." }
+                }
+            },
+            _ => rsx! { div { class: "loading", "Loading..." } }
         }
     }
 }

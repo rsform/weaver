@@ -41,12 +41,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "bug notes.md",
+                "file": "Why I rewrote pdsls in Rust (tm).md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "bug notes"
+              "title": "Why I rewrote pdsls in Rust (tm)"
             }
           }
         ],
@@ -201,6 +201,9 @@
   },
   "active": "6029beecc3d03bce",
   "lastOpenFiles": [
+    "light_mode_excerpt.png",
+    "notebook_entry_preview.png",
+    "xkcd_345_excerpt.png",
     "bug notes.md",
     "Why I rewrote pdsls in Rust (tm).md",
     "meta.png",
@@ -212,8 +215,6 @@
     "pretty_editor.png",
     "Arch.md",
     "Weaver - Long-form writing.md",
-    "weaver_photo_med.jpg",
-    "xkcd_345_excerpt.png",
-    "light_mode_excerpt.png"
+    "weaver_photo_med.jpg"
   ]
 }

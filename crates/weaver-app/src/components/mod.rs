@@ -7,7 +7,7 @@ pub use css::NotebookCss;
 
 mod entry;
 #[allow(unused_imports)]
-pub use entry::{Entry, EntryCard, EntryMarkdown};
+pub use entry::{Entry, EntryCard, EntryMarkdown, EntryPage};
 
 pub mod identity;
 #[allow(unused_imports)]
@@ -21,6 +21,9 @@ pub mod notebook_cover;
 pub use notebook_cover::NotebookCover;
 
 pub mod login;
+
+pub mod record_editor;
+pub mod record_view;
 
 use dioxus::prelude::*;
 
@@ -121,7 +124,7 @@ static _IOSK_ITAL_BOLD: Asset = asset!(
         .with_hash_suffix(false)
         .into_asset_options()
 );
-pub mod input;
-pub mod dialog;
-pub mod button;
 pub mod accordion;
+pub mod button;
+pub mod dialog;
+pub mod input;

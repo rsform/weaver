@@ -50,7 +50,9 @@ enum TableState {
     Body,
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider> ClientWriter<'a, I, W, E> {
+impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
+    ClientWriter<'a, I, W, E>
+{
     pub fn new(events: I, writer: W) -> Self {
         Self {
             events,
@@ -382,7 +384,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider> Cl
             Tag::Superscript => self.write("<sup>"),
             Tag::Emphasis => self.write("<em>"),
             Tag::Strong => self.write("<strong>"),
-            Tag::Strikethrough => self.write("<del>"),
+            Tag::Strikethrough => self.write("<s>"),
             Tag::Link {
                 link_type: LinkType::Email,
                 dest_url,
@@ -551,7 +553,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider> Cl
             TagEnd::Superscript => self.write("</sup>"),
             TagEnd::Subscript => self.write("</sub>"),
             TagEnd::Strong => self.write("</strong>"),
-            TagEnd::Strikethrough => self.write("</del>"),
+            TagEnd::Strikethrough => self.write("</s>"),
             TagEnd::Link => self.write("</a>"),
             TagEnd::Image => Ok(()), // No-op: raw_text() already consumed the End(Image) event
             TagEnd::Embed => Ok(()),
@@ -568,7 +570,9 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider> Cl
     }
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider> ClientWriter<'a, I, W, E> {
+impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
+    ClientWriter<'a, I, W, E>
+{
     fn write_embed(
         &mut self,
         embed_type: EmbedType,

@@ -103,8 +103,6 @@ impl ParseError {
 pub enum ParseErrorKind {
     #[error(transparent)]
     SerdeError(#[from] SerDeError),
-    #[error(transparent)]
-    MiniJinjaError(#[from] minijinja::Error),
     #[error("error in markdown parsing or rendering: {0}")]
     MarkdownError(markdown_weaver::CowStr<'static>),
 }
@@ -116,10 +114,6 @@ pub enum SerDeError {
     #[error(transparent)]
     #[diagnostic_source]
     Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    DagCbor(#[from] serde_ipld_dagcbor::error::CodecError),
-    #[error(transparent)]
-    HtmlForm(#[from] serde_html_form::ser::Error),
 }
 
 impl From<serde_json::Error> for ParseError {

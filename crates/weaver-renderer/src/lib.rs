@@ -10,7 +10,11 @@ use n0_future::Stream;
 use yaml_rust2::Yaml;
 use yaml_rust2::YamlLoader;
 
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use regex::Regex;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use regex_lite::Regex;
+
 use std::iter::Iterator;
 use std::path::PathBuf;
 use std::pin::Pin;

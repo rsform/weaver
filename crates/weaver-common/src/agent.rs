@@ -624,7 +624,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                         .map(|blob| {
                             let cid = blob.blob().cid();
                             jacquard::types::string::Uri::new_owned(format!(
-                                "https://cdn.bsky.app/img/avatar/plain/{}/{}",
+                                "https://cdn.bsky.app/img/avatar/plain/{}/{}@jpeg",
                                 did, cid
                             ))
                         })
@@ -639,7 +639,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                         .map(|blob| {
                             let cid = blob.blob().cid();
                             jacquard::types::string::Uri::new_owned(format!(
-                                "https://cdn.bsky.app/img/banner/plain/{}/{}",
+                                "https://cdn.bsky.app/img/banner/plain/{}/{}@jpeg",
                                 did, cid
                             ))
                         })
@@ -728,7 +728,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                     .map(|blob| {
                         let cid = blob.blob().cid();
                         jacquard::types::string::Uri::new_owned(format!(
-                            "https://cdn.bsky.app/img/avatar/plain/{}/{}",
+                            "https://cdn.bsky.app/img/avatar/plain/{}/{}@jpeg",
                             did, cid
                         ))
                     })
@@ -743,7 +743,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                     .map(|blob| {
                         let cid = blob.blob().cid();
                         jacquard::types::string::Uri::new_owned(format!(
-                            "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}",
+                            "https://cdn.bsky.app/img/banner/plain/{}/{}@jpeg",
                             did, cid
                         ))
                     })

@@ -26,7 +26,7 @@ pub struct Account<'a> {
     /// If active=false, this optional field indicates a reason for why the account is not active.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub status: Option<jacquard_common::CowStr<'a>>,
+    pub status: std::option::Option<jacquard_common::CowStr<'a>>,
     pub time: jacquard_common::types::string::Datetime,
 }
 
@@ -938,7 +938,7 @@ pub struct Commit<'a> {
     /// The root CID of the MST tree for the previous commit from this repo (indicated by the 'since' revision field in this message). Corresponds to the 'data' field in the repo commit object. NOTE: this field is effectively required for the 'inductive' version of firehose.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub prev_data: Option<jacquard_common::types::cid::CidLink<'a>>,
+    pub prev_data: std::option::Option<jacquard_common::types::cid::CidLink<'a>>,
     /// DEPRECATED -- unused
     pub rebase: bool,
     /// The repo this event comes from. Note that all other message types name this field 'did'.
@@ -1586,7 +1586,7 @@ pub struct Identity<'a> {
     /// The current handle for the account, or 'handle.invalid' if validation fails. This field is optional, might have been validated or passed-through from an upstream source. Semantics and behaviors for PDS vs Relay may evolve in the future; see atproto specs for more details.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub handle: Option<jacquard_common::types::string::Handle<'a>>,
+    pub handle: std::option::Option<jacquard_common::types::string::Handle<'a>>,
     pub seq: i64,
     pub time: jacquard_common::types::string::Datetime,
 }
@@ -2085,7 +2085,7 @@ pub struct RepoOp<'a> {
     /// For updates and deletes, the previous record CID (required for inductive firehose). For creations, field should not be defined.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub prev: Option<jacquard_common::types::cid::CidLink<'a>>,
+    pub prev: std::option::Option<jacquard_common::types::cid::CidLink<'a>>,
 }
 
 pub mod repo_op_state {

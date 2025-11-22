@@ -1,6 +1,9 @@
 #![allow(non_snake_case)]
 
-use crate::components::avatar::{Avatar, AvatarImage};
+use crate::{
+    components::avatar::{Avatar, AvatarImage},
+    data::NotebookHandle,
+};
 use dioxus::prelude::*;
 use weaver_api::sh_weaver::notebook::NotebookView;
 
@@ -21,7 +24,7 @@ pub fn NotebookCover(notebook: NotebookView<'static>, title: String) -> Element 
                     h1 { class: "notebook-cover-title", "{title}" }
                     div { "Error loading notebook details" }
                 }
-            }
+            };
         }
     };
 
@@ -89,7 +92,6 @@ fn NotebookAuthors(
 
 #[component]
 fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'static>) -> Element {
-    use crate::data::use_handle;
     use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 
     // Author already has profile data hydrated
@@ -100,7 +102,6 @@ fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'stati
                 .as_ref()
                 .map(|n| n.as_ref())
                 .unwrap_or("Unknown");
-            let handle = use_handle(p.did.clone().into())?;
 
             rsx! {
                 div { class: "notebook-author",
@@ -111,7 +112,7 @@ fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'stati
                     }
                     div { class: "notebook-author-info",
                         div { class: "notebook-author-name", "{display_name}" }
-                        div { class: "notebook-author-handle", "@{handle()}" }
+                        div { class: "notebook-author-handle", "@{p.handle}" }
                     }
                 }
             }
@@ -122,7 +123,6 @@ fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'stati
                 .as_ref()
                 .map(|n| n.as_ref())
                 .unwrap_or("Unknown");
-            let handle = use_handle(p.did.clone().into())?;
 
             rsx! {
                 div { class: "notebook-author",
@@ -133,7 +133,7 @@ fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'stati
                     }
                     div { class: "notebook-author-info",
                         div { class: "notebook-author-name", "{display_name}" }
-                        div { class: "notebook-author-handle", "@{handle()}" }
+                        div { class: "notebook-author-handle", "@{p.handle}" }
                     }
                 }
             }

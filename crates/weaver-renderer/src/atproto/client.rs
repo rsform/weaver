@@ -203,6 +203,7 @@ impl<'a, R: EmbedResolver> ClientContext<'a, R> {
         if let Some(embeds) = &entry.embeds {
             if let Some(images) = &embeds.images {
                 for img in &images.images {
+                    tracing::info!("Image: {:?}", img);
                     if let Some(name) = &img.name {
                         let blob_name = BlobName::from_filename(name.as_ref());
                         map.insert(blob_name, img.image.blob().cid().clone().into_static());
@@ -227,13 +228,13 @@ impl<'a, R: EmbedResolver> ClientContext<'a, R> {
 /// - Bluesky list: `at://{actor}/app.bsky.graph.list/{rkey}` → `https://bsky.app/profile/{actor}/lists/{rkey}`
 /// - Bluesky feed: `at://{actor}/app.bsky.feed.generator/{rkey}` → `https://bsky.app/profile/{actor}/feed/{rkey}`
 /// - Bluesky starterpack: `at://{actor}/app.bsky.graph.starterpack/{rkey}` → `https://bsky.app/starter-pack/{actor}/{rkey}`
-/// - Weaver/other: `at://{actor}/{collection}/{rkey}` → `https://weaver.sh/{actor}/{collection}/{rkey}`
+/// - Weaver/other: `at://{actor}/{collection}/{rkey}` → `https://weaver.sh/record/{at_uri}`
 fn at_uri_to_web_url(at_uri: &AtUri<'_>) -> String {
     let authority = at_uri.authority().as_ref();
 
     // Profile-only link (no collection/rkey)
     if at_uri.collection().is_none() && at_uri.rkey().is_none() {
-        return format!("https://weaver.sh/{}", authority);
+        return format!("https://alpha.weaver.sh/{}", authority);
     }
 
     // Record link
@@ -257,15 +258,12 @@ fn at_uri_to_web_url(at_uri: &AtUri<'_>) -> String {
             }
             // Weaver records and unknown collections go to weaver.sh
             _ => {
-                format!(
-                    "https://weaver.sh/{}/{}/{}",
-                    authority, collection_str, rkey_str
-                )
+                format!("https://alpha.weaver.sh/record/{}", at_uri)
             }
         }
     } else {
         // Fallback for malformed URIs
-        format!("https://weaver.sh/{}", authority)
+        format!("https://alpha.weaver.sh/{}", authority)
     }
 }
 

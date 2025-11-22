@@ -14,44 +14,30 @@ native = ["jacquard/dns"]
 n0-future = { workspace = true }
 weaver-api = { version = "0.1", path = "../weaver-api" }
 markdown-weaver = { workspace = true }
-#libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }
-
 http = "1.3.1"
-
 jacquard = { workspace = true }
 jacquard-common = { workspace = true }
 trait-variant = "0.1"
-
 serde = { workspace = true }
 serde_json = { version = "1.0.140", features = ["preserve_order", "raw_value"] }
-serde_ipld_dagcbor = { version = "0.6.1", features = ["codec"] }
-serde_html_form = "0.2.7"
-serde_bytes = "0.11.17"
 tokio = { version = "1.44", features = ["sync"] }
-
-minijinja = { workspace = true, features = [
-  "builtins",
-  "debug",
-  "deserialization",
-  "macros",
-  "multi_template",
-  "adjacent_loop_items",
-  "std_collections",
-  "serde",
-] }
-
-
 miette = { workspace = true }
-owo-colors = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-reqwest = "0.12.15"
-regex = "1.11.1"
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
+
 markdown-weaver-escape = { workspace = true, features = ["std"] }
 mime-sniffer = "^0.1"
 
+[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
+regex = "1.11.1"
+
 # wasm-in-browser dependencies
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+regex-lite = { version = "0.1" }
 futures-util = "0.3"
 js-sys = "0.3"
 pin-project = "1"

@@ -4,7 +4,7 @@
 use crate::blobcache::BlobCache;
 use crate::{
     components::avatar::{Avatar, AvatarImage},
-    data::use_handle,
+    data::{NotebookHandle, use_handle},
 };
 
 use crate::Route;
@@ -22,7 +22,18 @@ use jacquard::{
 };
 #[allow(unused_imports)]
 use std::sync::Arc;
-use weaver_api::sh_weaver::notebook::{BookEntryView, entry};
+use weaver_api::sh_weaver::notebook::{BookEntryView, EntryView, entry};
+
+#[component]
+pub fn EntryPage(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
+    title: ReadSignal<SmolStr>,
+) -> Element {
+    rsx! {
+        {std::iter::once(rsx! {Entry {ident, book_title, title}})}
+    }
+}
 
 #[component]
 pub fn Entry(
@@ -31,72 +42,54 @@ pub fn Entry(
     title: ReadSignal<SmolStr>,
 ) -> Element {
     // Use feature-gated hook for SSR support
-    let entry = crate::data::use_entry_data(ident(), book_title(), title())?;
+    let entry = crate::data::use_entry_data(ident(), book_title(), title());
+    let handle = use_context::<NotebookHandle>();
+    let fetcher = use_context::<crate::fetch::Fetcher>();
 
     // Handle blob caching when entry data is available
-    use_effect(move || {
-        if let Some((_book_entry_view, entry_record)) = &*entry.read() {
-            if let Some(embeds) = &entry_record.embeds {
-                if let Some(images) = &embeds.images {
-                    // Register blob mappings with service worker (client-side only)
-                    #[cfg(all(
-                        target_family = "wasm",
-                        target_os = "unknown",
-                        not(feature = "fullstack-server")
-                    ))]
-                    {
-                        let images = images.clone();
-                        spawn(async move {
-                            let fetcher = use_context::<fetch::CachedFetcher>();
-                            let _ = crate::service_worker::register_entry_blobs(
-                                &ident(),
-                                book_title().as_str(),
-                                &images,
-                                &fetcher,
-                            )
-                            .await;
-                        });
-                    }
-                    #[cfg(feature = "fullstack-server")]
-                    {
-                        let ident = ident();
-                        let images = images.clone();
-                        spawn(async move {
-                            for image in &images.images {
-                                use crate::data::cache_blob;
-
-                                let cid = image.image.blob().cid();
-                                cache_blob(
-                                    ident.to_smolstr(),
-                                    cid.to_smolstr(),
-                                    image.name.as_ref().map(|n| n.to_smolstr()),
+    if let Ok(entry) = entry {
+        match &*entry.read() {
+            Some((book_entry_view, entry_record)) => {
+                if let Some(embeds) = &entry_record.embeds {
+                    if let Some(images) = &embeds.images {
+                        // Register blob mappings with service worker (client-side only)
+                        #[cfg(all(
+                            target_family = "wasm",
+                            target_os = "unknown",
+                            not(feature = "fullstack-server")
+                        ))]
+                        {
+                            let fetcher = fetcher.clone();
+                            let images = images.clone();
+                            spawn(async move {
+                                let _ = crate::service_worker::register_entry_blobs(
+                                    &ident(),
+                                    book_title().as_str(),
+                                    &images,
+                                    &fetcher,
                                 )
-                                .await
-                                .ok();
-                            }
-                        });
+                                .await;
+                            });
+                        }
                     }
                 }
+                rsx! { EntryPageView {
+                    book_entry_view: book_entry_view.clone(),
+                    entry_record: entry_record.clone(),
+                    ident: handle.as_ref().unwrap().clone(),
+                    book_title: book_title()
+                } }
             }
+            _ => rsx! { p { "Loading..." } },
         }
-    });
-
-    match &*entry.read_unchecked() {
-        Some((book_entry_view, entry_record)) => {
-            rsx! { EntryPage {
-                book_entry_view: book_entry_view.clone(),
-                entry_record: entry_record.clone(),
-                ident: use_handle(ident())?(),
-                book_title: book_title()
-            } }
-        }
-        _ => rsx! { p { "Loading..." } },
+    } else {
+        rsx! { p { "Loading..." } }
     }
 }
 
 /// Full entry page with metadata, content, and navigation
 #[component]
-fn EntryPage(
+fn EntryPageView(
     book_entry_view: BookEntryView<'static>,
     entry_record: entry::Entry<'static>,
     ident: AtIdentifier<'static>,
@@ -166,7 +159,7 @@ pub fn EntryCard(
     author_count: usize,
 ) -> Element {
     use crate::Route;
-    use jacquard::{IntoStatic, from_data};
+    use jacquard::from_data;
     use weaver_api::sh_weaver::notebook::entry::Entry;
 
     let entry_view = &entry.entry;
@@ -176,8 +169,7 @@ pub fn EntryCard(
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
 
-    let ident = use_handle(entry_view.uri.authority().clone().into_static())?;
-
+    let ident = use_context::<NotebookHandle>();
     // Format date
     let formatted_date = entry_view
         .indexed_at
@@ -204,8 +196,8 @@ pub fn EntryCard(
     rsx! {
         div { class: "entry-card",
             Link {
-                to: Route::Entry {
-                    ident: ident(),
+                to: Route::EntryPage {
+                    ident: ident.as_ref().unwrap().clone(),
                     book_title: book_title.clone(),
                     title: title.to_string().into()
                 },
@@ -236,7 +228,7 @@ pub fn EntryCard(
                                                 }
                                             }
                                             span { class: "author-name", "{display_name}" }
-                                            span { class: "meta-label", "@{ident}" }
+                                            span { class: "meta-label", "@{ident.as_ref().unwrap()}" }
                                         }
                                     }
                                     ProfileDataViewInner::ProfileViewDetailed(profile) => {
@@ -248,7 +240,7 @@ pub fn EntryCard(
                                                 }
                                             }
                                             span { class: "author-name", "{display_name}" }
-                                            span { class: "meta-label", "@{ident}" }
+                                            span { class: "meta-label", "@{ident.as_ref().unwrap()}" }
                                         }
                                     }
                                     ProfileDataViewInner::TangledProfileView(profile) => {
@@ -291,7 +283,7 @@ pub fn EntryCard(
 /// Metadata header showing title, authors, date, tags
 #[component]
 fn EntryMetadata(
-    entry_view: weaver_api::sh_weaver::notebook::EntryView<'static>,
+    entry_view: EntryView<'static>,
     ident: AtIdentifier<'static>,
     created_at: Datetime,
 ) -> Element {
@@ -402,7 +394,7 @@ fn EntryMetadata(
 #[component]
 fn NavButton(
     direction: &'static str,
-    entry: weaver_api::sh_weaver::notebook::EntryView<'static>,
+    entry: EntryView<'static>,
     ident: AtIdentifier<'static>,
     book_title: SmolStr,
 ) -> Element {
@@ -415,7 +407,7 @@ fn NavButton(
 
     rsx! {
         Link {
-            to: Route::Entry {
+            to: Route::EntryPage {
                 ident: ident.clone(),
                 book_title: book_title.clone(),
                 title: entry_title.to_string().into()

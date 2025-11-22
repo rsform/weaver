@@ -35,7 +35,7 @@ pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
     use weaver_renderer::css::{generate_base_css, generate_syntax_css};
     use weaver_renderer::theme::{default_resolved_theme, resolve_theme};
 
-    let fetcher = use_context::<fetch::CachedFetcher>();
+    let fetcher = use_context::<fetch::Fetcher>();
 
     let css_content = use_resource(move || {
         let ident = ident.clone();
@@ -87,7 +87,7 @@ pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
 }
 
 #[cfg(feature = "fullstack-server")]
-#[get("/css/{ident}/{notebook}", fetcher: Extension<Arc<fetch::CachedFetcher>>)]
+#[get("/css/{ident}/{notebook}", fetcher: Extension<Arc<fetch::Fetcher>>)]
 pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<Response> {
     use dioxus::fullstack::http::header::CONTENT_TYPE;
     use jacquard::client::AgentSessionExt;

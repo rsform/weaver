@@ -24,7 +24,6 @@ serde_json = "1.0.128"
 uuid = { version = "1.8.0", features = ["v7", "serde"] }
 
 jacquard = { workspace = true, features = ["websocket", "zstd"] }
-jacquard-api = { workspace = true, features = ["sh_weaver"] }
 jacquard-axum = { workspace = true }
 
 axum = "0.8"

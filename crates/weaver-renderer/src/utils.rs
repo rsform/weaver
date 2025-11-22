@@ -2,7 +2,12 @@ use std::{path::Path, sync::OnceLock};
 use markdown_weaver::{CodeBlockKind, CowStr, Event, Tag};
 use miette::IntoDiagnostic;
 use n0_future::TryFutureExt;
+
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use regex::Regex;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use regex_lite::Regex;
+
 use markdown_weaver::BrokenLink;
 use std::path::PathBuf;
 use std::sync::Arc;

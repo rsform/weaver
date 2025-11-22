@@ -1,11 +1,9 @@
 #![allow(non_snake_case)]
 
-use crate::{
-    components::{
-        avatar::{Avatar, AvatarImage},
-        BskyIcon, TangledIcon,
-    },
-    data::use_handle,
+use crate::components::{
+    BskyIcon, TangledIcon,
+    avatar::{Avatar, AvatarImage},
+    identity::use_repo_notebook_context,
 };
 use dioxus::prelude::*;
 use jacquard::types::ident::AtIdentifier;
@@ -14,59 +12,62 @@ use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 const PROFILE_CSS: Asset = asset!("/assets/styling/profile.css");
 
 #[component]
-pub fn ProfileDisplay(ident: AtIdentifier<'static>) -> Element {
+pub fn ProfileDisplay(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     // Fetch profile data
-    let profile = crate::data::use_profile_data(ident.clone())?;
+    let profile = crate::data::use_profile_data(ident());
 
-    match profile().as_ref() {
-        Some(profile_view) => rsx! {
-            document::Stylesheet { href: PROFILE_CSS }
+    match &*profile?.read() {
+        Some(profile_view) => {
+            let profile_view = use_signal(|| profile_view.clone());
+            rsx! {
+                document::Stylesheet { href: PROFILE_CSS }
 
-            div { class: "profile-display",
-                // Banner if present
-                {match &profile_view.inner {
-                    ProfileDataViewInner::ProfileView(p) => {
-                        if let Some(ref banner) = p.banner {
-                            rsx! {
-                                div { class: "profile-banner",
-                                    img { src: "{banner.as_ref()}", alt: "Profile banner" }
+                div { class: "profile-display",
+                    // Banner if present
+                    {match &profile_view.read().inner {
+                        ProfileDataViewInner::ProfileView(p) => {
+                            if let Some(ref banner) = p.banner {
+                                rsx! {
+                                    div { class: "profile-banner",
+                                        img { src: "{banner.as_ref()}", alt: "Profile banner" }
+                                    }
                                 }
+                            } else {
+                                rsx! { }
                             }
-                        } else {
-                            rsx! { }
                         }
-                    }
-                    ProfileDataViewInner::ProfileViewDetailed(p) => {
-                        if let Some(ref banner) = p.banner {
-                            rsx! {
-                                div { class: "profile-banner",
-                                    img { src: "{banner.as_ref()}", alt: "Profile banner" }
+                        ProfileDataViewInner::ProfileViewDetailed(p) => {
+                            if let Some(ref banner) = p.banner {
+                                rsx! {
+                                    div { class: "profile-banner",
+                                        img { src: "{banner.as_ref()}", alt: "Profile banner" }
+                                    }
                                 }
+                            } else {
+                                rsx! { }
                             }
-                        } else {
-                            rsx! { }
                         }
+                        _ => rsx! { }
+                    }}
+
+                    div { class: "profile-content",
+                        // Avatar and identity
+                        ProfileIdentity { profile_view, ident }
+                        div {
+                            class: "profile-extras",
+                            // Stats
+                            ProfileStats { ident }
+
+                            // Links
+                            ProfileLinks { profile_view, ident }
+                        }
+
+
                     }
-                    _ => rsx! { }
-                }}
-
-                div { class: "profile-content",
-                    // Avatar and identity
-                    ProfileIdentity { profile_view: profile_view.clone(), ident: ident.clone() }
-                    div {
-                        class: "profile-extras",
-                        // Stats
-                        ProfileStats { ident: ident.clone() }
-
-                        // Links
-                        ProfileLinks { profile_view: profile_view.clone(), ident: ident.clone() }
-                    }
-
-
                 }
             }
-        },
-        None => rsx! {
+        }
+        _ => rsx! {
             div { class: "profile-display profile-loading",
                 "Loading profile..."
             }
@@ -76,10 +77,10 @@ pub fn ProfileDisplay(ident: AtIdentifier<'static>) -> Element {
 
 #[component]
 fn ProfileIdentity(
-    profile_view: weaver_api::sh_weaver::actor::ProfileDataView<'static>,
-    ident: AtIdentifier<'static>,
+    profile_view: ReadSignal<weaver_api::sh_weaver::actor::ProfileDataView<'static>>,
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Element {
-    match &profile_view.inner {
+    match &profile_view.read().inner {
         ProfileDataViewInner::ProfileView(profile) => {
             let display_name = profile
                 .display_name
@@ -121,7 +122,7 @@ fn ProfileIdentity(
                                     span { class: "profile-pronouns", " ({pronouns})" }
                                 }
                             }
-                            div { class: "profile-handle", "@{use_handle(ident.clone())?}" }
+                            div { class: "profile-handle", "@{profile.handle}" }
 
                             if let Some(ref location) = profile.location {
                                 div { class: "profile-location", "{location}" }
@@ -155,7 +156,7 @@ fn ProfileIdentity(
 
                         div { class: "profile-name-section",
                             h1 { class: "profile-display-name", "{display_name}" }
-                            div { class: "profile-handle", "@{use_handle(ident.clone())?}" }
+                            div { class: "profile-handle", "@{profile.handle}" }
                         }
                     }
 
@@ -192,11 +193,19 @@ fn ProfileIdentity(
 }
 
 #[component]
-fn ProfileStats(ident: AtIdentifier<'static>) -> Element {
+fn ProfileStats(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     // Fetch notebook count
-    let notebooks = crate::data::use_notebooks_for_did(ident.clone())?;
+    let notebooks = use_repo_notebook_context();
 
-    let notebook_count = notebooks().as_ref().map(|n| n.len()).unwrap_or(0);
+    let notebook_count = if let Some(notebooks) = notebooks {
+        if let Some(Some(notebooks)) = &*notebooks.read() {
+            notebooks.len()
+        } else {
+            0
+        }
+    } else {
+        0
+    };
 
     rsx! {
         div { class: "profile-stats",
@@ -210,10 +219,11 @@ fn ProfileStats(ident: AtIdentifier<'static>) -> Element {
 
 #[component]
 fn ProfileLinks(
-    profile_view: weaver_api::sh_weaver::actor::ProfileDataView<'static>,
-    ident: AtIdentifier<'static>,
+    profile_view: ReadSignal<weaver_api::sh_weaver::actor::ProfileDataView<'static>>,
+
+    ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Element {
-    match &profile_view.inner {
+    match &profile_view.read().inner {
         ProfileDataViewInner::ProfileView(profile) => {
             rsx! {
                 div { class: "profile-links",

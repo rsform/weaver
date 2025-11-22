@@ -25,7 +25,7 @@ pub struct Author<'a> {
     pub did: jacquard_common::types::string::Did<'a>,
     /// signed bytes of the corresponding notebook record in the author's repo
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub signature: Option<bytes::Bytes>,
+    pub signature: std::option::Option<bytes::Bytes>,
 }
 
 pub mod author_state {
@@ -1256,55 +1256,55 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for ProfileDataViewBasic<'a> 
 pub struct ProfileView<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub avatar: Option<jacquard_common::types::string::Uri<'a>>,
+    pub avatar: std::option::Option<jacquard_common::types::string::Uri<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub banner: Option<jacquard_common::types::string::Uri<'a>>,
+    pub banner: std::option::Option<jacquard_common::types::string::Uri<'a>>,
     /// Include link to this account on Bluesky.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub bluesky: Option<bool>,
+    pub bluesky: std::option::Option<bool>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub created_at: Option<jacquard_common::types::string::Datetime>,
+    pub created_at: std::option::Option<jacquard_common::types::string::Datetime>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub description: Option<jacquard_common::CowStr<'a>>,
+    pub description: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
     pub did: jacquard_common::types::string::Did<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub display_name: Option<jacquard_common::CowStr<'a>>,
+    pub display_name: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
     pub handle: jacquard_common::types::string::Handle<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub indexed_at: Option<jacquard_common::types::string::Datetime>,
+    pub indexed_at: std::option::Option<jacquard_common::types::string::Datetime>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub labels: Option<Vec<crate::com_atproto::label::Label<'a>>>,
+    pub labels: std::option::Option<Vec<crate::com_atproto::label::Label<'a>>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub links: Option<Vec<jacquard_common::types::string::Uri<'a>>>,
+    pub links: std::option::Option<Vec<jacquard_common::types::string::Uri<'a>>>,
     /// Free-form location text.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub location: Option<jacquard_common::CowStr<'a>>,
+    pub location: std::option::Option<jacquard_common::CowStr<'a>>,
     /// Notebooks or other records pinned for display.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub pinned: Option<crate::sh_weaver::actor::PinnedList<'a>>,
+    pub pinned: std::option::Option<crate::sh_weaver::actor::PinnedList<'a>>,
     /// Pronouns to use in user-generated content.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub pronouns: Option<crate::sh_weaver::actor::PronounsList<'a>>,
+    pub pronouns: std::option::Option<crate::sh_weaver::actor::PronounsList<'a>>,
     /// Include link to this account on stream.place.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub streamplace: Option<bool>,
+    pub streamplace: std::option::Option<bool>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub subscribed_count: Option<i64>,
+    pub subscribed_count: std::option::Option<i64>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub subscriber_count: Option<i64>,
+    pub subscriber_count: std::option::Option<i64>,
     /// Include link to this account on Tangled.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub tangled: Option<bool>,
+    pub tangled: std::option::Option<bool>,
 }
 
 pub mod profile_view_state {
@@ -1930,25 +1930,25 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for ProfileView<'a> {
 pub struct ProfileViewBasic<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub avatar: Option<jacquard_common::types::string::Uri<'a>>,
+    pub avatar: std::option::Option<jacquard_common::types::string::Uri<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub created_at: Option<jacquard_common::types::string::Datetime>,
+    pub created_at: std::option::Option<jacquard_common::types::string::Datetime>,
     #[serde(borrow)]
     pub did: jacquard_common::types::string::Did<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub display_name: Option<jacquard_common::CowStr<'a>>,
+    pub display_name: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
     pub handle: jacquard_common::types::string::Handle<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub indexed_at: Option<jacquard_common::types::string::Datetime>,
+    pub indexed_at: std::option::Option<jacquard_common::types::string::Datetime>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub labels: Option<Vec<crate::com_atproto::label::Label<'a>>>,
+    pub labels: std::option::Option<Vec<crate::com_atproto::label::Label<'a>>>,
     /// Pronouns to use in user-generated content.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub pronouns: Option<crate::sh_weaver::actor::PronounsList<'a>>,
+    pub pronouns: std::option::Option<crate::sh_weaver::actor::PronounsList<'a>>,
 }
 
 pub mod profile_view_basic_state {
@@ -2288,25 +2288,27 @@ pub struct TangledProfileView<'a> {
     /// Free-form profile description text.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub description: Option<jacquard_common::CowStr<'a>>,
+    pub description: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
     pub did: jacquard_common::types::string::Did<'a>,
     #[serde(borrow)]
     pub handle: jacquard_common::types::string::Handle<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub links: Option<Vec<jacquard_common::types::string::Uri<'a>>>,
+    pub links: std::option::Option<Vec<jacquard_common::types::string::Uri<'a>>>,
     /// Free-form location text.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub location: Option<jacquard_common::CowStr<'a>>,
+    pub location: std::option::Option<jacquard_common::CowStr<'a>>,
     /// Any ATURI, it is up to appviews to validate these fields.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub pinned_repositories: Option<Vec<jacquard_common::types::string::AtUri<'a>>>,
+    pub pinned_repositories: std::option::Option<
+        Vec<jacquard_common::types::string::AtUri<'a>>,
+    >,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub stats: Option<Vec<jacquard_common::CowStr<'a>>>,
+    pub stats: std::option::Option<Vec<jacquard_common::CowStr<'a>>>,
 }
 
 pub mod tangled_profile_view_state {

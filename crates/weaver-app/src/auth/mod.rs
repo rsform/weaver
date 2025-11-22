@@ -5,6 +5,7 @@ pub use storage::AuthStore;
 mod state;
 pub use state::AuthState;
 
+use crate::fetch::Fetcher;
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 use dioxus::prelude::*;
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
@@ -25,13 +26,12 @@ pub async fn client_metadata() -> Result<axum::Json<serde_json::Value>> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn restore_session() -> Result<(), String> {
+pub async fn restore_session(_fetcher: Fetcher) -> Result<(), String> {
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn restore_session() -> Result<(), CapturedError> {
-    use crate::fetch::CachedFetcher;
+pub async fn restore_session(fetcher: Fetcher) -> Result<(), CapturedError> {
     use dioxus::prelude::*;
     use gloo_storage::{LocalStorage, Storage};
     use jacquard::types::string::Did;
@@ -59,7 +59,6 @@ pub async fn restore_session() -> Result<(), CapturedError> {
     let (did_str, session_id) =
         found_session.ok_or(CapturedError::from_display("No saved session found"))?;
     let did = Did::new_owned(did_str)?;
-    let fetcher = use_context::<CachedFetcher>();
 
     let session = fetcher
         .client

@@ -30,7 +30,7 @@ pub struct AuthorListView<'a> {
     pub record: crate::sh_weaver::actor::ProfileDataView<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub uri: Option<jacquard_common::types::string::AtUri<'a>>,
+    pub uri: std::option::Option<jacquard_common::types::string::AtUri<'a>>,
 }
 
 pub mod author_list_view_state {
@@ -874,10 +874,10 @@ pub struct BookEntryView<'a> {
     pub index: i64,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub next: Option<crate::sh_weaver::notebook::BookEntryRef<'a>>,
+    pub next: std::option::Option<crate::sh_weaver::notebook::BookEntryRef<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub prev: Option<crate::sh_weaver::notebook::BookEntryRef<'a>>,
+    pub prev: std::option::Option<crate::sh_weaver::notebook::BookEntryRef<'a>>,
 }
 
 pub mod book_entry_view_state {
@@ -1139,13 +1139,13 @@ pub struct EntryView<'a> {
     pub record: jacquard_common::types::value::Data<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub rendered_view: Option<crate::sh_weaver::notebook::RenderedView<'a>>,
+    pub rendered_view: std::option::Option<crate::sh_weaver::notebook::RenderedView<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub tags: Option<crate::sh_weaver::notebook::Tags<'a>>,
+    pub tags: std::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub title: Option<crate::sh_weaver::notebook::Title<'a>>,
+    pub title: std::option::Option<crate::sh_weaver::notebook::Title<'a>>,
     #[serde(borrow)]
     pub uri: jacquard_common::types::string::AtUri<'a>,
 }
@@ -1511,10 +1511,10 @@ pub struct NotebookView<'a> {
     pub record: jacquard_common::types::value::Data<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub tags: Option<crate::sh_weaver::notebook::Tags<'a>>,
+    pub tags: std::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub title: Option<crate::sh_weaver::notebook::Title<'a>>,
+    pub title: std::option::Option<crate::sh_weaver::notebook::Title<'a>>,
     #[serde(borrow)]
     pub uri: jacquard_common::types::string::AtUri<'a>,
 }
@@ -1854,7 +1854,7 @@ pub type Path<'a> = jacquard_common::CowStr<'a>;
 pub struct RenderedView<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub css: Option<jacquard_common::types::blob::BlobRef<'a>>,
+    pub css: std::option::Option<jacquard_common::types::blob::BlobRef<'a>>,
     #[serde(borrow)]
     pub html: jacquard_common::types::blob::BlobRef<'a>,
 }

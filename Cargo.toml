@@ -21,38 +21,38 @@ name = "weaver-workspace"
 
 
 [workspace.dependencies]
-
 serde = { version = "1.0", features = ["derive"] }
 bytes = "1.10"
-minijinja = { version = "2.9.0", default-features = false }
-minijinja-contrib = { version = "2.9.0", default-features = false }
 miette = { version = "7.6" }
-owo-colors = { version = "4.2.0" }
 thiserror = "2.0"
 syntect = { version = "5.2.0", default-features = false }
-jane-eyre = "0.6.12"
 n0-future = "=0.1.3"
 tracing = { version = "0.1.41", default-features = false, features = ["std"] }
-lexicon_cid = { package = "cid", version = "0.10.1", features = [
-  "serde-codec",
-] }
-
 markdown-weaver = { git = "https://github.com/rsform/markdown-weaver" }
 markdown-weaver-escape = { git = "https://github.com/rsform/markdown-weaver" }
 
 # jacquard = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false, features = ["derive", "api_bluesky", "tracing"] }
-# jacquard-api = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
+# jacquard-identity = { git = "https://tangled.org/@nonbinary.computer/jacquard", features = ["cache"] }
 # jacquard-common = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
 # jacquard-axum = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
 # jacquard-derive = { git = "https://tangled.org/@nonbinary.computer/jacquard" }
 # jacquard-lexicon = { git = "https://tangled.org/@nonbinary.computer/jacquard", default-features = false }
 
-jacquard = { path = "../jacquard/crates/jacquard", default-features = false, features = ["derive", "api_bluesky", "tracing"] }
+jacquard = { path = "../jacquard/crates/jacquard", default-features = false, features = ["derive", "api_bluesky", "tracing", "cache"] }
+jacquard-identity = { path = "../jacquard/crates/jacquard-identity", features = ["cache"] }
 jacquard-api = { path = "../jacquard/crates/jacquard-api" }
 jacquard-common = { path = "../jacquard/crates/jacquard-common" }
 jacquard-axum = {path = "../jacquard/crates/jacquard-axum" }
 jacquard-derive = { path = "../jacquard/crates/jacquard-derive" }
 jacquard-lexicon = { path = "../jacquard/crates/jacquard-lexicon", default-features = false }
+
+# jacquard = { path = "../jacquard-facet/crates/jacquard", default-features = false, features = ["derive", "api_bluesky", "tracing", "serde"] }
+# jacquard-identity = { path = "../jacquard-facet/crates/jacquard-identity", features = ["cache"] }
+# jacquard-api = { path = "../jacquard-facet/crates/jacquard-api" }
+# jacquard-common = { path = "../jacquard-facet/crates/jacquard-common" }
+# jacquard-axum = {path = "../jacquard-facet/crates/jacquard-axum" }
+# jacquard-derive = { path = "../jacquard-facet/crates/jacquard-derive" }
+# jacquard-lexicon = { path = "../jacquard-facet/crates/jacquard-lexicon", default-features = false }
 
 [profile]
 

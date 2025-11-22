@@ -42,13 +42,37 @@ impl BlobCache {
             }
             AtIdentifier::Handle(handle) => self.client.pds_for_handle(&handle).await?,
         };
-        let blob = self
-            .client
-            .xrpc(pds_url)
-            .send(&GetBlob::new().cid(cid.clone()).did(repo_did).build())
-            .await?
-            .buffer()
-            .clone();
+        // let blob = if let Ok(blob_stream) = self
+        //     .client
+        //     .xrpc(pds_url)
+        //     .send(
+        //         &GetBlob::new()
+        //             .cid(cid.clone())
+        //             .did(repo_did.clone())
+        //             .build(),
+        //     )
+        //     .await
+        // {
+        //     blob_stream.buffer().clone()
+        // } else {
+        //     reqwest::get(format!(
+        //         "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@jpeg",
+        //         repo_did, cid
+        //     ))
+        //     .await?
+        //     .bytes()
+        //     .await?
+        //     .clone()
+        // };
+        //
+        let blob = reqwest::get(format!(
+            "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@jpeg",
+            repo_did, cid
+        ))
+        .await?
+        .bytes()
+        .await?
+        .clone();
 
         self.cache.insert(cid.clone(), blob);
         if let Some(name) = name {

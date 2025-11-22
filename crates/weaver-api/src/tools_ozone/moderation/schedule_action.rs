@@ -21,7 +21,7 @@ pub struct FailedScheduling<'a> {
     pub error: jacquard_common::CowStr<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub error_code: Option<jacquard_common::CowStr<'a>>,
+    pub error_code: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
     pub subject: jacquard_common::types::string::Did<'a>,
 }
@@ -574,6 +574,48 @@ fn lexicon_doc_tools_ozone_moderation_scheduleAction() -> ::jacquard_lexicon::le
                             }),
                         );
                         map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
+                                "emailContent",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                description: Some(
+                                    ::jacquard_common::CowStr::new_static(
+                                        "Email content to be sent to the user upon takedown.",
+                                    ),
+                                ),
+                                format: None,
+                                default: None,
+                                min_length: None,
+                                max_length: None,
+                                min_graphemes: None,
+                                max_graphemes: None,
+                                r#enum: None,
+                                r#const: None,
+                                known_values: None,
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
+                                "emailSubject",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                description: Some(
+                                    ::jacquard_common::CowStr::new_static(
+                                        "Subject of the email to be sent to the user upon takedown.",
+                                    ),
+                                ),
+                                format: None,
+                                default: None,
+                                min_length: None,
+                                max_length: None,
+                                min_graphemes: None,
+                                max_graphemes: None,
+                                r#enum: None,
+                                r#const: None,
+                                known_values: None,
+                            }),
+                        );
+                        map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("policies"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Array(::jacquard_lexicon::lexicon::LexArray {
                                 description: Some(
@@ -595,6 +637,63 @@ fn lexicon_doc_tools_ozone_moderation_scheduleAction() -> ::jacquard_lexicon::le
                                 }),
                                 min_length: None,
                                 max_length: Some(5usize),
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
+                                "severityLevel",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                description: Some(
+                                    ::jacquard_common::CowStr::new_static(
+                                        "Severity level of the violation (e.g., 'sev-0', 'sev-1', 'sev-2', etc.).",
+                                    ),
+                                ),
+                                format: None,
+                                default: None,
+                                min_length: None,
+                                max_length: None,
+                                min_graphemes: None,
+                                max_graphemes: None,
+                                r#enum: None,
+                                r#const: None,
+                                known_values: None,
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
+                                "strikeCount",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Integer(::jacquard_lexicon::lexicon::LexInteger {
+                                description: None,
+                                default: None,
+                                minimum: None,
+                                maximum: None,
+                                r#enum: None,
+                                r#const: None,
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
+                                "strikeExpiresAt",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                description: Some(
+                                    ::jacquard_common::CowStr::new_static(
+                                        "When the strike should expire. If not provided, the strike never expires.",
+                                    ),
+                                ),
+                                format: Some(
+                                    ::jacquard_lexicon::lexicon::LexStringFormat::Datetime,
+                                ),
+                                default: None,
+                                min_length: None,
+                                max_length: None,
+                                min_graphemes: None,
+                                max_graphemes: None,
+                                r#enum: None,
+                                r#const: None,
+                                known_values: None,
                             }),
                         );
                         map
@@ -642,7 +741,7 @@ pub struct ScheduleAction<'a> {
     /// This will be propagated to the moderation event when it is applied
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub mod_tool: Option<crate::tools_ozone::moderation::ModTool<'a>>,
+    pub mod_tool: std::option::Option<crate::tools_ozone::moderation::ModTool<'a>>,
     #[serde(borrow)]
     pub scheduling: crate::tools_ozone::moderation::schedule_action::SchedulingConfig<
         'a,
@@ -1198,10 +1297,28 @@ pub struct Takedown<'a> {
     /// Indicates how long the takedown should be in effect before automatically expiring.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     pub duration_in_hours: std::option::Option<i64>,
+    /// Email content to be sent to the user upon takedown.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub email_content: std::option::Option<jacquard_common::CowStr<'a>>,
+    /// Subject of the email to be sent to the user upon takedown.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub email_subject: std::option::Option<jacquard_common::CowStr<'a>>,
     /// Names/Keywords of the policies that drove the decision.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub policies: std::option::Option<Vec<jacquard_common::CowStr<'a>>>,
+    /// Severity level of the violation (e.g., 'sev-0', 'sev-1', 'sev-2', etc.).
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub severity_level: std::option::Option<jacquard_common::CowStr<'a>>,
+    /// Number of strikes to assign to the user when takedown is applied.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub strike_count: std::option::Option<i64>,
+    /// When the strike should expire. If not provided, the strike never expires.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub strike_expires_at: std::option::Option<jacquard_common::types::string::Datetime>,
 }
 
 impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Takedown<'a> {

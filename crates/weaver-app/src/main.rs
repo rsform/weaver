@@ -1,6 +1,6 @@
 // The dioxus prelude contains a ton of common items used in dioxus apps. It's a good idea to import wherever you
 // need dioxus
-use components::{Entry, Repository, RepositoryIndex};
+use components::{EntryPage, Repository, RepositoryIndex};
 #[allow(unused)]
 use dioxus::{CapturedError, prelude::*};
 
@@ -14,12 +14,10 @@ use jacquard::{
     smol_str::SmolStr,
     types::{cid::Cid, string::AtIdentifier},
 };
-#[cfg(feature = "server")]
-use std::sync::Arc;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 #[allow(unused)]
 use views::{
-    Callback, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordIndex, RecordView,
+    Callback, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordIndex, RecordPage,
 };
 
 use crate::{
@@ -37,6 +35,7 @@ mod config;
 mod data;
 mod env;
 mod fetch;
+mod record_utils;
 mod service_worker;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
 mod views;
@@ -59,7 +58,7 @@ enum Route {
         #[nest("/record")]
           #[layout(RecordIndex)]
             #[route("/:..uri")]
-            RecordView { uri: Vec<String> },
+            RecordPage { uri: Vec<String> },
                      #[end_layout]
         #[end_nest]
         #[route("/callback?:state&:iss&:code")]
@@ -73,7 +72,7 @@ enum Route {
               #[route("/")]
               NotebookIndex { ident: AtIdentifier<'static>, book_title: SmolStr },
                 #[route("/:title")]
-                Entry { ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr }
+                EntryPage { ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr }
 
 }
 const FAVICON: Asset = asset!("/assets/weaver_photo_sm.jpg");
@@ -122,7 +121,7 @@ fn main() {
         #[cfg(feature = "fullstack-server")]
         let router = {
             use jacquard::client::UnauthenticatedSession;
-            let fetcher = Arc::new(fetch::CachedFetcher::new(OAuthClient::new(
+            let fetcher = Arc::new(fetch::Fetcher::new(OAuthClient::new(
                 AuthStore::new(),
                 ClientData::new_public(CONFIG.oauth.clone()),
             )));
@@ -132,14 +131,13 @@ fn main() {
             axum::Router::new()
                 // Server side render the application, serve static assets, and register server functions
                 .serve_dioxus_application(
-                    ServeConfig::builder()
-                        // Enable incremental rendering
-                        .incremental(
-                            dioxus::server::IncrementalRendererConfig::new()
-                                .pre_render(true)
-                                .clear_cache(false),
-                        )
-                        .enable_out_of_order_streaming(),
+                    ServeConfig::builder(), // Enable incremental rendering
+                    // .incremental(
+                    //     dioxus::server::IncrementalRendererConfig::new()
+                    //         .pre_render(true)
+                    //         .clear_cache(false),
+                    // )
+                    //.enable_out_of_order_streaming(),
                     App,
                 )
                 .layer(middleware::from_fn({
@@ -165,18 +163,18 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    use_context_provider(|| {
-        fetch::CachedFetcher::new(OAuthClient::new(
+    let fetcher = use_context_provider(|| {
+        fetch::Fetcher::new(OAuthClient::new(
             AuthStore::new(),
             ClientData::new_public(CONFIG.oauth.clone()),
         ))
     });
     use_context_provider(|| Signal::new(AuthState::default()));
-
     use_effect(move || {
+        let fetcher = fetcher.clone();
         spawn(async move {
-            if let Err(e) = auth::restore_session().await {
-                tracing::warn!("Session restoration failed: {}", e);
+            if let Err(e) = auth::restore_session(fetcher).await {
+                tracing::debug!("Session restoration failed: {}", e);
             }
         });
     });
@@ -186,10 +184,8 @@ fn App() -> Element {
         target_os = "unknown",
         not(feature = "fullstack-server")
     ))]
-    use_effect(move || {
-        spawn(async move {
-            let _ = service_worker::register_service_worker().await;
-        });
+    spawn(async move {
+        let _ = service_worker::register_service_worker().await;
     });
 
     rsx! {

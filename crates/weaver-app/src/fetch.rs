@@ -326,33 +326,17 @@ impl AgentSession for Client {
     }
 }
 
+//#[cfg(not(feature = "server"))]
 #[derive(Clone)]
-pub struct CachedFetcher {
+pub struct Fetcher {
     pub client: Arc<Client>,
-    book_cache: cache_impl::Cache<
-        (AtIdentifier<'static>, SmolStr),
-        Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>,
-    >,
-    entry_cache: cache_impl::Cache<
-        (AtIdentifier<'static>, SmolStr),
-        Arc<(BookEntryView<'static>, Entry<'static>)>,
-    >,
-    profile_cache: cache_impl::Cache<AtIdentifier<'static>, Arc<ProfileDataView<'static>>>,
 }
 
-/// SAFETY: This isn't thread-safe on WASM, but we aren't multithreaded on WASM
-unsafe impl Sync for CachedFetcher {}
-
-/// SAFETY: This isn't thread-safe on WASM, but we aren't multithreaded on WASM
-unsafe impl Send for CachedFetcher {}
-
-impl CachedFetcher {
+//#[cfg(not(feature = "server"))]
+impl Fetcher {
     pub fn new(client: OAuthClient<JacquardResolver, AuthStore>) -> Self {
         Self {
             client: Arc::new(Client::new(client)),
-            book_cache: cache_impl::new_cache(100, Duration::from_secs(1200)),
-            entry_cache: cache_impl::new_cache(100, Duration::from_secs(600)),
-            profile_cache: cache_impl::new_cache(100, Duration::from_secs(1800)),
         }
     }
 
@@ -390,21 +374,16 @@ impl CachedFetcher {
         ident: AtIdentifier<'static>,
         title: SmolStr,
     ) -> Result<Option<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
-        if let Some(entry) = cache_impl::get(&self.book_cache, &(ident.clone(), title.clone())) {
-            Ok(Some(entry))
+        let client = self.get_client();
+        if let Some((notebook, entries)) = client
+            .notebook_by_title(&ident, &title)
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?
+        {
+            let stored = Arc::new((notebook, entries));
+            Ok(Some(stored))
         } else {
-            let client = self.get_client();
-            if let Some((notebook, entries)) = client
-                .notebook_by_title(&ident, &title)
-                .await
-                .map_err(|e| dioxus::CapturedError::from_display(e))?
-            {
-                let stored = Arc::new((notebook, entries));
-                cache_impl::insert(&self.book_cache, (ident, title), stored.clone());
-                Ok(Some(stored))
-            } else {
-                Ok(None)
-            }
+            Ok(None)
         }
     }
 
@@ -416,23 +395,16 @@ impl CachedFetcher {
     ) -> Result<Option<Arc<(BookEntryView<'static>, Entry<'static>)>>> {
         if let Some(result) = self.get_notebook(ident.clone(), book_title).await? {
             let (notebook, entries) = result.as_ref();
-            if let Some(entry) =
-                cache_impl::get(&self.entry_cache, &(ident.clone(), entry_title.clone()))
+            let client = self.get_client();
+            if let Some(entry) = client
+                .entry_by_title(notebook, entries.as_ref(), &entry_title)
+                .await
+                .map_err(|e| dioxus::CapturedError::from_display(e))?
             {
-                Ok(Some(entry))
+                let stored = Arc::new(entry);
+                Ok(Some(stored))
             } else {
-                let client = self.get_client();
-                if let Some(entry) = client
-                    .entry_by_title(notebook, entries.as_ref(), &entry_title)
-                    .await
-                    .map_err(|e| dioxus::CapturedError::from_display(e))?
-                {
-                    let stored = Arc::new(entry);
-                    cache_impl::insert(&self.entry_cache, (ident, entry_title), stored.clone());
-                    Ok(Some(stored))
-                } else {
-                    Ok(None)
-                }
+                Ok(None)
             }
         } else {
             Ok(None)
@@ -477,8 +449,6 @@ impl CachedFetcher {
                         .unwrap_or_else(|| SmolStr::new("Untitled"));
 
                     let result = Arc::new((notebook, entries));
-                    // Cache it
-                    cache_impl::insert(&self.book_cache, (ident, title), result.clone());
                     notebooks.push(result);
                 }
                 Err(_) => continue, // Skip notebooks that fail to load
@@ -546,8 +516,6 @@ impl CachedFetcher {
                             .unwrap_or_else(|| SmolStr::new("Untitled"));
 
                         let result = Arc::new((notebook, entries));
-                        // Cache it
-                        cache_impl::insert(&self.book_cache, (ident, title), result.clone());
                         notebooks.push(result);
                     }
                     Err(_) => continue, // Skip notebooks that fail to load
@@ -585,14 +553,6 @@ impl CachedFetcher {
         &self,
         ident: &AtIdentifier<'_>,
     ) -> Result<Arc<ProfileDataView<'static>>> {
-        use jacquard::IntoStatic;
-
-        let ident_static = ident.clone().into_static();
-
-        if let Some(cached) = cache_impl::get(&self.profile_cache, &ident_static) {
-            return Ok(cached);
-        }
-
         let client = self.get_client();
 
         let did = match ident {
@@ -609,13 +569,305 @@ impl CachedFetcher {
             .map_err(|e| dioxus::CapturedError::from_display(e))?;
 
         let result = Arc::new(profile_view);
-        cache_impl::insert(&self.profile_cache, ident_static, result.clone());
 
         Ok(result)
     }
 }
 
-impl HttpClient for CachedFetcher {
+// //#[cfg(feature = "server")]
+// #[derive(Clone)]
+// pub struct Fetcher {
+//     pub client: Arc<Client>,
+//     book_cache: cache_impl::Cache<
+//         (AtIdentifier<'static>, SmolStr),
+//         Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>,
+//     >,
+//     entry_cache: cache_impl::Cache<
+//         (AtIdentifier<'static>, SmolStr),
+//         Arc<(BookEntryView<'static>, Entry<'static>)>,
+//     >,
+//     profile_cache: cache_impl::Cache<AtIdentifier<'static>, Arc<ProfileDataView<'static>>>,
+// }
+
+// // /// SAFETY: This isn't thread-safe on WASM, but we aren't multithreaded on WASM
+// //#[cfg(feature = "server")]
+// unsafe impl Sync for Fetcher {}
+
+// // /// SAFETY: This isn't thread-safe on WASM, but we aren't multithreaded on WASM
+// //#[cfg(feature = "server")]
+// unsafe impl Send for Fetcher {}
+
+// //#[cfg(feature = "server")]
+// impl Fetcher {
+//     pub fn new(client: OAuthClient<JacquardResolver, AuthStore>) -> Self {
+//         Self {
+//             client: Arc::new(Client::new(client)),
+//             book_cache: cache_impl::new_cache(100, Duration::from_secs(30)),
+//             entry_cache: cache_impl::new_cache(100, Duration::from_secs(30)),
+//             profile_cache: cache_impl::new_cache(100, Duration::from_secs(1800)),
+//         }
+//     }
+
+//     pub async fn upgrade_to_authenticated(
+//         &self,
+//         session: OAuthSession<JacquardResolver, crate::auth::AuthStore>,
+//     ) {
+//         let mut session_slot = self.client.session.write().await;
+//         *session_slot = Some(Arc::new(Agent::new(session)));
+//     }
+
+//     pub async fn downgrade_to_unauthenticated(&self) {
+//         let mut session_slot = self.client.session.write().await;
+//         if let Some(session) = session_slot.take() {
+//             session.inner().logout().await.ok();
+//         }
+//     }
+
+//     #[allow(dead_code)]
+//     pub async fn current_did(&self) -> Option<Did<'static>> {
+//         let session_slot = self.client.session.read().await;
+//         if let Some(session) = session_slot.as_ref() {
+//             session.info().await.map(|(d, _)| d)
+//         } else {
+//             None
+//         }
+//     }
+
+//     pub fn get_client(&self) -> Arc<Client> {
+//         self.client.clone()
+//     }
+
+//     pub async fn get_notebook(
+//         &self,
+//         ident: AtIdentifier<'static>,
+//         title: SmolStr,
+//     ) -> Result<Option<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+//         if let Some(entry) = cache_impl::get(&self.book_cache, &(ident.clone(), title.clone())) {
+//             Ok(Some(entry))
+//         } else {
+//             let client = self.get_client();
+//             if let Some((notebook, entries)) = client
+//                 .notebook_by_title(&ident, &title)
+//                 .await
+//                 .map_err(|e| dioxus::CapturedError::from_display(e))?
+//             {
+//                 let stored = Arc::new((notebook, entries));
+//                 cache_impl::insert(&self.book_cache, (ident, title), stored.clone());
+//                 Ok(Some(stored))
+//             } else {
+//                 Ok(None)
+//             }
+//         }
+//     }
+
+//     pub async fn get_entry(
+//         &self,
+//         ident: AtIdentifier<'static>,
+//         book_title: SmolStr,
+//         entry_title: SmolStr,
+//     ) -> Result<Option<Arc<(BookEntryView<'static>, Entry<'static>)>>> {
+//         if let Some(result) = self.get_notebook(ident.clone(), book_title).await? {
+//             let (notebook, entries) = result.as_ref();
+//             if let Some(entry) =
+//                 cache_impl::get(&self.entry_cache, &(ident.clone(), entry_title.clone()))
+//             {
+//                 Ok(Some(entry))
+//             } else {
+//                 let client = self.get_client();
+//                 if let Some(entry) = client
+//                     .entry_by_title(notebook, entries.as_ref(), &entry_title)
+//                     .await
+//                     .map_err(|e| dioxus::CapturedError::from_display(e))?
+//                 {
+//                     let stored = Arc::new(entry);
+//                     cache_impl::insert(&self.entry_cache, (ident, entry_title), stored.clone());
+//                     Ok(Some(stored))
+//                 } else {
+//                     Ok(None)
+//                 }
+//             }
+//         } else {
+//             Ok(None)
+//         }
+//     }
+
+//     pub async fn fetch_notebooks_from_ufos(
+//         &self,
+//     ) -> Result<Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+//         use jacquard::{IntoStatic, types::aturi::AtUri};
+
+//         let url = "https://ufos-api.microcosm.blue/records?collection=sh.weaver.notebook.book";
+//         let response = reqwest::get(url)
+//             .await
+//             .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+//         let records: Vec<UfosRecord> = response
+//             .json()
+//             .await
+//             .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+//         let mut notebooks = Vec::new();
+//         let client = self.get_client();
+
+//         for ufos_record in records {
+//             // Construct URI
+//             let uri_str = format!(
+//                 "at://{}/{}/{}",
+//                 ufos_record.did, ufos_record.collection, ufos_record.rkey
+//             );
+//             let uri = AtUri::new_owned(uri_str)
+//                 .map_err(|e| dioxus::CapturedError::from_display(format!("Invalid URI: {}", e)))?;
+
+//             // Fetch the full notebook view (which hydrates authors)
+//             match client.view_notebook(&uri).await {
+//                 Ok((notebook, entries)) => {
+//                     let ident = uri.authority().clone().into_static();
+//                     let title = notebook
+//                         .title
+//                         .as_ref()
+//                         .map(|t| SmolStr::new(t.as_ref()))
+//                         .unwrap_or_else(|| SmolStr::new("Untitled"));
+
+//                     let result = Arc::new((notebook, entries));
+//                     // Cache it
+//                     cache_impl::insert(&self.book_cache, (ident, title), result.clone());
+//                     notebooks.push(result);
+//                 }
+//                 Err(_) => continue, // Skip notebooks that fail to load
+//             }
+//         }
+
+//         Ok(notebooks)
+//     }
+
+//     pub async fn fetch_notebooks_for_did(
+//         &self,
+//         ident: &AtIdentifier<'_>,
+//     ) -> Result<Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+//         use jacquard::{
+//             IntoStatic,
+//             types::{collection::Collection, nsid::Nsid},
+//             xrpc::XrpcExt,
+//         };
+//         use weaver_api::{
+//             com_atproto::repo::list_records::ListRecords, sh_weaver::notebook::book::Book,
+//         };
+
+//         let client = self.get_client();
+
+//         // Resolve DID and PDS
+//         let (repo_did, pds_url) = match ident {
+//             AtIdentifier::Did(did) => {
+//                 let pds = client
+//                     .pds_for_did(did)
+//                     .await
+//                     .map_err(|e| dioxus::CapturedError::from_display(e))?;
+//                 (did.clone(), pds)
+//             }
+//             AtIdentifier::Handle(handle) => client
+//                 .pds_for_handle(handle)
+//                 .await
+//                 .map_err(|e| dioxus::CapturedError::from_display(e))?,
+//         };
+
+//         // Fetch all notebook records for this repo
+//         let resp = client
+//             .xrpc(pds_url)
+//             .send(
+//                 &ListRecords::new()
+//                     .repo(repo_did)
+//                     .collection(Nsid::raw(Book::NSID))
+//                     .limit(100)
+//                     .build(),
+//             )
+//             .await
+//             .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+//         let mut notebooks = Vec::new();
+
+//         if let Ok(list) = resp.parse() {
+//             for record in list.records {
+//                 // View the notebook (which hydrates authors)
+//                 match client.view_notebook(&record.uri).await {
+//                     Ok((notebook, entries)) => {
+//                         let ident = record.uri.authority().clone().into_static();
+//                         let title = notebook
+//                             .title
+//                             .as_ref()
+//                             .map(|t| SmolStr::new(t.as_ref()))
+//                             .unwrap_or_else(|| SmolStr::new("Untitled"));
+
+//                         let result = Arc::new((notebook, entries));
+//                         // Cache it
+//                         cache_impl::insert(&self.book_cache, (ident, title), result.clone());
+//                         notebooks.push(result);
+//                     }
+//                     Err(_) => continue, // Skip notebooks that fail to load
+//                 }
+//             }
+//         }
+
+//         Ok(notebooks)
+//     }
+
+//     pub async fn list_notebook_entries(
+//         &self,
+//         ident: AtIdentifier<'static>,
+//         book_title: SmolStr,
+//     ) -> Result<Option<Vec<BookEntryView<'static>>>> {
+//         if let Some(result) = self.get_notebook(ident.clone(), book_title).await? {
+//             let (notebook, entries) = result.as_ref();
+//             let mut book_entries = Vec::new();
+//             let client = self.get_client();
+
+//             for index in 0..entries.len() {
+//                 match client.view_entry(notebook, entries, index).await {
+//                     Ok(book_entry) => book_entries.push(book_entry),
+//                     Err(_) => continue, // Skip entries that fail to load
+//                 }
+//             }
+
+//             Ok(Some(book_entries))
+//         } else {
+//             Ok(None)
+//         }
+//     }
+
+//     pub async fn fetch_profile(
+//         &self,
+//         ident: &AtIdentifier<'_>,
+//     ) -> Result<Arc<ProfileDataView<'static>>> {
+//         use jacquard::IntoStatic;
+
+//         let ident_static = ident.clone().into_static();
+
+//         if let Some(cached) = cache_impl::get(&self.profile_cache, &ident_static) {
+//             return Ok(cached);
+//         }
+
+//         let client = self.get_client();
+
+//         let did = match ident {
+//             AtIdentifier::Did(d) => d.clone(),
+//             AtIdentifier::Handle(h) => client
+//                 .resolve_handle(h)
+//                 .await
+//                 .map_err(|e| dioxus::CapturedError::from_display(e))?,
+//         };
+
+//         let (_uri, profile_view) = client
+//             .hydrate_profile_view(&did)
+//             .await
+//             .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+//         let result = Arc::new(profile_view);
+//         cache_impl::insert(&self.profile_cache, ident_static, result.clone());
+
+//         Ok(result)
+//     }
+// }
+
+impl HttpClient for Fetcher {
     #[doc = " Error type returned by the HTTP client"]
     type Error = reqwest::Error;
 
@@ -645,7 +897,7 @@ impl HttpClient for CachedFetcher {
     }
 }
 
-impl XrpcClient for CachedFetcher {
+impl XrpcClient for Fetcher {
     #[doc = " Get the base URI for the client."]
     fn base_uri(&self) -> impl Future<Output = CowStr<'static>> + Send {
         self.client.base_uri()
@@ -717,7 +969,7 @@ impl XrpcClient for CachedFetcher {
     }
 }
 
-impl IdentityResolver for CachedFetcher {
+impl IdentityResolver for Fetcher {
     #[doc = " Access options for validation decisions in default methods"]
     fn options(&self) -> &ResolverOptions {
         self.client.options()
@@ -766,7 +1018,7 @@ impl IdentityResolver for CachedFetcher {
     }
 }
 
-impl LexiconSchemaResolver for CachedFetcher {
+impl LexiconSchemaResolver for Fetcher {
     #[cfg(not(target_arch = "wasm32"))]
     async fn resolve_lexicon_schema(
         &self,
@@ -784,7 +1036,7 @@ impl LexiconSchemaResolver for CachedFetcher {
     }
 }
 
-impl AgentSession for CachedFetcher {
+impl AgentSession for Fetcher {
     #[doc = " Identify the kind of session."]
     fn session_kind(&self) -> AgentKind {
         self.client.session_kind()

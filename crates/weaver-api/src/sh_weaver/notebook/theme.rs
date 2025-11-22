@@ -565,7 +565,7 @@ pub struct Theme<'a> {
     pub dark_scheme: crate::com_atproto::repo::strong_ref::StrongRef<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub default_theme: Option<jacquard_common::CowStr<'a>>,
+    pub default_theme: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
     pub fonts: ThemeFonts<'a>,
     /// Syntax highlighting theme for light mode

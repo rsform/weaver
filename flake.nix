@@ -267,6 +267,7 @@
             dioxus-cli
             wasm-bindgen-cli
             wasm-pack
+            twiggy
             binaryen.out
           ];
         };

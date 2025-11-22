@@ -1,5 +1,5 @@
 use crate::auth::AuthState;
-use crate::fetch::CachedFetcher;
+use crate::fetch::Fetcher;
 use dioxus::prelude::*;
 use jacquard::{
     IntoStatic,
@@ -15,7 +15,7 @@ pub fn Callback(
     iss: ReadSignal<SmolStr>,
     code: ReadSignal<SmolStr>,
 ) -> Element {
-    let fetcher = use_context::<CachedFetcher>();
+    let fetcher = use_context::<Fetcher>();
     let mut auth = use_context::<Signal<AuthState>>();
     #[cfg(feature = "web")]
     let result = {
@@ -43,6 +43,8 @@ pub fn Callback(
     };
     #[cfg(not(feature = "web"))]
     let result = { use_resource(move || async { Ok::<(), OAuthError>(()) }) };
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let nav = use_navigator();
 
     match &*result.read_unchecked() {
         Some(Ok(())) => {
@@ -52,7 +54,7 @@ pub fn Callback(
                 let mut prev = gloo_storage::LocalStorage::get::<String>("cached_route").ok();
                 if let Some(prev) = prev.take() {
                     tracing::info!("Navigating to previous page");
-                    let nav = use_navigator();
+
                     gloo_storage::LocalStorage::delete("cached_route");
                     nav.replace(prev);
                 }
