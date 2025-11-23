@@ -69,7 +69,7 @@ pub fn EntryPage(
     match &*entry.read() {
         Some((book_entry_view, entry_record)) => {
             if let Some(embeds) = &entry_record.embeds {
-                if let Some(images) = &embeds.images {
+                if let Some(_images) = &embeds.images {
                     // Register blob mappings with service worker (client-side only)
                     #[cfg(all(
                         target_family = "wasm",
@@ -83,7 +83,7 @@ pub fn EntryPage(
                             let _ = crate::service_worker::register_entry_blobs(
                                 &ident(),
                                 book_title().as_str(),
-                                &images,
+                                &_images,
                                 &fetcher,
                             )
                             .await;
@@ -117,6 +117,8 @@ fn EntryPageView(
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
+
+    tracing::info!("Entry: {book_title} - {title}");
 
     rsx! {
         // Set page title

@@ -1,3 +1,4 @@
+use weaver_api::app_bsky::actor::get_profile::GetProfile;
 // Re-export view types for use elsewhere
 pub use weaver_api::sh_weaver::notebook::{
     AuthorListView, BookEntryRef, BookEntryView, EntryView, NotebookView,
@@ -35,25 +36,8 @@ use crate::{PublishResult, W_TICKER, normalize_title_path};
 /// - `agent.upload_blob()` - Upload a single blob
 ///
 /// This trait is for multi-step workflows that coordinate between multiple operations.
-//#[trait_variant::make(Send)]
-pub trait WeaverExt: AgentSessionExt + XrpcExt {
-    /// Publish a notebook directory to the user's PDS
-    ///
-    /// Multi-step workflow:
-    /// 1. Parse markdown files in directory
-    /// 2. Extract and upload images/assets → BlobRefs
-    /// 3. Transform markdown refs to point at uploaded blobs
-    /// 4. Create entry records for each file
-    /// 5. Create book record with entry refs
-    ///
-    /// Returns the AT-URI of the published book
-    fn publish_notebook(
-        &self,
-        path: &Path,
-    ) -> impl Future<Output = Result<PublishResult<'_>, WeaverError>> {
-        async { todo!() }
-    }
-
+//#[cfg_attr(not(target_arch = "wasm32"), trait_variant::make(Send))]
+pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
     /// Publish a blob to the user's PDS
     ///
     /// Multi-step workflow:
@@ -62,16 +46,16 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
     ///
     /// Returns the AT-URI of the published blob
     fn publish_blob<'a>(
-        &self,
+        &'a self,
         blob: Bytes,
         url_path: &'a str,
         prev: Option<Tid>,
-    ) -> impl Future<Output = Result<(StrongRef<'a>, PublishedBlob<'a>), WeaverError>> {
+    ) -> impl Future<Output = Result<(StrongRef<'a>, PublishedBlob<'a>), WeaverError>> + 'a {
         async move {
             let mime_type =
                 MimeType::new_owned(blob.sniff_mime_type().unwrap_or("application/octet-stream"));
 
-            let blob = self.upload_blob(blob, mime_type).await?;
+            let blob = self.upload_blob(blob, mime_type.into_static()).await?;
             let publish_record = PublishedBlob::new()
                 .path(url_path)
                 .upload(BlobRef::Blob(blob))
@@ -86,10 +70,10 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
         }
     }
 
-    fn confirm_record_ref(
-        &self,
-        uri: &AtUri<'_>,
-    ) -> impl Future<Output = Result<StrongRef<'_>, WeaverError>> {
+    fn confirm_record_ref<'a>(
+        &'a self,
+        uri: &'a AtUri<'a>,
+    ) -> impl Future<Output = Result<StrongRef<'static>, WeaverError>> + 'a {
         async move {
             let rkey = uri.rkey().ok_or_else(|| {
                 AgentError::from(
@@ -314,6 +298,13 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
             let tags = notebook.value.tags.clone();
 
             let mut authors = Vec::new();
+            use weaver_api::app_bsky::actor::{
+                ProfileViewDetailed, get_profile::GetProfile, profile::Profile as BskyProfile,
+            };
+            use weaver_api::sh_weaver::actor::{
+                ProfileDataView, ProfileDataViewInner, ProfileView,
+                profile::Profile as WeaverProfile,
+            };
 
             for (index, author) in notebook.value.authors.iter().enumerate() {
                 let (profile_uri, profile_view) = self.hydrate_profile_view(&author.did).await?;
@@ -540,6 +531,14 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                         let tags = notebook.tags.clone();
 
                         let mut authors = Vec::new();
+                        use weaver_api::app_bsky::actor::{
+                            ProfileViewDetailed, get_profile::GetProfile,
+                            profile::Profile as BskyProfile,
+                        };
+                        use weaver_api::sh_weaver::actor::{
+                            ProfileDataView, ProfileDataViewInner, ProfileView,
+                            profile::Profile as WeaverProfile,
+                        };
 
                         for (index, author) in notebook.authors.iter().enumerate() {
                             let (profile_uri, profile_view) =
@@ -684,7 +683,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                     .send(GetProfile::new().actor(did.clone()).build())
                     .await
                 {
-                    if let Ok(output) = bsky_resp.parse() {
+                    if let Ok(output) = bsky_resp.into_output() {
                         let bsky_uri =
                             BskyProfile::uri(format!("at://{}/app.bsky.actor.profile/self", did))
                                 .map_err(|_| {
@@ -696,7 +695,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt {
                             Some(bsky_uri.as_uri().clone().into_static()),
                             ProfileDataView::new()
                                 .inner(ProfileDataViewInner::ProfileViewDetailed(Box::new(
-                                    output.value.into_static(),
+                                    output.value,
                                 )))
                                 .build()
                                 .into_static(),

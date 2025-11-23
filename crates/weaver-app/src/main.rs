@@ -98,6 +98,11 @@ fn main() {
     #[cfg(target_arch = "wasm32")]
     console_error_panic_hook::set_once();
 
+    #[cfg(feature = "server")]
+    std::panic::set_hook(Box::new(|panic_info| {
+        tracing::error!("PANIC: {:?}", panic_info);
+    }));
+
     // Run `serve()` on the server only
     #[cfg(feature = "server")]
     dioxus::serve(|| async move {
@@ -125,6 +130,7 @@ fn main() {
                 UnauthenticatedSession::new_public(),
             )));
             axum::Router::new()
+                .route("/favicon.ico", get(favicon))
                 // Server side render the application, serve static assets, and register server functions
                 .serve_dioxus_application(
                     ServeConfig::builder(), // Enable incremental rendering
@@ -257,6 +263,13 @@ fn ErrorLayout() -> Element {
             Outlet::<Route> {}
         }
     }
+}
+
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+pub async fn favicon() -> axum::response::Response {
+    use axum::{http::header::CONTENT_TYPE, response::IntoResponse};
+    let bytes = include_bytes!("../assets/weaver_photo_sm.jpg");
+    ([(CONTENT_TYPE, "image/jpg")], bytes).into_response()
 }
 
 #[cfg(all(feature = "fullstack-server", feature = "server"))]

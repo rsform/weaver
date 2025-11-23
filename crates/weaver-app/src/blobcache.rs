@@ -42,6 +42,9 @@ impl BlobCache {
             }
             AtIdentifier::Handle(handle) => self.client.pds_for_handle(&handle).await?,
         };
+        if self.get_cid(&cid).is_some() {
+            return Ok(());
+        }
         let blob = if let Ok(blob_stream) = self
             .client
             .xrpc(pds_url)

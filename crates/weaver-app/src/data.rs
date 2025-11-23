@@ -470,29 +470,25 @@ pub fn use_profile_data(
     Memo<Option<ProfileDataView<'static>>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let res = use_server_future(use_reactive!(|ident| {
+    let res = use_resource(use_reactive!(|ident| {
         let fetcher = fetcher.clone();
         async move {
-            tracing::debug!("use_profile_data server future STARTED for {:?}", ident);
-            let result = fetcher
+            fetcher
                 .fetch_profile(&ident())
                 .await
                 .ok()
                 .map(|arc| serde_json::to_value(&*arc).ok())
-                .flatten();
-            tracing::debug!("use_profile_data server future COMPLETED for {:?}", ident);
-            result
+                .flatten()
         }
     }));
     let memo = use_memo(use_reactive!(|res| {
-        let res = res.as_ref().ok()?;
         if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<ProfileDataView>(value.clone()).ok()
         } else {
             None
         }
     }));
-    (res, memo)
+    (Ok(res), memo)
 }
 
 /// Fetches profile data client-side only (no SSR)
