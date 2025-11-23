@@ -26,9 +26,16 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
         ident()
     );
     use crate::components::ProfileDisplay;
-    let notebooks = data::use_notebooks_for_did(ident);
-    let profile = crate::data::use_profile_data(ident);
+    let (notebooks_result, notebooks) = data::use_notebooks_for_did(ident);
+    let (profile_result, profile) = crate::data::use_profile_data(ident);
     tracing::debug!("RepositoryIndex got profile and notebooks");
+
+    #[cfg(feature = "fullstack-server")]
+    notebooks_result?;
+
+    #[cfg(feature = "fullstack-server")]
+    profile_result?;
+
     rsx! {
         document::Stylesheet { href: NOTEBOOK_CARD_CSS }
 

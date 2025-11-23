@@ -7,7 +7,7 @@ pub use css::NotebookCss;
 
 mod entry;
 #[allow(unused_imports)]
-pub use entry::{Entry, EntryCard, EntryMarkdown, EntryPage};
+pub use entry::{EntryCard, EntryMarkdown, EntryPage};
 
 pub mod identity;
 #[allow(unused_imports)]

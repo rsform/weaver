@@ -40,9 +40,15 @@ pub fn NotebookIndex(
     );
     // Fetch full notebook metadata with SSR support
     // IMPORTANT: Call ALL hooks before any ? early returns to maintain hook order
-    let notebook_data = data::use_notebook(ident, book_title);
-    let entries_resource = data::use_notebook_entries(ident, book_title);
+    let (notebook_result, notebook_data) = data::use_notebook(ident, book_title);
+    let (entries_result, entries_resource) = data::use_notebook_entries(ident, book_title);
     tracing::debug!("NotebookIndex got notebook data and entries");
+
+    #[cfg(feature = "fullstack-server")]
+    notebook_result?;
+
+    #[cfg(feature = "fullstack-server")]
+    entries_result?;
 
     rsx! {
         document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }

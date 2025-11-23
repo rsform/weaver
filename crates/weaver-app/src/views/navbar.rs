@@ -5,6 +5,7 @@ use crate::components::login::LoginModal;
 use crate::data::{use_get_handle, use_load_handle};
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
+use jacquard::types::string::Did;
 
 const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
 
@@ -20,16 +21,20 @@ pub fn Navbar() -> Element {
     tracing::debug!("Route: {:?}", route);
 
     let mut auth_state = use_context::<Signal<crate::auth::AuthState>>();
-    let route_handle = use_load_handle(match &route {
+    let (route_handle_res, route_handle) = use_load_handle(match &route {
         Route::EntryPage { ident, .. } => Some(ident.clone()),
         Route::RepositoryIndex { ident } => Some(ident.clone()),
         Route::NotebookIndex { ident, .. } => Some(ident.clone()),
         _ => None,
     });
+
+    #[cfg(feature = "fullstack-server")]
+    route_handle_res?;
+
     let fetcher = use_context::<Fetcher>();
     let mut show_login_modal = use_signal(|| false);
 
-    tracing::debug!("Navbar got route_handle: {:?}", route_handle);
+    tracing::debug!("Navbar got route_handle: {:?}", route_handle.read());
 
     rsx! {
         document::Link { rel: "stylesheet", href: NAVBAR_CSS }
@@ -90,17 +95,7 @@ pub fn Navbar() -> Element {
             }
             if auth_state.read().is_authenticated() {
                 if let Some(did) = &auth_state.read().did {
-                    Button {
-                        variant: ButtonVariant::Ghost,
-                        onclick: move |_| {
-                            let fetcher = fetcher.clone();
-                            auth_state.write().clear();
-                            async move {
-                                fetcher.downgrade_to_unauthenticated().await;
-                            }
-                        },
-                        span { class: "auth-handle", "@{use_get_handle(did.clone())}" }
-                    }
+                    AuthButton { did: did.clone() }
                 }
             } else {
                 div {
@@ -119,5 +114,27 @@ pub fn Navbar() -> Element {
         }
 
         Outlet::<Route> {}
+    }
+}
+
+#[component]
+fn AuthButton(did: Did<'static>) -> Element {
+    let auth_handle = use_get_handle(did);
+
+    let fetcher = use_context::<Fetcher>();
+    let mut auth_state = use_context::<Signal<AuthState>>();
+
+    rsx! {
+        Button {
+            variant: ButtonVariant::Ghost,
+            onclick: move |_| {
+                let fetcher = fetcher.clone();
+                auth_state.write().clear();
+                async move {
+                    fetcher.downgrade_to_unauthenticated().await;
+                }
+            },
+            span { class: "auth-handle", "@{auth_handle()}" }
+        }
     }
 }

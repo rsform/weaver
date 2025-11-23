@@ -178,13 +178,16 @@ fn App() -> Element {
     ))]
     {
         let fetcher = fetcher.clone();
-        use_future(move || {
+        use_effect(move || {
             let fetcher = fetcher.clone();
-            async move {
-                if let Err(e) = auth::restore_session(fetcher, auth_state).await {
-                    tracing::debug!("Session restoration failed: {}", e);
+            use_future(move || {
+                let fetcher = fetcher.clone();
+                async move {
+                    if let Err(e) = auth::restore_session(fetcher, auth_state).await {
+                        tracing::debug!("Session restoration failed: {}", e);
+                    }
                 }
-            }
+            });
         });
     }
 

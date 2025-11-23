@@ -24,39 +24,46 @@ use jacquard::{
 use std::sync::Arc;
 use weaver_api::sh_weaver::notebook::{BookEntryView, EntryView, entry};
 
+// #[component]
+// pub fn EntryPage(
+//     ident: ReadSignal<AtIdentifier<'static>>,
+//     book_title: ReadSignal<SmolStr>,
+//     title: ReadSignal<SmolStr>,
+// ) -> Element {
+//     rsx! {
+//         {std::iter::once(rsx! {Entry {ident, book_title, title}})}
+//     }
+// }
+
 #[component]
 pub fn EntryPage(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
     title: ReadSignal<SmolStr>,
 ) -> Element {
-    tracing::debug!(
-        "EntryPage component rendering for ident: {:?}, book: {}, title: {}",
-        ident(),
-        book_title(),
-        title()
-    );
-    rsx! {
-        {std::iter::once(rsx! {Entry {ident, book_title, title}})}
-    }
-}
-
-#[component]
-pub fn Entry(
-    ident: ReadSignal<AtIdentifier<'static>>,
-    book_title: ReadSignal<SmolStr>,
-    title: ReadSignal<SmolStr>,
-) -> Element {
-    tracing::debug!(
-        "Entry component rendering for ident: {:?}, book: {}, title: {}",
-        ident(),
-        book_title(),
-        title()
-    );
     // Use feature-gated hook for SSR support
-    let entry = crate::data::use_entry_data(ident, book_title, title);
+    let (entry_res, entry) = crate::data::use_entry_data(ident, book_title, title);
+    let route = use_route::<Route>();
+    let mut last_route = use_signal(|| route.clone());
+
+    #[cfg(all(
+        target_family = "wasm",
+        target_os = "unknown",
+        not(feature = "fullstack-server")
+    ))]
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    tracing::debug!("Entry component got entry data");
+
+    // Suspend SSR until entry loads
+    #[cfg(feature = "fullstack-server")]
+    let mut entry_res = entry_res?;
+
+    #[cfg(feature = "fullstack-server")]
+    use_effect(use_reactive!(|route| {
+        if route != last_route() {
+            entry_res.restart();
+            last_route.set(route.clone());
+        }
+    }));
 
     // Handle blob caching when entry data is available
     match &*entry.read() {

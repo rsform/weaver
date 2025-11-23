@@ -36,10 +36,13 @@ pub fn use_entry_data(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
     title: ReadSignal<SmolStr>,
-) -> Memo<Option<(BookEntryView<'static>, Entry<'static>)>> {
+) -> (
+    Result<Resource<Option<(serde_json::Value, serde_json::Value)>>, RenderError>,
+    Memo<Option<(BookEntryView<'static>, Entry<'static>)>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
-    let res = use_server_future(move || {
+    let res = use_server_future(use_reactive!(|(ident, book_title, title)| {
         let fetcher = fetcher.clone();
         async move {
             if let Some(entry) = fetcher
@@ -51,7 +54,7 @@ pub fn use_entry_data(
                 let (_book_entry_view, entry_record) = (&entry.0, &entry.1);
                 if let Some(embeds) = &entry_record.embeds {
                     if let Some(images) = &embeds.images {
-                        let ident_val = ident();
+                        let ident_val = ident.clone();
                         let images = images.clone();
                         for image in &images.images {
                             use jacquard::smol_str::ToSmolStr;
@@ -75,9 +78,9 @@ pub fn use_entry_data(
                 None
             }
         }
-    });
-    use_memo(use_reactive!(|res| {
-        let res = res.ok()?;
+    }));
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
         if let Some(Some((ev, e))) = &*res.read() {
             use jacquard::from_json_value;
 
@@ -88,7 +91,8 @@ pub fn use_entry_data(
         } else {
             None
         }
-    }))
+    }));
+    (res, memo)
 }
 /// Fetches entry data client-side only (no SSR).
 #[cfg(not(feature = "fullstack-server"))]
@@ -96,7 +100,10 @@ pub fn use_entry_data(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
     title: ReadSignal<SmolStr>,
-) -> Memo<Option<(BookEntryView<'static>, Entry<'static>)>> {
+) -> (
+    Resource<Option<(serde_json::Value, serde_json::Value)>>,
+    Memo<Option<(BookEntryView<'static>, Entry<'static>)>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
     let res = use_resource(move || {
@@ -136,7 +143,7 @@ pub fn use_entry_data(
             }
         }
     });
-    use_memo(move || {
+    let memo = use_memo(move || {
         if let Some(Some((ev, e))) = &*res.read() {
             use jacquard::from_json_value;
 
@@ -147,22 +154,85 @@ pub fn use_entry_data(
         } else {
             None
         }
+    });
+    (res, memo)
+}
+
+#[cfg(feature = "fullstack-server")]
+pub fn use_get_handle(did: Did<'static>) -> Memo<AtIdentifier<'static>> {
+    let ident = use_signal(use_reactive!(|did| AtIdentifier::Did(did.clone())));
+    let old_ident = ident.read().clone();
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let fetcher = fetcher.clone();
+    let res = use_resource(move || {
+        let client = fetcher.get_client();
+        let old_ident = old_ident.clone();
+        async move {
+            client
+                .resolve_ident_owned(&*ident.read())
+                .await
+                .map(|doc| {
+                    doc.handles()
+                        .first()
+                        .map(|h| AtIdentifier::Handle(h.clone()).into_static())
+                })
+                .ok()
+                .flatten()
+                .unwrap_or(old_ident)
+        }
+    });
+    use_memo(move || {
+        if let Some(value) = &*res.read() {
+            value.clone()
+        } else {
+            ident.read().clone()
+        }
     })
 }
 
-pub fn use_get_handle(did: Did<'static>) -> AtIdentifier<'static> {
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_get_handle(did: Did<'static>) -> Memo<AtIdentifier<'static>> {
     let ident = use_signal(use_reactive!(|did| AtIdentifier::Did(did.clone())));
-    use_handle(ident.into()).read().clone()
+    let old_ident = ident.read().clone();
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let fetcher = fetcher.clone();
+    let res = use_resource(move || {
+        let client = fetcher.get_client();
+        let old_ident = old_ident.clone();
+        async move {
+            client
+                .resolve_ident_owned(&*ident.read())
+                .await
+                .map(|doc| {
+                    doc.handles()
+                        .first()
+                        .map(|h| AtIdentifier::Handle(h.clone()).into_static())
+                })
+                .ok()
+                .flatten()
+                .unwrap_or(old_ident)
+        }
+    });
+    use_memo(move || {
+        if let Some(value) = &*res.read() {
+            value.clone()
+        } else {
+            ident.read().clone()
+        }
+    })
 }
 
 #[cfg(feature = "fullstack-server")]
 pub fn use_load_handle(
     ident: Option<AtIdentifier<'static>>,
-) -> ReadSignal<Option<AtIdentifier<'static>>> {
+) -> (
+    Result<Resource<Option<SmolStr>>, RenderError>,
+    Memo<Option<AtIdentifier<'static>>>,
+) {
     let ident = use_signal(use_reactive!(|ident| ident.clone()));
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
-    let res = use_server_future(move || {
+    let res = use_server_future(use_reactive!(|ident| {
         let client = fetcher.get_client();
         async move {
             if let Some(ident) = &*ident.read() {
@@ -177,9 +247,9 @@ pub fn use_load_handle(
                 None
             }
         }
-    });
+    }));
 
-    use_memo(use_reactive!(|res| {
+    let memo = use_memo(use_reactive!(|res| {
         if let Ok(res) = res {
             if let Some(value) = &*res.read() {
                 if let Some(handle) = value {
@@ -193,14 +263,18 @@ pub fn use_load_handle(
         } else {
             ident.read().clone()
         }
-    }))
-    .into()
+    }));
+
+    (res, memo)
 }
 
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_load_handle(
     ident: Option<AtIdentifier<'static>>,
-) -> ReadSignal<Option<AtIdentifier<'static>>> {
+) -> (
+    Resource<Option<AtIdentifier<'static>>>,
+    Memo<Option<AtIdentifier<'static>>>,
+) {
     let ident = use_signal(use_reactive!(|ident| ident.clone()));
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
@@ -223,14 +297,20 @@ pub fn use_load_handle(
         }
     });
 
-    if let Ok(ident) = res.suspend() {
-        ident.into()
-    } else {
-        ident.into()
-    }
+    let memo = use_memo(move || {
+        if let Some(value) = &*res.read() {
+            value.clone()
+        } else {
+            ident.read().clone()
+        }
+    });
+
+    (res, memo)
 }
 #[cfg(not(feature = "fullstack-server"))]
-pub fn use_handle(ident: ReadSignal<AtIdentifier<'static>>) -> ReadSignal<AtIdentifier<'static>> {
+pub fn use_handle(
+    ident: ReadSignal<AtIdentifier<'static>>,
+) -> (Resource<AtIdentifier<'static>>, Memo<AtIdentifier<'static>>) {
     let old_ident = ident.read().clone();
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
@@ -251,25 +331,35 @@ pub fn use_handle(ident: ReadSignal<AtIdentifier<'static>>) -> ReadSignal<AtIden
                 .unwrap_or(old_ident)
         }
     });
-    if let Ok(ident) = res.suspend() {
-        ident.into()
-    } else {
-        ident
-    }
+
+    let memo = use_memo(move || {
+        if let Some(value) = &*res.read() {
+            value.clone()
+        } else {
+            ident.read().clone()
+        }
+    });
+
+    (res, memo)
 }
 #[cfg(feature = "fullstack-server")]
-pub fn use_handle(ident: ReadSignal<AtIdentifier<'static>>) -> ReadSignal<AtIdentifier<'static>> {
+pub fn use_handle(
+    ident: ReadSignal<AtIdentifier<'static>>,
+) -> (
+    Result<Resource<SmolStr>, RenderError>,
+    Memo<AtIdentifier<'static>>,
+) {
     let old_ident = ident.read().clone();
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
-    let res = use_server_future(move || {
+    let res = use_server_future(use_reactive!(|ident| {
         let client = fetcher.get_client();
         let old_ident = old_ident.clone();
         async move {
             use jacquard::smol_str::ToSmolStr;
 
             client
-                .resolve_ident_owned(&*ident.read())
+                .resolve_ident_owned(&ident())
                 .await
                 .map(|doc| {
                     use jacquard::smol_str::ToSmolStr;
@@ -280,9 +370,9 @@ pub fn use_handle(ident: ReadSignal<AtIdentifier<'static>>) -> ReadSignal<AtIden
                 .flatten()
                 .unwrap_or(old_ident.to_smolstr())
         }
-    });
+    }));
 
-    use_memo(use_reactive!(|res| {
+    let memo = use_memo(use_reactive!(|res| {
         if let Ok(res) = res {
             if let Some(value) = &*res.read() {
                 AtIdentifier::new_owned(value).unwrap()
@@ -292,8 +382,9 @@ pub fn use_handle(ident: ReadSignal<AtIdentifier<'static>>) -> ReadSignal<AtIden
         } else {
             ident.read().clone()
         }
-    }))
-    .into()
+    }));
+
+    (res, memo)
 }
 
 /// Hook to render markdown with SSR support.
@@ -303,16 +394,16 @@ pub fn use_rendered_markdown(
     ident: ReadSignal<AtIdentifier<'static>>,
 ) -> Memo<Option<String>> {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let res = use_server_future(move || {
+    let res = use_server_future(use_reactive!(|(content, ident)| {
         let client = fetcher.get_client();
         async move {
-            let did = match ident() {
+            let did = match ident.read().clone() {
                 AtIdentifier::Did(d) => d,
                 AtIdentifier::Handle(h) => client.resolve_handle(&h).await.ok()?,
             };
             Some(render_markdown_impl(content(), did).await)
         }
-    });
+    }));
     use_memo(use_reactive!(|res| {
         let res = res.ok()?;
         if let Some(Some(value)) = &*res.read() {
@@ -374,37 +465,44 @@ async fn render_markdown_impl(content: Entry<'static>, did: Did<'static>) -> Str
 #[cfg(feature = "fullstack-server")]
 pub fn use_profile_data(
     ident: ReadSignal<AtIdentifier<'static>>,
-) -> Memo<Option<ProfileDataView<'static>>> {
+) -> (
+    Result<Resource<Option<serde_json::Value>>, RenderError>,
+    Memo<Option<ProfileDataView<'static>>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let res = use_server_future(move || {
+    let res = use_server_future(use_reactive!(|ident| {
         let fetcher = fetcher.clone();
         async move {
-            tracing::debug!("use_profile_data server future STARTED for {:?}", ident());
+            tracing::debug!("use_profile_data server future STARTED for {:?}", ident);
             let result = fetcher
                 .fetch_profile(&ident())
                 .await
                 .ok()
                 .map(|arc| serde_json::to_value(&*arc).ok())
                 .flatten();
-            tracing::debug!("use_profile_data server future COMPLETED for {:?}", ident());
+            tracing::debug!("use_profile_data server future COMPLETED for {:?}", ident);
             result
         }
-    });
-    use_memo(use_reactive!(|res| {
-        let res = res.ok()?;
+    }));
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
         if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<ProfileDataView>(value.clone()).ok()
         } else {
             None
         }
-    }))
+    }));
+    (res, memo)
 }
 
 /// Fetches profile data client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_profile_data(
     ident: ReadSignal<AtIdentifier<'static>>,
-) -> Memo<Option<ProfileDataView<'static>>> {
+) -> (
+    Resource<Option<serde_json::Value>>,
+    Memo<Option<ProfileDataView<'static>>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
@@ -417,22 +515,26 @@ pub fn use_profile_data(
                 .flatten()
         }
     });
-    use_memo(move || {
+    let memo = use_memo(move || {
         if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<ProfileDataView>(value.clone()).ok()
         } else {
             None
         }
-    })
+    });
+    (res, memo);
 }
 
 /// Fetches notebooks for a specific DID
 #[cfg(feature = "fullstack-server")]
 pub fn use_notebooks_for_did(
     ident: ReadSignal<AtIdentifier<'static>>,
-) -> Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+) -> (
+    Result<Resource<Option<Vec<serde_json::Value>>>, RenderError>,
+    Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let res = use_server_future(move || {
+    let res = use_server_future(use_reactive!(|ident| {
         let fetcher = fetcher.clone();
         async move {
             fetcher
@@ -447,9 +549,9 @@ pub fn use_notebooks_for_did(
                 })
                 .flatten()
         }
-    });
-    use_memo(use_reactive!(|res| {
-        let res = res.ok()?;
+    }));
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
         if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
@@ -460,14 +562,18 @@ pub fn use_notebooks_for_did(
         } else {
             None
         }
-    }))
+    }));
+    (res, memo)
 }
 
 /// Fetches notebooks client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_notebooks_for_did(
     ident: ReadSignal<AtIdentifier<'static>>,
-) -> Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+) -> (
+    Resource<Option<Vec<serde_json::Value>>>,
+    Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
@@ -485,7 +591,7 @@ pub fn use_notebooks_for_did(
                 .flatten()
         }
     });
-    use_memo(move || {
+    let memo = use_memo(move || {
         if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
@@ -496,13 +602,16 @@ pub fn use_notebooks_for_did(
         } else {
             None
         }
-    })
+    });
+    (res, memo)
 }
 
 /// Fetches notebooks from UFOS with SSR support in fullstack mode
 #[cfg(feature = "fullstack-server")]
-pub fn use_notebooks_from_ufos()
--> Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+pub fn use_notebooks_from_ufos() -> (
+    Result<Resource<Option<Vec<serde_json::Value>>>, RenderError>,
+    Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let res = use_server_future(move || {
         let fetcher = fetcher.clone();
@@ -520,8 +629,8 @@ pub fn use_notebooks_from_ufos()
                 .flatten()
         }
     });
-    use_memo(use_reactive!(|res| {
-        let res = res.ok()?;
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
         if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
@@ -532,13 +641,16 @@ pub fn use_notebooks_from_ufos()
         } else {
             None
         }
-    }))
+    }));
+    (res, memo)
 }
 
 /// Fetches notebooks from UFOS client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
-pub fn use_notebooks_from_ufos()
--> Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+pub fn use_notebooks_from_ufos() -> (
+    Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+    Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
@@ -556,7 +668,7 @@ pub fn use_notebooks_from_ufos()
                 .flatten()
         }
     });
-    use_memo(move || {
+    let memo = use_memo(move || {
         if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
@@ -567,7 +679,8 @@ pub fn use_notebooks_from_ufos()
         } else {
             None
         }
-    })
+    });
+    (res, memo)
 }
 
 /// Fetches notebook metadata with SSR support in fullstack mode
@@ -575,9 +688,12 @@ pub fn use_notebooks_from_ufos()
 pub fn use_notebook(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
-) -> Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>> {
+) -> (
+    Result<Resource<Option<serde_json::Value>>, RenderError>,
+    Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let res = use_server_future(move || {
+    let res = use_server_future(use_reactive!(|(ident, book_title)| {
         let fetcher = fetcher.clone();
         async move {
             fetcher
@@ -588,15 +704,16 @@ pub fn use_notebook(
                 .map(|arc| serde_json::to_value(arc.as_ref()).ok())
                 .flatten()
         }
-    });
-    use_memo(use_reactive!(|res| {
-        let res = res.ok()?;
+    }));
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
         if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<(NotebookView, Vec<StrongRef>)>(value.clone()).ok()
         } else {
             None
         }
-    }))
+    }));
+    (res, memo)
 }
 
 /// Fetches notebook metadata client-side only (no SSR)
@@ -604,7 +721,10 @@ pub fn use_notebook(
 pub fn use_notebook(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
-) -> Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>> {
+) -> (
+    Resource<Option<serde_json::Value>>,
+    Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
@@ -618,14 +738,14 @@ pub fn use_notebook(
                 .flatten()
         }
     });
-    use_memo(use_reactive!(|res| {
-        let res = res.ok()?;
+    let memo = use_memo(use_reactive!(|res| {
         if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<(NotebookView, Vec<StrongRef>)>(value.clone()).ok()
         } else {
             None
         }
-    }))
+    }));
+    (res, memo)
 }
 
 /// Fetches notebook entries with SSR support in fullstack mode
@@ -633,9 +753,12 @@ pub fn use_notebook(
 pub fn use_notebook_entries(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
-) -> Memo<Option<Vec<BookEntryView<'static>>>> {
+) -> (
+    Result<Resource<Option<Vec<serde_json::Value>>>, RenderError>,
+    Memo<Option<Vec<BookEntryView<'static>>>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let res = use_server_future(move || {
+    let res = use_server_future(use_reactive!(|(ident, book_title)| {
         let fetcher = fetcher.clone();
         async move {
             fetcher
@@ -651,9 +774,9 @@ pub fn use_notebook_entries(
                 })
                 .flatten()
         }
-    });
-    use_memo(use_reactive!(|res| {
-        let res = res.ok()?;
+    }));
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
         if let Some(Some(values)) = &*res.read() {
             values
                 .iter()
@@ -662,7 +785,9 @@ pub fn use_notebook_entries(
         } else {
             None
         }
-    }))
+    }));
+
+    (res, memo)
 }
 
 /// Fetches notebook entries client-side only (no SSR)
@@ -670,7 +795,10 @@ pub fn use_notebook_entries(
 pub fn use_notebook_entries(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
-) -> Memo<Option<Vec<BookEntryView<'static>>>> {
+) -> (
+    Resource<Option<Vec<BookEntryView<'static>>>>,
+    Memo<Option<Vec<BookEntryView<'static>>>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let r = use_resource(move || {
         let fetcher = fetcher.clone();
@@ -682,7 +810,8 @@ pub fn use_notebook_entries(
                 .flatten()
         }
     });
-    use_memo(move || r.read().as_ref().and_then(|v| v.clone()))
+    let memo = use_memo(move || r.read().as_ref().and_then(|v| v.clone()));
+    (r, memo)
 }
 
 #[cfg(feature = "fullstack-server")]

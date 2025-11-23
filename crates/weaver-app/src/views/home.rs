@@ -8,7 +8,7 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 #[component]
 pub fn Home() -> Element {
     // Fetch notebooks from UFOS with SSR support
-    let notebooks = data::use_notebooks_from_ufos();
+    let (notebooks_result, notebooks) = data::use_notebooks_from_ufos();
     let navigator = use_navigator();
     let mut uri_input = use_signal(|| String::new());
 
@@ -21,6 +21,12 @@ pub fn Home() -> Element {
             }
         }
     };
+    #[cfg(feature = "fullstack-server")]
+    notebooks_result
+        .as_ref()
+        .ok()
+        .map(|r| r.suspend())
+        .transpose()?;
 
     rsx! {
         document::Link { rel: "stylesheet", href: NOTEBOOK_CARD_CSS }
