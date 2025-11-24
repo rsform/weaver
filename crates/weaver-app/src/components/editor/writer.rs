@@ -288,6 +288,12 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             return Ok(());
         }
 
+        // Skip gap emission if we're buffering code block content
+        // The code block handler manages its own syntax emission
+        if self.code_buffer.is_some() {
+            return Ok(());
+        }
+
         if next_offset > self.last_byte_offset {
             self.emit_syntax(self.last_byte_offset..next_offset)?;
         }
@@ -501,6 +507,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
                     // Track byte and char ranges for code block content
                     let text_char_len = text.chars().count();
+                    let text_byte_len = text.len();
                     if let Some(ref mut code_byte_range) = self.code_buffer_byte_range {
                         // Extend existing ranges
                         code_byte_range.end = range.end;
@@ -512,6 +519,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                         self.code_buffer_byte_range = Some(range.clone());
                         self.code_buffer_char_range = Some(self.last_char_offset..self.last_char_offset + text_char_len);
                     }
+                    // Update offsets so paragraph boundary is correct
+                    self.last_char_offset += text_char_len;
+                    self.last_byte_offset += text_byte_len;
                 } else if !self.in_non_writing_block {
                     // Escape HTML and count chars in one pass
                     let char_start = self.last_char_offset;
@@ -533,75 +543,74 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 }
             }
             Code(text) => {
-                // Emit opening backtick
-                if range.start < range.end {
-                    let raw_text = &self.source[range.clone()];
-                    if raw_text.starts_with('`') {
-                        self.write("<span class=\"md-syntax-inline\">`</span>")?;
-                    }
+                let char_start = self.last_char_offset;
+                let raw_text = &self.source[range.clone()];
+
+                // Emit opening backtick and track it
+                if raw_text.starts_with('`') {
+                    self.write("<span class=\"md-syntax-inline\">`</span>")?;
+                    self.last_char_offset += 1;
                 }
 
                 self.write("<code>")?;
 
                 // Track offset mapping for code content
-                let char_start = self.last_char_offset;
+                let content_char_start = self.last_char_offset;
                 let text_char_len = escape_html_body_text_with_char_count(&mut self.writer, &text)?;
-                let char_end = char_start + text_char_len;
+                let content_char_end = content_char_start + text_char_len;
 
                 // Record offset mapping (code content is visible)
-                self.record_mapping(range.clone(), char_start..char_end);
-                self.last_char_offset = char_end;
+                self.record_mapping(range.clone(), content_char_start..content_char_end);
+                self.last_char_offset = content_char_end;
 
                 self.write("</code>")?;
 
-                // Emit closing backtick
-                if range.start < range.end {
-                    let raw_text = &self.source[range];
-                    if raw_text.ends_with('`') {
-                        self.write("<span class=\"md-syntax-inline\">`</span>")?;
-                    }
+                // Emit closing backtick and track it
+                if raw_text.ends_with('`') {
+                    self.write("<span class=\"md-syntax-inline\">`</span>")?;
+                    self.last_char_offset += 1;
                 }
             }
             InlineMath(text) => {
-                // Emit opening $
-                if range.start < range.end {
-                    let raw_text = &self.source[range.clone()];
-                    if raw_text.starts_with('$') {
-                        self.write("<span class=\"md-syntax-inline\">$</span>")?;
-                    }
+                let raw_text = &self.source[range.clone()];
+
+                // Emit opening $ and track it
+                if raw_text.starts_with('$') {
+                    self.write("<span class=\"md-syntax-inline\">$</span>")?;
+                    self.last_char_offset += 1;
                 }
 
                 self.write(r#"<span class="math math-inline">"#)?;
+                let text_char_len = text.chars().count();
                 escape_html(&mut self.writer, &text)?;
+                self.last_char_offset += text_char_len;
                 self.write("</span>")?;
 
-                // Emit closing $
-                if range.start < range.end {
-                    let raw_text = &self.source[range];
-                    if raw_text.ends_with('$') {
-                        self.write("<span class=\"md-syntax-inline\">$</span>")?;
-                    }
+                // Emit closing $ and track it
+                if raw_text.ends_with('$') {
+                    self.write("<span class=\"md-syntax-inline\">$</span>")?;
+                    self.last_char_offset += 1;
                 }
             }
             DisplayMath(text) => {
-                // Emit opening $$
-                if range.start < range.end {
-                    let raw_text = &self.source[range.clone()];
-                    if raw_text.starts_with("$$") {
-                        self.write("<span class=\"md-syntax-inline\">$$</span>")?;
-                    }
+                let raw_text = &self.source[range.clone()];
+
+                // Emit opening $$ and track it
+                if raw_text.starts_with("$$") {
+                    self.write("<span class=\"md-syntax-inline\">$$</span>")?;
+                    self.last_char_offset += 2;
                 }
 
                 self.write(r#"<span class="math math-display">"#)?;
+                let text_char_len = text.chars().count();
                 escape_html(&mut self.writer, &text)?;
+                self.last_char_offset += text_char_len;
                 self.write("</span>")?;
 
-                // Emit closing $$
-                if range.start < range.end {
-                    let raw_text = &self.source[range];
-                    if raw_text.ends_with("$$") {
-                        self.write("<span class=\"md-syntax-inline\">$$</span>")?;
-                    }
+                // Emit closing $$ and track it
+                if raw_text.ends_with("$$") {
+                    self.write("<span class=\"md-syntax-inline\">$$</span>")?;
+                    self.last_char_offset += 2;
                 }
             }
             Html(html) | InlineHtml(html) => {
@@ -1018,6 +1027,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 Ok(())
             }
             Tag::CodeBlock(info) => {
+                // Track code block as paragraph-level block
+                self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
+
                 if !self.end_newline {
                     self.write_newline()?;
                 }
@@ -1027,15 +1039,19 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
                 match info {
                     CodeBlockKind::Fenced(info) => {
-                        // Emit opening ```language
+                        // Emit opening ```language and track both char and byte offsets
                         if range.start < range.end {
-                            let raw_text = &self.source[range];
+                            let raw_text = &self.source[range.clone()];
                             if let Some(fence_pos) = raw_text.find("```") {
                                 let fence_end = (fence_pos + 3 + info.len()).min(raw_text.len());
                                 let syntax = &raw_text[fence_pos..fence_end];
+                                let syntax_char_len = syntax.chars().count() + 1; // +1 for newline
+                                let syntax_byte_len = syntax.len() + 1; // +1 for newline
                                 self.write("<span class=\"md-syntax-block\">")?;
                                 escape_html(&mut self.writer, syntax)?;
                                 self.write("</span>\n")?;
+                                self.last_char_offset += syntax_char_len;
+                                self.last_byte_offset = range.start + fence_pos + syntax_byte_len;
                             }
                         }
 
@@ -1063,6 +1079,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 }
             }
             Tag::List(Some(1)) => {
+                // Track list as paragraph-level block
+                self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
                 if self.end_newline {
                     self.write("<ol>\n")
                 } else {
@@ -1070,6 +1088,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 }
             }
             Tag::List(Some(start)) => {
+                // Track list as paragraph-level block
+                self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
                 if self.end_newline {
                     self.write("<ol start=\"")?;
                 } else {
@@ -1079,6 +1099,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 self.write("\">\n")
             }
             Tag::List(None) => {
+                // Track list as paragraph-level block
+                self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
                 if self.end_newline {
                     self.write("<ul>\n")
                 } else {
@@ -1098,12 +1120,15 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 // Begin node tracking
                 self.begin_node(node_id);
 
-                // Emit list marker syntax inside the <li> tag
+                // Emit list marker syntax inside the <li> tag and track both offsets
                 if range.start < range.end {
-                    let raw_text = &self.source[range];
+                    let raw_text = &self.source[range.clone()];
 
                     // Try to find the list marker (-, *, or digit.)
                     let trimmed = raw_text.trim_start();
+                    let leading_ws_bytes = raw_text.len() - trimmed.len();
+                    let leading_ws_chars = raw_text.chars().count() - trimmed.chars().count();
+
                     if let Some(marker) = trimmed.chars().next() {
                         if marker == '-' || marker == '*' {
                             // Unordered list: extract "- " or "* "
@@ -1112,17 +1137,25 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                                 .map(|pos| pos + 1)
                                 .unwrap_or(1);
                             let syntax = &trimmed[..marker_end.min(trimmed.len())];
+                            let syntax_char_len = leading_ws_chars + syntax.chars().count();
+                            let syntax_byte_len = leading_ws_bytes + syntax.len();
                             self.write("<span class=\"md-syntax-block\">")?;
                             escape_html(&mut self.writer, syntax)?;
                             self.write("</span>")?;
+                            self.last_char_offset += syntax_char_len;
+                            self.last_byte_offset = range.start + syntax_byte_len;
                         } else if marker.is_ascii_digit() {
                             // Ordered list: extract "1. " or similar
                             if let Some(dot_pos) = trimmed.find('.') {
                                 let syntax_end = (dot_pos + 2).min(trimmed.len());
                                 let syntax = &trimmed[..syntax_end].trim_end();
+                                let syntax_char_len = leading_ws_chars + syntax.chars().count();
+                                let syntax_byte_len = leading_ws_bytes + syntax.len();
                                 self.write("<span class=\"md-syntax-block\">")?;
                                 escape_html(&mut self.writer, syntax)?;
                                 self.write("</span>")?;
+                                self.last_char_offset += syntax_char_len;
+                                self.last_byte_offset = range.start + syntax_byte_len;
                             }
                         }
                     }
@@ -1407,20 +1440,49 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     self.write("</code></pre>\n")?;
                 }
 
-                // Emit closing ```
+                // Emit closing ``` (emit_gap_before is skipped while buffering)
                 if range.start < range.end {
                     let raw_text = &self.source[range.clone()];
                     if let Some(fence_line) = raw_text.lines().last() {
-                        if fence_line.trim() == "```" {
-                            self.write("<span class=\"md-syntax-block\">```</span>")?;
+                        if fence_line.trim().starts_with("```") {
+                            let fence = fence_line.trim();
+                            let fence_char_len = fence.chars().count();
+                            self.write("<span class=\"md-syntax-block\">")?;
+                            escape_html(&mut self.writer, fence)?;
+                            self.write("</span>")?;
+                            self.last_char_offset += fence_char_len;
+                            self.last_byte_offset += fence.len();
                         }
                     }
                 }
 
+                // Record code block end for paragraph boundary tracking
+                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
+                    let byte_range = byte_start..self.last_byte_offset;
+                    let char_range = char_start..self.last_char_offset;
+                    self.paragraph_ranges.push((byte_range, char_range));
+                }
+
                 Ok(())
             }
-            TagEnd::List(true) => self.write("</ol>\n"),
-            TagEnd::List(false) => self.write("</ul>\n"),
+            TagEnd::List(true) => {
+                // Record list end for paragraph boundary tracking
+                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
+                    let byte_range = byte_start..self.last_byte_offset;
+                    let char_range = char_start..self.last_char_offset;
+                    self.paragraph_ranges.push((byte_range, char_range));
+                }
+                self.write("</ol>\n")
+            }
+            TagEnd::List(false) => {
+                // Record list end for paragraph boundary tracking
+                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
+                    let byte_range = byte_start..self.last_byte_offset;
+                    let char_range = char_start..self.last_char_offset;
+                    self.paragraph_ranges.push((byte_range, char_range));
+                }
+                self.write("</ul>\n")
+            }
             TagEnd::Item => {
                 self.end_node();
                 self.write("</li>\n")

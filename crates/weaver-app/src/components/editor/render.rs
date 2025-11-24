@@ -98,9 +98,7 @@ pub fn render_paragraphs(rope: &JumpRopeBuf) -> Vec<ParagraphRender> {
     let mut paragraphs = Vec::with_capacity(paragraph_ranges.len());
     let mut node_id_offset = 0; // Track total nodes used so far for unique IDs
 
-    tracing::info!("[RENDER] Rendering {} paragraphs", paragraph_ranges.len());
     for (idx, (byte_range, char_range)) in paragraph_ranges.iter().enumerate() {
-        tracing::info!("[RENDER] Paragraph {}: char_range {:?}", idx, char_range);
         // Extract paragraph source
         let para_source = rope_slice_to_string(rope, char_range.clone());
         let source_hash = hash_source(&para_source);
@@ -161,6 +159,45 @@ pub fn render_paragraphs(rope: &JumpRopeBuf) -> Vec<ParagraphRender> {
         });
     }
 
+    // Insert gap paragraphs for whitespace between blocks
+    // This gives the cursor somewhere to land when positioned in newlines
+    let mut paragraphs_with_gaps = Vec::with_capacity(paragraphs.len() * 2);
+    let mut prev_end_char = 0usize;
+    let mut prev_end_byte = 0usize;
+
+    for para in paragraphs {
+        // Check for gap before this paragraph
+        if para.char_range.start > prev_end_char {
+            let gap_start_char = prev_end_char;
+            let gap_end_char = para.char_range.start;
+            let gap_start_byte = prev_end_byte;
+            let gap_end_byte = para.byte_range.start;
+
+            let gap_node_id = format!("n{}", node_id_offset);
+            node_id_offset += 1;
+            let gap_html = format!(r#"<span id="{}">{}</span>"#, gap_node_id, '\u{200B}');
+
+            paragraphs_with_gaps.push(ParagraphRender {
+                byte_range: gap_start_byte..gap_end_byte,
+                char_range: gap_start_char..gap_end_char,
+                html: gap_html,
+                offset_map: vec![OffsetMapping {
+                    byte_range: gap_start_byte..gap_end_byte,
+                    char_range: gap_start_char..gap_end_char,
+                    node_id: gap_node_id,
+                    char_offset_in_node: 0,
+                    child_index: None,
+                    utf16_len: 1, // zero-width space represents the gap
+                }],
+                source_hash: hash_source(&rope_slice_to_string(rope, gap_start_char..gap_end_char)),
+            });
+        }
+
+        prev_end_char = para.char_range.end;
+        prev_end_byte = para.byte_range.end;
+        paragraphs_with_gaps.push(para);
+    }
+
     // Check if rope ends with trailing newlines (empty paragraph at end)
     // If so, add an empty paragraph div for cursor positioning
     let source = rope.to_string();
@@ -170,24 +207,27 @@ pub fn render_paragraphs(rope: &JumpRopeBuf) -> Vec<ParagraphRender> {
         let doc_end_char = rope.len_chars();
         let doc_end_byte = rope.len_bytes();
 
-        let empty_node_id = format!("n{}", node_id_offset);
-        let empty_html = format!(r#"<span id="{}">{}</span>"#, empty_node_id, '\u{200B}');
+        // Only add if there's actually a gap at the end
+        if doc_end_char > prev_end_char {
+            let empty_node_id = format!("n{}", node_id_offset);
+            let empty_html = format!(r#"<span id="{}">{}</span>"#, empty_node_id, '\u{200B}');
 
-        paragraphs.push(ParagraphRender {
-            byte_range: doc_end_byte..doc_end_byte,
-            char_range: doc_end_char..doc_end_char + 1, // range for the zero-width space
-            html: empty_html,
-            offset_map: vec![OffsetMapping {
-                byte_range: doc_end_byte..doc_end_byte,
-                char_range: doc_end_char..doc_end_char + 1,
-                node_id: empty_node_id,
-                char_offset_in_node: 0,
-                child_index: None,
-                utf16_len: 1, // zero-width space is 1 UTF-16 code unit
-            }],
-            source_hash: 0, // always render this paragraph
-        });
+            paragraphs_with_gaps.push(ParagraphRender {
+                byte_range: prev_end_byte..doc_end_byte,
+                char_range: prev_end_char..doc_end_char,
+                html: empty_html,
+                offset_map: vec![OffsetMapping {
+                    byte_range: prev_end_byte..doc_end_byte,
+                    char_range: prev_end_char..doc_end_char,
+                    node_id: empty_node_id,
+                    char_offset_in_node: 0,
+                    child_index: None,
+                    utf16_len: 1, // zero-width space is 1 UTF-16 code unit
+                }],
+                source_hash: 0, // always render this paragraph
+            });
+        }
     }
 
-    paragraphs
+    paragraphs_with_gaps
 }
