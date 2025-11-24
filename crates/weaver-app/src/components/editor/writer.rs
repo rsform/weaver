@@ -7,7 +7,6 @@
 //! represent consumed formatting characters.
 
 use super::offset_map::{OffsetMapping, RenderResult};
-use super::offsets::{byte_to_char, char_to_byte};
 use jumprope::JumpRopeBuf;
 use markdown_weaver::{
     Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, Tag,
@@ -18,6 +17,17 @@ use markdown_weaver_escape::{
 };
 use std::collections::HashMap;
 use std::ops::Range;
+
+/// Result of rendering with the EditorWriter.
+#[derive(Debug, Clone)]
+pub struct WriterResult {
+    /// Offset mappings from source to DOM positions
+    pub offset_maps: Vec<OffsetMapping>,
+
+    /// Paragraph boundaries in source: (byte_range, char_range)
+    /// These are extracted during rendering by tracking Tag::Paragraph events
+    pub paragraph_ranges: Vec<(Range<usize>, Range<usize>)>,
+}
 
 /// Classification of markdown syntax characters
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -100,6 +110,7 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: St
 
     code_buffer: Option<(Option<String>, String)>, // (lang, content)
     code_buffer_byte_range: Option<Range<usize>>,  // byte range of buffered code content
+    code_buffer_char_range: Option<Range<usize>>,  // char range of buffered code content
     pending_blockquote_range: Option<Range<usize>>, // range for emitting > inside next paragraph
 
     // Table rendering mode
@@ -112,6 +123,10 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: St
     current_node_id: Option<String>, // node ID for current text container
     current_node_char_offset: usize, // UTF-16 offset within current node
     current_node_child_count: usize, // number of child elements/text nodes in current container
+
+    // Paragraph boundary tracking for incremental rendering
+    paragraph_ranges: Vec<(Range<usize>, Range<usize>)>, // (byte_range, char_range)
+    current_paragraph_start: Option<(usize, usize)>, // (byte_offset, char_offset)
 
     _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -126,6 +141,16 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
     EditorWriter<'a, I, W, E>
 {
     pub fn new(source: &'a str, source_rope: &'a JumpRopeBuf, events: I, writer: W) -> Self {
+        Self::new_with_node_offset(source, source_rope, events, writer, 0)
+    }
+
+    pub fn new_with_node_offset(
+        source: &'a str,
+        source_rope: &'a JumpRopeBuf,
+        events: I,
+        writer: W,
+        node_id_offset: usize,
+    ) -> Self {
         Self {
             source,
             source_rope,
@@ -142,14 +167,17 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             embed_provider: None,
             code_buffer: None,
             code_buffer_byte_range: None,
+            code_buffer_char_range: None,
             pending_blockquote_range: None,
             render_tables_as_markdown: true, // Default to markdown rendering
             table_start_offset: None,
             offset_maps: Vec::new(),
-            next_node_id: 0,
+            next_node_id: node_id_offset,
             current_node_id: None,
             current_node_char_offset: 0,
             current_node_child_count: 0,
+            paragraph_ranges: Vec::new(),
+            current_paragraph_start: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -172,6 +200,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             embed_provider: Some(provider),
             code_buffer: self.code_buffer,
             code_buffer_byte_range: self.code_buffer_byte_range,
+            code_buffer_char_range: self.code_buffer_char_range,
             pending_blockquote_range: self.pending_blockquote_range,
             render_tables_as_markdown: self.render_tables_as_markdown,
             table_start_offset: self.table_start_offset,
@@ -180,6 +209,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             current_node_id: self.current_node_id,
             current_node_char_offset: self.current_node_char_offset,
             current_node_child_count: self.current_node_child_count,
+            paragraph_ranges: self.paragraph_ranges,
+            current_paragraph_start: self.current_paragraph_start,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -211,14 +242,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 let char_start = self.last_char_offset;
                 let syntax_char_len = syntax.chars().count();
 
-                tracing::debug!(
-                    "emit_syntax: range={:?}, chars={}..{}, syntax={:?}",
-                    range,
-                    char_start,
-                    char_start + syntax_char_len,
-                    syntax
-                );
-
                 // If we're outside any node, create a wrapper span for tracking
                 let created_node = if self.current_node_id.is_none() {
                     let node_id = self.gen_node_id();
@@ -241,8 +264,12 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
                 // Record offset mapping for this syntax
                 self.record_mapping(range.clone(), char_start..char_start + syntax_char_len);
-                self.last_char_offset = char_start + syntax_char_len;
-                self.last_byte_offset = range.end; // Mark bytes as processed
+                let new_char = char_start + syntax_char_len;
+                let new_byte = range.end;
+                tracing::debug!("[EMIT_SYNTAX] Updating offsets: last_char {} -> {}, last_byte {} -> {}",
+                    self.last_char_offset, new_char, self.last_byte_offset, new_byte);
+                self.last_char_offset = new_char;
+                self.last_byte_offset = new_byte; // Mark bytes as processed
 
                 // Close wrapper if we created one
                 if created_node {
@@ -300,8 +327,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             let utf16_len = wchar_end - wchar_start;
 
             let mapping = OffsetMapping {
-                byte_range,
-                char_range,
+                byte_range: byte_range.clone(),
+                char_range: char_range.clone(),
                 node_id: node_id.clone(),
                 char_offset_in_node: self.current_node_char_offset,
                 child_index: None, // text-based position
@@ -309,15 +336,40 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             };
             self.offset_maps.push(mapping);
             self.current_node_char_offset += utf16_len;
+        } else {
+            tracing::warn!("[RECORD_MAPPING] SKIPPED - current_node_id is None!");
         }
     }
 
     /// Process markdown events and write HTML.
     ///
-    /// Returns the offset mappings. The HTML is written to the writer
-    /// passed in the constructor.
-    pub fn run(mut self) -> Result<Vec<OffsetMapping>, W::Error> {
+    /// Returns offset mappings and paragraph boundaries. The HTML is written
+    /// to the writer passed in the constructor.
+    pub fn run(mut self) -> Result<WriterResult, W::Error> {
         while let Some((event, range)) = self.events.next() {
+            // Log events for debugging
+            tracing::debug!("[WRITER] Event: {:?}, range: {:?}, last_byte: {}, last_char: {}",
+                match &event {
+                    Event::Start(tag) => format!("Start({:?})", tag),
+                    Event::End(tag) => format!("End({:?})", tag),
+                    Event::Text(t) => format!("Text('{}')", t),
+                    Event::Code(t) => format!("Code('{}')", t),
+                    Event::Html(t) => format!("Html('{}')", t),
+                    Event::InlineHtml(t) => format!("InlineHtml('{}')", t),
+                    Event::FootnoteReference(t) => format!("FootnoteReference('{}')", t),
+                    Event::SoftBreak => "SoftBreak".to_string(),
+                    Event::HardBreak => "HardBreak".to_string(),
+                    Event::Rule => "Rule".to_string(),
+                    Event::TaskListMarker(b) => format!("TaskListMarker({})", b),
+                    Event::WeaverBlock(t) => format!("WeaverBlock('{}')", t),
+                    Event::InlineMath(t) => format!("InlineMath('{}')", t),
+                    Event::DisplayMath(t) => format!("DisplayMath('{}')", t),
+                },
+                &range,
+                self.last_byte_offset,
+                self.last_char_offset
+            );
+
             // For End events, emit any trailing content within the event's range
             // BEFORE calling end_tag (which calls end_node and clears current_node_id)
             if matches!(&event, Event::End(_)) {
@@ -330,11 +382,19 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 self.emit_gap_before(range.start)?;
             }
 
+            // Store last_byte before processing
+            let last_byte_before = self.last_byte_offset;
+
             // Process the event (passing range for tag syntax)
             self.process_event(event, range.clone())?;
 
-            // Update tracking
-            self.last_byte_offset = range.end;
+            // Update tracking - but don't override if start_tag manually updated it
+            // (for inline formatting tags that emit opening syntax)
+            if self.last_byte_offset == last_byte_before {
+                // Event didn't update offset, so we update it
+                self.last_byte_offset = range.end;
+            }
+            // else: Event updated offset (e.g. start_tag emitted opening syntax), keep that value
         }
 
         // Emit any trailing syntax
@@ -346,14 +406,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
         let doc_char_len = self.source_rope.len_chars();
 
         if self.last_byte_offset < doc_byte_len || self.last_char_offset < doc_char_len {
-            tracing::debug!(
-                "Unmapped trailing content: bytes {}..{}, chars {}..{}",
-                self.last_byte_offset,
-                doc_byte_len,
-                self.last_char_offset,
-                doc_char_len
-            );
-
             // Emit the trailing content as visible syntax
             if self.last_byte_offset < doc_byte_len {
                 let trailing = &self.source[self.last_byte_offset..];
@@ -384,7 +436,10 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             }
         }
 
-        Ok(self.offset_maps)
+        Ok(WriterResult {
+            offset_maps: self.offset_maps,
+            paragraph_ranges: self.paragraph_ranges,
+        })
     }
 
     // Consume raw text events until end tag, for alt attributes
@@ -436,16 +491,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
     fn process_event(&mut self, event: Event<'_>, range: Range<usize>) -> Result<(), W::Error> {
         use Event::*;
 
-        tracing::debug!(
-            "Event: {:?}, range: {:?}",
-            match &event {
-                Start(tag) => format!("Start({:?})", tag),
-                End(tag) => format!("End({:?})", tag),
-                Text(t) => format!("Text({:?})", &t[..t.len().min(20)]),
-                _ => format!("{:?}", event),
-            },
-            range
-        );
         match event {
             Start(tag) => self.start_tag(tag, range)?,
             End(tag) => self.end_tag(tag, range)?,
@@ -454,13 +499,18 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 if let Some((_, ref mut buffer)) = self.code_buffer {
                     buffer.push_str(&text);
 
-                    // Track byte range for code block content
-                    if let Some(ref mut code_range) = self.code_buffer_byte_range {
-                        // Extend existing range
-                        code_range.end = range.end;
+                    // Track byte and char ranges for code block content
+                    let text_char_len = text.chars().count();
+                    if let Some(ref mut code_byte_range) = self.code_buffer_byte_range {
+                        // Extend existing ranges
+                        code_byte_range.end = range.end;
+                        if let Some(ref mut code_char_range) = self.code_buffer_char_range {
+                            code_char_range.end = self.last_char_offset + text_char_len;
+                        }
                     } else {
                         // First text in code block - start tracking
                         self.code_buffer_byte_range = Some(range.clone());
+                        self.code_buffer_char_range = Some(self.last_char_offset..self.last_char_offset + text_char_len);
                     }
                 } else if !self.in_non_writing_block {
                     // Escape HTML and count chars in one pass
@@ -468,14 +518,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     let text_char_len =
                         escape_html_body_text_with_char_count(&mut self.writer, &text)?;
                     let char_end = char_start + text_char_len;
-
-                    tracing::debug!(
-                        "Text event: range={:?}, chars={}..{}, text={:?}",
-                        range,
-                        char_start,
-                        char_end,
-                        &text[..text.len().min(40)]
-                    );
 
                     // Text becomes a text node child of the current container
                     if text_char_len > 0 {
@@ -580,7 +622,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 let gap = &self.source[range.clone()];
                 if gap.ends_with('\n') {
                     let spaces = &gap[..gap.len() - 1]; // everything except the \n
-                    let char_start = byte_to_char(self.source, range.start);
+                    let char_start = self.last_char_offset;
                     let spaces_char_len = spaces.chars().count();
 
                     // Emit and map the visible spaces
@@ -602,22 +644,31 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     // Count the <br> as a child
                     self.current_node_child_count += 1;
 
-                    // Map the newline to an element-based position (after the <br>)
-                    // The binary search is end-inclusive, so cursor at position N+1
-                    // will match a mapping with range N..N+1
+                    // After <br>, emit plain zero-width space for cursor positioning
+                    self.write("\u{200B}")?;
+
+                    // Count the zero-width space text node as a child
+                    self.current_node_child_count += 1;
+
+                    // Map the newline position to the zero-width space text node
                     if let Some(ref node_id) = self.current_node_id {
                         let newline_char_offset = char_start + spaces_char_len;
                         let mapping = OffsetMapping {
                             byte_range: range.start + spaces.len()..range.end,
                             char_range: newline_char_offset..newline_char_offset + 1,
                             node_id: node_id.clone(),
-                            char_offset_in_node: 0,
-                            child_index: Some(self.current_node_child_count),
-                            utf16_len: 0,
+                            char_offset_in_node: self.current_node_char_offset,
+                            child_index: None, // text node - TreeWalker will find it
+                            utf16_len: 1, // zero-width space is 1 UTF-16 unit
                         };
                         self.offset_maps.push(mapping);
+
+                        // Increment char offset - TreeWalker will encounter this text node
+                        self.current_node_char_offset += 1;
                     }
 
+                    // DO NOT increment last_char_offset - zero-width space is not in source
+                    // The \n itself IS in source, so we already accounted for it
                     self.last_char_offset = char_start + spaces_char_len + 1; // +1 for \n
                 } else {
                     // Fallback: just <br>
@@ -724,11 +775,23 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     SyntaxClass::Inline => "md-syntax-inline",
                     SyntaxClass::Block => "md-syntax-block",
                 };
+
+                let char_start = self.last_char_offset;
+                let syntax_char_len = syntax.chars().count();
+                let syntax_byte_len = syntax.len();
+
                 self.write("<span class=\"")?;
                 self.write(class)?;
                 self.write("\">")?;
                 escape_html(&mut self.writer, syntax)?;
                 self.write("</span>")?;
+
+                // Update tracking - we've consumed this opening syntax
+                tracing::debug!("[START_TAG] Opening syntax '{}': last_char {} -> {}, last_byte {} -> {}",
+                    syntax, self.last_char_offset, char_start + syntax_char_len,
+                    self.last_byte_offset, range.start + syntax_byte_len);
+                self.last_char_offset = char_start + syntax_char_len;
+                self.last_byte_offset = range.start + syntax_byte_len;
             }
         }
 
@@ -736,6 +799,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
         match tag {
             Tag::HtmlBlock => Ok(()),
             Tag::Paragraph => {
+                // Record paragraph start for boundary tracking
+                self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
+
                 let node_id = self.gen_node_id();
                 if self.end_newline {
                     write!(&mut self.writer, "<p id=\"{}\">", node_id)?;
@@ -791,6 +857,10 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 classes,
                 attrs,
             } => {
+                // Record paragraph start for boundary tracking
+                // Treat headings as paragraph-level blocks
+                self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
+
                 if !self.end_newline {
                     self.write("\n")?;
                 }
@@ -835,11 +905,24 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 self.write(">")?;
 
                 // Begin node tracking for offset mapping
-                self.begin_node(node_id);
+                self.begin_node(node_id.clone());
+
+                // Map the start position of the heading (before any content)
+                // This allows cursor to be placed at the very beginning
+                let heading_start_char = self.last_char_offset;
+                let mapping = OffsetMapping {
+                    byte_range: range.start..range.start,
+                    char_range: heading_start_char..heading_start_char,
+                    node_id: node_id.clone(),
+                    char_offset_in_node: 0,
+                    child_index: Some(0), // position before first child
+                    utf16_len: 0,
+                };
+                self.offset_maps.push(mapping);
 
                 // Emit # syntax inside the heading tag
                 if range.start < range.end {
-                    let raw_text = &self.source[range];
+                    let raw_text = &self.source[range.clone()];
                     let count = level as usize;
                     let pattern = "#".repeat(count);
 
@@ -849,10 +932,24 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                         let syntax_start = hash_pos;
                         let syntax_end = (hash_pos + count + 1).min(raw_text.len());
                         let syntax = &raw_text[syntax_start..syntax_end];
+                        let syntax_char_len = syntax.chars().count();
+
+                        // Calculate byte range for this syntax in the source
+                        let syntax_byte_start = range.start + syntax_start;
+                        let syntax_byte_end = range.start + syntax_end;
+                        let char_start = self.last_char_offset;
 
                         self.write("<span class=\"md-syntax-block\">")?;
                         escape_html(&mut self.writer, syntax)?;
                         self.write("</span>")?;
+
+                        // Record offset mapping and update char tracking
+                        // Note: last_byte_offset is managed by the main event loop
+                        self.record_mapping(
+                            syntax_byte_start..syntax_byte_end,
+                            char_start..char_start + syntax_char_len
+                        );
+                        self.last_char_offset = char_start + syntax_char_len;
                     }
                 }
                 Ok(())
@@ -1193,10 +1290,24 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
         let result = match tag {
             TagEnd::HtmlBlock => Ok(()),
             TagEnd::Paragraph => {
+                // Record paragraph end for boundary tracking
+                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
+                    let byte_range = byte_start..self.last_byte_offset;
+                    let char_range = char_start..self.last_char_offset;
+                    self.paragraph_ranges.push((byte_range, char_range));
+                }
+
                 self.end_node();
                 self.write("</p>\n")
             }
             TagEnd::Heading(level) => {
+                // Record paragraph end for boundary tracking
+                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
+                    let byte_range = byte_start..self.last_byte_offset;
+                    let char_range = char_start..self.last_char_offset;
+                    self.paragraph_ranges.push((byte_range, char_range));
+                }
+
                 self.end_node();
                 self.write("</")?;
                 write!(&mut self.writer, "{}", level)?;
@@ -1255,16 +1366,12 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     LazyLock::new(|| SyntaxSet::load_defaults_newlines());
 
                 if let Some((lang, buffer)) = self.code_buffer.take() {
-                    // Create offset mapping for code block content if we tracked a range
-                    if let Some(code_byte_range) = self.code_buffer_byte_range.take() {
-                        // Calculate char range from the tracked byte range
-                        let char_start = byte_to_char(self.source, code_byte_range.start);
-                        let char_end = byte_to_char(self.source, code_byte_range.end);
-                        let char_range = char_start..char_end;
-
+                    // Create offset mapping for code block content if we tracked ranges
+                    if let (Some(code_byte_range), Some(code_char_range)) =
+                        (self.code_buffer_byte_range.take(), self.code_buffer_char_range.take()) {
                         // Record mapping before writing HTML
                         // (current_node_id should be set by start_tag for CodeBlock)
-                        self.record_mapping(code_byte_range, char_range);
+                        self.record_mapping(code_byte_range, code_char_range);
                     }
 
                     if let Some(ref lang_str) = lang {
@@ -1348,65 +1455,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
         result?;
 
-        // Extract and emit closing syntax based on tag type
-        if range.start < range.end {
-            let raw_text = &self.source[range];
-            let closing_syntax = match &tag {
-                TagEnd::Strong => {
-                    if raw_text.ends_with("**") {
-                        Some("**")
-                    } else if raw_text.ends_with("__") {
-                        Some("__")
-                    } else {
-                        None
-                    }
-                }
-                TagEnd::Emphasis => {
-                    if raw_text.ends_with("*") {
-                        Some("*")
-                    } else if raw_text.ends_with("_") {
-                        Some("_")
-                    } else {
-                        None
-                    }
-                }
-                TagEnd::Strikethrough => {
-                    if raw_text.ends_with("~~") {
-                        Some("~~")
-                    } else {
-                        None
-                    }
-                }
-                TagEnd::Link => {
-                    // Extract ](url) part
-                    if let Some(idx) = raw_text.rfind("](") {
-                        Some(&raw_text[idx..])
-                    } else {
-                        None
-                    }
-                }
-                TagEnd::CodeBlock => {
-                    if raw_text.ends_with("```") {
-                        raw_text.lines().last()
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            };
-
-            if let Some(syntax) = closing_syntax {
-                let class = match classify_syntax(syntax) {
-                    SyntaxClass::Inline => "md-syntax-inline",
-                    SyntaxClass::Block => "md-syntax-block",
-                };
-                self.write("<span class=\"")?;
-                self.write(class)?;
-                self.write("\">")?;
-                escape_html(&mut self.writer, syntax)?;
-                self.write("</span>")?;
-            }
-        }
+        // Note: Closing syntax for inline tags (Strong, Emphasis, etc.) is now handled
+        // by emit_gap_before(range.end) which is called before end_tag() in the main loop.
+        // No need for manual emission here anymore.
 
         Ok(())
     }
