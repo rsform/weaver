@@ -42,13 +42,15 @@ base64 = "0.22"
 http = "1.3"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 dioxus-free-icons = { version = "0.9", features = ["font-awesome-brands"] }
-
+syntect = { workspace = true, default-features = false, features = ["default-fancy"]}
 # diesel = { version = "2.3",  features = ["sqlite", "returning_clauses_for_sqlite_3_35", "chrono", "serde_json"] }
 # diesel_migrations = { version = "2.3", features = ["sqlite"] }
 tokio = { version = "1.28", features = ["sync"] }
 serde_html_form = "0.2.8"
 tracing.workspace = true
 serde_ipld_dagcbor = { version = "0.6" }
+jumprope = { version = "1.1", features = ["wchar_conversion"] }
+markdown-weaver-escape = { workspace = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 webbrowser = "1.0.6"
@@ -63,9 +65,10 @@ mini-moka = { git = "https://github.com/moka-rs/mini-moka", rev = "da864e849f5d0
 chrono = { version = "0.4", features = ["wasmbind"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorker", "ServiceWorkerRegistration", "RegistrationOptions", "Window", "Navigator", "MessageEvent", "console", "Document", "Element", "HtmlImageElement"] }
+web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorker", "ServiceWorkerRegistration", "RegistrationOptions", "Window", "Navigator", "MessageEvent", "console", "Document", "Element", "HtmlImageElement", "Selection", "Range", "Node", "HtmlElement", "TreeWalker", "NodeFilter"] }
 js-sys = "0.3"
 gloo-storage = "0.3"
+gloo-timers = "0.3"
 lol_alloc = "0.4.1"
 
 [build-dependencies]

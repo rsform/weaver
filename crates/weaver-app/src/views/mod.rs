@@ -27,3 +27,4 @@ mod callback;
 pub use callback::Callback;
 
 mod editor;
+pub use editor::Editor;

@@ -17,7 +17,7 @@ use jacquard::{
 use std::sync::{Arc, LazyLock};
 #[allow(unused)]
 use views::{
-    Callback, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordIndex, RecordPage,
+    Callback, Editor, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordIndex, RecordPage,
 };
 
 use crate::{
@@ -54,6 +54,8 @@ enum Route {
     #[layout(Navbar)]
         #[route("/")]
         Home {},
+        #[route("/editor")]
+        Editor {},
         #[layout(ErrorLayout)]
         #[nest("/record")]
           #[layout(RecordIndex)]
