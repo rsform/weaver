@@ -1,0 +1,101 @@
+/* Markdown Editor Styling - using Rose Pine theme variables */
+
+.editor-page {
+    width: 100%;
+    height: 100%;
+    background: var(--color-base);
+    overflow: hidden;
+}
+
+.markdown-editor-container {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    font-family: var(--font-body);
+    background: var(--color-base);
+    color: var(--color-text);
+}
+
+.editor-content-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.editor-content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    outline: none;
+    line-height: var(--spacing-line-height);
+    font-size: 16px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+}
+
+.editor-content:focus {
+    background: var(--color-surface);
+}
+
+.editor-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: var(--color-base);
+    flex-shrink: 0;
+    min-width: 60px;
+}
+
+.toolbar-button {
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    text-align: center;
+    transition: background 0.2s ease;
+}
+
+.toolbar-button:hover {
+    background: var(--color-overlay);
+}
+
+.toolbar-separator {
+    height: 1px;
+    background: var(--color-border);
+    margin: 4px 0;
+}
+
+.editor-debug {
+    padding: 8px;
+    background: var(--color-base);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    flex-shrink: 0;
+    color: var(--color-muted);
+}
+
+/* Markdown syntax characters - inline (**, *, ~~, `, etc) */
+.md-syntax-inline {
+    color: var(--color-muted);
+    opacity: 0.6;
+    user-select: none;
+}
+
+/* Markdown syntax characters - block level (#, >, -, etc) */
+.md-syntax-block {
+    color: var(--color-muted);
+    opacity: 0.7;
+    user-select: none;
+    font-weight: normal;
+}
+
+/* Future: contextual hiding based on cursor position */
+/* .cursor-active .md-syntax-inline { display: none; } */

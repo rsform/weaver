@@ -1,0 +1,1495 @@
+//! HTML writer for markdown editor with visible formatting characters.
+//!
+//! Based on ClientWriter from weaver-renderer, but modified to preserve
+//! formatting characters (**, *, #, etc) wrapped in styled spans.
+//!
+//! Uses Parser::into_offset_iter() to track gaps between events, which
+//! represent consumed formatting characters.
+
+use super::offset_map::{OffsetMapping, RenderResult};
+use super::offsets::{byte_to_char, char_to_byte};
+use jumprope::JumpRopeBuf;
+use markdown_weaver::{
+    Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, Tag,
+};
+use markdown_weaver_escape::{
+    StrWrite, escape_href, escape_html, escape_html_body_text,
+    escape_html_body_text_with_char_count,
+};
+use std::collections::HashMap;
+use std::ops::Range;
+
+/// Classification of markdown syntax characters
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SyntaxClass {
+    /// Inline formatting: **, *, ~~, `, $, [, ], (, )
+    Inline,
+    /// Block formatting: #, >, -, *, 1., ```, ---
+    Block,
+}
+
+/// Classify syntax text as inline or block level
+fn classify_syntax(text: &str) -> SyntaxClass {
+    let trimmed = text.trim_start();
+
+    // Check for block-level markers
+    if trimmed.starts_with('#')
+        || trimmed.starts_with('>')
+        || trimmed.starts_with("```")
+        || trimmed.starts_with("---")
+        || (trimmed.starts_with('-')
+            && trimmed
+                .chars()
+                .nth(1)
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false))
+        || (trimmed.starts_with('*')
+            && trimmed
+                .chars()
+                .nth(1)
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false))
+        || trimmed
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+            && trimmed.contains('.')
+    {
+        SyntaxClass::Block
+    } else {
+        SyntaxClass::Inline
+    }
+}
+
+/// Synchronous callback for injecting embed content
+///
+/// Takes the embed tag and returns optional HTML content to inject.
+pub trait EmbedContentProvider {
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String>;
+}
+
+impl EmbedContentProvider for () {
+    fn get_embed_content(&self, _tag: &Tag<'_>) -> Option<String> {
+        None
+    }
+}
+
+/// HTML writer that preserves markdown formatting characters.
+///
+/// This writer processes offset-iter events to detect gaps (consumed formatting)
+/// and emits them as styled spans for visibility in the editor.
+pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E = ()> {
+    source: &'a str,
+    source_rope: &'a JumpRopeBuf,
+    events: I,
+    writer: W,
+    last_byte_offset: usize,
+    last_char_offset: usize,
+
+    end_newline: bool,
+    in_non_writing_block: bool,
+
+    table_state: TableState,
+    table_alignments: Vec<Alignment>,
+    table_cell_index: usize,
+
+    numbers: HashMap<String, usize>,
+
+    embed_provider: Option<E>,
+
+    code_buffer: Option<(Option<String>, String)>, // (lang, content)
+    code_buffer_byte_range: Option<Range<usize>>,  // byte range of buffered code content
+    pending_blockquote_range: Option<Range<usize>>, // range for emitting > inside next paragraph
+
+    // Table rendering mode
+    render_tables_as_markdown: bool,
+    table_start_offset: Option<usize>, // track start of table for markdown rendering
+
+    // Offset mapping tracking
+    offset_maps: Vec<OffsetMapping>,
+    next_node_id: usize,
+    current_node_id: Option<String>, // node ID for current text container
+    current_node_char_offset: usize, // UTF-16 offset within current node
+    current_node_child_count: usize, // number of child elements/text nodes in current container
+
+    _phantom: std::marker::PhantomData<&'a ()>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TableState {
+    Head,
+    Body,
+}
+
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedContentProvider>
+    EditorWriter<'a, I, W, E>
+{
+    pub fn new(source: &'a str, source_rope: &'a JumpRopeBuf, events: I, writer: W) -> Self {
+        Self {
+            source,
+            source_rope,
+            events,
+            writer,
+            last_byte_offset: 0,
+            last_char_offset: 0,
+            end_newline: true,
+            in_non_writing_block: false,
+            table_state: TableState::Head,
+            table_alignments: vec![],
+            table_cell_index: 0,
+            numbers: HashMap::new(),
+            embed_provider: None,
+            code_buffer: None,
+            code_buffer_byte_range: None,
+            pending_blockquote_range: None,
+            render_tables_as_markdown: true, // Default to markdown rendering
+            table_start_offset: None,
+            offset_maps: Vec::new(),
+            next_node_id: 0,
+            current_node_id: None,
+            current_node_char_offset: 0,
+            current_node_child_count: 0,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Add an embed content provider
+    pub fn with_embed_provider(self, provider: E) -> EditorWriter<'a, I, W, E> {
+        EditorWriter {
+            source: self.source,
+            source_rope: self.source_rope,
+            events: self.events,
+            writer: self.writer,
+            last_byte_offset: self.last_byte_offset,
+            last_char_offset: self.last_char_offset,
+            end_newline: self.end_newline,
+            in_non_writing_block: self.in_non_writing_block,
+            table_state: self.table_state,
+            table_alignments: self.table_alignments,
+            table_cell_index: self.table_cell_index,
+            numbers: self.numbers,
+            embed_provider: Some(provider),
+            code_buffer: self.code_buffer,
+            code_buffer_byte_range: self.code_buffer_byte_range,
+            pending_blockquote_range: self.pending_blockquote_range,
+            render_tables_as_markdown: self.render_tables_as_markdown,
+            table_start_offset: self.table_start_offset,
+            offset_maps: self.offset_maps,
+            next_node_id: self.next_node_id,
+            current_node_id: self.current_node_id,
+            current_node_char_offset: self.current_node_char_offset,
+            current_node_child_count: self.current_node_child_count,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+    #[inline]
+    fn write_newline(&mut self) -> Result<(), W::Error> {
+        self.end_newline = true;
+        self.writer.write_str("\n")
+    }
+
+    #[inline]
+    fn write(&mut self, s: &str) -> Result<(), W::Error> {
+        self.writer.write_str(s)?;
+        if !s.is_empty() {
+            self.end_newline = s.ends_with('\n');
+        }
+        Ok(())
+    }
+
+    /// Emit syntax span for a given range and record offset mapping
+    fn emit_syntax(&mut self, range: Range<usize>) -> Result<(), W::Error> {
+        if range.start < range.end {
+            let syntax = &self.source[range.clone()];
+            if !syntax.is_empty() {
+                let class = match classify_syntax(syntax) {
+                    SyntaxClass::Inline => "md-syntax-inline",
+                    SyntaxClass::Block => "md-syntax-block",
+                };
+
+                let char_start = self.last_char_offset;
+                let syntax_char_len = syntax.chars().count();
+
+                tracing::debug!(
+                    "emit_syntax: range={:?}, chars={}..{}, syntax={:?}",
+                    range,
+                    char_start,
+                    char_start + syntax_char_len,
+                    syntax
+                );
+
+                // If we're outside any node, create a wrapper span for tracking
+                let created_node = if self.current_node_id.is_none() {
+                    let node_id = self.gen_node_id();
+                    write!(
+                        &mut self.writer,
+                        "<span id=\"{}\" class=\"{}\">",
+                        node_id, class
+                    )?;
+                    self.begin_node(node_id);
+                    true
+                } else {
+                    self.write("<span class=\"")?;
+                    self.write(class)?;
+                    self.write("\">")?;
+                    false
+                };
+
+                escape_html(&mut self.writer, syntax)?;
+                self.write("</span>")?;
+
+                // Record offset mapping for this syntax
+                self.record_mapping(range.clone(), char_start..char_start + syntax_char_len);
+                self.last_char_offset = char_start + syntax_char_len;
+                self.last_byte_offset = range.end; // Mark bytes as processed
+
+                // Close wrapper if we created one
+                if created_node {
+                    self.write("</span>")?;
+                    self.end_node();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Emit any gap between last position and next offset
+    fn emit_gap_before(&mut self, next_offset: usize) -> Result<(), W::Error> {
+        // Skip gap emission if we're inside a table being rendered as markdown
+        if self.table_start_offset.is_some() && self.render_tables_as_markdown {
+            return Ok(());
+        }
+
+        if next_offset > self.last_byte_offset {
+            self.emit_syntax(self.last_byte_offset..next_offset)?;
+        }
+        Ok(())
+    }
+
+    /// Generate a unique node ID
+    fn gen_node_id(&mut self) -> String {
+        let id = format!("n{}", self.next_node_id);
+        self.next_node_id += 1;
+        id
+    }
+
+    /// Start tracking a new text container node
+    fn begin_node(&mut self, node_id: String) {
+        self.current_node_id = Some(node_id);
+        self.current_node_char_offset = 0;
+        self.current_node_child_count = 0;
+    }
+
+    /// Stop tracking current node
+    fn end_node(&mut self) {
+        self.current_node_id = None;
+        self.current_node_char_offset = 0;
+        self.current_node_child_count = 0;
+    }
+
+    /// Record an offset mapping for the given byte and char ranges.
+    ///
+    /// Computes UTF-16 length efficiently using the rope's internal indexing.
+    fn record_mapping(&mut self, byte_range: Range<usize>, char_range: Range<usize>) {
+        if let Some(ref node_id) = self.current_node_id {
+            // Use rope to convert char offsets to UTF-16 (wchar) offsets - O(log n)
+            let rope = self.source_rope.borrow();
+            let wchar_start = rope.chars_to_wchars(char_range.start);
+            let wchar_end = rope.chars_to_wchars(char_range.end);
+            let utf16_len = wchar_end - wchar_start;
+
+            let mapping = OffsetMapping {
+                byte_range,
+                char_range,
+                node_id: node_id.clone(),
+                char_offset_in_node: self.current_node_char_offset,
+                child_index: None, // text-based position
+                utf16_len,
+            };
+            self.offset_maps.push(mapping);
+            self.current_node_char_offset += utf16_len;
+        }
+    }
+
+    /// Process markdown events and write HTML.
+    ///
+    /// Returns the offset mappings. The HTML is written to the writer
+    /// passed in the constructor.
+    pub fn run(mut self) -> Result<Vec<OffsetMapping>, W::Error> {
+        while let Some((event, range)) = self.events.next() {
+            // For End events, emit any trailing content within the event's range
+            // BEFORE calling end_tag (which calls end_node and clears current_node_id)
+            if matches!(&event, Event::End(_)) {
+                // Emit gap from last_byte_offset to range.end
+                // (emit_syntax handles char offset tracking)
+                self.emit_gap_before(range.end)?;
+            } else {
+                // For other events, emit any gap before range.start
+                // (emit_syntax handles char offset tracking)
+                self.emit_gap_before(range.start)?;
+            }
+
+            // Process the event (passing range for tag syntax)
+            self.process_event(event, range.clone())?;
+
+            // Update tracking
+            self.last_byte_offset = range.end;
+        }
+
+        // Emit any trailing syntax
+        self.emit_gap_before(self.source.len())?;
+
+        // Handle unmapped trailing content (stripped by parser)
+        // This includes trailing spaces that markdown ignores
+        let doc_byte_len = self.source.len();
+        let doc_char_len = self.source_rope.len_chars();
+
+        if self.last_byte_offset < doc_byte_len || self.last_char_offset < doc_char_len {
+            tracing::debug!(
+                "Unmapped trailing content: bytes {}..{}, chars {}..{}",
+                self.last_byte_offset,
+                doc_byte_len,
+                self.last_char_offset,
+                doc_char_len
+            );
+
+            // Emit the trailing content as visible syntax
+            if self.last_byte_offset < doc_byte_len {
+                let trailing = &self.source[self.last_byte_offset..];
+                if !trailing.is_empty() {
+                    let char_start = self.last_char_offset;
+                    let trailing_char_len = trailing.chars().count();
+
+                    self.write("<span class=\"md-syntax-inline\">")?;
+                    escape_html(&mut self.writer, trailing)?;
+                    self.write("</span>")?;
+
+                    // Record mapping if we have a node
+                    if let Some(ref node_id) = self.current_node_id {
+                        let mapping = OffsetMapping {
+                            byte_range: self.last_byte_offset..doc_byte_len,
+                            char_range: char_start..char_start + trailing_char_len,
+                            node_id: node_id.clone(),
+                            char_offset_in_node: self.current_node_char_offset,
+                            child_index: None,
+                            utf16_len: trailing_char_len, // visible
+                        };
+                        self.offset_maps.push(mapping);
+                        self.current_node_char_offset += trailing_char_len;
+                    }
+
+                    self.last_char_offset = char_start + trailing_char_len;
+                }
+            }
+        }
+
+        Ok(self.offset_maps)
+    }
+
+    // Consume raw text events until end tag, for alt attributes
+    fn raw_text(&mut self) -> Result<(), W::Error> {
+        use Event::*;
+        let mut nest = 0;
+        while let Some((event, _range)) = self.events.next() {
+            match event {
+                Start(_) => nest += 1,
+                End(_) => {
+                    if nest == 0 {
+                        break;
+                    }
+                    nest -= 1;
+                }
+                Html(_) => {}
+                InlineHtml(text) | Code(text) | Text(text) => {
+                    // Don't use escape_html_body_text here.
+                    // The output of this function is used in the `alt` attribute.
+                    escape_html(&mut self.writer, &text)?;
+                    self.end_newline = text.ends_with('\n');
+                }
+                InlineMath(text) => {
+                    self.write("$")?;
+                    escape_html(&mut self.writer, &text)?;
+                    self.write("$")?;
+                }
+                DisplayMath(text) => {
+                    self.write("$$")?;
+                    escape_html(&mut self.writer, &text)?;
+                    self.write("$$")?;
+                }
+                SoftBreak | HardBreak | Rule => {
+                    self.write(" ")?;
+                }
+                FootnoteReference(name) => {
+                    let len = self.numbers.len() + 1;
+                    let number = *self.numbers.entry(name.into_string()).or_insert(len);
+                    write!(&mut self.writer, "[{}]", number)?;
+                }
+                TaskListMarker(true) => self.write("[x]")?,
+                TaskListMarker(false) => self.write("[ ]")?,
+                WeaverBlock(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn process_event(&mut self, event: Event<'_>, range: Range<usize>) -> Result<(), W::Error> {
+        use Event::*;
+
+        tracing::debug!(
+            "Event: {:?}, range: {:?}",
+            match &event {
+                Start(tag) => format!("Start({:?})", tag),
+                End(tag) => format!("End({:?})", tag),
+                Text(t) => format!("Text({:?})", &t[..t.len().min(20)]),
+                _ => format!("{:?}", event),
+            },
+            range
+        );
+        match event {
+            Start(tag) => self.start_tag(tag, range)?,
+            End(tag) => self.end_tag(tag, range)?,
+            Text(text) => {
+                // If buffering code, append to buffer instead of writing
+                if let Some((_, ref mut buffer)) = self.code_buffer {
+                    buffer.push_str(&text);
+
+                    // Track byte range for code block content
+                    if let Some(ref mut code_range) = self.code_buffer_byte_range {
+                        // Extend existing range
+                        code_range.end = range.end;
+                    } else {
+                        // First text in code block - start tracking
+                        self.code_buffer_byte_range = Some(range.clone());
+                    }
+                } else if !self.in_non_writing_block {
+                    // Escape HTML and count chars in one pass
+                    let char_start = self.last_char_offset;
+                    let text_char_len =
+                        escape_html_body_text_with_char_count(&mut self.writer, &text)?;
+                    let char_end = char_start + text_char_len;
+
+                    tracing::debug!(
+                        "Text event: range={:?}, chars={}..{}, text={:?}",
+                        range,
+                        char_start,
+                        char_end,
+                        &text[..text.len().min(40)]
+                    );
+
+                    // Text becomes a text node child of the current container
+                    if text_char_len > 0 {
+                        self.current_node_child_count += 1;
+                    }
+
+                    // Record offset mapping
+                    self.record_mapping(range.clone(), char_start..char_end);
+
+                    // Update char offset tracking
+                    self.last_char_offset = char_end;
+                    self.end_newline = text.ends_with('\n');
+                }
+            }
+            Code(text) => {
+                // Emit opening backtick
+                if range.start < range.end {
+                    let raw_text = &self.source[range.clone()];
+                    if raw_text.starts_with('`') {
+                        self.write("<span class=\"md-syntax-inline\">`</span>")?;
+                    }
+                }
+
+                self.write("<code>")?;
+
+                // Track offset mapping for code content
+                let char_start = self.last_char_offset;
+                let text_char_len = escape_html_body_text_with_char_count(&mut self.writer, &text)?;
+                let char_end = char_start + text_char_len;
+
+                // Record offset mapping (code content is visible)
+                self.record_mapping(range.clone(), char_start..char_end);
+                self.last_char_offset = char_end;
+
+                self.write("</code>")?;
+
+                // Emit closing backtick
+                if range.start < range.end {
+                    let raw_text = &self.source[range];
+                    if raw_text.ends_with('`') {
+                        self.write("<span class=\"md-syntax-inline\">`</span>")?;
+                    }
+                }
+            }
+            InlineMath(text) => {
+                // Emit opening $
+                if range.start < range.end {
+                    let raw_text = &self.source[range.clone()];
+                    if raw_text.starts_with('$') {
+                        self.write("<span class=\"md-syntax-inline\">$</span>")?;
+                    }
+                }
+
+                self.write(r#"<span class="math math-inline">"#)?;
+                escape_html(&mut self.writer, &text)?;
+                self.write("</span>")?;
+
+                // Emit closing $
+                if range.start < range.end {
+                    let raw_text = &self.source[range];
+                    if raw_text.ends_with('$') {
+                        self.write("<span class=\"md-syntax-inline\">$</span>")?;
+                    }
+                }
+            }
+            DisplayMath(text) => {
+                // Emit opening $$
+                if range.start < range.end {
+                    let raw_text = &self.source[range.clone()];
+                    if raw_text.starts_with("$$") {
+                        self.write("<span class=\"md-syntax-inline\">$$</span>")?;
+                    }
+                }
+
+                self.write(r#"<span class="math math-display">"#)?;
+                escape_html(&mut self.writer, &text)?;
+                self.write("</span>")?;
+
+                // Emit closing $$
+                if range.start < range.end {
+                    let raw_text = &self.source[range];
+                    if raw_text.ends_with("$$") {
+                        self.write("<span class=\"md-syntax-inline\">$$</span>")?;
+                    }
+                }
+            }
+            Html(html) | InlineHtml(html) => {
+                // Track offset mapping for raw HTML
+                let char_start = self.last_char_offset;
+                let html_char_len = html.chars().count();
+                let char_end = char_start + html_char_len;
+
+                self.write(&html)?;
+
+                // Record mapping for inline HTML
+                self.record_mapping(range.clone(), char_start..char_end);
+                self.last_char_offset = char_end;
+            }
+            SoftBreak => self.write_newline()?,
+            HardBreak => {
+                // Emit the two spaces as visible (dimmed) text, then <br>
+                let gap = &self.source[range.clone()];
+                if gap.ends_with('\n') {
+                    let spaces = &gap[..gap.len() - 1]; // everything except the \n
+                    let char_start = byte_to_char(self.source, range.start);
+                    let spaces_char_len = spaces.chars().count();
+
+                    // Emit and map the visible spaces
+                    self.write("<span class=\"md-syntax-inline\">")?;
+                    escape_html(&mut self.writer, spaces)?;
+                    self.write("</span>")?;
+
+                    // Count this span as a child
+                    self.current_node_child_count += 1;
+
+                    self.record_mapping(
+                        range.start..range.start + spaces.len(),
+                        char_start..char_start + spaces_char_len,
+                    );
+
+                    // Now the actual line break <br>
+                    self.write("<br />")?;
+
+                    // Count the <br> as a child
+                    self.current_node_child_count += 1;
+
+                    // Map the newline to an element-based position (after the <br>)
+                    // The binary search is end-inclusive, so cursor at position N+1
+                    // will match a mapping with range N..N+1
+                    if let Some(ref node_id) = self.current_node_id {
+                        let newline_char_offset = char_start + spaces_char_len;
+                        let mapping = OffsetMapping {
+                            byte_range: range.start + spaces.len()..range.end,
+                            char_range: newline_char_offset..newline_char_offset + 1,
+                            node_id: node_id.clone(),
+                            char_offset_in_node: 0,
+                            child_index: Some(self.current_node_child_count),
+                            utf16_len: 0,
+                        };
+                        self.offset_maps.push(mapping);
+                    }
+
+                    self.last_char_offset = char_start + spaces_char_len + 1; // +1 for \n
+                } else {
+                    // Fallback: just <br>
+                    self.write("<br />")?;
+                }
+            }
+            Rule => {
+                if !self.end_newline {
+                    self.write("\n")?;
+                }
+
+                // Emit syntax span before the rendered element
+                if range.start < range.end {
+                    let raw_text = &self.source[range];
+                    let trimmed = raw_text.trim();
+                    if !trimmed.is_empty() {
+                        self.write("<span class=\"md-syntax-block\">")?;
+                        escape_html(&mut self.writer, trimmed)?;
+                        self.write("</span>\n")?;
+                    }
+                }
+
+                // Wrap <hr /> in toggle-block for future cursor-based toggling
+                self.write("<div class=\"toggle-block\"><hr /></div>\n")?;
+            }
+            FootnoteReference(name) => {
+                let len = self.numbers.len() + 1;
+                self.write("<sup class=\"footnote-reference\"><a href=\"#")?;
+                escape_html(&mut self.writer, &name)?;
+                self.write("\">")?;
+                let number = *self.numbers.entry(name.to_string()).or_insert(len);
+                write!(&mut self.writer, "{}", number)?;
+                self.write("</a></sup>")?;
+            }
+            TaskListMarker(checked) => {
+                // Emit the [ ] or [x] syntax
+                if range.start < range.end {
+                    let raw_text = &self.source[range];
+                    if let Some(bracket_pos) = raw_text.find('[') {
+                        let end_pos = raw_text.find(']').map(|p| p + 1).unwrap_or(bracket_pos + 3);
+                        let syntax = &raw_text[bracket_pos..end_pos.min(raw_text.len())];
+                        self.write("<span class=\"md-syntax-inline\">")?;
+                        escape_html(&mut self.writer, syntax)?;
+                        self.write("</span> ")?;
+                    }
+                }
+
+                if checked {
+                    self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n")?;
+                } else {
+                    self.write("<input disabled=\"\" type=\"checkbox\"/>\n")?;
+                }
+            }
+            WeaverBlock(_) => {}
+        }
+        Ok(())
+    }
+
+    fn start_tag(&mut self, tag: Tag<'_>, range: Range<usize>) -> Result<(), W::Error> {
+        // Check if this is a block-level tag that should have syntax inside
+        let is_block_tag = matches!(tag, Tag::Heading { .. } | Tag::BlockQuote(_));
+
+        // For inline tags, emit syntax before tag
+        if !is_block_tag && range.start < range.end {
+            let raw_text = &self.source[range.clone()];
+            let opening_syntax = match &tag {
+                Tag::Strong => {
+                    if raw_text.starts_with("**") {
+                        Some("**")
+                    } else if raw_text.starts_with("__") {
+                        Some("__")
+                    } else {
+                        None
+                    }
+                }
+                Tag::Emphasis => {
+                    if raw_text.starts_with("*") {
+                        Some("*")
+                    } else if raw_text.starts_with("_") {
+                        Some("_")
+                    } else {
+                        None
+                    }
+                }
+                Tag::Strikethrough => {
+                    if raw_text.starts_with("~~") {
+                        Some("~~")
+                    } else {
+                        None
+                    }
+                }
+                Tag::Link { .. } => {
+                    if raw_text.starts_with('[') {
+                        Some("[")
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+
+            if let Some(syntax) = opening_syntax {
+                let class = match classify_syntax(syntax) {
+                    SyntaxClass::Inline => "md-syntax-inline",
+                    SyntaxClass::Block => "md-syntax-block",
+                };
+                self.write("<span class=\"")?;
+                self.write(class)?;
+                self.write("\">")?;
+                escape_html(&mut self.writer, syntax)?;
+                self.write("</span>")?;
+            }
+        }
+
+        // Emit the opening tag
+        match tag {
+            Tag::HtmlBlock => Ok(()),
+            Tag::Paragraph => {
+                let node_id = self.gen_node_id();
+                if self.end_newline {
+                    write!(&mut self.writer, "<p id=\"{}\">", node_id)?;
+                } else {
+                    write!(&mut self.writer, "\n<p id=\"{}\">", node_id)?;
+                }
+                self.begin_node(node_id.clone());
+
+                // Map the start position of the paragraph (before any content)
+                // This allows cursor to be placed at the very beginning
+                let para_start_char = self.last_char_offset;
+                let mapping = OffsetMapping {
+                    byte_range: range.start..range.start,
+                    char_range: para_start_char..para_start_char,
+                    node_id,
+                    char_offset_in_node: 0,
+                    child_index: Some(0), // position before first child
+                    utf16_len: 0,
+                };
+                self.offset_maps.push(mapping);
+
+                // Emit > syntax if we're inside a blockquote
+                if let Some(bq_range) = self.pending_blockquote_range.take() {
+                    if bq_range.start < bq_range.end {
+                        let raw_text = &self.source[bq_range];
+                        if let Some(gt_pos) = raw_text.find('>') {
+                            // Extract > [!NOTE] or just >
+                            let after_gt = &raw_text[gt_pos + 1..];
+                            let syntax_end = if after_gt.trim_start().starts_with("[!") {
+                                // Find the closing ]
+                                if let Some(close_bracket) = after_gt.find(']') {
+                                    gt_pos + 1 + close_bracket + 1
+                                } else {
+                                    gt_pos + 1
+                                }
+                            } else {
+                                // Just > and maybe a space
+                                (gt_pos + 2).min(raw_text.len())
+                            };
+
+                            let syntax = &raw_text[gt_pos..syntax_end];
+                            self.write("<span class=\"md-syntax-block\">")?;
+                            escape_html(&mut self.writer, syntax)?;
+                            self.write("</span> ")?; // Add space after
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Tag::Heading {
+                level,
+                id,
+                classes,
+                attrs,
+            } => {
+                if !self.end_newline {
+                    self.write("\n")?;
+                }
+
+                // Generate node ID for offset tracking
+                let node_id = self.gen_node_id();
+
+                self.write("<")?;
+                write!(&mut self.writer, "{}", level)?;
+
+                // Add our tracking ID as data attribute (preserve user's id if present)
+                self.write(" data-node-id=\"")?;
+                self.write(&node_id)?;
+                self.write("\"")?;
+
+                if let Some(id) = id {
+                    self.write(" id=\"")?;
+                    escape_html(&mut self.writer, &id)?;
+                    self.write("\"")?;
+                }
+                if !classes.is_empty() {
+                    self.write(" class=\"")?;
+                    for (i, class) in classes.iter().enumerate() {
+                        if i > 0 {
+                            self.write(" ")?;
+                        }
+                        escape_html(&mut self.writer, class)?;
+                    }
+                    self.write("\"")?;
+                }
+                for (attr, value) in attrs {
+                    self.write(" ")?;
+                    escape_html(&mut self.writer, &attr)?;
+                    if let Some(val) = value {
+                        self.write("=\"")?;
+                        escape_html(&mut self.writer, &val)?;
+                        self.write("\"")?;
+                    } else {
+                        self.write("=\"\"")?;
+                    }
+                }
+                self.write(">")?;
+
+                // Begin node tracking for offset mapping
+                self.begin_node(node_id);
+
+                // Emit # syntax inside the heading tag
+                if range.start < range.end {
+                    let raw_text = &self.source[range];
+                    let count = level as usize;
+                    let pattern = "#".repeat(count);
+
+                    // Find where the # actually starts (might have leading whitespace)
+                    if let Some(hash_pos) = raw_text.find(&pattern) {
+                        // Extract "# " or "## " etc
+                        let syntax_start = hash_pos;
+                        let syntax_end = (hash_pos + count + 1).min(raw_text.len());
+                        let syntax = &raw_text[syntax_start..syntax_end];
+
+                        self.write("<span class=\"md-syntax-block\">")?;
+                        escape_html(&mut self.writer, syntax)?;
+                        self.write("</span>")?;
+                    }
+                }
+                Ok(())
+            }
+            Tag::Table(alignments) => {
+                if self.render_tables_as_markdown {
+                    // Store start offset and skip HTML rendering
+                    self.table_start_offset = Some(range.start);
+                    self.in_non_writing_block = true; // Suppress content output
+                    Ok(())
+                } else {
+                    self.table_alignments = alignments;
+                    self.write("<table>")
+                }
+            }
+            Tag::TableHead => {
+                if self.render_tables_as_markdown {
+                    Ok(()) // Skip HTML rendering
+                } else {
+                    self.table_state = TableState::Head;
+                    self.table_cell_index = 0;
+                    self.write("<thead><tr>")
+                }
+            }
+            Tag::TableRow => {
+                if self.render_tables_as_markdown {
+                    Ok(()) // Skip HTML rendering
+                } else {
+                    self.table_cell_index = 0;
+                    self.write("<tr>")
+                }
+            }
+            Tag::TableCell => {
+                if self.render_tables_as_markdown {
+                    Ok(()) // Skip HTML rendering
+                } else {
+                    match self.table_state {
+                        TableState::Head => self.write("<th")?,
+                        TableState::Body => self.write("<td")?,
+                    }
+                    match self.table_alignments.get(self.table_cell_index) {
+                        Some(&Alignment::Left) => self.write(" style=\"text-align: left\">"),
+                        Some(&Alignment::Center) => self.write(" style=\"text-align: center\">"),
+                        Some(&Alignment::Right) => self.write(" style=\"text-align: right\">"),
+                        _ => self.write(">"),
+                    }
+                }
+            }
+            Tag::BlockQuote(kind) => {
+                let class_str = match kind {
+                    None => "",
+                    Some(BlockQuoteKind::Note) => " class=\"markdown-alert-note\"",
+                    Some(BlockQuoteKind::Tip) => " class=\"markdown-alert-tip\"",
+                    Some(BlockQuoteKind::Important) => " class=\"markdown-alert-important\"",
+                    Some(BlockQuoteKind::Warning) => " class=\"markdown-alert-warning\"",
+                    Some(BlockQuoteKind::Caution) => " class=\"markdown-alert-caution\"",
+                };
+                if self.end_newline {
+                    write!(&mut self.writer, "<blockquote{}>\n", class_str)?;
+                } else {
+                    write!(&mut self.writer, "\n<blockquote{}>\n", class_str)?;
+                }
+
+                // Store range for emitting > inside the next paragraph
+                self.pending_blockquote_range = Some(range);
+                Ok(())
+            }
+            Tag::CodeBlock(info) => {
+                if !self.end_newline {
+                    self.write_newline()?;
+                }
+
+                // Generate node ID for code block
+                let node_id = self.gen_node_id();
+
+                match info {
+                    CodeBlockKind::Fenced(info) => {
+                        // Emit opening ```language
+                        if range.start < range.end {
+                            let raw_text = &self.source[range];
+                            if let Some(fence_pos) = raw_text.find("```") {
+                                let fence_end = (fence_pos + 3 + info.len()).min(raw_text.len());
+                                let syntax = &raw_text[fence_pos..fence_end];
+                                self.write("<span class=\"md-syntax-block\">")?;
+                                escape_html(&mut self.writer, syntax)?;
+                                self.write("</span>\n")?;
+                            }
+                        }
+
+                        let lang = info.split(' ').next().unwrap();
+                        let lang_opt = if lang.is_empty() {
+                            None
+                        } else {
+                            Some(lang.to_string())
+                        };
+                        // Start buffering
+                        self.code_buffer = Some((lang_opt, String::new()));
+
+                        // Begin node tracking for offset mapping
+                        self.begin_node(node_id);
+                        Ok(())
+                    }
+                    CodeBlockKind::Indented => {
+                        // Ignore indented code blocks (as per executive decision)
+                        self.code_buffer = Some((None, String::new()));
+
+                        // Begin node tracking for offset mapping
+                        self.begin_node(node_id);
+                        Ok(())
+                    }
+                }
+            }
+            Tag::List(Some(1)) => {
+                if self.end_newline {
+                    self.write("<ol>\n")
+                } else {
+                    self.write("\n<ol>\n")
+                }
+            }
+            Tag::List(Some(start)) => {
+                if self.end_newline {
+                    self.write("<ol start=\"")?;
+                } else {
+                    self.write("\n<ol start=\"")?;
+                }
+                write!(&mut self.writer, "{}", start)?;
+                self.write("\">\n")
+            }
+            Tag::List(None) => {
+                if self.end_newline {
+                    self.write("<ul>\n")
+                } else {
+                    self.write("\n<ul>\n")
+                }
+            }
+            Tag::Item => {
+                // Generate node ID for list item
+                let node_id = self.gen_node_id();
+
+                if self.end_newline {
+                    write!(&mut self.writer, "<li data-node-id=\"{}\">", node_id)?;
+                } else {
+                    write!(&mut self.writer, "\n<li data-node-id=\"{}\">", node_id)?;
+                }
+
+                // Begin node tracking
+                self.begin_node(node_id);
+
+                // Emit list marker syntax inside the <li> tag
+                if range.start < range.end {
+                    let raw_text = &self.source[range];
+
+                    // Try to find the list marker (-, *, or digit.)
+                    let trimmed = raw_text.trim_start();
+                    if let Some(marker) = trimmed.chars().next() {
+                        if marker == '-' || marker == '*' {
+                            // Unordered list: extract "- " or "* "
+                            let marker_end = trimmed
+                                .find(|c: char| c != '-' && c != '*')
+                                .map(|pos| pos + 1)
+                                .unwrap_or(1);
+                            let syntax = &trimmed[..marker_end.min(trimmed.len())];
+                            self.write("<span class=\"md-syntax-block\">")?;
+                            escape_html(&mut self.writer, syntax)?;
+                            self.write("</span>")?;
+                        } else if marker.is_ascii_digit() {
+                            // Ordered list: extract "1. " or similar
+                            if let Some(dot_pos) = trimmed.find('.') {
+                                let syntax_end = (dot_pos + 2).min(trimmed.len());
+                                let syntax = &trimmed[..syntax_end].trim_end();
+                                self.write("<span class=\"md-syntax-block\">")?;
+                                escape_html(&mut self.writer, syntax)?;
+                                self.write("</span>")?;
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Tag::DefinitionList => {
+                if self.end_newline {
+                    self.write("<dl>\n")
+                } else {
+                    self.write("\n<dl>\n")
+                }
+            }
+            Tag::DefinitionListTitle => {
+                let node_id = self.gen_node_id();
+
+                if self.end_newline {
+                    write!(&mut self.writer, "<dt data-node-id=\"{}\">", node_id)?;
+                } else {
+                    write!(&mut self.writer, "\n<dt data-node-id=\"{}\">", node_id)?;
+                }
+
+                self.begin_node(node_id);
+                Ok(())
+            }
+            Tag::DefinitionListDefinition => {
+                let node_id = self.gen_node_id();
+
+                if self.end_newline {
+                    write!(&mut self.writer, "<dd data-node-id=\"{}\">", node_id)?;
+                } else {
+                    write!(&mut self.writer, "\n<dd data-node-id=\"{}\">", node_id)?;
+                }
+
+                self.begin_node(node_id);
+                Ok(())
+            }
+            Tag::Subscript => self.write("<sub>"),
+            Tag::Superscript => self.write("<sup>"),
+            Tag::Emphasis => self.write("<em>"),
+            Tag::Strong => self.write("<strong>"),
+            Tag::Strikethrough => self.write("<s>"),
+            Tag::Link {
+                link_type: LinkType::Email,
+                dest_url,
+                title,
+                ..
+            } => {
+                self.write("<a href=\"mailto:")?;
+                escape_href(&mut self.writer, &dest_url)?;
+                if !title.is_empty() {
+                    self.write("\" title=\"")?;
+                    escape_html(&mut self.writer, &title)?;
+                }
+                self.write("\">")
+            }
+            Tag::Link {
+                dest_url, title, ..
+            } => {
+                self.write("<a href=\"")?;
+                escape_href(&mut self.writer, &dest_url)?;
+                if !title.is_empty() {
+                    self.write("\" title=\"")?;
+                    escape_html(&mut self.writer, &title)?;
+                }
+                self.write("\">")
+            }
+            Tag::Image {
+                dest_url,
+                title,
+                attrs,
+                ..
+            } => {
+                // Emit opening ![
+                if range.start < range.end {
+                    let raw_text = &self.source[range.clone()];
+                    if raw_text.starts_with("![") {
+                        self.write("<span class=\"md-syntax-inline\">![</span>")?;
+                    }
+                }
+
+                self.write("<img src=\"")?;
+                escape_href(&mut self.writer, &dest_url)?;
+                self.write("\" alt=\"")?;
+                // Consume text events for alt attribute
+                self.raw_text()?;
+                self.write("\"")?;
+                if !title.is_empty() {
+                    self.write(" title=\"")?;
+                    escape_html(&mut self.writer, &title)?;
+                    self.write("\"")?;
+                }
+                if let Some(attrs) = attrs {
+                    if !attrs.classes.is_empty() {
+                        self.write(" class=\"")?;
+                        for (i, class) in attrs.classes.iter().enumerate() {
+                            if i > 0 {
+                                self.write(" ")?;
+                            }
+                            escape_html(&mut self.writer, class)?;
+                        }
+                        self.write("\"")?;
+                    }
+                    for (attr, value) in &attrs.attrs {
+                        self.write(" ")?;
+                        escape_html(&mut self.writer, attr)?;
+                        self.write("=\"")?;
+                        escape_html(&mut self.writer, value)?;
+                        self.write("\"")?;
+                    }
+                }
+                self.write(" />")?;
+
+                // Emit closing ](url)
+                if range.start < range.end {
+                    let raw_text = &self.source[range];
+                    if let Some(paren_pos) = raw_text.rfind("](") {
+                        let syntax = &raw_text[paren_pos..];
+                        self.write("<span class=\"md-syntax-inline\">")?;
+                        escape_html(&mut self.writer, syntax)?;
+                        self.write("</span>")?;
+                    }
+                }
+                Ok(())
+            }
+            Tag::Embed {
+                embed_type,
+                dest_url,
+                title,
+                id,
+                attrs,
+            } => self.write_embed(embed_type, dest_url, title, id, attrs),
+            Tag::WeaverBlock(_, _) => {
+                self.in_non_writing_block = true;
+                Ok(())
+            }
+            Tag::FootnoteDefinition(name) => {
+                if self.end_newline {
+                    self.write("<div class=\"footnote-definition\" id=\"")?;
+                } else {
+                    self.write("\n<div class=\"footnote-definition\" id=\"")?;
+                }
+                escape_html(&mut self.writer, &name)?;
+                self.write("\"><sup class=\"footnote-definition-label\">")?;
+                let len = self.numbers.len() + 1;
+                let number = *self.numbers.entry(name.to_string()).or_insert(len);
+                write!(&mut self.writer, "{}", number)?;
+                self.write("</sup>")
+            }
+            Tag::MetadataBlock(_) => {
+                self.in_non_writing_block = true;
+                Ok(())
+            }
+        }
+    }
+
+    fn end_tag(
+        &mut self,
+        tag: markdown_weaver::TagEnd,
+        range: Range<usize>,
+    ) -> Result<(), W::Error> {
+        use markdown_weaver::TagEnd;
+
+        // Emit tag HTML first
+        let result = match tag {
+            TagEnd::HtmlBlock => Ok(()),
+            TagEnd::Paragraph => {
+                self.end_node();
+                self.write("</p>\n")
+            }
+            TagEnd::Heading(level) => {
+                self.end_node();
+                self.write("</")?;
+                write!(&mut self.writer, "{}", level)?;
+                self.write(">\n")
+            }
+            TagEnd::Table => {
+                if self.render_tables_as_markdown {
+                    // Emit the raw markdown table
+                    if let Some(start) = self.table_start_offset.take() {
+                        let table_text = &self.source[start..range.end];
+                        self.in_non_writing_block = false;
+
+                        // Wrap in a pre or div for styling
+                        self.write("<pre class=\"table-markdown\">")?;
+                        escape_html(&mut self.writer, table_text)?;
+                        self.write("</pre>\n")?;
+                    }
+                    Ok(())
+                } else {
+                    self.write("</tbody></table>\n")
+                }
+            }
+            TagEnd::TableHead => {
+                if self.render_tables_as_markdown {
+                    Ok(()) // Skip HTML rendering
+                } else {
+                    self.write("</tr></thead><tbody>\n")?;
+                    self.table_state = TableState::Body;
+                    Ok(())
+                }
+            }
+            TagEnd::TableRow => {
+                if self.render_tables_as_markdown {
+                    Ok(()) // Skip HTML rendering
+                } else {
+                    self.write("</tr>\n")
+                }
+            }
+            TagEnd::TableCell => {
+                if self.render_tables_as_markdown {
+                    Ok(()) // Skip HTML rendering
+                } else {
+                    match self.table_state {
+                        TableState::Head => self.write("</th>")?,
+                        TableState::Body => self.write("</td>")?,
+                    }
+                    self.table_cell_index += 1;
+                    Ok(())
+                }
+            }
+            TagEnd::BlockQuote(_) => self.write("</blockquote>\n"),
+            TagEnd::CodeBlock => {
+                use std::sync::LazyLock;
+                use syntect::parsing::SyntaxSet;
+                static SYNTAX_SET: LazyLock<SyntaxSet> =
+                    LazyLock::new(|| SyntaxSet::load_defaults_newlines());
+
+                if let Some((lang, buffer)) = self.code_buffer.take() {
+                    // Create offset mapping for code block content if we tracked a range
+                    if let Some(code_byte_range) = self.code_buffer_byte_range.take() {
+                        // Calculate char range from the tracked byte range
+                        let char_start = byte_to_char(self.source, code_byte_range.start);
+                        let char_end = byte_to_char(self.source, code_byte_range.end);
+                        let char_range = char_start..char_end;
+
+                        // Record mapping before writing HTML
+                        // (current_node_id should be set by start_tag for CodeBlock)
+                        self.record_mapping(code_byte_range, char_range);
+                    }
+
+                    if let Some(ref lang_str) = lang {
+                        // Use a temporary String buffer for syntect
+                        let mut temp_output = String::new();
+                        match weaver_renderer::code_pretty::highlight(
+                            &SYNTAX_SET,
+                            Some(lang_str),
+                            &buffer,
+                            &mut temp_output,
+                        ) {
+                            Ok(_) => {
+                                self.write(&temp_output)?;
+                            }
+                            Err(_) => {
+                                // Fallback to plain code block
+                                self.write("<pre><code class=\"language-")?;
+                                escape_html(&mut self.writer, lang_str)?;
+                                self.write("\">")?;
+                                escape_html_body_text(&mut self.writer, &buffer)?;
+                                self.write("</code></pre>\n")?;
+                            }
+                        }
+                    } else {
+                        self.write("<pre><code>")?;
+                        escape_html_body_text(&mut self.writer, &buffer)?;
+                        self.write("</code></pre>\n")?;
+                    }
+
+                    // End node tracking
+                    self.end_node();
+                } else {
+                    self.write("</code></pre>\n")?;
+                }
+
+                // Emit closing ```
+                if range.start < range.end {
+                    let raw_text = &self.source[range.clone()];
+                    if let Some(fence_line) = raw_text.lines().last() {
+                        if fence_line.trim() == "```" {
+                            self.write("<span class=\"md-syntax-block\">```</span>")?;
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+            TagEnd::List(true) => self.write("</ol>\n"),
+            TagEnd::List(false) => self.write("</ul>\n"),
+            TagEnd::Item => {
+                self.end_node();
+                self.write("</li>\n")
+            }
+            TagEnd::DefinitionList => self.write("</dl>\n"),
+            TagEnd::DefinitionListTitle => {
+                self.end_node();
+                self.write("</dt>\n")
+            }
+            TagEnd::DefinitionListDefinition => {
+                self.end_node();
+                self.write("</dd>\n")
+            }
+            TagEnd::Emphasis => self.write("</em>"),
+            TagEnd::Superscript => self.write("</sup>"),
+            TagEnd::Subscript => self.write("</sub>"),
+            TagEnd::Strong => self.write("</strong>"),
+            TagEnd::Strikethrough => self.write("</s>"),
+            TagEnd::Link => self.write("</a>"),
+            TagEnd::Image => Ok(()), // No-op: raw_text() already consumed the End(Image) event
+            TagEnd::Embed => Ok(()),
+            TagEnd::WeaverBlock(_) => {
+                self.in_non_writing_block = false;
+                Ok(())
+            }
+            TagEnd::FootnoteDefinition => self.write("</div>\n"),
+            TagEnd::MetadataBlock(_) => {
+                self.in_non_writing_block = false;
+                Ok(())
+            }
+        };
+
+        result?;
+
+        // Extract and emit closing syntax based on tag type
+        if range.start < range.end {
+            let raw_text = &self.source[range];
+            let closing_syntax = match &tag {
+                TagEnd::Strong => {
+                    if raw_text.ends_with("**") {
+                        Some("**")
+                    } else if raw_text.ends_with("__") {
+                        Some("__")
+                    } else {
+                        None
+                    }
+                }
+                TagEnd::Emphasis => {
+                    if raw_text.ends_with("*") {
+                        Some("*")
+                    } else if raw_text.ends_with("_") {
+                        Some("_")
+                    } else {
+                        None
+                    }
+                }
+                TagEnd::Strikethrough => {
+                    if raw_text.ends_with("~~") {
+                        Some("~~")
+                    } else {
+                        None
+                    }
+                }
+                TagEnd::Link => {
+                    // Extract ](url) part
+                    if let Some(idx) = raw_text.rfind("](") {
+                        Some(&raw_text[idx..])
+                    } else {
+                        None
+                    }
+                }
+                TagEnd::CodeBlock => {
+                    if raw_text.ends_with("```") {
+                        raw_text.lines().last()
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+
+            if let Some(syntax) = closing_syntax {
+                let class = match classify_syntax(syntax) {
+                    SyntaxClass::Inline => "md-syntax-inline",
+                    SyntaxClass::Block => "md-syntax-block",
+                };
+                self.write("<span class=\"")?;
+                self.write(class)?;
+                self.write("\">")?;
+                escape_html(&mut self.writer, syntax)?;
+                self.write("</span>")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedContentProvider>
+    EditorWriter<'a, I, W, E>
+{
+    fn write_embed(
+        &mut self,
+        embed_type: EmbedType,
+        dest_url: CowStr<'_>,
+        title: CowStr<'_>,
+        id: CowStr<'_>,
+        attrs: Option<markdown_weaver::WeaverAttributes<'_>>,
+    ) -> Result<(), W::Error> {
+        // Try to get content from attributes first
+        let content_from_attrs = if let Some(ref attrs) = attrs {
+            attrs
+                .attrs
+                .iter()
+                .find(|(k, _)| k.as_ref() == "content")
+                .map(|(_, v)| v.as_ref().to_string())
+        } else {
+            None
+        };
+
+        // If no content in attrs, try provider
+        let content = if let Some(content) = content_from_attrs {
+            Some(content)
+        } else if let Some(ref provider) = self.embed_provider {
+            let tag = Tag::Embed {
+                embed_type,
+                dest_url: dest_url.clone(),
+                title: title.clone(),
+                id: id.clone(),
+                attrs: attrs.clone(),
+            };
+            provider.get_embed_content(&tag)
+        } else {
+            None
+        };
+
+        if let Some(html_content) = content {
+            // Write the pre-rendered content directly
+            self.write(&html_content)?;
+            self.write_newline()?;
+        } else {
+            // Fallback: render as iframe
+            self.write("<iframe src=\"")?;
+            escape_href(&mut self.writer, &dest_url)?;
+            self.write("\" title=\"")?;
+            escape_html(&mut self.writer, &title)?;
+            if !id.is_empty() {
+                self.write("\" id=\"")?;
+                escape_html(&mut self.writer, &id)?;
+            }
+            self.write("\"")?;
+
+            if let Some(attrs) = attrs {
+                if !attrs.classes.is_empty() {
+                    self.write(" class=\"")?;
+                    for (i, class) in attrs.classes.iter().enumerate() {
+                        if i > 0 {
+                            self.write(" ")?;
+                        }
+                        escape_html(&mut self.writer, class)?;
+                    }
+                    self.write("\"")?;
+                }
+                for (attr, value) in &attrs.attrs {
+                    // Skip the content attr in HTML output
+                    if attr.as_ref() != "content" {
+                        self.write(" ")?;
+                        escape_html(&mut self.writer, attr)?;
+                        self.write("=\"")?;
+                        escape_html(&mut self.writer, value)?;
+                        self.write("\"")?;
+                    }
+                }
+            }
+            self.write("></iframe>")?;
+        }
+        Ok(())
+    }
+}
