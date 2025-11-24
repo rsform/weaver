@@ -86,15 +86,38 @@
 .md-syntax-inline {
     color: var(--color-muted);
     opacity: 0.6;
-    user-select: none;
+}
+
+.md-syntax-inline:[hidden] {
+    color: var(--color-muted);
+    opacity: 0.6;
+    width: 0;
+    user-select: none; /* idk if we want this when its hidden or not */
 }
 
 /* Markdown syntax characters - block level (#, >, -, etc) */
 .md-syntax-block {
     color: var(--color-muted);
     opacity: 0.7;
-    user-select: none;
+    width: 0;
     font-weight: normal;
+}
+
+.md-syntax-block:[hidden] {
+    content: attr(data-syntax);
+    display: inline-block;
+    margin-right: 4px;
+    user-select: none; /* idk if we want this when its hidden or not */
+}
+
+/* Cursor positioning helper after <br> */
+.br-cursor {
+    display: inline-block;
+    font-size: 0;
+    width: 0;
+    height: 1em; /* force height so cursor is visible */
+    line-height: 1em;
+    vertical-align: baseline;
 }
 
 /* Future: contextual hiding based on cursor position */
