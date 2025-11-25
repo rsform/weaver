@@ -119,19 +119,19 @@ pub fn find_mapping_for_char(
     char_offset: usize,
 ) -> Option<(&OffsetMapping, bool)> {
     // Binary search for the mapping
-    // Note: We allow cursor at the end boundary of a mapping (cursor after text)
-    // This makes ranges END-INCLUSIVE for cursor positioning
+    // Rust ranges are end-exclusive, so range 0..10 covers positions 0-9.
+    // When cursor is exactly at a boundary (e.g., position 10 between 0..10 and 10..20),
+    // prefer the NEXT mapping so cursor goes "down" to new content.
     let idx = offset_map
         .binary_search_by(|mapping| {
-            if mapping.char_range.end < char_offset {
-                // Cursor is after this mapping
+            if mapping.char_range.end <= char_offset {
+                // Cursor is at or after end of this mapping - look forward
                 std::cmp::Ordering::Less
             } else if mapping.char_range.start > char_offset {
                 // Cursor is before this mapping
                 std::cmp::Ordering::Greater
             } else {
-                // Cursor is within [start, end] OR exactly at end (inclusive)
-                // This handles cursor at position N matching range N-1..N
+                // Cursor is within [start, end)
                 std::cmp::Ordering::Equal
             }
         })

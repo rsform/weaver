@@ -1,0 +1,13 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 0
+  char_range:
+    - 0
+    - 0
+  html: "<span id=\"n0\">​</span>"
+  offset_map: []
+  source_hash: 0

@@ -1,0 +1,101 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 41
+    - 18
+  char_range:
+    - 0
+    - 18
+  html: "<blockquote>\n<p id=\"n0\"><span class=\"md-syntax-block\">&gt; </span>This is a quote<span class=\"md-syntax-inline\">\n</span></p>\n</blockquote>\n"
+  offset_map:
+    - byte_range:
+        - 43
+        - 43
+      char_range:
+        - 0
+        - 0
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 41
+        - 43
+      char_range:
+        - 0
+        - 2
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 43
+        - 58
+      char_range:
+        - 2
+        - 17
+      node_id: n0
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 15
+    - byte_range:
+        - 58
+        - 59
+      char_range:
+        - 17
+        - 18
+      node_id: n0
+      char_offset_in_node: 17
+      child_index: ~
+      utf16_len: 1
+  source_hash: 11268153476336590706
+- byte_range:
+    - 20
+    - 22
+  char_range:
+    - 20
+    - 22
+  html: "<span id=\"gap-20-22\">​</span>"
+  offset_map:
+    - byte_range:
+        - 20
+        - 22
+      char_range:
+        - 20
+        - 22
+      node_id: gap-20-22
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 1
+  source_hash: 6078396554664461735
+- byte_range:
+    - 22
+    - 41
+  char_range:
+    - 22
+    - 41
+  html: "<p id=\"n1\">With multiple lines</p>\n"
+  offset_map:
+    - byte_range:
+        - 22
+        - 22
+      char_range:
+        - 22
+        - 22
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 22
+        - 41
+      char_range:
+        - 22
+        - 41
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 19
+  source_hash: 765233770142737875

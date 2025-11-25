@@ -1,0 +1,93 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 26
+  char_range:
+    - 0
+    - 26
+  html: "<ul>\n<li data-node-id=\"n0\"><span class=\"md-syntax-block\">- </span>Item 1<span class=\"md-syntax-inline\">\n</span></li>\n<li data-node-id=\"n1\"><span class=\"md-syntax-block\">- </span>Item 2<span class=\"md-syntax-inline\">\n</span></li>\n<li data-node-id=\"n2\"><span class=\"md-syntax-block\">- </span>Item 3</li>\n</ul>\n"
+  offset_map:
+    - byte_range:
+        - 0
+        - 2
+      char_range:
+        - 0
+        - 2
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 2
+        - 8
+      char_range:
+        - 2
+        - 8
+      node_id: n0
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 6
+    - byte_range:
+        - 8
+        - 9
+      char_range:
+        - 8
+        - 9
+      node_id: n0
+      char_offset_in_node: 8
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
+        - 9
+        - 11
+      char_range:
+        - 9
+        - 11
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 11
+        - 17
+      char_range:
+        - 11
+        - 17
+      node_id: n1
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 6
+    - byte_range:
+        - 17
+        - 18
+      char_range:
+        - 17
+        - 18
+      node_id: n1
+      char_offset_in_node: 8
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
+        - 18
+        - 20
+      char_range:
+        - 18
+        - 20
+      node_id: n2
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 20
+        - 26
+      char_range:
+        - 20
+        - 26
+      node_id: n2
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 6
+  source_hash: 10971198075422308878

@@ -1,0 +1,23 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 24
+  char_range:
+    - 0
+    - 24
+  html: "<span class=\"md-syntax-block\">```rust</span>\n<pre><code class=\"wvc-code language-Rust\"><span class=\"wvc-source wvc-rust\"><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-storage wvc-type wvc-function wvc-rust\">fn</span> </span><span class=\"wvc-entity wvc-name wvc-function wvc-rust\">main</span></span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-parameters wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-parameters wvc-begin wvc-rust\">(</span></span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-parameters wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-parameters wvc-end wvc-rust\">)</span></span></span></span><span class=\"wvc-meta wvc-function wvc-rust\"> </span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-block wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-block wvc-begin wvc-rust\">{</span></span><span class=\"wvc-meta wvc-block wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-block wvc-end wvc-rust\">}</span></span></span>\n</span></code></pre><span class=\"md-syntax-block\">```</span>"
+  offset_map:
+    - byte_range:
+        - 8
+        - 21
+      char_range:
+        - 8
+        - 21
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 13
+  source_hash: 13617303422540996675

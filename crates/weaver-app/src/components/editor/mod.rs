@@ -15,11 +15,14 @@ mod storage;
 mod toolbar;
 mod writer;
 
+#[cfg(test)]
+mod tests;
+
 pub use document::{Affinity, CompositionState, CursorState, EditorDocument, Selection};
 pub use formatting::{FormatAction, apply_formatting, find_word_boundaries};
 pub use offset_map::{OffsetMapping, RenderResult, find_mapping_for_byte};
 pub use paragraph::ParagraphRender;
-pub use render::{render_markdown_simple, render_paragraphs};
+pub use render::{RenderCache, render_paragraphs, render_paragraphs_incremental};
 pub use rope_writer::RopeWriter;
 pub use storage::{EditorSnapshot, clear_storage, load_from_storage, save_to_storage};
 pub use toolbar::EditorToolbar;
@@ -60,8 +63,25 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     let mut document = use_signal(|| EditorDocument::new(restored()));
     let editor_id = "markdown-editor";
 
-    // Render paragraphs for incremental updates
-    let paragraphs = use_memo(move || render::render_paragraphs(&document().rope));
+    // Cache for incremental paragraph rendering
+    let mut render_cache = use_signal(|| render::RenderCache::default());
+
+    // Render paragraphs with incremental caching
+    let paragraphs = use_memo(move || {
+        let doc = document();
+        let cache = render_cache.peek();
+        let edit = doc.last_edit.as_ref();
+
+        let (paras, new_cache) =
+            render::render_paragraphs_incremental(&doc.rope, Some(&cache), edit);
+
+        // Update cache for next render (write-only via spawn to avoid reactive loop)
+        dioxus::prelude::spawn(async move {
+            render_cache.set(new_cache);
+        });
+
+        paras
+    });
 
     // Flatten offset maps from all paragraphs
     let offset_map = use_memo(move || {

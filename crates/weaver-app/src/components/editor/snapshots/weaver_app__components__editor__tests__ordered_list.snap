@@ -1,0 +1,123 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 27
+  char_range:
+    - 0
+    - 27
+  html: "<ol>\n<li data-node-id=\"n0\"><span class=\"md-syntax-block\">1.</span><span class=\"md-syntax-inline\"> </span>First<span class=\"md-syntax-inline\">\n</span></li>\n<li data-node-id=\"n1\"><span class=\"md-syntax-block\">2.</span><span class=\"md-syntax-inline\"> </span>Second<span class=\"md-syntax-inline\">\n</span></li>\n<li data-node-id=\"n2\"><span class=\"md-syntax-block\">3.</span><span class=\"md-syntax-inline\"> </span>Third</li>\n</ol>\n"
+  offset_map:
+    - byte_range:
+        - 0
+        - 2
+      char_range:
+        - 0
+        - 2
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 2
+        - 3
+      char_range:
+        - 2
+        - 3
+      node_id: n0
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
+        - 3
+        - 8
+      char_range:
+        - 3
+        - 8
+      node_id: n0
+      char_offset_in_node: 3
+      child_index: ~
+      utf16_len: 5
+    - byte_range:
+        - 8
+        - 9
+      char_range:
+        - 8
+        - 9
+      node_id: n0
+      char_offset_in_node: 8
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
+        - 9
+        - 11
+      char_range:
+        - 9
+        - 11
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 11
+        - 12
+      char_range:
+        - 11
+        - 12
+      node_id: n1
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
+        - 12
+        - 18
+      char_range:
+        - 12
+        - 18
+      node_id: n1
+      char_offset_in_node: 3
+      child_index: ~
+      utf16_len: 6
+    - byte_range:
+        - 18
+        - 19
+      char_range:
+        - 18
+        - 19
+      node_id: n1
+      char_offset_in_node: 9
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
+        - 19
+        - 21
+      char_range:
+        - 19
+        - 21
+      node_id: n2
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 21
+        - 22
+      char_range:
+        - 21
+        - 22
+      node_id: n2
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
+        - 22
+        - 27
+      char_range:
+        - 22
+        - 27
+      node_id: n2
+      char_offset_in_node: 3
+      child_index: ~
+      utf16_len: 5
+  source_hash: 5390174624313041457
