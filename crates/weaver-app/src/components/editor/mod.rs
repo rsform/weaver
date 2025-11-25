@@ -52,15 +52,11 @@ use dioxus::prelude::*;
 /// - No mouse selection
 #[component]
 pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
-    // Try to restore from localStorage
-    let restored = use_memo(move || {
+    // Try to restore from localStorage (includes CRDT state for undo history)
+    let mut document = use_signal(move || {
         storage::load_from_storage()
-            .map(|s| s.content)
-            .or_else(|| initial_content.clone())
-            .unwrap_or_default()
+            .unwrap_or_else(|| EditorDocument::new(initial_content.clone().unwrap_or_default()))
     });
-
-    let mut document = use_signal(|| EditorDocument::new(restored()));
     let editor_id = "markdown-editor";
 
     // Cache for incremental paragraph rendering
@@ -164,15 +160,36 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     // Auto-save with debounce
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
-        // Read document once and extract what we need
-        let doc = document();
-        let content = doc.to_string();
-        let cursor = doc.cursor.offset;
-        drop(doc);
+        // Capture snapshot data, syncing Loro cursor first
+        let (content, cursor_offset, loro_cursor, snapshot_bytes) = document.with_mut(|doc| {
+            // Sync Loro cursor to current position before saving
+            doc.sync_loro_cursor();
+            (
+                doc.to_string(),
+                doc.cursor.offset,
+                doc.loro_cursor().cloned(),
+                doc.export_snapshot(),
+            )
+        });
 
         // Save after 500ms of no typing
         let timer = gloo_timers::callback::Timeout::new(500, move || {
-            let _ = storage::save_to_storage(&content, cursor);
+            use gloo_storage::Storage as _; // bring trait into scope for LocalStorage::set
+            let snapshot_b64 = if snapshot_bytes.is_empty() {
+                None
+            } else {
+                Some(base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    &snapshot_bytes,
+                ))
+            };
+            let snapshot = storage::EditorSnapshot {
+                content,
+                snapshot: snapshot_b64,
+                cursor: loro_cursor,
+                cursor_offset,
+            };
+            let _ = gloo_storage::LocalStorage::set("weaver_editor_draft", &snapshot);
         });
         timer.forget();
     });
@@ -279,10 +296,10 @@ fn should_intercept_key(evt: &Event<KeyboardData>) -> bool {
     // Handle Ctrl/Cmd shortcuts
     if mods.ctrl() || mods.meta() {
         if let Key::Character(ch) = &key {
-            // Intercept our formatting shortcuts (Ctrl+B, Ctrl+I)
-            return matches!(ch.as_str(), "b" | "i");
+            // Intercept our shortcuts: formatting (b/i), undo/redo (z/y)
+            return matches!(ch.as_str(), "b" | "i" | "z" | "y");
         }
-        // Let browser handle other Ctrl/Cmd shortcuts (paste, copy, cut, undo, etc.)
+        // Let browser handle other Ctrl/Cmd shortcuts (paste, copy, cut, etc.)
         return false;
     }
 
@@ -665,6 +682,31 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                             formatting::apply_formatting(doc, FormatAction::Italic);
                             return;
                         }
+                        "z" => {
+                            if mods.shift() {
+                                // Ctrl+Shift+Z = redo
+                                if let Ok(true) = doc.redo() {
+                                    // Cursor position should be handled by the undo manager
+                                    // but we may need to clamp it
+                                    doc.cursor.offset = doc.cursor.offset.min(doc.len_chars());
+                                }
+                            } else {
+                                // Ctrl+Z = undo
+                                if let Ok(true) = doc.undo() {
+                                    doc.cursor.offset = doc.cursor.offset.min(doc.len_chars());
+                                }
+                            }
+                            doc.selection = None;
+                            return;
+                        }
+                        "y" => {
+                            // Ctrl+Y = redo (alternative)
+                            if let Ok(true) = doc.redo() {
+                                doc.cursor.offset = doc.cursor.offset.min(doc.len_chars());
+                            }
+                            doc.selection = None;
+                            return;
+                        }
                         _ => {}
                     }
                 }
@@ -813,6 +855,12 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
             }
 
             _ => {}
+        }
+
+        // Sync Loro cursor when edits affect paragraph boundaries
+        // This ensures cursor position is tracked correctly through structural changes
+        if doc.last_edit.as_ref().is_some_and(|e| e.contains_newline) {
+            doc.sync_loro_cursor();
         }
     });
 }
