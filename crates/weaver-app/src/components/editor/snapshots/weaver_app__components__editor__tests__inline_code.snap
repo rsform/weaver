@@ -39,7 +39,7 @@ expression: result
       node_id: n0
       char_offset_in_node: 5
       child_index: ~
-      utf16_len: 4
+      utf16_len: 6
     - byte_range:
         - 11
         - 16
@@ -47,7 +47,7 @@ expression: result
         - 11
         - 16
       node_id: n0
-      char_offset_in_node: 9
+      char_offset_in_node: 11
       child_index: ~
       utf16_len: 5
   source_hash: 10489263388249723293

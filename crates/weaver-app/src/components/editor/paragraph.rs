@@ -5,7 +5,7 @@
 
 use super::offset_map::OffsetMapping;
 use super::writer::SyntaxSpanInfo;
-use jumprope::JumpRopeBuf;
+use loro::LoroText;
 use std::ops::Range;
 
 /// A rendered paragraph with its source range and offset mappings.
@@ -40,15 +40,8 @@ pub fn hash_source(text: &str) -> u64 {
     hasher.finish()
 }
 
-/// Extract substring from rope as String
-pub fn rope_slice_to_string(rope: &JumpRopeBuf, range: Range<usize>) -> String {
-    let rope_borrow = rope.borrow();
-    let mut result = String::new();
-
-    for substr in rope_borrow.slice_substrings(range) {
-        result.push_str(substr);
-    }
-
-    result
+/// Extract substring from LoroText as String
+pub fn text_slice_to_string(text: &LoroText, range: Range<usize>) -> String {
+    text.slice(range.start, range.end).unwrap_or_default()
 }
 

@@ -8,7 +8,6 @@
 //! 4. Setting cursor with web_sys Selection API
 
 use super::offset_map::{find_mapping_for_char, OffsetMapping};
-use jumprope::JumpRopeBuf;
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen::JsCast;
@@ -16,8 +15,7 @@ use wasm_bindgen::JsCast;
 /// Restore cursor position in the DOM after re-render.
 ///
 /// # Arguments
-/// - `rope`: The document content (for length bounds checking)
-/// - `char_offset`: Cursor position as char offset in rope
+/// - `char_offset`: Cursor position as char offset in document
 /// - `offset_map`: Mappings from source to DOM positions
 /// - `editor_id`: DOM ID of the contenteditable element
 ///
@@ -28,19 +26,20 @@ use wasm_bindgen::JsCast;
 /// 4. Set cursor with Selection API
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn restore_cursor_position(
-    rope: &JumpRopeBuf,
     char_offset: usize,
     offset_map: &[OffsetMapping],
     editor_id: &str,
 ) -> Result<(), wasm_bindgen::JsValue> {
-    // Bounds check
-    let max_offset = rope.len_chars();
-    if char_offset > max_offset {
-        return Err(format!("cursor offset {} > document length {}", char_offset, max_offset).into());
+    // Empty document - no cursor to restore
+    if offset_map.is_empty() {
+        return Ok(());
     }
 
-    // Empty document - no cursor to restore
-    if offset_map.is_empty() || max_offset == 0 {
+    // Bounds check using offset map
+    let max_offset = offset_map.iter().map(|m| m.char_range.end).max().unwrap_or(0);
+    if char_offset > max_offset {
+        tracing::warn!("cursor offset {} > max mapping offset {}", char_offset, max_offset);
+        // Don't error, just skip restoration - this can happen during edits
         return Ok(());
     }
 
@@ -159,7 +158,6 @@ fn find_text_node_at_offset(
 /// Non-WASM stub for testing
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub fn restore_cursor_position(
-    _rope: &JumpRopeBuf,
     _char_offset: usize,
     _offset_map: &[OffsetMapping],
     _editor_id: &str,

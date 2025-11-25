@@ -3,7 +3,7 @@
 use super::offset_map::{OffsetMapping, find_mapping_for_char};
 use super::paragraph::ParagraphRender;
 use super::render::render_paragraphs_incremental;
-use jumprope::JumpRopeBuf;
+use loro::LoroDoc;
 use serde::Serialize;
 
 /// Serializable version of ParagraphRender for snapshot testing.
@@ -54,8 +54,10 @@ impl From<&OffsetMapping> for TestOffsetMapping {
 
 /// Helper: render markdown and convert to serializable test output.
 fn render_test(input: &str) -> Vec<TestParagraph> {
-    let rope = JumpRopeBuf::from(input);
-    let (paragraphs, _cache) = render_paragraphs_incremental(&rope, None, None);
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+    text.insert(0, input).unwrap();
+    let (paragraphs, _cache) = render_paragraphs_incremental(&text, None, None);
     paragraphs.iter().map(TestParagraph::from).collect()
 }
 
@@ -434,8 +436,10 @@ fn test_char_range_coverage_allows_paragraph_breaks() {
     // cursor snaps to adjacent paragraphs for standard breaks.
     // Only EXTRA whitespace beyond \n\n gets gap elements.
     let input = "Hello\n\nWorld";
-    let rope = JumpRopeBuf::from(input);
-    let (paragraphs, _cache) = render_paragraphs_incremental(&rope, None, None);
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+    text.insert(0, input).unwrap();
+    let (paragraphs, _cache) = render_paragraphs_incremental(&text, None, None);
 
     // With standard \n\n break, we expect 2 paragraphs (no gap element)
     // Paragraph ranges include some trailing whitespace from markdown parsing
@@ -453,8 +457,10 @@ fn test_char_range_coverage_with_extra_whitespace() {
     // Extra whitespace beyond MIN_PARAGRAPH_BREAK (2) gets gap elements
     // Plain paragraphs don't consume trailing newlines like headings do
     let input = "Hello\n\n\n\nWorld"; // 4 newlines = gap of 4 > 2
-    let rope = JumpRopeBuf::from(input);
-    let (paragraphs, _cache) = render_paragraphs_incremental(&rope, None, None);
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+    text.insert(0, input).unwrap();
+    let (paragraphs, _cache) = render_paragraphs_incremental(&text, None, None);
 
     // With extra newlines, we expect 3 elements: para, gap, para
     assert_eq!(paragraphs.len(), 3, "Expected 3 elements with extra whitespace");
@@ -542,13 +548,15 @@ fn test_offset_mappings_reference_own_paragraph() {
 fn test_incremental_cache_reuse() {
     // Verify cache is populated and can be reused
     let input = "First para\n\nSecond para";
-    let rope = JumpRopeBuf::from(input);
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+    text.insert(0, input).unwrap();
 
-    let (paras1, cache1) = render_paragraphs_incremental(&rope, None, None);
+    let (paras1, cache1) = render_paragraphs_incremental(&text, None, None);
     assert!(!cache1.paragraphs.is_empty(), "Cache should be populated");
 
     // Second render with same content should reuse cache
-    let (paras2, _cache2) = render_paragraphs_incremental(&rope, Some(&cache1), None);
+    let (paras2, _cache2) = render_paragraphs_incremental(&text, Some(&cache1), None);
 
     // Should produce identical output
     assert_eq!(paras1.len(), paras2.len());
