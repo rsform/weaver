@@ -72,23 +72,23 @@ impl VisibilityState {
                             .map(|r| selection_overlaps(selection, r))
                             .unwrap_or(false);
 
-                    tracing::debug!(
-                        "[VISIBILITY] span {} char_range {:?} formatted_range {:?} cursor {} -> in_extended={} in_formatted={} visible={}",
-                        span.syn_id,
-                        span.char_range,
-                        span.formatted_range,
-                        cursor_offset,
-                        in_extended,
-                        in_formatted_region,
-                        result
-                    );
-
                     result
                 }
                 SyntaxType::Block => {
-                    // Show if cursor anywhere in same paragraph
-                    cursor_in_same_paragraph(cursor_offset, &span.char_range, paragraphs)
-                        || selection_overlaps(selection, &span.char_range)
+                    // Show if cursor anywhere in same paragraph (with slop for edge cases)
+                    // The slop handles typing at the end of a heading like "# |"
+                    let para_bounds = find_paragraph_bounds(&span.char_range, paragraphs);
+                    let in_paragraph = para_bounds
+                        .as_ref()
+                        .map(|p| {
+                            // Extend paragraph bounds by 1 char on each side for slop
+                            let ext_start = p.start.saturating_sub(1);
+                            let ext_end = p.end.saturating_add(1);
+                            cursor_offset >= ext_start && cursor_offset <= ext_end
+                        })
+                        .unwrap_or(false);
+
+                    in_paragraph || selection_overlaps(selection, &span.char_range)
                 }
             };
 
@@ -96,6 +96,14 @@ impl VisibilityState {
                 visible.insert(span.syn_id.clone());
             }
         }
+
+        tracing::debug!(
+            target: "weaver::visibility",
+            cursor_offset,
+            total_spans = syntax_spans.len(),
+            visible_count = visible.len(),
+            "calculated visibility"
+        );
 
         Self {
             visible_span_ids: visible,

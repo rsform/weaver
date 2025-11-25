@@ -151,17 +151,33 @@ pub fn render_paragraphs_incremental(
     }
 
     // Determine if we can use fast path (skip boundary discovery)
+    // Need cache and non-boundary-affecting edit info (for edit position)
+    let current_len = text.len_unicode();
     let use_fast_path = cache.is_some() && edit.is_some() && !is_boundary_affecting(edit.unwrap());
+
+    tracing::debug!(
+        target: "weaver::render",
+        use_fast_path,
+        has_cache = cache.is_some(),
+        has_edit = edit.is_some(),
+        boundary_affecting = edit.map(is_boundary_affecting),
+        current_len,
+        "render path decision"
+    );
 
     // Get paragraph boundaries
     let paragraph_ranges = if use_fast_path {
-        // Fast path: adjust cached boundaries based on edit
+        // Fast path: adjust cached boundaries based on actual length change
         let cache = cache.unwrap();
         let edit = edit.unwrap();
 
         // Find which paragraph the edit falls into
         let edit_pos = edit.edit_char_pos;
-        let char_delta = edit.inserted_len as isize - edit.deleted_len as isize;
+
+        // Compute delta from actual length difference, not edit info
+        // This handles stale edits gracefully (delta = 0 if lengths match)
+        let cached_len = cache.paragraphs.last().map(|p| p.char_range.end).unwrap_or(0);
+        let char_delta = current_len as isize - cached_len as isize;
 
         // Adjust each cached paragraph's range
         cache
@@ -210,9 +226,20 @@ pub fn render_paragraphs_incremental(
         }
     };
 
-    tracing::debug!("[RENDER] Discovered {} paragraph ranges", paragraph_ranges.len());
+    // Log discovered paragraphs
     for (i, (byte_range, char_range)) in paragraph_ranges.iter().enumerate() {
-        tracing::debug!("[RENDER]   Range {}: bytes {:?}, chars {:?}", i, byte_range, char_range);
+        let preview: String = text_slice_to_string(text, char_range.clone())
+            .chars()
+            .take(30)
+            .collect();
+        tracing::trace!(
+            target: "weaver::render",
+            para_idx = i,
+            char_range = ?char_range,
+            byte_range = ?byte_range,
+            preview = %preview,
+            "paragraph boundary"
+        );
     }
 
     // Render paragraphs, reusing cache where possible
@@ -224,13 +251,6 @@ pub fn render_paragraphs_incremental(
     for (idx, (byte_range, char_range)) in paragraph_ranges.iter().enumerate() {
         let para_source = text_slice_to_string(text, char_range.clone());
         let source_hash = hash_source(&para_source);
-
-        tracing::debug!(
-            "[RENDER] Para {}: char_range {:?}, source preview: {:?}",
-            idx,
-            char_range,
-            &para_source[..para_source.len().min(50)]
-        );
 
         // Check if we have a cached render with matching hash
         let cached_match =

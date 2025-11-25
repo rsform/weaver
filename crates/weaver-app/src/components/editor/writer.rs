@@ -351,12 +351,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             let format_end = self.last_char_offset;
             let formatted_range = format_start..format_end;
 
-            tracing::debug!(
-                "[FINALIZE_PAIRED] Setting formatted_range {:?} for opening '{}' and closing (last span)",
-                formatted_range,
-                opening_syn_id
-            );
-
             // Update the opening span's formatted_range
             if let Some(opening_span) = self
                 .syntax_spans
@@ -364,7 +358,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 .find(|s| s.syn_id == opening_syn_id)
             {
                 opening_span.formatted_range = Some(formatted_range.clone());
-                tracing::debug!("[FINALIZE_PAIRED] Updated opening span {}", opening_syn_id);
             } else {
                 tracing::warn!("[FINALIZE_PAIRED] Could not find opening span {}", opening_syn_id);
             }
@@ -375,7 +368,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 // Only update if it's an inline span (closing syntax should be inline)
                 if closing_span.syntax_type == SyntaxType::Inline {
                     closing_span.formatted_range = Some(formatted_range);
-                    tracing::debug!("[FINALIZE_PAIRED] Updated closing span {}", closing_span.syn_id);
                 }
             }
         }
@@ -389,6 +381,14 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 let char_start = self.last_char_offset;
                 let syntax_char_len = syntax.chars().count();
                 let char_end = char_start + syntax_char_len;
+
+                tracing::trace!(
+                    target: "weaver::writer",
+                    byte_range = ?range,
+                    char_range = ?(char_start..char_end),
+                    syntax = %syntax.escape_debug(),
+                    "emit_syntax"
+                );
 
                 // In boundary_only mode, just update offsets without HTML
                 if self.boundary_only {
@@ -438,13 +438,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
                 // Record offset mapping for this syntax
                 self.record_mapping(range.clone(), char_start..char_end);
-                tracing::debug!(
-                    "[EMIT_SYNTAX] Updating offsets: last_char {} -> {}, last_byte {} -> {}",
-                    self.last_char_offset,
-                    char_end,
-                    self.last_byte_offset,
-                    range.end
-                );
                 self.last_char_offset = char_end;
                 self.last_byte_offset = range.end; // Mark bytes as processed
 
@@ -616,28 +609,12 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
     /// to the writer passed in the constructor.
     pub fn run(mut self) -> Result<WriterResult, W::Error> {
         while let Some((event, range)) = self.events.next() {
-            // Log events for debugging
-            // tracing::debug!("[WRITER] Event: {:?}, range: {:?}, last_byte: {}, last_char: {}",
-            //     match &event {
-            //         Event::Start(tag) => format!("Start({:?})", tag),
-            //         Event::End(tag) => format!("End({:?})", tag),
-            //         Event::Text(t) => format!("Text('{}')", t),
-            //         Event::Code(t) => format!("Code('{}')", t),
-            //         Event::Html(t) => format!("Html('{}')", t),
-            //         Event::InlineHtml(t) => format!("InlineHtml('{}')", t),
-            //         Event::FootnoteReference(t) => format!("FootnoteReference('{}')", t),
-            //         Event::SoftBreak => "SoftBreak".to_string(),
-            //         Event::HardBreak => "HardBreak".to_string(),
-            //         Event::Rule => "Rule".to_string(),
-            //         Event::TaskListMarker(b) => format!("TaskListMarker({})", b),
-            //         Event::WeaverBlock(t) => format!("WeaverBlock('{}')", t),
-            //         Event::InlineMath(t) => format!("InlineMath('{}')", t),
-            //         Event::DisplayMath(t) => format!("DisplayMath('{}')", t),
-            //     },
-            //     &range,
-            //     self.last_byte_offset,
-            //     self.last_char_offset
-            // );
+            tracing::trace!(
+                target: "weaver::writer",
+                event = ?event,
+                byte_range = ?range,
+                "processing event"
+            );
 
             // For End events, emit any trailing content within the event's range
             // BEFORE calling end_tag (which calls end_node and clears current_node_id)
@@ -654,7 +631,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
             if matches!(&event, Event::End(_)) && !is_inline_format_end {
                 // Emit gap from last_byte_offset to range.end
-                // (emit_syntax handles char offset tracking)
                 self.emit_gap_before(range.end)?;
             } else if !matches!(&event, Event::End(_)) {
                 // For other events, emit any gap before range.start
@@ -1240,14 +1216,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 }
 
                 // Update tracking - we've consumed this opening syntax
-                tracing::debug!(
-                    "[START_TAG] Opening syntax '{}': last_char {} -> {}, last_byte {} -> {}",
-                    syntax,
-                    self.last_char_offset,
-                    char_end,
-                    self.last_byte_offset,
-                    range.start + syntax_byte_len
-                );
                 self.last_char_offset = char_end;
                 self.last_byte_offset = range.start + syntax_byte_len;
             }

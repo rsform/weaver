@@ -140,15 +140,6 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
         cached_paragraphs.set(new_paras.clone());
 
         // Update syntax visibility after DOM changes
-        // Debug: log what syntax spans we have
-        for span in spans.iter() {
-            tracing::debug!(
-                "[VISIBILITY_INPUT] span {} char_range {:?} formatted_range {:?}",
-                span.syn_id,
-                span.char_range,
-                span.formatted_range
-            );
-        }
         update_syntax_visibility(
             cursor_offset,
             selection.as_ref(),
@@ -157,41 +148,60 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
         );
     });
 
-    // Auto-save with debounce
+    // Track last saved frontiers to detect changes (peek-only, no subscriptions)
+    let mut last_saved_frontiers: Signal<Option<loro::Frontiers>> = use_signal(|| None);
+
+    // Auto-save with periodic check (no reactive dependency to avoid loops)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
-        // Capture snapshot data, syncing Loro cursor first
-        let (content, cursor_offset, loro_cursor, snapshot_bytes) = document.with_mut(|doc| {
-            // Sync Loro cursor to current position before saving
-            doc.sync_loro_cursor();
-            (
-                doc.to_string(),
-                doc.cursor.offset,
-                doc.loro_cursor().cloned(),
-                doc.export_snapshot(),
-            )
-        });
+        // Check every 500ms if there are unsaved changes
+        let interval = gloo_timers::callback::Interval::new(500, move || {
+            // Peek both signals without creating reactive dependencies
+            let current_frontiers = document.peek().state_frontiers();
 
-        // Save after 500ms of no typing
-        let timer = gloo_timers::callback::Timeout::new(500, move || {
-            use gloo_storage::Storage as _; // bring trait into scope for LocalStorage::set
-            let snapshot_b64 = if snapshot_bytes.is_empty() {
-                None
-            } else {
-                Some(base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    &snapshot_bytes,
-                ))
-            };
-            let snapshot = storage::EditorSnapshot {
-                content,
-                snapshot: snapshot_b64,
-                cursor: loro_cursor,
-                cursor_offset,
-            };
-            let _ = gloo_storage::LocalStorage::set("weaver_editor_draft", &snapshot);
+            // Only save if frontiers changed (document was edited)
+            let needs_save = {
+                let last_frontiers = last_saved_frontiers.peek();
+                match &*last_frontiers {
+                    None => true, // First save
+                    Some(last) => &current_frontiers != last,
+                }
+            }; // drop last_frontiers borrow here
+
+            if needs_save {
+                // Sync cursor and extract data for save
+                let (content, cursor_offset, loro_cursor, snapshot_bytes) = document.with_mut(|doc| {
+                    doc.sync_loro_cursor();
+                    (
+                        doc.to_string(),
+                        doc.cursor.offset,
+                        doc.loro_cursor().cloned(),
+                        doc.export_snapshot(),
+                    )
+                });
+
+                use gloo_storage::Storage as _; // bring trait into scope for LocalStorage::set
+                let snapshot_b64 = if snapshot_bytes.is_empty() {
+                    None
+                } else {
+                    Some(base64::Engine::encode(
+                        &base64::engine::general_purpose::STANDARD,
+                        &snapshot_bytes,
+                    ))
+                };
+                let snapshot = storage::EditorSnapshot {
+                    content,
+                    snapshot: snapshot_b64,
+                    cursor: loro_cursor,
+                    cursor_offset,
+                };
+                let _ = gloo_storage::LocalStorage::set("weaver_editor_draft", &snapshot);
+
+                // Update last saved frontiers
+                last_saved_frontiers.set(Some(current_frontiers));
+            }
         });
-        timer.forget();
+        interval.forget();
     });
 
     rsx! {
@@ -382,11 +392,9 @@ fn sync_cursor_from_dom(
                         anchor,
                         head: focus,
                     });
-                    tracing::debug!("[SYNC] Selection {}..{}", anchor, focus);
                 } else {
                     // Collapsed selection (just cursor)
                     doc.selection = None;
-                    tracing::debug!("[SYNC] Cursor at {}", focus);
                 }
             }
             _ => {
@@ -528,8 +536,6 @@ fn update_syntax_visibility(
 
 /// Handle paste events and insert text at cursor
 fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
-    tracing::info!("[PASTE] handle_paste called");
-
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         use dioxus::web::WebEventExt;
@@ -539,7 +545,6 @@ fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>
         if let Some(clipboard_evt) = base_evt.dyn_ref::<web_sys::ClipboardEvent>() {
             if let Some(data_transfer) = clipboard_evt.clipboard_data() {
                 if let Ok(text) = data_transfer.get_data("text/plain") {
-                    tracing::info!("[PASTE] Got text: {} chars", text.len());
                     document.with_mut(|doc| {
                         // Delete selection if present
                         if let Some(sel) = doc.selection {
@@ -563,8 +568,6 @@ fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>
 
 /// Handle cut events - extract text, write to clipboard, then delete
 fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
-    tracing::info!("[CUT] handle_cut called");
-
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         use dioxus::web::WebEventExt;
@@ -578,11 +581,6 @@ fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) 
                     if start != end {
                         // Extract text
                         let selected_text = doc.slice(start, end).unwrap_or_default();
-                        tracing::info!(
-                            "[CUT] Extracted {} chars: {:?}",
-                            selected_text.len(),
-                            &selected_text[..selected_text.len().min(50)]
-                        );
 
                         // Write to clipboard BEFORE deleting
                         if let Some(data_transfer) = clipboard_evt.clipboard_data() {
@@ -609,8 +607,6 @@ fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) 
 
 /// Handle copy events - extract text, clean it up, write to clipboard
 fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
-    tracing::info!("[COPY] handle_copy called");
-
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         use dioxus::web::WebEventExt;
@@ -629,12 +625,6 @@ fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
                     let clean_text = selected_text
                         .replace('\u{200C}', "")
                         .replace('\u{200B}', "");
-
-                    tracing::info!(
-                        "[COPY] Extracted {} chars (cleaned to {})",
-                        selected_text.len(),
-                        clean_text.len()
-                    );
 
                     // Write to clipboard
                     if let Some(data_transfer) = clipboard_evt.clipboard_data() {
@@ -809,14 +799,7 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                     doc.cursor.offset += 3;
                 } else if let Some(ctx) = detect_list_context(doc.loro_text(), doc.cursor.offset) {
                     // We're in a list item
-                    tracing::debug!("[ENTER] List context detected: {:?}", ctx);
-                    tracing::debug!(
-                        "[ENTER] Cursor at {}, doc len {}",
-                        doc.cursor.offset,
-                        doc.len_chars()
-                    );
                     if is_list_item_empty(doc.loro_text(), doc.cursor.offset, &ctx) {
-                        tracing::debug!("[ENTER] Item is empty, exiting list");
                         // Empty item - exit list by removing marker and inserting paragraph break
                         let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
                         let line_end = find_line_end(doc.loro_text(), doc.cursor.offset);
@@ -948,14 +931,6 @@ fn is_list_item_empty(
             indent.len() + number.to_string().len() + 2 // "1. "
         }
     };
-
-    tracing::debug!(
-        "[LIST] is_empty check: line={:?}, line.len()={}, marker_len={}, result={}",
-        line,
-        line.len(),
-        marker_len,
-        line.len() <= marker_len
-    );
 
     // Item is empty if line length equals marker length (nothing after marker)
     line.len() <= marker_len
