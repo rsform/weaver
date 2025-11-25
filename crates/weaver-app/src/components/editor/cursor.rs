@@ -44,18 +44,17 @@ pub fn restore_cursor_position(
     }
 
     // Find mapping for this cursor position
-    let (mapping, should_snap) = find_mapping_for_char(offset_map, char_offset)
+    let (mapping, _should_snap) = find_mapping_for_char(offset_map, char_offset)
         .ok_or("no mapping found for cursor offset")?;
 
-    tracing::info!("[CURSOR] Restoring cursor at offset {}", char_offset);
-    tracing::info!("[CURSOR]   found mapping: char_range {:?}, node_id '{}', char_offset_in_node {}",
-        mapping.char_range, mapping.node_id, mapping.char_offset_in_node);
-
-    // If cursor is in invisible content, snap to next visible position
-    // For now, we'll still use the mapping but this is a future enhancement
-    if should_snap {
-        tracing::debug!("cursor in invisible content at offset {}", char_offset);
-    }
+    tracing::trace!(
+        target: "weaver::cursor",
+        char_offset,
+        node_id = %mapping.node_id,
+        mapping_range = ?mapping.char_range,
+        child_index = ?mapping.child_index,
+        "restoring cursor position"
+    );
 
     // Get window and document
     let window = web_sys::window().ok_or("no window")?;
@@ -123,19 +122,15 @@ fn find_text_node_at_offset(
     let mut accumulated_utf16 = 0;
     let mut last_node: Option<web_sys::Node> = None;
 
-    tracing::info!("[CURSOR] Walking text nodes, target_utf16_offset = {}", target_utf16_offset);
     while let Some(node) = walker.next_node()? {
         last_node = Some(node.clone());
 
         if let Some(text) = node.text_content() {
             let text_len = text.encode_utf16().count();
-            tracing::info!("[CURSOR]   text node: '{}' (utf16_len {}), accumulated = {}",
-                text.chars().take(20).collect::<String>(), text_len, accumulated_utf16);
 
             // Found the node containing target offset
             if accumulated_utf16 + text_len >= target_utf16_offset {
                 let offset_in_node = target_utf16_offset - accumulated_utf16;
-                tracing::info!("[CURSOR]   -> FOUND at offset {} in this node", offset_in_node);
                 return Ok((node, offset_in_node));
             }
 

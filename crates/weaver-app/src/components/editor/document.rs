@@ -87,6 +87,10 @@ pub struct EditInfo {
     /// Whether the edit is in the block-syntax zone of a line (first ~6 chars).
     /// Edits here could affect block-level syntax like headings, lists, code fences.
     pub in_block_syntax_zone: bool,
+    /// Document length (in chars) after this edit was applied.
+    /// Used to detect stale edit info - if current doc length doesn't match,
+    /// the edit info is from a previous render cycle and shouldn't be used.
+    pub doc_len_after: usize,
 }
 
 /// Max distance from line start where block syntax can appear.
@@ -183,20 +187,23 @@ impl EditorDocument {
     /// Insert text and record edit info for incremental rendering.
     pub fn insert_tracked(&mut self, pos: usize, text: &str) -> LoroResult<()> {
         let in_block_syntax_zone = self.is_in_block_syntax_zone(pos);
+        let len_before = self.text.len_unicode();
+        let result = self.text.insert(pos, text);
+        let len_after = self.text.len_unicode();
         self.last_edit = Some(EditInfo {
             edit_char_pos: pos,
-            inserted_len: text.chars().count(),
+            inserted_len: len_after.saturating_sub(len_before),
             deleted_len: 0,
             contains_newline: text.contains('\n'),
             in_block_syntax_zone,
+            doc_len_after: len_after,
         });
-        self.text.insert(pos, text)
+        result
     }
 
     /// Remove text range and record edit info for incremental rendering.
     pub fn remove_tracked(&mut self, start: usize, len: usize) -> LoroResult<()> {
         let content = self.text.to_string();
-        let end = start + len;
         let contains_newline = content
             .chars()
             .skip(start)
@@ -204,14 +211,16 @@ impl EditorDocument {
             .any(|c| c == '\n');
         let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
 
+        let result = self.text.delete(start, len);
         self.last_edit = Some(EditInfo {
             edit_char_pos: start,
             inserted_len: 0,
             deleted_len: len,
             contains_newline,
             in_block_syntax_zone,
+            doc_len_after: self.text.len_unicode(),
         });
-        self.text.delete(start, len)
+        result
     }
 
     /// Replace text (delete then insert) and record combined edit info.
@@ -224,16 +233,23 @@ impl EditorDocument {
             .any(|c| c == '\n');
         let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
 
+        let len_before = self.text.len_unicode();
+        // Use splice for atomic replace
+        self.text.splice(start, len, text)?;
+        let len_after = self.text.len_unicode();
+
+        // inserted_len = (len_after - len_before) + deleted_len
+        // because: len_after = len_before - deleted + inserted
+        let inserted_len = (len_after + len).saturating_sub(len_before);
+
         self.last_edit = Some(EditInfo {
             edit_char_pos: start,
-            inserted_len: text.chars().count(),
+            inserted_len,
             deleted_len: len,
             contains_newline: delete_has_newline || text.contains('\n'),
             in_block_syntax_zone,
+            doc_len_after: len_after,
         });
-
-        // Use splice for atomic replace
-        self.text.splice(start, len, text)?;
         Ok(())
     }
 
@@ -321,11 +337,21 @@ impl EditorDocument {
         self.doc.export(ExportMode::Snapshot).unwrap_or_default()
     }
 
+    /// Get the current state frontiers for change detection.
+    /// Frontiers represent the "version" of the document state.
+    pub fn state_frontiers(&self) -> loro::Frontiers {
+        self.doc.state_frontiers()
+    }
+
     /// Create a new EditorDocument from a binary snapshot.
     /// Falls back to empty document if import fails.
     ///
     /// If `loro_cursor` is provided, it will be used to restore the cursor position.
     /// Otherwise, falls back to `fallback_offset`.
+    ///
+    /// Note: Undo/redo is session-only. The UndoManager tracks operations as they
+    /// happen in real-time; it cannot rebuild history from imported CRDT ops.
+    /// For cross-session "undo", use time travel via `doc.checkout(frontiers)`.
     pub fn from_snapshot(
         snapshot: &[u8],
         loro_cursor: Option<Cursor>,
@@ -341,7 +367,7 @@ impl EditorDocument {
 
         let text = doc.get_text("content");
 
-        // Set up undo manager
+        // Set up undo manager - tracks operations from this point forward only
         let mut undo_mgr = UndoManager::new(&doc);
         undo_mgr.set_merge_interval(300);
         undo_mgr.set_max_undo_steps(100);

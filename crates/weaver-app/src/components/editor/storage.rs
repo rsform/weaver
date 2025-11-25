@@ -16,14 +16,17 @@ use super::document::EditorDocument;
 ///
 /// Stores both human-readable content and CRDT snapshot for best of both worlds:
 /// - `content`: Human-readable text for debugging
-/// - `snapshot`: Base64-encoded CRDT state for full undo history restoration
+/// - `snapshot`: Base64-encoded CRDT state for document history
 /// - `cursor`: Loro Cursor (serialized as JSON) for stable cursor position
 /// - `cursor_offset`: Fallback cursor position if Loro cursor can't be restored
+///
+/// Note: Undo/redo is session-only (UndoManager state is ephemeral).
+/// For cross-session "undo", use time travel via `doc.checkout(frontiers)`.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EditorSnapshot {
     /// Human-readable document content (for debugging/fallback)
     pub content: String,
-    /// Base64-encoded CRDT snapshot (preserves undo history)
+    /// Base64-encoded CRDT snapshot
     pub snapshot: Option<String>,
     /// Loro Cursor for stable cursor position tracking
     pub cursor: Option<Cursor>,
