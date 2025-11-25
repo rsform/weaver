@@ -88,26 +88,23 @@
     opacity: 0.6;
 }
 
-.md-syntax-inline:[hidden] {
-    color: var(--color-muted);
-    opacity: 0.6;
-    width: 0;
-    user-select: none; /* idk if we want this when its hidden or not */
-}
-
 /* Markdown syntax characters - block level (#, >, -, etc) */
 .md-syntax-block {
     color: var(--color-muted);
     opacity: 0.7;
-    width: 0;
     font-weight: normal;
 }
 
-.md-syntax-block:[hidden] {
-    content: attr(data-syntax);
-    display: inline-block;
-    margin-right: 4px;
-    user-select: none; /* idk if we want this when its hidden or not */
+/* Hidden syntax spans - collapsed when cursor is not near */
+.md-syntax-inline.hidden,
+.md-syntax-block.hidden {
+    display: none;
+}
+
+/* Hide HTML list markers when markdown syntax is visible (not hidden) */
+/* This prevents double bullets/numbers when showing "- " or "1. " */
+li:has(.md-syntax-block:not(.hidden)) {
+    list-style-type: none;
 }
 
 /* Cursor positioning helper after <br> */
@@ -119,6 +116,3 @@
     line-height: 1em;
     vertical-align: baseline;
 }
-
-/* Future: contextual hiding based on cursor position */
-/* .cursor-active .md-syntax-inline { display: none; } */

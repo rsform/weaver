@@ -4,6 +4,7 @@
 //! Tag::Paragraph events. This allows updating only changed paragraphs in the DOM.
 
 use super::offset_map::OffsetMapping;
+use super::writer::SyntaxSpanInfo;
 use jumprope::JumpRopeBuf;
 use std::ops::Range;
 
@@ -21,6 +22,9 @@ pub struct ParagraphRender {
 
     /// Offset mappings for this paragraph
     pub offset_map: Vec<OffsetMapping>,
+
+    /// Syntax spans for conditional visibility
+    pub syntax_spans: Vec<SyntaxSpanInfo>,
 
     /// Hash of source text for quick change detection
     pub source_hash: u64,

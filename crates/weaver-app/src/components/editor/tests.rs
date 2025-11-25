@@ -2,7 +2,7 @@
 
 use super::offset_map::{OffsetMapping, find_mapping_for_char};
 use super::paragraph::ParagraphRender;
-use super::render::render_paragraphs;
+use super::render::render_paragraphs_incremental;
 use jumprope::JumpRopeBuf;
 use serde::Serialize;
 
@@ -55,7 +55,7 @@ impl From<&OffsetMapping> for TestOffsetMapping {
 /// Helper: render markdown and convert to serializable test output.
 fn render_test(input: &str) -> Vec<TestParagraph> {
     let rope = JumpRopeBuf::from(input);
-    let paragraphs = render_paragraphs(&rope);
+    let (paragraphs, _cache) = render_paragraphs_incremental(&rope, None, None);
     paragraphs.iter().map(TestParagraph::from).collect()
 }
 
@@ -410,22 +410,17 @@ fn regression_bug9_code_blocks_as_paragraph_boundary() {
 
 #[test]
 fn regression_bug11_gap_paragraphs_for_whitespace() {
-    // Bug #11: Gap paragraphs should be created for inter-block whitespace
-    let result = render_test("# Title\n\nContent");
+    // Bug #11: Gap paragraphs should be created for EXTRA inter-block whitespace
+    // Note: Headings consume trailing newline, so need 4 newlines total for gap > MIN_PARAGRAPH_BREAK
 
-    // Check that char ranges cover the full document without gaps
-    let mut prev_end = 0;
-    for para in &result {
-        // Allow gaps to be filled by gap paragraphs
-        if para.char_range.0 > prev_end {
-            // This would be a gap - but gap paragraphs should fill it
-            panic!(
-                "Gap in char ranges: {}..{} missing coverage",
-                prev_end, para.char_range.0
-            );
-        }
-        prev_end = para.char_range.1;
-    }
+    // Test with extra whitespace (4 newlines = heading eats 1, leaves 3, gap = 3 > 2)
+    let result = render_test("# Title\n\n\n\nContent"); // 4 newlines
+    assert_eq!(result.len(), 3, "Expected 3 elements with extra whitespace");
+    assert!(result[1].html.contains("gap-"), "Middle element should be a gap");
+
+    // Test standard break (3 newlines = heading eats 1, leaves 2, gap = 2 = MIN, no gap element)
+    let result2 = render_test("# Title\n\n\nContent"); // 3 newlines
+    assert_eq!(result2.len(), 2, "Expected 2 elements with standard break equivalent");
 }
 
 // =============================================================================
@@ -433,36 +428,46 @@ fn regression_bug11_gap_paragraphs_for_whitespace() {
 // =============================================================================
 
 #[test]
-fn test_char_range_full_coverage() {
-    // Verify that char ranges cover entire document
+fn test_char_range_coverage_allows_paragraph_breaks() {
+    // Verify char ranges cover document content, allowing standard \n\n breaks
+    // The MIN_PARAGRAPH_BREAK zone (2 chars) is intentionally not covered -
+    // cursor snaps to adjacent paragraphs for standard breaks.
+    // Only EXTRA whitespace beyond \n\n gets gap elements.
     let input = "Hello\n\nWorld";
     let rope = JumpRopeBuf::from(input);
-    let paragraphs = render_paragraphs(&rope);
+    let (paragraphs, _cache) = render_paragraphs_incremental(&rope, None, None);
 
-    let doc_len = rope.len_chars();
+    // With standard \n\n break, we expect 2 paragraphs (no gap element)
+    // Paragraph ranges include some trailing whitespace from markdown parsing
+    assert_eq!(paragraphs.len(), 2, "Expected 2 paragraphs for standard break");
 
-    // Collect all ranges
-    let mut ranges: Vec<_> = paragraphs.iter().map(|p| p.char_range.clone()).collect();
-    ranges.sort_by_key(|r| r.start);
+    // First paragraph ends before second starts, with gap for \n\n
+    let gap_start = paragraphs[0].char_range.end;
+    let gap_end = paragraphs[1].char_range.start;
+    let gap_size = gap_end - gap_start;
+    assert!(gap_size <= 2, "Gap should be at most MIN_PARAGRAPH_BREAK (2), got {}", gap_size);
+}
 
-    // Check coverage
-    let mut covered = 0;
-    for range in &ranges {
-        assert!(
-            range.start <= covered,
-            "Gap at position {}, next range starts at {}",
-            covered,
-            range.start
-        );
-        covered = covered.max(range.end);
-    }
+#[test]
+fn test_char_range_coverage_with_extra_whitespace() {
+    // Extra whitespace beyond MIN_PARAGRAPH_BREAK (2) gets gap elements
+    // Plain paragraphs don't consume trailing newlines like headings do
+    let input = "Hello\n\n\n\nWorld"; // 4 newlines = gap of 4 > 2
+    let rope = JumpRopeBuf::from(input);
+    let (paragraphs, _cache) = render_paragraphs_incremental(&rope, None, None);
 
-    assert!(
-        covered >= doc_len,
-        "Ranges don't cover full document: covered {} of {}",
-        covered,
-        doc_len
-    );
+    // With extra newlines, we expect 3 elements: para, gap, para
+    assert_eq!(paragraphs.len(), 3, "Expected 3 elements with extra whitespace");
+
+    // Gap element should exist and cover whitespace zone
+    let gap = &paragraphs[1];
+    assert!(gap.html.contains("gap-"), "Second element should be a gap");
+
+    // Gap should cover ALL whitespace (not just extra)
+    assert_eq!(gap.char_range.start, paragraphs[0].char_range.end,
+        "Gap should start where first paragraph ends");
+    assert_eq!(gap.char_range.end, paragraphs[2].char_range.start,
+        "Gap should end where second paragraph starts");
 }
 
 #[test]
@@ -533,45 +538,6 @@ fn test_offset_mappings_reference_own_paragraph() {
 // Incremental Rendering Tests
 // =============================================================================
 
-use super::render::render_paragraphs_incremental;
-
-#[test]
-fn test_incremental_renders_same_as_full() {
-    // Incremental render with no cache should produce same result as full render
-    let input = "# Heading\n\nParagraph with **bold**\n\n- List item";
-    let rope = JumpRopeBuf::from(input);
-
-    let full = render_paragraphs(&rope);
-    let (incremental, _cache) = render_paragraphs_incremental(&rope, None, None);
-
-    // Compare HTML output (hashes may differ due to caching internals)
-    assert_eq!(
-        full.len(),
-        incremental.len(),
-        "Different paragraph count: full={}, incr={}",
-        full.len(),
-        incremental.len()
-    );
-
-    for (i, (f, inc)) in full.iter().zip(incremental.iter()).enumerate() {
-        assert_eq!(
-            f.html, inc.html,
-            "Paragraph {} HTML differs:\nFull: {}\nIncr: {}",
-            i, f.html, inc.html
-        );
-        assert_eq!(
-            f.byte_range, inc.byte_range,
-            "Paragraph {} byte_range differs",
-            i
-        );
-        assert_eq!(
-            f.char_range, inc.char_range,
-            "Paragraph {} char_range differs",
-            i
-        );
-    }
-}
-
 #[test]
 fn test_incremental_cache_reuse() {
     // Verify cache is populated and can be reused
@@ -588,5 +554,159 @@ fn test_incremental_cache_reuse() {
     assert_eq!(paras1.len(), paras2.len());
     for (p1, p2) in paras1.iter().zip(paras2.iter()) {
         assert_eq!(p1.html, p2.html);
+    }
+}
+
+// =============================================================================
+// Loro CRDT API Spike Tests
+// =============================================================================
+
+#[test]
+fn test_loro_basic_text_operations() {
+    use loro::LoroDoc;
+
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+
+    // Insert
+    text.insert(0, "Hello").unwrap();
+    assert_eq!(text.to_string(), "Hello");
+    assert_eq!(text.len_unicode(), 5);
+
+    // Insert at position
+    text.insert(5, " world").unwrap();
+    assert_eq!(text.to_string(), "Hello world");
+    assert_eq!(text.len_unicode(), 11);
+
+    // Delete
+    text.delete(5, 6).unwrap(); // delete " world"
+    assert_eq!(text.to_string(), "Hello");
+    assert_eq!(text.len_unicode(), 5);
+}
+
+#[test]
+fn test_loro_unicode_handling() {
+    use loro::LoroDoc;
+
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+
+    // Insert unicode
+    text.insert(0, "Hello 🎉 世界").unwrap();
+
+    // Check lengths
+    let content = text.to_string();
+    assert_eq!(content, "Hello 🎉 世界");
+
+    // Unicode length (chars)
+    assert_eq!(text.len_unicode(), 10); // H e l l o   🎉   世 界
+
+    // UTF-16 length (for DOM)
+    // 🎉 is a surrogate pair (2 UTF-16 units), rest are 1 each
+    assert_eq!(text.len_utf16(), 11); // 6 + 2 + 1 + 2 = 11
+
+    // UTF-8 length (bytes)
+    assert_eq!(text.len_utf8(), content.len());
+}
+
+#[test]
+fn test_loro_undo_redo() {
+    use loro::{LoroDoc, UndoManager};
+
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+    let mut undo_mgr = UndoManager::new(&doc);
+
+    // Type some text
+    text.insert(0, "Hello").unwrap();
+    doc.commit();
+
+    text.insert(5, " world").unwrap();
+    doc.commit();
+
+    assert_eq!(text.to_string(), "Hello world");
+
+    // Undo last change
+    assert!(undo_mgr.can_undo());
+    undo_mgr.undo().unwrap();
+    assert_eq!(text.to_string(), "Hello");
+
+    // Undo first change
+    undo_mgr.undo().unwrap();
+    assert_eq!(text.to_string(), "");
+
+    // Redo
+    assert!(undo_mgr.can_redo());
+    undo_mgr.redo().unwrap();
+    assert_eq!(text.to_string(), "Hello");
+
+    undo_mgr.redo().unwrap();
+    assert_eq!(text.to_string(), "Hello world");
+}
+
+#[test]
+fn test_loro_char_to_utf16_conversion() {
+    use loro::LoroDoc;
+
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+
+    text.insert(0, "Hello 🎉 世界").unwrap();
+
+    // Simulate char→UTF16 conversion for cursor positioning
+    // Given a char offset, compute UTF-16 offset
+    fn char_to_utf16(text: &loro::LoroText, char_pos: usize) -> usize {
+        if char_pos == 0 {
+            return 0;
+        }
+        // Fast path: if all ASCII, char == UTF-16
+        if text.len_unicode() == text.len_utf16() {
+            return char_pos;
+        }
+        // Slow path: get slice and count UTF-16 units
+        match text.slice(0, char_pos) {
+            Ok(slice) => slice.encode_utf16().count(),
+            Err(_) => 0,
+        }
+    }
+
+    // "Hello 🎉 世界"
+    // Positions: H(0) e(1) l(2) l(3) o(4) ' '(5) 🎉(6) ' '(7) 世(8) 界(9)
+    // UTF-16:    0     1    2    3    4     5     6,7    8     9    10
+
+    assert_eq!(char_to_utf16(&text, 0), 0);
+    assert_eq!(char_to_utf16(&text, 6), 6);  // before emoji
+    assert_eq!(char_to_utf16(&text, 7), 8);  // after emoji (emoji is 2 UTF-16 units)
+    assert_eq!(char_to_utf16(&text, 10), 11); // end
+}
+
+#[test]
+fn test_loro_ascii_fast_path() {
+    use loro::LoroDoc;
+
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+
+    // Pure ASCII content
+    text.insert(0, "Hello world, this is a test!").unwrap();
+
+    // Verify fast path condition: all lengths equal for ASCII
+    assert_eq!(text.len_unicode(), text.len_utf8());
+    assert_eq!(text.len_unicode(), text.len_utf16());
+
+    // Fast path should just return char_pos directly
+    fn char_to_utf16(text: &loro::LoroText, char_pos: usize) -> usize {
+        if char_pos == 0 {
+            return 0;
+        }
+        if text.len_unicode() == text.len_utf16() {
+            return char_pos; // fast path
+        }
+        text.slice(0, char_pos).map(|s| s.encode_utf16().count()).unwrap_or(0)
+    }
+
+    // All positions should be identity for ASCII
+    for i in 0..=text.len_unicode() {
+        assert_eq!(char_to_utf16(&text, i), i, "ASCII fast path failed at pos {}", i);
     }
 }
