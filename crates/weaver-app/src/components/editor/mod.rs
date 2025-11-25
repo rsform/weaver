@@ -10,7 +10,6 @@ mod formatting;
 mod offset_map;
 mod paragraph;
 mod render;
-mod rope_writer;
 mod storage;
 mod toolbar;
 mod visibility;
@@ -24,7 +23,6 @@ pub use formatting::{FormatAction, apply_formatting, find_word_boundaries};
 pub use offset_map::{OffsetMapping, RenderResult, find_mapping_for_byte};
 pub use paragraph::ParagraphRender;
 pub use render::{RenderCache, render_paragraphs_incremental};
-pub use rope_writer::RopeWriter;
 pub use storage::{EditorSnapshot, clear_storage, load_from_storage, save_to_storage};
 pub use toolbar::EditorToolbar;
 pub use visibility::VisibilityState;
@@ -38,7 +36,7 @@ use dioxus::prelude::*;
 /// - `initial_content`: Optional initial markdown content
 ///
 /// # Features
-/// - JumpRope-based text storage for efficient editing
+/// - Loro CRDT-based text storage with undo/redo support
 /// - Event interception for full control over editing operations
 /// - Toolbar formatting buttons
 /// - LocalStorage auto-save with debouncing
@@ -75,7 +73,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
         let edit = doc.last_edit.as_ref();
 
         let (paras, new_cache) =
-            render::render_paragraphs_incremental(&doc.rope, Some(&cache), edit);
+            render::render_paragraphs_incremental(doc.loro_text(), Some(&cache), edit);
 
         // Update cache for next render (write-only via spawn to avoid reactive loop)
         dioxus::prelude::spawn(async move {
@@ -107,8 +105,15 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     // Update DOM when paragraphs change (incremental rendering)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
+        // Read document once to avoid multiple borrows
+        let doc = document();
+        let cursor_offset = doc.cursor.offset;
+        let selection = doc.selection;
+        drop(doc); // Release borrow before other operations
+
         let new_paras = paragraphs();
-        let cursor_offset = document().cursor.offset;
+        let map = offset_map();
+        let spans = syntax_spans();
 
         // Use peek() to avoid creating reactive dependency on cached_paragraphs
         let prev = cached_paragraphs.peek().clone();
@@ -120,14 +125,11 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             use wasm_bindgen::JsCast;
             use wasm_bindgen::prelude::*;
 
-            let rope = document().rope.clone();
-            let map = offset_map();
-
             // Use requestAnimationFrame to wait for browser paint
             if let Some(window) = web_sys::window() {
                 let closure = Closure::once(move || {
                     if let Err(e) =
-                        cursor::restore_cursor_position(&rope, cursor_offset, &map, editor_id)
+                        cursor::restore_cursor_position(cursor_offset, &map, editor_id)
                     {
                         tracing::warn!("Cursor restoration failed: {:?}", e);
                     }
@@ -142,11 +144,18 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
         cached_paragraphs.set(new_paras.clone());
 
         // Update syntax visibility after DOM changes
-        let doc = document();
-        let spans = syntax_spans();
+        // Debug: log what syntax spans we have
+        for span in spans.iter() {
+            tracing::debug!(
+                "[VISIBILITY_INPUT] span {} char_range {:?} formatted_range {:?}",
+                span.syn_id,
+                span.char_range,
+                span.formatted_range
+            );
+        }
         update_syntax_visibility(
-            doc.cursor.offset,
-            doc.selection.as_ref(),
+            cursor_offset,
+            selection.as_ref(),
             &spans,
             &new_paras,
         );
@@ -155,11 +164,15 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     // Auto-save with debounce
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
+        // Read document once and extract what we need
         let doc = document();
+        let content = doc.to_string();
+        let cursor = doc.cursor.offset;
+        drop(doc);
 
         // Save after 500ms of no typing
         let timer = gloo_timers::callback::Timeout::new(500, move || {
-            let _ = storage::save_to_storage(&doc.to_string(), doc.cursor.offset);
+            let _ = storage::save_to_storage(&content, cursor);
         });
         timer.forget();
     });
@@ -213,22 +226,8 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                     },
 
                     onclick: move |_evt| {
-                        // After mouse click, sync cursor from DOM
-                        let paras = cached_paragraphs();
-                        sync_cursor_from_dom(&mut document, editor_id, &paras);
-                        // Update syntax visibility after cursor sync
-                        let doc = document();
-                        let spans = syntax_spans();
-                        update_syntax_visibility(
-                            doc.cursor.offset,
-                            doc.selection.as_ref(),
-                            &spans,
-                            &paras,
-                        );
-                    },
-
-                    onmouseup: move |_evt| {
-                        // After drag selection, sync cursor/selection from DOM
+                        // After mouse click or drag selection, sync cursor from DOM
+                        // (click fires after mouseup, so this handles both cases)
                         let paras = cached_paragraphs();
                         sync_cursor_from_dom(&mut document, editor_id, &paras);
                         // Update syntax visibility after cursor sync
@@ -528,13 +527,13 @@ fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>
                         // Delete selection if present
                         if let Some(sel) = doc.selection {
                             let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                            doc.rope.remove(start..end);
+                            let _ = doc.remove_tracked(start, end.saturating_sub(start));
                             doc.cursor.offset = start;
                             doc.selection = None;
                         }
 
                         // Insert pasted text
-                        doc.rope.insert(doc.cursor.offset, &text);
+                        let _ = doc.insert_tracked(doc.cursor.offset, &text);
                         doc.cursor.offset += text.chars().count();
                     });
                 }
@@ -545,7 +544,7 @@ fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>
     }
 }
 
-/// Handle cut events - extract text, write to clipboard, then delete from rope
+/// Handle cut events - extract text, write to clipboard, then delete
 fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
     tracing::info!("[CUT] handle_cut called");
 
@@ -560,8 +559,8 @@ fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) 
                 if let Some(sel) = doc.selection {
                     let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
                     if start != end {
-                        // Extract text from rope
-                        let selected_text = extract_rope_slice(&doc.rope, start, end);
+                        // Extract text
+                        let selected_text = doc.slice(start, end).unwrap_or_default();
                         tracing::info!(
                             "[CUT] Extracted {} chars: {:?}",
                             selected_text.len(),
@@ -575,8 +574,8 @@ fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) 
                             }
                         }
 
-                        // Now delete from rope
-                        doc.rope.remove(start..end);
+                        // Now delete
+                        let _ = doc.remove_tracked(start, end.saturating_sub(start));
                         doc.cursor.offset = start;
                         doc.selection = None;
                     }
@@ -591,7 +590,7 @@ fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) 
     }
 }
 
-/// Handle copy events - extract text from rope, clean it up, write to clipboard
+/// Handle copy events - extract text, clean it up, write to clipboard
 fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
     tracing::info!("[COPY] handle_copy called");
 
@@ -606,8 +605,8 @@ fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
             if let Some(sel) = doc.selection {
                 let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
                 if start != end {
-                    // Extract text from rope
-                    let selected_text = extract_rope_slice(&doc.rope, start, end);
+                    // Extract text
+                    let selected_text = doc.slice(start, end).unwrap_or_default();
 
                     // Strip zero-width chars used for gap handling
                     let clean_text = selected_text
@@ -640,14 +639,9 @@ fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
     }
 }
 
-/// Extract a slice of text from the rope as a String
-fn extract_rope_slice(rope: &jumprope::JumpRopeBuf, start: usize, end: usize) -> String {
-    let mut result = String::new();
-    let rope_ref = rope.borrow();
-    for substr in rope_ref.slice_substrings(start..end) {
-        result.push_str(substr);
-    }
-    result
+/// Extract a slice of text from a string by char indices
+fn extract_text_slice(text: &str, start: usize, end: usize) -> String {
+    text.chars().skip(start).take(end.saturating_sub(start)).collect()
 }
 
 /// Handle keyboard events and update document state
@@ -675,30 +669,27 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                     }
                 }
 
-                // Insert character at cursor
-                if doc.selection.is_some() {
-                    // Delete selection first
-                    let sel = doc.selection.unwrap();
+                // Insert character at cursor (replacing selection if any)
+                if let Some(sel) = doc.selection.take() {
                     let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    doc.rope.remove(start..end);
-                    doc.cursor.offset = start;
-                    doc.selection = None;
+                    let _ = doc.replace_tracked(start, end.saturating_sub(start), &ch);
+                    doc.cursor.offset = start + ch.chars().count();
+                } else {
+                    let _ = doc.insert_tracked(doc.cursor.offset, &ch);
+                    doc.cursor.offset += ch.chars().count();
                 }
-
-                doc.rope.insert(doc.cursor.offset, &ch);
-                doc.cursor.offset += ch.chars().count();
             }
 
             Key::Backspace => {
                 if let Some(sel) = doc.selection {
                     // Delete selection
                     let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    doc.rope.remove(start..end);
+                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
                     doc.cursor.offset = start;
                     doc.selection = None;
                 } else if doc.cursor.offset > 0 {
                     // Check if we're about to delete a newline
-                    let prev_char = get_char_at(&doc.rope, doc.cursor.offset - 1);
+                    let prev_char = get_char_at(doc.loro_text(), doc.cursor.offset - 1);
 
                     if prev_char == Some('\n') {
                         let newline_pos = doc.cursor.offset - 1;
@@ -708,7 +699,7 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                         // Check if there's another newline before this one (empty paragraph)
                         // If so, delete both newlines to merge paragraphs
                         if newline_pos > 0 {
-                            let prev_prev_char = get_char_at(&doc.rope, newline_pos - 1);
+                            let prev_prev_char = get_char_at(doc.loro_text(), newline_pos - 1);
                             if prev_prev_char == Some('\n') {
                                 // Empty paragraph case: delete both newlines
                                 delete_start = newline_pos - 1;
@@ -716,7 +707,7 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                         }
 
                         // Also check if there's a zero-width char after cursor (inserted by Shift+Enter)
-                        if let Some(ch) = get_char_at(&doc.rope, delete_end) {
+                        if let Some(ch) = get_char_at(doc.loro_text(), delete_end) {
                             if ch == '\u{200C}' || ch == '\u{200B}' {
                                 delete_end += 1;
                             }
@@ -724,7 +715,7 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
 
                         // Scan backwards through whitespace before the newline(s)
                         while delete_start > 0 {
-                            let ch = get_char_at(&doc.rope, delete_start - 1);
+                            let ch = get_char_at(doc.loro_text(), delete_start - 1);
                             match ch {
                                 Some(' ') | Some('\t') | Some('\u{200C}') | Some('\u{200B}') => {
                                     delete_start -= 1;
@@ -735,27 +726,26 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                         }
 
                         // Delete from where we stopped to end (including any trailing zero-width)
-                        doc.rope.remove(delete_start..delete_end);
+                        let _ = doc.remove_tracked(delete_start, delete_end.saturating_sub(delete_start));
                         doc.cursor.offset = delete_start;
                     } else {
                         // Normal backspace - delete one char
                         let prev = doc.cursor.offset - 1;
-                        doc.rope.remove(prev..doc.cursor.offset);
+                        let _ = doc.remove_tracked(prev, 1);
                         doc.cursor.offset = prev;
                     }
                 }
             }
 
             Key::Delete => {
-                if let Some(sel) = doc.selection {
+                if let Some(sel) = doc.selection.take() {
                     // Delete selection
                     let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    doc.rope.remove(start..end);
+                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
                     doc.cursor.offset = start;
-                    doc.selection = None;
                 } else if doc.cursor.offset < doc.len_chars() {
                     // Delete next char
-                    doc.rope.remove(doc.cursor.offset..doc.cursor.offset + 1);
+                    let _ = doc.remove_tracked(doc.cursor.offset, 1);
                 }
             }
 
@@ -765,44 +755,37 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
             }
 
             Key::Enter => {
-                if doc.selection.is_some() {
-                    let sel = doc.selection.unwrap();
+                if let Some(sel) = doc.selection.take() {
                     let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    doc.rope.remove(start..end);
+                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
                     doc.cursor.offset = start;
-                    doc.selection = None;
                 }
 
                 if mods.shift() {
                     // Shift+Enter: hard line break (soft break)
-                    doc.rope.insert(doc.cursor.offset, "  \n\u{200C}");
+                    let _ = doc.insert_tracked(doc.cursor.offset, "  \n\u{200C}");
                     doc.cursor.offset += 3;
-                } else if let Some(ctx) = detect_list_context(&doc.rope, doc.cursor.offset) {
+                } else if let Some(ctx) = detect_list_context(doc.loro_text(), doc.cursor.offset) {
                     // We're in a list item
                     tracing::debug!("[ENTER] List context detected: {:?}", ctx);
                     tracing::debug!(
-                        "[ENTER] Cursor at {}, rope len {}",
+                        "[ENTER] Cursor at {}, doc len {}",
                         doc.cursor.offset,
-                        doc.rope.len_chars()
+                        doc.len_chars()
                     );
-                    if is_list_item_empty(&doc.rope, doc.cursor.offset, &ctx) {
+                    if is_list_item_empty(doc.loro_text(), doc.cursor.offset, &ctx) {
                         tracing::debug!("[ENTER] Item is empty, exiting list");
                         // Empty item - exit list by removing marker and inserting paragraph break
-                        let line_start = find_line_start(&doc.rope, doc.cursor.offset);
-                        let line_end = find_line_end(&doc.rope, doc.cursor.offset);
+                        let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
+                        let line_end = find_line_end(doc.loro_text(), doc.cursor.offset);
 
                         // Delete the empty list item line INCLUDING its trailing newline
                         // line_end points to the newline, so +1 to include it
-                        let delete_end = (line_end + 1).min(doc.rope.len_chars());
+                        let delete_end = (line_end + 1).min(doc.len_chars());
 
-                        doc.rope.remove(line_start..delete_end);
-                        doc.cursor.offset = line_start;
-
-                        // Insert two newlines, a zero-width whitespace character, and then another
-                        // newline to properly split the list (TODO: clean up the weird whitespace
-                        // char once that new paragraph has content)
-                        doc.rope.insert(doc.cursor.offset, "\n\n\u{200C}\n");
-                        doc.cursor.offset += 2;
+                        // Use replace_tracked to atomically delete line and insert paragraph break
+                        let _ = doc.replace_tracked(line_start, delete_end.saturating_sub(line_start), "\n\n\u{200C}\n");
+                        doc.cursor.offset = line_start + 2;
                     } else {
                         // Non-empty item - continue list
                         let continuation = match ctx {
@@ -814,12 +797,12 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                             }
                         };
                         let len = continuation.chars().count();
-                        doc.rope.insert(doc.cursor.offset, &continuation);
+                        let _ = doc.insert_tracked(doc.cursor.offset, &continuation);
                         doc.cursor.offset += len;
                     }
                 } else {
                     // Not in a list - normal paragraph break
-                    doc.rope.insert(doc.cursor.offset, "\n\n");
+                    let _ = doc.insert_tracked(doc.cursor.offset, "\n\n");
                     doc.cursor.offset += 2;
                 }
             }
@@ -846,22 +829,18 @@ enum ListContext {
 /// Detect if cursor is in a list item and return context for continuation.
 ///
 /// Scans backwards to find start of current line, then checks for list marker.
-fn detect_list_context(rope: &jumprope::JumpRopeBuf, cursor_offset: usize) -> Option<ListContext> {
+fn detect_list_context(text: &loro::LoroText, cursor_offset: usize) -> Option<ListContext> {
     // Find start of current line
-    let line_start = find_line_start(rope, cursor_offset);
+    let line_start = find_line_start(text, cursor_offset);
 
     // Get the line content from start to cursor
-    let line_end = find_line_end(rope, cursor_offset);
+    let line_end = find_line_end(text, cursor_offset);
     if line_start >= line_end {
         return None;
     }
 
     // Extract line text
-    let mut line = String::new();
-    let rope_ref = rope.borrow();
-    for substr in rope_ref.slice_substrings(line_start..line_end) {
-        line.push_str(substr);
-    }
+    let line = text.slice(line_start, line_end).ok()?;
 
     // Parse indentation
     let indent: String = line
@@ -901,19 +880,18 @@ fn detect_list_context(rope: &jumprope::JumpRopeBuf, cursor_offset: usize) -> Op
 ///
 /// Used to determine whether Enter should continue the list or exit it.
 fn is_list_item_empty(
-    rope: &jumprope::JumpRopeBuf,
+    text: &loro::LoroText,
     cursor_offset: usize,
     ctx: &ListContext,
 ) -> bool {
-    let line_start = find_line_start(rope, cursor_offset);
-    let line_end = find_line_end(rope, cursor_offset);
+    let line_start = find_line_start(text, cursor_offset);
+    let line_end = find_line_end(text, cursor_offset);
 
     // Get line content
-    let mut line = String::new();
-    let rope_ref = rope.borrow();
-    for substr in rope_ref.slice_substrings(line_start..line_end) {
-        line.push_str(substr);
-    }
+    let line = match text.slice(line_start, line_end) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
 
     // Calculate expected marker length
     let marker_len = match ctx {
@@ -935,63 +913,47 @@ fn is_list_item_empty(
     line.len() <= marker_len
 }
 
-/// Get character at the given offset in the rope
-fn get_char_at(rope: &jumprope::JumpRopeBuf, offset: usize) -> Option<char> {
-    if offset >= rope.len_chars() {
-        return None;
-    }
-
-    let rope = rope.borrow();
-    let mut current = 0;
-    for substr in rope.slice_substrings(offset..offset + 1) {
-        for c in substr.chars() {
-            if current == 0 {
-                return Some(c);
-            }
-            current += 1;
-        }
-    }
-    None
+/// Get character at the given offset in LoroText
+fn get_char_at(text: &loro::LoroText, offset: usize) -> Option<char> {
+    text.char_at(offset).ok()
 }
 
 /// Find start of line containing offset
-fn find_line_start(rope: &jumprope::JumpRopeBuf, offset: usize) -> usize {
-    // Search backwards from cursor for newline
-    let mut char_pos = 0;
-    let mut last_newline_pos = None;
-
-    let rope = rope.borrow();
-    for substr in rope.slice_substrings(0..offset) {
-        // TODO: make more efficient
-        for c in substr.chars() {
-            if c == '\n' {
-                last_newline_pos = Some(char_pos);
-            }
-            char_pos += 1;
-        }
+fn find_line_start(text: &loro::LoroText, offset: usize) -> usize {
+    if offset == 0 {
+        return 0;
     }
-
-    last_newline_pos.map(|pos| pos + 1).unwrap_or(0)
+    // Only slice the portion before cursor
+    let prefix = match text.slice(0, offset) {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    prefix
+        .chars()
+        .enumerate()
+        .filter(|(_, c)| *c == '\n')
+        .last()
+        .map(|(pos, _)| pos + 1)
+        .unwrap_or(0)
 }
 
 /// Find end of line containing offset
-fn find_line_end(rope: &jumprope::JumpRopeBuf, offset: usize) -> usize {
-    // Search forwards from cursor for newline
-    let mut char_pos = offset;
-
-    let rope = rope.borrow();
-    let byte_len = rope.len_bytes() - 1;
-    for substr in rope.slice_substrings(offset..byte_len) {
-        // TODO: make more efficient
-        for c in substr.chars() {
-            if c == '\n' {
-                return char_pos;
-            }
-            char_pos += 1;
-        }
+fn find_line_end(text: &loro::LoroText, offset: usize) -> usize {
+    let char_len = text.len_unicode();
+    if offset >= char_len {
+        return char_len;
     }
-
-    rope.len_chars()
+    // Only slice from cursor to end
+    let suffix = match text.slice(offset, char_len) {
+        Ok(s) => s,
+        Err(_) => return char_len,
+    };
+    suffix
+        .chars()
+        .enumerate()
+        .find(|(_, c)| *c == '\n')
+        .map(|(i, _)| offset + i)
+        .unwrap_or(char_len)
 }
 
 /// Update paragraph DOM elements incrementally.

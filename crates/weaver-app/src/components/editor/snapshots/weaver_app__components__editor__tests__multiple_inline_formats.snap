@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 32
-  html: "<p id=\"n0\"><span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\">**</span><strong>Bold<span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"6\" data-char-end=\"8\">**</span></strong> and <span class=\"md-syntax-inline\" data-syn-id=\"s2\" data-char-start=\"13\" data-char-end=\"14\">*</span><em>italic<span class=\"md-syntax-inline\" data-syn-id=\"s3\" data-char-start=\"20\" data-char-end=\"21\">*</span></em> and <span class=\"md-syntax-inline\" data-syn-id=\"s4\" data-char-start=\"26\" data-char-end=\"27\">`</span><code>code</code><span class=\"md-syntax-inline\" data-syn-id=\"s5\" data-char-start=\"31\" data-char-end=\"32\">`</span></p>\n"
+  html: "<p id=\"n0\"><span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\">**</span><strong>Bold</strong><span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"6\" data-char-end=\"8\">**</span> and <span class=\"md-syntax-inline\" data-syn-id=\"s2\" data-char-start=\"13\" data-char-end=\"14\">*</span><em>italic</em><span class=\"md-syntax-inline\" data-syn-id=\"s3\" data-char-start=\"20\" data-char-end=\"21\">*</span> and <span class=\"md-syntax-inline\" data-syn-id=\"s4\" data-char-start=\"26\" data-char-end=\"27\">`</span><code>code</code><span class=\"md-syntax-inline\" data-syn-id=\"s5\" data-char-start=\"31\" data-char-end=\"32\">`</span></p>\n"
   offset_map:
     - byte_range:
         - 0
@@ -21,13 +21,23 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
+        - 0
+        - 2
+      char_range:
+        - 0
+        - 2
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
         - 2
         - 6
       char_range:
         - 2
         - 6
       node_id: n0
-      char_offset_in_node: 0
+      char_offset_in_node: 2
       child_index: ~
       utf16_len: 4
     - byte_range:
@@ -37,7 +47,7 @@ expression: result
         - 6
         - 8
       node_id: n0
-      char_offset_in_node: 4
+      char_offset_in_node: 6
       child_index: ~
       utf16_len: 2
     - byte_range:
@@ -47,9 +57,19 @@ expression: result
         - 8
         - 13
       node_id: n0
-      char_offset_in_node: 6
+      char_offset_in_node: 8
       child_index: ~
       utf16_len: 5
+    - byte_range:
+        - 13
+        - 14
+      char_range:
+        - 13
+        - 14
+      node_id: n0
+      char_offset_in_node: 13
+      child_index: ~
+      utf16_len: 1
     - byte_range:
         - 14
         - 20
@@ -57,7 +77,7 @@ expression: result
         - 14
         - 20
       node_id: n0
-      char_offset_in_node: 11
+      char_offset_in_node: 14
       child_index: ~
       utf16_len: 6
     - byte_range:
@@ -67,7 +87,7 @@ expression: result
         - 20
         - 21
       node_id: n0
-      char_offset_in_node: 17
+      char_offset_in_node: 20
       child_index: ~
       utf16_len: 1
     - byte_range:
@@ -77,7 +97,7 @@ expression: result
         - 21
         - 26
       node_id: n0
-      char_offset_in_node: 18
+      char_offset_in_node: 21
       child_index: ~
       utf16_len: 5
     - byte_range:
@@ -87,7 +107,7 @@ expression: result
         - 27
         - 31
       node_id: n0
-      char_offset_in_node: 23
+      char_offset_in_node: 26
       child_index: ~
-      utf16_len: 4
+      utf16_len: 6
   source_hash: 17988102203032347642

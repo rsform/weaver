@@ -7,7 +7,7 @@
 //! represent consumed formatting characters.
 
 use super::offset_map::{OffsetMapping, RenderResult};
-use jumprope::JumpRopeBuf;
+use loro::LoroText;
 use markdown_weaver::{
     Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, Tag,
 };
@@ -109,7 +109,7 @@ impl EmbedContentProvider for () {
 /// and emits them as styled spans for visibility in the editor.
 pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E = ()> {
     source: &'a str,
-    source_rope: &'a JumpRopeBuf,
+    source_text: &'a LoroText,
     events: I,
     writer: W,
     last_byte_offset: usize,
@@ -142,6 +142,11 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: St
     current_node_char_offset: usize, // UTF-16 offset within current node
     current_node_child_count: usize, // number of child elements/text nodes in current container
 
+    // Incremental UTF-16 offset tracking (replaces rope.chars_to_wchars)
+    // Maps char_offset -> utf16_offset at checkpoints we've traversed.
+    // Can be reused for future lookups or passed to subsequent writers.
+    utf16_checkpoints: Vec<(usize, usize)>, // (char_offset, utf16_offset)
+
     // Paragraph boundary tracking for incremental rendering
     paragraph_ranges: Vec<(Range<usize>, Range<usize>)>, // (byte_range, char_range)
     current_paragraph_start: Option<(usize, usize)>,     // (byte_offset, char_offset)
@@ -170,23 +175,23 @@ enum TableState {
 impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedContentProvider>
     EditorWriter<'a, I, W, E>
 {
-    pub fn new(source: &'a str, source_rope: &'a JumpRopeBuf, events: I, writer: W) -> Self {
-        Self::new_with_node_offset(source, source_rope, events, writer, 0)
+    pub fn new(source: &'a str, source_text: &'a LoroText, events: I, writer: W) -> Self {
+        Self::new_with_node_offset(source, source_text, events, writer, 0)
     }
 
     pub fn new_with_node_offset(
         source: &'a str,
-        source_rope: &'a JumpRopeBuf,
+        source_text: &'a LoroText,
         events: I,
         writer: W,
         node_id_offset: usize,
     ) -> Self {
-        Self::new_with_offsets(source, source_rope, events, writer, node_id_offset, 0)
+        Self::new_with_offsets(source, source_text, events, writer, node_id_offset, 0)
     }
 
     pub fn new_with_offsets(
         source: &'a str,
-        source_rope: &'a JumpRopeBuf,
+        source_text: &'a LoroText,
         events: I,
         writer: W,
         node_id_offset: usize,
@@ -194,7 +199,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
     ) -> Self {
         Self {
             source,
-            source_rope,
+            source_text,
             events,
             writer,
             last_byte_offset: 0,
@@ -217,6 +222,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             current_node_id: None,
             current_node_char_offset: 0,
             current_node_child_count: 0,
+            utf16_checkpoints: vec![(0, 0)],
             paragraph_ranges: Vec::new(),
             current_paragraph_start: None,
             list_depth: 0,
@@ -232,13 +238,13 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
     /// Used for fast boundary discovery in incremental rendering.
     pub fn new_boundary_only(
         source: &'a str,
-        source_rope: &'a JumpRopeBuf,
+        source_text: &'a LoroText,
         events: I,
         writer: W,
     ) -> Self {
         Self {
             source,
-            source_rope,
+            source_text,
             events,
             writer,
             last_byte_offset: 0,
@@ -261,6 +267,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             current_node_id: None,
             current_node_char_offset: 0,
             current_node_child_count: 0,
+            utf16_checkpoints: vec![(0, 0)],
             syntax_spans: Vec::new(),
             next_syn_id: 0,
             pending_inline_formats: Vec::new(),
@@ -276,7 +283,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
     pub fn with_embed_provider(self, provider: E) -> EditorWriter<'a, I, W, E> {
         EditorWriter {
             source: self.source,
-            source_rope: self.source_rope,
+            source_text: self.source_text,
             events: self.events,
             writer: self.writer,
             last_byte_offset: self.last_byte_offset,
@@ -299,6 +306,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             current_node_id: self.current_node_id,
             current_node_char_offset: self.current_node_char_offset,
             current_node_child_count: self.current_node_child_count,
+            utf16_checkpoints: self.utf16_checkpoints,
             paragraph_ranges: self.paragraph_ranges,
             current_paragraph_start: self.current_paragraph_start,
             list_depth: self.list_depth,
@@ -343,6 +351,12 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             let format_end = self.last_char_offset;
             let formatted_range = format_start..format_end;
 
+            tracing::debug!(
+                "[FINALIZE_PAIRED] Setting formatted_range {:?} for opening '{}' and closing (last span)",
+                formatted_range,
+                opening_syn_id
+            );
+
             // Update the opening span's formatted_range
             if let Some(opening_span) = self
                 .syntax_spans
@@ -350,6 +364,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 .find(|s| s.syn_id == opening_syn_id)
             {
                 opening_span.formatted_range = Some(formatted_range.clone());
+                tracing::debug!("[FINALIZE_PAIRED] Updated opening span {}", opening_syn_id);
+            } else {
+                tracing::warn!("[FINALIZE_PAIRED] Could not find opening span {}", opening_syn_id);
             }
 
             // Update the closing span's formatted_range (the most recent one)
@@ -358,6 +375,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 // Only update if it's an inline span (closing syntax should be inline)
                 if closing_span.syntax_type == SyntaxType::Inline {
                     closing_span.formatted_range = Some(formatted_range);
+                    tracing::debug!("[FINALIZE_PAIRED] Updated closing span {}", closing_span.syn_id);
                 }
             }
         }
@@ -544,16 +562,38 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
         self.current_node_child_count = 0;
     }
 
+    /// Compute UTF-16 length for a text slice with fast path for ASCII.
+    #[inline]
+    fn utf16_len_for_slice(text: &str) -> usize {
+        let byte_len = text.len();
+        let char_len = text.chars().count();
+
+        // Fast path: if byte_len == char_len, all ASCII, so utf16_len == char_len
+        if byte_len == char_len {
+            char_len
+        } else {
+            // Slow path: has multi-byte chars, need to count UTF-16 code units
+            text.encode_utf16().count()
+        }
+    }
+
     /// Record an offset mapping for the given byte and char ranges.
     ///
-    /// Computes UTF-16 length efficiently using the rope's internal indexing.
+    /// Builds up utf16_checkpoints incrementally for efficient lookups.
     fn record_mapping(&mut self, byte_range: Range<usize>, char_range: Range<usize>) {
         if let Some(ref node_id) = self.current_node_id {
-            // Use rope to convert char offsets to UTF-16 (wchar) offsets - O(log n)
-            let rope = self.source_rope.borrow();
-            let wchar_start = rope.chars_to_wchars(char_range.start);
-            let wchar_end = rope.chars_to_wchars(char_range.end);
-            let utf16_len = wchar_end - wchar_start;
+            // Get UTF-16 length using fast path
+            let text_slice = &self.source[byte_range.clone()];
+            let utf16_len = Self::utf16_len_for_slice(text_slice);
+
+            // Record checkpoint at end of this range for future lookups
+            let last_checkpoint = self.utf16_checkpoints.last().copied().unwrap_or((0, 0));
+            let new_utf16_offset = last_checkpoint.1 + utf16_len;
+
+            // Only add checkpoint if we've advanced
+            if char_range.end > last_checkpoint.0 {
+                self.utf16_checkpoints.push((char_range.end, new_utf16_offset));
+            }
 
             let mapping = OffsetMapping {
                 byte_range: byte_range.clone(),
@@ -601,15 +641,27 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
             // For End events, emit any trailing content within the event's range
             // BEFORE calling end_tag (which calls end_node and clears current_node_id)
-            if matches!(&event, Event::End(_)) {
+            //
+            // EXCEPTION: For inline formatting tags (Strong, Emphasis, Strikethrough),
+            // the closing syntax must be emitted AFTER the closing HTML tag, not before.
+            // Otherwise the closing `**` span ends up INSIDE the <strong> element.
+            // These tags handle their own closing syntax in end_tag().
+            use markdown_weaver::TagEnd;
+            let is_inline_format_end = matches!(
+                &event,
+                Event::End(TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough)
+            );
+
+            if matches!(&event, Event::End(_)) && !is_inline_format_end {
                 // Emit gap from last_byte_offset to range.end
                 // (emit_syntax handles char offset tracking)
                 self.emit_gap_before(range.end)?;
-            } else {
+            } else if !matches!(&event, Event::End(_)) {
                 // For other events, emit any gap before range.start
                 // (emit_syntax handles char offset tracking)
                 self.emit_gap_before(range.start)?;
             }
+            // For inline format End events, gap is emitted inside end_tag() AFTER the closing HTML
 
             // Store last_byte before processing
             let last_byte_before = self.last_byte_offset;
@@ -632,7 +684,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
         // Handle unmapped trailing content (stripped by parser)
         // This includes trailing spaces that markdown ignores
         let doc_byte_len = self.source.len();
-        let doc_char_len = self.source_rope.len_chars();
+        let doc_char_len = self.source_text.len_unicode();
 
         if self.last_byte_offset < doc_byte_len || self.last_char_offset < doc_char_len {
             // Emit the trailing content as visible syntax
@@ -1173,6 +1225,13 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     syntax_type,
                     formatted_range: None, // Will be updated when closing tag is emitted
                 });
+
+                // Record offset mapping for cursor positioning
+                // This is critical - without it, current_node_char_offset is wrong
+                // and all subsequent cursor positions are shifted
+                let byte_start = range.start;
+                let byte_end = range.start + syntax_byte_len;
+                self.record_mapping(byte_start..byte_end, char_start..char_end);
 
                 // For paired inline syntax (Strong, Emphasis, Strikethrough),
                 // track the opening span so we can set formatted_range when closing
@@ -1990,18 +2049,27 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 self.write("</dd>\n")
             }
             TagEnd::Emphasis => {
+                // Write closing tag FIRST, then emit closing syntax OUTSIDE the tag
+                self.write("</em>")?;
+                self.emit_gap_before(range.end)?;
                 self.finalize_paired_inline_format();
-                self.write("</em>")
+                Ok(())
             }
             TagEnd::Superscript => self.write("</sup>"),
             TagEnd::Subscript => self.write("</sub>"),
             TagEnd::Strong => {
+                // Write closing tag FIRST, then emit closing syntax OUTSIDE the tag
+                self.write("</strong>")?;
+                self.emit_gap_before(range.end)?;
                 self.finalize_paired_inline_format();
-                self.write("</strong>")
+                Ok(())
             }
             TagEnd::Strikethrough => {
+                // Write closing tag FIRST, then emit closing syntax OUTSIDE the tag
+                self.write("</s>")?;
+                self.emit_gap_before(range.end)?;
                 self.finalize_paired_inline_format();
-                self.write("</s>")
+                Ok(())
             }
             TagEnd::Link => self.write("</a>"),
             TagEnd::Image => Ok(()), // No-op: raw_text() already consumed the End(Image) event
@@ -2019,9 +2087,10 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
         result?;
 
-        // Note: Closing syntax for inline tags (Strong, Emphasis, etc.) is now handled
-        // by emit_gap_before(range.end) which is called before end_tag() in the main loop.
-        // No need for manual emission here anymore.
+        // Note: Closing syntax for inline formatting tags (Strong, Emphasis, Strikethrough)
+        // is handled INSIDE their respective match arms above, AFTER writing the closing HTML.
+        // This ensures the closing syntax span appears OUTSIDE the formatted element.
+        // Other End events have their closing syntax emitted by emit_gap_before() in the main loop.
 
         Ok(())
     }

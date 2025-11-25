@@ -1,15 +1,25 @@
 //! Core data structures for the markdown editor.
+//!
+//! Uses Loro CRDT for text storage with built-in undo/redo support.
 
-use jumprope::JumpRopeBuf;
+use loro::{LoroDoc, LoroResult, LoroText, UndoManager};
 
 /// Single source of truth for editor state.
 ///
-/// Contains the document text, cursor position, selection, and IME composition state.
-#[derive(Clone, Debug)]
+/// Contains the document text (backed by Loro CRDT), cursor position,
+/// selection, and IME composition state.
+#[derive(Debug)]
 pub struct EditorDocument {
-    /// The rope storing document text (uses char offsets, not bytes).
-    /// Uses JumpRopeBuf to batch consecutive edits for performance.
-    pub rope: JumpRopeBuf,
+    /// The Loro document containing all editor state.
+    /// Using full LoroDoc (not just LoroText) to support future
+    /// expansion to blobs, metadata, etc.
+    doc: LoroDoc,
+
+    /// Handle to the text container within the doc.
+    text: LoroText,
+
+    /// Undo manager for the document.
+    undo_mgr: UndoManager,
 
     /// Current cursor position (char offset)
     pub cursor: CursorState,
@@ -28,7 +38,7 @@ pub struct EditorDocument {
 /// Cursor state including position and affinity.
 #[derive(Clone, Debug, Copy)]
 pub struct CursorState {
-    /// Character offset in rope (NOT byte offset!)
+    /// Character offset in text (NOT byte offset!)
     pub offset: usize,
 
     /// Prefer left/right when at boundary (for vertical cursor movement)
@@ -85,19 +95,18 @@ impl EditorDocument {
             return true;
         }
 
-        // Find distance from previous newline by scanning forward and tracking last newline
-        let rope = self.rope.borrow();
+        let content = self.text.to_string();
         let mut last_newline_pos: Option<usize> = None;
 
-        for (i, c) in rope.slice_chars(0..pos).enumerate() {
+        for (i, c) in content.chars().take(pos).enumerate() {
             if c == '\n' {
                 last_newline_pos = Some(i);
             }
         }
 
         let chars_from_line_start = match last_newline_pos {
-            Some(nl_pos) => pos - nl_pos - 1, // -1 because newline itself is not part of current line
-            None => pos, // No newline found, distance is from document start
+            Some(nl_pos) => pos - nl_pos - 1,
+            None => pos,
         };
 
         chars_from_line_start <= BLOCK_SYNTAX_ZONE
@@ -105,8 +114,23 @@ impl EditorDocument {
 
     /// Create a new editor document with the given content.
     pub fn new(content: String) -> Self {
+        let doc = LoroDoc::new();
+        let text = doc.get_text("content");
+
+        // Insert initial content if any
+        if !content.is_empty() {
+            text.insert(0, &content).expect("failed to insert initial content");
+        }
+
+        // Set up undo manager with merge interval for batching keystrokes
+        let mut undo_mgr = UndoManager::new(&doc);
+        undo_mgr.set_merge_interval(300); // 300ms merge window
+        undo_mgr.set_max_undo_steps(100);
+
         Self {
-            rope: JumpRopeBuf::from(content.as_str()),
+            doc,
+            text,
+            undo_mgr,
             cursor: CursorState {
                 offset: 0,
                 affinity: Affinity::Before,
@@ -117,23 +141,38 @@ impl EditorDocument {
         }
     }
 
+    /// Get the underlying LoroText for read operations.
+    pub fn loro_text(&self) -> &LoroText {
+        &self.text
+    }
+
     /// Convert the document to a string.
     pub fn to_string(&self) -> String {
-        self.rope.to_string()
+        self.text.to_string()
     }
 
     /// Get the length of the document in characters.
     pub fn len_chars(&self) -> usize {
-        self.rope.len_chars()
+        self.text.len_unicode()
+    }
+
+    /// Get the length of the document in UTF-8 bytes.
+    pub fn len_bytes(&self) -> usize {
+        self.text.len_utf8()
+    }
+
+    /// Get the length of the document in UTF-16 code units.
+    pub fn len_utf16(&self) -> usize {
+        self.text.len_utf16()
     }
 
     /// Check if the document is empty.
     pub fn is_empty(&self) -> bool {
-        self.rope.len_chars() == 0
+        self.text.len_unicode() == 0
     }
 
     /// Insert text and record edit info for incremental rendering.
-    pub fn insert_tracked(&mut self, pos: usize, text: &str) {
+    pub fn insert_tracked(&mut self, pos: usize, text: &str) -> LoroResult<()> {
         let in_block_syntax_zone = self.is_in_block_syntax_zone(pos);
         self.last_edit = Some(EditInfo {
             edit_char_pos: pos,
@@ -142,36 +181,94 @@ impl EditorDocument {
             contains_newline: text.contains('\n'),
             in_block_syntax_zone,
         });
-        self.rope.insert(pos, text);
+        self.text.insert(pos, text)
     }
 
     /// Remove text range and record edit info for incremental rendering.
-    pub fn remove_tracked(&mut self, range: std::ops::Range<usize>) {
-        // Check if deleted region contains newline - borrow inner JumpRope
-        let contains_newline = self.rope.borrow().slice_chars(range.clone()).any(|c| c == '\n');
-        let in_block_syntax_zone = self.is_in_block_syntax_zone(range.start);
+    pub fn remove_tracked(&mut self, start: usize, len: usize) -> LoroResult<()> {
+        let content = self.text.to_string();
+        let end = start + len;
+        let contains_newline = content
+            .chars()
+            .skip(start)
+            .take(len)
+            .any(|c| c == '\n');
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
+
         self.last_edit = Some(EditInfo {
-            edit_char_pos: range.start,
+            edit_char_pos: start,
             inserted_len: 0,
-            deleted_len: range.end - range.start,
+            deleted_len: len,
             contains_newline,
             in_block_syntax_zone,
         });
-        self.rope.remove(range);
+        self.text.delete(start, len)
     }
 
     /// Replace text (delete then insert) and record combined edit info.
-    pub fn replace_tracked(&mut self, range: std::ops::Range<usize>, text: &str) {
-        let delete_has_newline = self.rope.borrow().slice_chars(range.clone()).any(|c| c == '\n');
-        let in_block_syntax_zone = self.is_in_block_syntax_zone(range.start);
+    pub fn replace_tracked(&mut self, start: usize, len: usize, text: &str) -> LoroResult<()> {
+        let content = self.text.to_string();
+        let delete_has_newline = content
+            .chars()
+            .skip(start)
+            .take(len)
+            .any(|c| c == '\n');
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
+
         self.last_edit = Some(EditInfo {
-            edit_char_pos: range.start,
+            edit_char_pos: start,
             inserted_len: text.chars().count(),
-            deleted_len: range.end - range.start,
+            deleted_len: len,
             contains_newline: delete_has_newline || text.contains('\n'),
             in_block_syntax_zone,
         });
-        self.rope.remove(range);
-        self.rope.insert(self.last_edit.as_ref().unwrap().edit_char_pos, text);
+
+        // Use splice for atomic replace
+        self.text.splice(start, len, text)?;
+        Ok(())
+    }
+
+    /// Undo the last operation.
+    /// Returns true if an undo was performed.
+    pub fn undo(&mut self) -> LoroResult<bool> {
+        self.undo_mgr.undo()
+    }
+
+    /// Redo the last undone operation.
+    /// Returns true if a redo was performed.
+    pub fn redo(&mut self) -> LoroResult<bool> {
+        self.undo_mgr.redo()
+    }
+
+    /// Check if undo is available.
+    pub fn can_undo(&self) -> bool {
+        self.undo_mgr.can_undo()
+    }
+
+    /// Check if redo is available.
+    pub fn can_redo(&self) -> bool {
+        self.undo_mgr.can_redo()
+    }
+
+    /// Get a slice of the document text.
+    /// Returns None if the range is invalid.
+    pub fn slice(&self, start: usize, end: usize) -> Option<String> {
+        self.text.slice(start, end).ok()
+    }
+}
+
+// EditorDocument can't derive Clone because LoroDoc/LoroText/UndoManager don't implement Clone.
+// This is intentional - the document should be the single source of truth.
+
+impl Clone for EditorDocument {
+    fn clone(&self) -> Self {
+        // Create a new document with the same content
+        let content = self.to_string();
+        let mut new_doc = Self::new(content);
+        new_doc.cursor = self.cursor;
+        new_doc.selection = self.selection;
+        new_doc.composition = self.composition.clone();
+        new_doc.last_edit = self.last_edit.clone();
+        new_doc
     }
 }

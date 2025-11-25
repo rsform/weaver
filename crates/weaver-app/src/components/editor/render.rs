@@ -6,9 +6,9 @@
 
 use super::document::EditInfo;
 use super::offset_map::{OffsetMapping, RenderResult};
-use super::paragraph::{ParagraphRender, hash_source, rope_slice_to_string};
+use super::paragraph::{ParagraphRender, hash_source, text_slice_to_string};
 use super::writer::{EditorWriter, SyntaxSpanInfo};
-use jumprope::JumpRopeBuf;
+use loro::LoroText;
 use markdown_weaver::Parser;
 use std::ops::Range;
 
@@ -105,11 +105,11 @@ fn adjust_paragraph_positions(
 /// # Returns
 /// Tuple of (rendered paragraphs, updated cache)
 pub fn render_paragraphs_incremental(
-    rope: &JumpRopeBuf,
+    text: &LoroText,
     cache: Option<&RenderCache>,
     edit: Option<&EditInfo>,
 ) -> (Vec<ParagraphRender>, RenderCache) {
-    let source = rope.to_string();
+    let source = text.to_string();
 
     // Handle empty document
     if source.is_empty() {
@@ -190,7 +190,7 @@ pub fn render_paragraphs_incremental(
 
         match EditorWriter::<_, _, ()>::new_boundary_only(
             &source,
-            rope,
+            text,
             parser,
             &mut scratch_output,
         )
@@ -213,7 +213,7 @@ pub fn render_paragraphs_incremental(
     let mut syn_id_offset = cache.map(|c| c.next_syn_id).unwrap_or(0);
 
     for (idx, (byte_range, char_range)) in paragraph_ranges.iter().enumerate() {
-        let para_source = rope_slice_to_string(rope, char_range.clone());
+        let para_source = text_slice_to_string(text, char_range.clone());
         let source_hash = hash_source(&para_source);
 
         tracing::debug!(
@@ -250,8 +250,11 @@ pub fn render_paragraphs_incremental(
 
             (cached.html.clone(), adjusted_map, adjusted_syntax)
         } else {
-            // Fresh render needed
-            let para_rope = JumpRopeBuf::from(para_source.as_str());
+            // Fresh render needed - create detached LoroDoc for this paragraph
+            let para_doc = loro::LoroDoc::new();
+            let para_text = para_doc.get_text("content");
+            let _ = para_text.insert(0, &para_source);
+
             let parser = Parser::new_ext(&para_source, weaver_renderer::default_md_options())
                 .into_offset_iter();
             let mut output = String::new();
@@ -259,7 +262,7 @@ pub fn render_paragraphs_incremental(
             let (mut offset_map, mut syntax_spans) =
                 match EditorWriter::<_, _, ()>::new_with_offsets(
                     &para_source,
-                    &para_rope,
+                    &para_text,
                     parser,
                     &mut output,
                     node_id_offset,
@@ -374,7 +377,7 @@ pub fn render_paragraphs_incremental(
                     utf16_len: 1,
                 }],
                 syntax_spans: vec![],
-                source_hash: hash_source(&rope_slice_to_string(rope, gap_start_char..gap_end_char)),
+                source_hash: hash_source(&text_slice_to_string(text, gap_start_char..gap_end_char)),
             });
         }
 
@@ -386,8 +389,8 @@ pub fn render_paragraphs_incremental(
     // Add trailing gap if needed
     let has_trailing_newlines = source.ends_with("\n\n") || source.ends_with("\n");
     if has_trailing_newlines {
-        let doc_end_char = rope.len_chars();
-        let doc_end_byte = rope.len_bytes();
+        let doc_end_char = text.len_unicode();
+        let doc_end_byte = text.len_utf8();
 
         if doc_end_char > prev_end_char {
             // Position-based ID for trailing gap

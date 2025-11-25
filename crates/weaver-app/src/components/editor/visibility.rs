@@ -33,29 +33,57 @@ impl VisibilityState {
         let mut visible = HashSet::new();
 
         for span in syntax_spans {
+            // Find the paragraph containing this span for boundary clamping
+            let para_bounds = find_paragraph_bounds(&span.char_range, paragraphs);
+
             let should_show = match span.syntax_type {
                 SyntaxType::Inline => {
                     // Show if cursor within formatted span content OR adjacent to markers
-                    // "Adjacent" means within 1 char of the syntax boundaries
-                    let extended_range = span.char_range.start.saturating_sub(1)
-                        ..span.char_range.end.saturating_add(1);
+                    // "Adjacent" means within 1 char of the syntax boundaries,
+                    // clamped to paragraph bounds (paragraphs are split by newlines,
+                    // so clamping to para bounds prevents cross-line extension)
+                    let extended_start =
+                        safe_extend_left(span.char_range.start, 1, para_bounds.as_ref());
+                    let extended_end =
+                        safe_extend_right(span.char_range.end, 1, para_bounds.as_ref());
+                    let extended_range = extended_start..extended_end;
 
                     // Also show if cursor is anywhere in the formatted_range
                     // (the region between paired opening/closing markers)
+                    // Extend by 1 char on BOTH sides for symmetric "approaching" behavior,
+                    // clamped to paragraph bounds.
                     let in_formatted_region = span
                         .formatted_range
                         .as_ref()
-                        .map(|r| r.contains(&cursor_offset))
+                        .map(|r| {
+                            let ext_start = safe_extend_left(r.start, 1, para_bounds.as_ref());
+                            let ext_end = safe_extend_right(r.end, 1, para_bounds.as_ref());
+                            cursor_offset >= ext_start && cursor_offset <= ext_end
+                        })
                         .unwrap_or(false);
 
-                    extended_range.contains(&cursor_offset)
+                    let in_extended = extended_range.contains(&cursor_offset);
+                    let result = in_extended
                         || in_formatted_region
                         || selection_overlaps(selection, &span.char_range)
                         || span
                             .formatted_range
                             .as_ref()
                             .map(|r| selection_overlaps(selection, r))
-                            .unwrap_or(false)
+                            .unwrap_or(false);
+
+                    tracing::debug!(
+                        "[VISIBILITY] span {} char_range {:?} formatted_range {:?} cursor {} -> in_extended={} in_formatted={} visible={}",
+                        span.syn_id,
+                        span.char_range,
+                        span.formatted_range,
+                        cursor_offset,
+                        in_extended,
+                        in_formatted_region,
+                        result
+                    );
+
+                    result
                 }
                 SyntaxType::Block => {
                     // Show if cursor anywhere in same paragraph
@@ -114,6 +142,42 @@ fn cursor_in_same_paragraph(
     }
 
     false
+}
+
+/// Find the paragraph bounds containing a syntax span.
+fn find_paragraph_bounds(
+    syntax_range: &Range<usize>,
+    paragraphs: &[ParagraphRender],
+) -> Option<Range<usize>> {
+    for para in paragraphs {
+        // Skip gap paragraphs
+        if para.syntax_spans.is_empty() && !para.char_range.is_empty() {
+            continue;
+        }
+
+        if para.char_range.start <= syntax_range.start && syntax_range.end <= para.char_range.end {
+            return Some(para.char_range.clone());
+        }
+    }
+    None
+}
+
+/// Safely extend a position leftward by `amount` chars, clamped to paragraph bounds.
+///
+/// Paragraphs are already split by newlines, so clamping to paragraph bounds
+/// naturally prevents extending across line boundaries.
+fn safe_extend_left(pos: usize, amount: usize, para_bounds: Option<&Range<usize>>) -> usize {
+    let min_pos = para_bounds.map(|p| p.start).unwrap_or(0);
+    pos.saturating_sub(amount).max(min_pos)
+}
+
+/// Safely extend a position rightward by `amount` chars, clamped to paragraph bounds.
+///
+/// Paragraphs are already split by newlines, so clamping to paragraph bounds
+/// naturally prevents extending across line boundaries.
+fn safe_extend_right(pos: usize, amount: usize, para_bounds: Option<&Range<usize>>) -> usize {
+    let max_pos = para_bounds.map(|p| p.end).unwrap_or(usize::MAX);
+    pos.saturating_add(amount).min(max_pos)
 }
 
 #[cfg(test)]
@@ -197,10 +261,12 @@ mod tests {
 
     #[test]
     fn test_inline_visibility_cursor_adjacent() {
+        // "test **bold** after"
+        //       5  7
         let spans = vec![
             make_span("s0", 5, 7, SyntaxType::Inline), // ** at positions 5-6
         ];
-        let paras = vec![make_para(0, 20, spans.clone())];
+        let paras = vec![make_para(0, 19, spans.clone())];
 
         // Cursor at position 4 (one before ** which starts at 5)
         let vis = VisibilityState::calculate(4, None, &spans, &paras);
@@ -216,7 +282,7 @@ mod tests {
         let spans = vec![
             make_span("s0", 10, 12, SyntaxType::Inline),
         ];
-        let paras = vec![make_para(0, 30, spans.clone())];
+        let paras = vec![make_para(0, 33, spans.clone())];
 
         // Cursor at position 0 (far from **)
         let vis = VisibilityState::calculate(0, None, &spans, &paras);
@@ -259,11 +325,44 @@ mod tests {
         let spans = vec![
             make_span("s0", 5, 7, SyntaxType::Inline),
         ];
-        let paras = vec![make_para(0, 20, spans.clone())];
+        let paras = vec![make_para(0, 24, spans.clone())];
 
         // Selection overlaps the syntax span
         let selection = Selection { anchor: 3, head: 10 };
         let vis = VisibilityState::calculate(10, Some(&selection), &spans, &paras);
         assert!(vis.is_visible("s0"), "** should be visible when selection overlaps");
+    }
+
+    #[test]
+    fn test_paragraph_boundary_blocks_extension() {
+        // Cursor in paragraph 2 should NOT reveal syntax in paragraph 1,
+        // even if cursor is only 1 char after the paragraph boundary
+        // (paragraph bounds clamp the extension)
+        let spans = vec![
+            make_span_with_range("s0", 0, 2, SyntaxType::Inline, 0..8), // opening **
+            make_span_with_range("s1", 6, 8, SyntaxType::Inline, 0..8), // closing **
+        ];
+        let paras = vec![
+            make_para(0, 8, spans.clone()),  // "**bold**"
+            make_para(9, 13, vec![]),        // "text" (after newline)
+        ];
+
+        // Cursor at position 9 (start of second paragraph)
+        // Should NOT reveal the closing ** because para bounds clamp extension
+        let vis = VisibilityState::calculate(9, None, &spans, &paras);
+        assert!(!vis.is_visible("s1"), "closing ** should NOT be visible when cursor is in next paragraph");
+    }
+
+    #[test]
+    fn test_extension_clamps_to_paragraph() {
+        // Syntax at very start of paragraph - extension left should stop at para start
+        let spans = vec![
+            make_span_with_range("s0", 0, 2, SyntaxType::Inline, 0..8),
+        ];
+        let paras = vec![make_para(0, 8, spans.clone())];
+
+        // Cursor at position 0 - should still see the opening **
+        let vis = VisibilityState::calculate(0, None, &spans, &paras);
+        assert!(vis.is_visible("s0"), "** at start should be visible when cursor at position 0");
     }
 }

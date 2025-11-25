@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 18
-  html: "<p id=\"n0\">Some <span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"5\" data-char-end=\"6\">*</span><em>italic<span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"12\" data-char-end=\"13\">*</span></em> text</p>\n"
+  html: "<p id=\"n0\">Some <span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"5\" data-char-end=\"6\">*</span><em>italic</em><span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"12\" data-char-end=\"13\">*</span> text</p>\n"
   offset_map:
     - byte_range:
         - 0
@@ -31,13 +31,23 @@ expression: result
       child_index: ~
       utf16_len: 5
     - byte_range:
+        - 5
+        - 6
+      char_range:
+        - 5
+        - 6
+      node_id: n0
+      char_offset_in_node: 5
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
         - 6
         - 12
       char_range:
         - 6
         - 12
       node_id: n0
-      char_offset_in_node: 5
+      char_offset_in_node: 6
       child_index: ~
       utf16_len: 6
     - byte_range:
@@ -47,7 +57,7 @@ expression: result
         - 12
         - 13
       node_id: n0
-      char_offset_in_node: 11
+      char_offset_in_node: 12
       child_index: ~
       utf16_len: 1
     - byte_range:
@@ -57,7 +67,7 @@ expression: result
         - 13
         - 18
       node_id: n0
-      char_offset_in_node: 12
+      char_offset_in_node: 13
       child_index: ~
       utf16_len: 5
   source_hash: 4363411941421262428
