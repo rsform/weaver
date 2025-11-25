@@ -1,0 +1,91 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 6
+  char_range:
+    - 0
+    - 6
+  html: "<p id=\"n0\">First<span class=\"md-syntax-inline\">\n</span></p>\n"
+  offset_map:
+    - byte_range:
+        - 0
+        - 0
+      char_range:
+        - 0
+        - 0
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 0
+        - 5
+      char_range:
+        - 0
+        - 5
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 5
+    - byte_range:
+        - 5
+        - 6
+      char_range:
+        - 5
+        - 6
+      node_id: n0
+      char_offset_in_node: 5
+      child_index: ~
+      utf16_len: 1
+  source_hash: 6799294212516041738
+- byte_range:
+    - 8
+    - 9
+  char_range:
+    - 8
+    - 9
+  html: "<span id=\"gap-8-9\">​</span>"
+  offset_map:
+    - byte_range:
+        - 8
+        - 9
+      char_range:
+        - 8
+        - 9
+      node_id: gap-8-9
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 1
+  source_hash: 4789919281594481934
+- byte_range:
+    - 9
+    - 15
+  char_range:
+    - 9
+    - 15
+  html: "<p id=\"n1\">Second</p>\n"
+  offset_map:
+    - byte_range:
+        - 9
+        - 9
+      char_range:
+        - 9
+        - 9
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 9
+        - 15
+      char_range:
+        - 9
+        - 15
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 6
+  source_hash: 14114649427451643080

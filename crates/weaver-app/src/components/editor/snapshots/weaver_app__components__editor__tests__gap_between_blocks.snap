@@ -1,0 +1,82 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 10
+  char_range:
+    - 0
+    - 10
+  html: "<h1 data-node-id=\"n0\"><span class=\"md-syntax-block\"># </span>Heading<span class=\"md-syntax-inline\">\n</span></h1>\n"
+  offset_map:
+    - byte_range:
+        - 0
+        - 0
+      char_range:
+        - 0
+        - 0
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 0
+        - 2
+      char_range:
+        - 0
+        - 2
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 2
+        - 9
+      char_range:
+        - 2
+        - 9
+      node_id: n0
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 7
+    - byte_range:
+        - 9
+        - 10
+      char_range:
+        - 9
+        - 10
+      node_id: n0
+      char_offset_in_node: 9
+      child_index: ~
+      utf16_len: 1
+  source_hash: 9728620054493468379
+- byte_range:
+    - 11
+    - 26
+  char_range:
+    - 11
+    - 26
+  html: "<p id=\"n1\">Paragraph below</p>\n"
+  offset_map:
+    - byte_range:
+        - 11
+        - 11
+      char_range:
+        - 11
+        - 11
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 11
+        - 26
+      char_range:
+        - 11
+        - 26
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 15
+  source_hash: 3568739071302808795

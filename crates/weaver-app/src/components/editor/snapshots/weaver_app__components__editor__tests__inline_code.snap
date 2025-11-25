@@ -1,0 +1,53 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 16
+  char_range:
+    - 0
+    - 16
+  html: "<p id=\"n0\">Some <span class=\"md-syntax-inline\">`</span><code>code</code><span class=\"md-syntax-inline\">`</span> here</p>\n"
+  offset_map:
+    - byte_range:
+        - 0
+        - 0
+      char_range:
+        - 0
+        - 0
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 0
+        - 5
+      char_range:
+        - 0
+        - 5
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 5
+    - byte_range:
+        - 5
+        - 11
+      char_range:
+        - 6
+        - 10
+      node_id: n0
+      char_offset_in_node: 5
+      child_index: ~
+      utf16_len: 4
+    - byte_range:
+        - 11
+        - 16
+      char_range:
+        - 11
+        - 16
+      node_id: n0
+      char_offset_in_node: 9
+      child_index: ~
+      utf16_len: 5
+  source_hash: 10489263388249723293

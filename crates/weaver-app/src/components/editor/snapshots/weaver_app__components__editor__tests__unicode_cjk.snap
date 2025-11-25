@@ -1,0 +1,33 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 12
+  char_range:
+    - 0
+    - 4
+  html: "<p id=\"n0\">你好世界</p>\n"
+  offset_map:
+    - byte_range:
+        - 0
+        - 0
+      char_range:
+        - 0
+        - 0
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 0
+        - 12
+      char_range:
+        - 0
+        - 4
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 4
+  source_hash: 18244118180434471326

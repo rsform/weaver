@@ -1,0 +1,73 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 27
+  char_range:
+    - 0
+    - 27
+  html: "<p id=\"n0\">Some <span class=\"md-syntax-inline\">*</span><em><span class=\"md-syntax-inline\">**</span><strong>bold italic<span class=\"md-syntax-inline\">**</span></strong><span class=\"md-syntax-inline\">*</span></em> text</p>\n"
+  offset_map:
+    - byte_range:
+        - 0
+        - 0
+      char_range:
+        - 0
+        - 0
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 0
+        - 5
+      char_range:
+        - 0
+        - 5
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 5
+    - byte_range:
+        - 8
+        - 19
+      char_range:
+        - 8
+        - 19
+      node_id: n0
+      char_offset_in_node: 5
+      child_index: ~
+      utf16_len: 11
+    - byte_range:
+        - 19
+        - 21
+      char_range:
+        - 19
+        - 21
+      node_id: n0
+      char_offset_in_node: 16
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 21
+        - 22
+      char_range:
+        - 21
+        - 22
+      node_id: n0
+      char_offset_in_node: 18
+      child_index: ~
+      utf16_len: 1
+    - byte_range:
+        - 22
+        - 27
+      char_range:
+        - 22
+        - 27
+      node_id: n0
+      char_offset_in_node: 19
+      child_index: ~
+      utf16_len: 5
+  source_hash: 17839597501764990486

@@ -128,6 +128,10 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: St
     paragraph_ranges: Vec<(Range<usize>, Range<usize>)>, // (byte_range, char_range)
     current_paragraph_start: Option<(usize, usize)>, // (byte_offset, char_offset)
 
+    /// When true, skip HTML generation and only track paragraph boundaries.
+    /// Used for fast boundary discovery in incremental rendering.
+    boundary_only: bool,
+
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
@@ -178,6 +182,47 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             current_node_child_count: 0,
             paragraph_ranges: Vec::new(),
             current_paragraph_start: None,
+            boundary_only: false,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Create a writer that only tracks paragraph boundaries without generating HTML.
+    /// Used for fast boundary discovery in incremental rendering.
+    pub fn new_boundary_only(
+        source: &'a str,
+        source_rope: &'a JumpRopeBuf,
+        events: I,
+        writer: W,
+    ) -> Self {
+        Self {
+            source,
+            source_rope,
+            events,
+            writer,
+            last_byte_offset: 0,
+            last_char_offset: 0,
+            end_newline: true,
+            in_non_writing_block: false,
+            table_state: TableState::Head,
+            table_alignments: vec![],
+            table_cell_index: 0,
+            numbers: HashMap::new(),
+            embed_provider: None,
+            code_buffer: None,
+            code_buffer_byte_range: None,
+            code_buffer_char_range: None,
+            pending_blockquote_range: None,
+            render_tables_as_markdown: true,
+            table_start_offset: None,
+            offset_maps: Vec::new(),
+            next_node_id: 0,
+            current_node_id: None,
+            current_node_char_offset: 0,
+            current_node_child_count: 0,
+            paragraph_ranges: Vec::new(),
+            current_paragraph_start: None,
+            boundary_only: true,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -211,22 +256,28 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             current_node_child_count: self.current_node_child_count,
             paragraph_ranges: self.paragraph_ranges,
             current_paragraph_start: self.current_paragraph_start,
+            boundary_only: self.boundary_only,
             _phantom: std::marker::PhantomData,
         }
     }
     #[inline]
     fn write_newline(&mut self) -> Result<(), W::Error> {
         self.end_newline = true;
+        if self.boundary_only {
+            return Ok(());
+        }
         self.writer.write_str("\n")
     }
 
     #[inline]
     fn write(&mut self, s: &str) -> Result<(), W::Error> {
-        self.writer.write_str(s)?;
         if !s.is_empty() {
             self.end_newline = s.ends_with('\n');
         }
-        Ok(())
+        if self.boundary_only {
+            return Ok(());
+        }
+        self.writer.write_str(s)
     }
 
     /// Emit syntax span for a given range and record offset mapping
@@ -234,13 +285,20 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
         if range.start < range.end {
             let syntax = &self.source[range.clone()];
             if !syntax.is_empty() {
+                let char_start = self.last_char_offset;
+                let syntax_char_len = syntax.chars().count();
+
+                // In boundary_only mode, just update offsets without HTML
+                if self.boundary_only {
+                    self.last_char_offset = char_start + syntax_char_len;
+                    self.last_byte_offset = range.end;
+                    return Ok(());
+                }
+
                 let class = match classify_syntax(syntax) {
                     SyntaxClass::Inline => "md-syntax-inline",
                     SyntaxClass::Block => "md-syntax-block",
                 };
-
-                let char_start = self.last_char_offset;
-                let syntax_char_len = syntax.chars().count();
 
                 // If we're outside any node, create a wrapper span for tracking
                 let created_node = if self.current_node_id.is_none() {
@@ -278,6 +336,59 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Emit syntax span inside current node with full offset tracking.
+    ///
+    /// Use this for syntax markers that appear inside block elements (headings, lists,
+    /// blockquotes, code fences). Unlike `emit_syntax` which is for gaps and creates
+    /// wrapper nodes, this assumes we're already inside a tracked node.
+    ///
+    /// - Writes `<span class="md-syntax-{class}">{syntax}</span>`
+    /// - Records offset mapping (for cursor positioning)
+    /// - Updates both `last_char_offset` and `last_byte_offset`
+    fn emit_inner_syntax(
+        &mut self,
+        syntax: &str,
+        byte_start: usize,
+        class: SyntaxClass,
+    ) -> Result<(), W::Error> {
+        if syntax.is_empty() {
+            return Ok(());
+        }
+
+        let char_start = self.last_char_offset;
+        let syntax_char_len = syntax.chars().count();
+        let byte_end = byte_start + syntax.len();
+
+        // In boundary_only mode, just update offsets
+        if self.boundary_only {
+            self.last_char_offset = char_start + syntax_char_len;
+            self.last_byte_offset = byte_end;
+            return Ok(());
+        }
+
+        let class_str = match class {
+            SyntaxClass::Inline => "md-syntax-inline",
+            SyntaxClass::Block => "md-syntax-block",
+        };
+
+        self.write("<span class=\"")?;
+        self.write(class_str)?;
+        self.write("\">")?;
+        escape_html(&mut self.writer, syntax)?;
+        self.write("</span>")?;
+
+        // Record offset mapping for cursor positioning
+        self.record_mapping(
+            byte_start..byte_end,
+            char_start..char_start + syntax_char_len,
+        );
+
+        self.last_char_offset = char_start + syntax_char_len;
+        self.last_byte_offset = byte_end;
+
         Ok(())
     }
 
@@ -835,7 +946,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 // Emit > syntax if we're inside a blockquote
                 if let Some(bq_range) = self.pending_blockquote_range.take() {
                     if bq_range.start < bq_range.end {
-                        let raw_text = &self.source[bq_range];
+                        let raw_text = &self.source[bq_range.clone()];
                         if let Some(gt_pos) = raw_text.find('>') {
                             // Extract > [!NOTE] or just >
                             let after_gt = &raw_text[gt_pos + 1..];
@@ -852,9 +963,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                             };
 
                             let syntax = &raw_text[gt_pos..syntax_end];
-                            self.write("<span class=\"md-syntax-block\">")?;
-                            escape_html(&mut self.writer, syntax)?;
-                            self.write("</span> ")?; // Add space after
+                            let syntax_byte_start = bq_range.start + gt_pos;
+                            self.emit_inner_syntax(syntax, syntax_byte_start, SyntaxClass::Block)?;
                         }
                     }
                 }
@@ -938,27 +1048,11 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     // Find where the # actually starts (might have leading whitespace)
                     if let Some(hash_pos) = raw_text.find(&pattern) {
                         // Extract "# " or "## " etc
-                        let syntax_start = hash_pos;
                         let syntax_end = (hash_pos + count + 1).min(raw_text.len());
-                        let syntax = &raw_text[syntax_start..syntax_end];
-                        let syntax_char_len = syntax.chars().count();
+                        let syntax = &raw_text[hash_pos..syntax_end];
+                        let syntax_byte_start = range.start + hash_pos;
 
-                        // Calculate byte range for this syntax in the source
-                        let syntax_byte_start = range.start + syntax_start;
-                        let syntax_byte_end = range.start + syntax_end;
-                        let char_start = self.last_char_offset;
-
-                        self.write("<span class=\"md-syntax-block\">")?;
-                        escape_html(&mut self.writer, syntax)?;
-                        self.write("</span>")?;
-
-                        // Record offset mapping and update char tracking
-                        // Note: last_byte_offset is managed by the main event loop
-                        self.record_mapping(
-                            syntax_byte_start..syntax_byte_end,
-                            char_start..char_start + syntax_char_len
-                        );
-                        self.last_char_offset = char_start + syntax_char_len;
+                        self.emit_inner_syntax(syntax, syntax_byte_start, SyntaxClass::Block)?;
                     }
                 }
                 Ok(())
@@ -1137,24 +1231,36 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                                 .map(|pos| pos + 1)
                                 .unwrap_or(1);
                             let syntax = &trimmed[..marker_end.min(trimmed.len())];
+                            let char_start = self.last_char_offset;
                             let syntax_char_len = leading_ws_chars + syntax.chars().count();
                             let syntax_byte_len = leading_ws_bytes + syntax.len();
                             self.write("<span class=\"md-syntax-block\">")?;
                             escape_html(&mut self.writer, syntax)?;
                             self.write("</span>")?;
-                            self.last_char_offset += syntax_char_len;
+                            // Record offset mapping for cursor positioning
+                            self.record_mapping(
+                                range.start..range.start + syntax_byte_len,
+                                char_start..char_start + syntax_char_len,
+                            );
+                            self.last_char_offset = char_start + syntax_char_len;
                             self.last_byte_offset = range.start + syntax_byte_len;
                         } else if marker.is_ascii_digit() {
                             // Ordered list: extract "1. " or similar
                             if let Some(dot_pos) = trimmed.find('.') {
                                 let syntax_end = (dot_pos + 2).min(trimmed.len());
                                 let syntax = &trimmed[..syntax_end].trim_end();
+                                let char_start = self.last_char_offset;
                                 let syntax_char_len = leading_ws_chars + syntax.chars().count();
                                 let syntax_byte_len = leading_ws_bytes + syntax.len();
                                 self.write("<span class=\"md-syntax-block\">")?;
                                 escape_html(&mut self.writer, syntax)?;
                                 self.write("</span>")?;
-                                self.last_char_offset += syntax_char_len;
+                                // Record offset mapping for cursor positioning
+                                self.record_mapping(
+                                    range.start..range.start + syntax_byte_len,
+                                    char_start..char_start + syntax_char_len,
+                                );
+                                self.last_char_offset = char_start + syntax_char_len;
                                 self.last_byte_offset = range.start + syntax_byte_len;
                             }
                         }

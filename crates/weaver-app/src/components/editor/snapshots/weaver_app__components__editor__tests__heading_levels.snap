@@ -1,0 +1,190 @@
+---
+source: crates/weaver-app/src/components/editor/tests.rs
+expression: result
+---
+- byte_range:
+    - 0
+    - 5
+  char_range:
+    - 0
+    - 5
+  html: "<h1 data-node-id=\"n0\"><span class=\"md-syntax-block\"># </span>H1<span class=\"md-syntax-inline\">\n</span></h1>\n"
+  offset_map:
+    - byte_range:
+        - 0
+        - 0
+      char_range:
+        - 0
+        - 0
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 0
+        - 2
+      char_range:
+        - 0
+        - 2
+      node_id: n0
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 2
+        - 4
+      char_range:
+        - 2
+        - 4
+      node_id: n0
+      char_offset_in_node: 2
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 4
+        - 5
+      char_range:
+        - 4
+        - 5
+      node_id: n0
+      char_offset_in_node: 4
+      child_index: ~
+      utf16_len: 1
+  source_hash: 7777810684660076739
+- byte_range:
+    - 6
+    - 12
+  char_range:
+    - 6
+    - 12
+  html: "<h2 data-node-id=\"n1\"><span class=\"md-syntax-block\">## </span>H2<span class=\"md-syntax-inline\">\n</span></h2>\n"
+  offset_map:
+    - byte_range:
+        - 6
+        - 6
+      char_range:
+        - 6
+        - 6
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 6
+        - 9
+      char_range:
+        - 6
+        - 9
+      node_id: n1
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 3
+    - byte_range:
+        - 9
+        - 11
+      char_range:
+        - 9
+        - 11
+      node_id: n1
+      char_offset_in_node: 3
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 11
+        - 12
+      char_range:
+        - 11
+        - 12
+      node_id: n1
+      char_offset_in_node: 5
+      child_index: ~
+      utf16_len: 1
+  source_hash: 252166429066241764
+- byte_range:
+    - 13
+    - 20
+  char_range:
+    - 13
+    - 20
+  html: "<h3 data-node-id=\"n2\"><span class=\"md-syntax-block\">### </span>H3<span class=\"md-syntax-inline\">\n</span></h3>\n"
+  offset_map:
+    - byte_range:
+        - 13
+        - 13
+      char_range:
+        - 13
+        - 13
+      node_id: n2
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 13
+        - 17
+      char_range:
+        - 13
+        - 17
+      node_id: n2
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 4
+    - byte_range:
+        - 17
+        - 19
+      char_range:
+        - 17
+        - 19
+      node_id: n2
+      char_offset_in_node: 4
+      child_index: ~
+      utf16_len: 2
+    - byte_range:
+        - 19
+        - 20
+      char_range:
+        - 19
+        - 20
+      node_id: n2
+      char_offset_in_node: 6
+      child_index: ~
+      utf16_len: 1
+  source_hash: 7264449752500241334
+- byte_range:
+    - 21
+    - 28
+  char_range:
+    - 21
+    - 28
+  html: "<h4 data-node-id=\"n3\"><span class=\"md-syntax-block\">#### </span>H4</h4>\n"
+  offset_map:
+    - byte_range:
+        - 21
+        - 21
+      char_range:
+        - 21
+        - 21
+      node_id: n3
+      char_offset_in_node: 0
+      child_index: 0
+      utf16_len: 0
+    - byte_range:
+        - 21
+        - 26
+      char_range:
+        - 21
+        - 26
+      node_id: n3
+      char_offset_in_node: 0
+      child_index: ~
+      utf16_len: 5
+    - byte_range:
+        - 26
+        - 28
+      char_range:
+        - 26
+        - 28
+      node_id: n3
+      char_offset_in_node: 5
+      child_index: ~
+      utf16_len: 2
+  source_hash: 2886251954581387532
