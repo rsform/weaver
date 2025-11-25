@@ -13,6 +13,7 @@ mod render;
 mod rope_writer;
 mod storage;
 mod toolbar;
+mod visibility;
 mod writer;
 
 #[cfg(test)]
@@ -22,11 +23,12 @@ pub use document::{Affinity, CompositionState, CursorState, EditorDocument, Sele
 pub use formatting::{FormatAction, apply_formatting, find_word_boundaries};
 pub use offset_map::{OffsetMapping, RenderResult, find_mapping_for_byte};
 pub use paragraph::ParagraphRender;
-pub use render::{RenderCache, render_paragraphs, render_paragraphs_incremental};
+pub use render::{RenderCache, render_paragraphs_incremental};
 pub use rope_writer::RopeWriter;
 pub use storage::{EditorSnapshot, clear_storage, load_from_storage, save_to_storage};
 pub use toolbar::EditorToolbar;
-pub use writer::WriterResult;
+pub use visibility::VisibilityState;
+pub use writer::{SyntaxSpanInfo, SyntaxType, WriterResult};
 
 use dioxus::prelude::*;
 
@@ -91,6 +93,14 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             .collect::<Vec<_>>()
     });
 
+    // Flatten syntax spans from all paragraphs
+    let syntax_spans = use_memo(move || {
+        paragraphs()
+            .iter()
+            .flat_map(|p| p.syntax_spans.iter().cloned())
+            .collect::<Vec<_>>()
+    });
+
     // Cache paragraphs for change detection AND for event handlers to access
     let mut cached_paragraphs = use_signal(|| Vec::<ParagraphRender>::new());
 
@@ -129,7 +139,17 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
         }
 
         // Store for next comparison AND for event handlers (write-only, no reactive read)
-        cached_paragraphs.set(new_paras);
+        cached_paragraphs.set(new_paras.clone());
+
+        // Update syntax visibility after DOM changes
+        let doc = document();
+        let spans = syntax_spans();
+        update_syntax_visibility(
+            doc.cursor.offset,
+            doc.selection.as_ref(),
+            &spans,
+            &new_paras,
+        );
     });
 
     // Auto-save with debounce
@@ -180,6 +200,15 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                         if dominated {
                             let paras = cached_paragraphs();
                             sync_cursor_from_dom(&mut document, editor_id, &paras);
+                            // Update syntax visibility after cursor sync
+                            let doc = document();
+                            let spans = syntax_spans();
+                            update_syntax_visibility(
+                                doc.cursor.offset,
+                                doc.selection.as_ref(),
+                                &spans,
+                                &paras,
+                            );
                         }
                     },
 
@@ -187,6 +216,30 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                         // After mouse click, sync cursor from DOM
                         let paras = cached_paragraphs();
                         sync_cursor_from_dom(&mut document, editor_id, &paras);
+                        // Update syntax visibility after cursor sync
+                        let doc = document();
+                        let spans = syntax_spans();
+                        update_syntax_visibility(
+                            doc.cursor.offset,
+                            doc.selection.as_ref(),
+                            &spans,
+                            &paras,
+                        );
+                    },
+
+                    onmouseup: move |_evt| {
+                        // After drag selection, sync cursor/selection from DOM
+                        let paras = cached_paragraphs();
+                        sync_cursor_from_dom(&mut document, editor_id, &paras);
+                        // Update syntax visibility after cursor sync
+                        let doc = document();
+                        let spans = syntax_spans();
+                        update_syntax_visibility(
+                            doc.cursor.offset,
+                            doc.selection.as_ref(),
+                            &spans,
+                            &paras,
+                        );
                     },
 
                     onpaste: move |evt| {
@@ -195,6 +248,10 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
                     oncut: move |evt| {
                         handle_cut(evt, &mut document);
+                    },
+
+                    oncopy: move |evt| {
+                        handle_copy(evt, &document);
                     },
                 }
 
@@ -409,6 +466,50 @@ fn sync_cursor_from_dom(
     // No-op on non-wasm
 }
 
+/// Update syntax span visibility in the DOM based on cursor position.
+///
+/// Toggles the "hidden" class on syntax spans based on calculated visibility.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn update_syntax_visibility(
+    cursor_offset: usize,
+    selection: Option<&Selection>,
+    syntax_spans: &[SyntaxSpanInfo],
+    paragraphs: &[ParagraphRender],
+) {
+    let visibility =
+        visibility::VisibilityState::calculate(cursor_offset, selection, syntax_spans, paragraphs);
+
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+
+    // Update each syntax span's visibility
+    for span in syntax_spans {
+        let selector = format!("[data-syn-id='{}']", span.syn_id);
+        if let Ok(Some(element)) = document.query_selector(&selector) {
+            let class_list = element.class_list();
+            if visibility.is_visible(&span.syn_id) {
+                let _ = class_list.remove_1("hidden");
+            } else {
+                let _ = class_list.add_1("hidden");
+            }
+        }
+    }
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn update_syntax_visibility(
+    _cursor_offset: usize,
+    _selection: Option<&Selection>,
+    _syntax_spans: &[SyntaxSpanInfo],
+    _paragraphs: &[ParagraphRender],
+) {
+    // No-op on non-wasm
+}
+
 /// Handle paste events and insert text at cursor
 fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
     tracing::info!("[PASTE] handle_paste called");
@@ -444,22 +545,109 @@ fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>
     }
 }
 
-/// Handle cut events - browser copies selection, we delete it from rope
-/// Selection is synced via onkeyup/onclick, so doc.selection should be current
-fn handle_cut(_evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
+/// Handle cut events - extract text, write to clipboard, then delete from rope
+fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
     tracing::info!("[CUT] handle_cut called");
 
-    document.with_mut(|doc| {
-        if let Some(sel) = doc.selection {
-            let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-            if start != end {
-                tracing::info!("[CUT] Deleting selection {}..{}", start, end);
-                doc.rope.remove(start..end);
-                doc.cursor.offset = start;
-                doc.selection = None;
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        use dioxus::web::WebEventExt;
+        use wasm_bindgen::JsCast;
+
+        let base_evt = evt.as_web_event();
+        if let Some(clipboard_evt) = base_evt.dyn_ref::<web_sys::ClipboardEvent>() {
+            document.with_mut(|doc| {
+                if let Some(sel) = doc.selection {
+                    let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                    if start != end {
+                        // Extract text from rope
+                        let selected_text = extract_rope_slice(&doc.rope, start, end);
+                        tracing::info!(
+                            "[CUT] Extracted {} chars: {:?}",
+                            selected_text.len(),
+                            &selected_text[..selected_text.len().min(50)]
+                        );
+
+                        // Write to clipboard BEFORE deleting
+                        if let Some(data_transfer) = clipboard_evt.clipboard_data() {
+                            if let Err(e) = data_transfer.set_data("text/plain", &selected_text) {
+                                tracing::warn!("[CUT] Failed to set clipboard data: {:?}", e);
+                            }
+                        }
+
+                        // Now delete from rope
+                        doc.rope.remove(start..end);
+                        doc.cursor.offset = start;
+                        doc.selection = None;
+                    }
+                }
+            });
+        }
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        let _ = evt; // suppress unused warning
+    }
+}
+
+/// Handle copy events - extract text from rope, clean it up, write to clipboard
+fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
+    tracing::info!("[COPY] handle_copy called");
+
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        use dioxus::web::WebEventExt;
+        use wasm_bindgen::JsCast;
+
+        let base_evt = evt.as_web_event();
+        if let Some(clipboard_evt) = base_evt.dyn_ref::<web_sys::ClipboardEvent>() {
+            let doc = document.read();
+            if let Some(sel) = doc.selection {
+                let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                if start != end {
+                    // Extract text from rope
+                    let selected_text = extract_rope_slice(&doc.rope, start, end);
+
+                    // Strip zero-width chars used for gap handling
+                    let clean_text = selected_text
+                        .replace('\u{200C}', "")
+                        .replace('\u{200B}', "");
+
+                    tracing::info!(
+                        "[COPY] Extracted {} chars (cleaned to {})",
+                        selected_text.len(),
+                        clean_text.len()
+                    );
+
+                    // Write to clipboard
+                    if let Some(data_transfer) = clipboard_evt.clipboard_data() {
+                        if let Err(e) = data_transfer.set_data("text/plain", &clean_text) {
+                            tracing::warn!("[COPY] Failed to set clipboard data: {:?}", e);
+                        }
+                    }
+
+                    // Prevent browser's default copy (which would copy rendered HTML)
+                    evt.prevent_default();
+                }
             }
         }
-    });
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        let _ = (evt, document); // suppress unused warnings
+    }
+}
+
+/// Extract a slice of text from the rope as a String
+fn extract_rope_slice(rope: &jumprope::JumpRopeBuf, start: usize, end: usize) -> String {
+    let mut result = String::new();
+    let rope_ref = rope.borrow();
+    for substr in rope_ref.slice_substrings(start..end) {
+        result.push_str(substr);
+    }
+    result
 }
 
 /// Handle keyboard events and update document state
@@ -589,8 +777,48 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                     // Shift+Enter: hard line break (soft break)
                     doc.rope.insert(doc.cursor.offset, "  \n\u{200C}");
                     doc.cursor.offset += 3;
+                } else if let Some(ctx) = detect_list_context(&doc.rope, doc.cursor.offset) {
+                    // We're in a list item
+                    tracing::debug!("[ENTER] List context detected: {:?}", ctx);
+                    tracing::debug!(
+                        "[ENTER] Cursor at {}, rope len {}",
+                        doc.cursor.offset,
+                        doc.rope.len_chars()
+                    );
+                    if is_list_item_empty(&doc.rope, doc.cursor.offset, &ctx) {
+                        tracing::debug!("[ENTER] Item is empty, exiting list");
+                        // Empty item - exit list by removing marker and inserting paragraph break
+                        let line_start = find_line_start(&doc.rope, doc.cursor.offset);
+                        let line_end = find_line_end(&doc.rope, doc.cursor.offset);
+
+                        // Delete the empty list item line INCLUDING its trailing newline
+                        // line_end points to the newline, so +1 to include it
+                        let delete_end = (line_end + 1).min(doc.rope.len_chars());
+
+                        doc.rope.remove(line_start..delete_end);
+                        doc.cursor.offset = line_start;
+
+                        // Insert two newlines, a zero-width whitespace character, and then another
+                        // newline to properly split the list (TODO: clean up the weird whitespace
+                        // char once that new paragraph has content)
+                        doc.rope.insert(doc.cursor.offset, "\n\n\u{200C}\n");
+                        doc.cursor.offset += 2;
+                    } else {
+                        // Non-empty item - continue list
+                        let continuation = match ctx {
+                            ListContext::Unordered { indent, marker } => {
+                                format!("\n{}{} ", indent, marker)
+                            }
+                            ListContext::Ordered { indent, number } => {
+                                format!("\n{}{}. ", indent, number + 1)
+                            }
+                        };
+                        let len = continuation.chars().count();
+                        doc.rope.insert(doc.cursor.offset, &continuation);
+                        doc.cursor.offset += len;
+                    }
                 } else {
-                    // Enter: paragraph break
+                    // Not in a list - normal paragraph break
                     doc.rope.insert(doc.cursor.offset, "\n\n");
                     doc.cursor.offset += 2;
                 }
@@ -604,6 +832,107 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
             _ => {}
         }
     });
+}
+
+/// Describes what kind of list item the cursor is in, if any
+#[derive(Debug, Clone)]
+enum ListContext {
+    /// Unordered list with the given marker char ('-' or '*') and indentation
+    Unordered { indent: String, marker: char },
+    /// Ordered list with the current number and indentation
+    Ordered { indent: String, number: usize },
+}
+
+/// Detect if cursor is in a list item and return context for continuation.
+///
+/// Scans backwards to find start of current line, then checks for list marker.
+fn detect_list_context(rope: &jumprope::JumpRopeBuf, cursor_offset: usize) -> Option<ListContext> {
+    // Find start of current line
+    let line_start = find_line_start(rope, cursor_offset);
+
+    // Get the line content from start to cursor
+    let line_end = find_line_end(rope, cursor_offset);
+    if line_start >= line_end {
+        return None;
+    }
+
+    // Extract line text
+    let mut line = String::new();
+    let rope_ref = rope.borrow();
+    for substr in rope_ref.slice_substrings(line_start..line_end) {
+        line.push_str(substr);
+    }
+
+    // Parse indentation
+    let indent: String = line
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect();
+    let trimmed = &line[indent.len()..];
+
+    // Check for unordered list marker: "- " or "* "
+    if trimmed.starts_with("- ") {
+        return Some(ListContext::Unordered {
+            indent,
+            marker: '-',
+        });
+    }
+    if trimmed.starts_with("* ") {
+        return Some(ListContext::Unordered {
+            indent,
+            marker: '*',
+        });
+    }
+
+    // Check for ordered list marker: "1. ", "2. ", "123. ", etc.
+    if let Some(dot_pos) = trimmed.find(". ") {
+        let num_part = &trimmed[..dot_pos];
+        if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
+            if let Ok(number) = num_part.parse::<usize>() {
+                return Some(ListContext::Ordered { indent, number });
+            }
+        }
+    }
+
+    None
+}
+
+/// Check if the current list item is empty (just the marker, no content after cursor).
+///
+/// Used to determine whether Enter should continue the list or exit it.
+fn is_list_item_empty(
+    rope: &jumprope::JumpRopeBuf,
+    cursor_offset: usize,
+    ctx: &ListContext,
+) -> bool {
+    let line_start = find_line_start(rope, cursor_offset);
+    let line_end = find_line_end(rope, cursor_offset);
+
+    // Get line content
+    let mut line = String::new();
+    let rope_ref = rope.borrow();
+    for substr in rope_ref.slice_substrings(line_start..line_end) {
+        line.push_str(substr);
+    }
+
+    // Calculate expected marker length
+    let marker_len = match ctx {
+        ListContext::Unordered { indent, .. } => indent.len() + 2, // "- "
+        ListContext::Ordered { indent, number } => {
+            indent.len() + number.to_string().len() + 2 // "1. "
+        }
+    };
+
+    tracing::debug!(
+        "[LIST] is_empty check: line={:?}, line.len()={}, marker_len={}, result={}",
+        line,
+        line.len(),
+        marker_len,
+        line.len() <= marker_len
+    );
+
+    // Item is empty if line length equals marker length (nothing after marker)
+    line.len() <= marker_len
 }
 
 /// Get character at the given offset in the rope

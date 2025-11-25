@@ -122,24 +122,34 @@ pub fn find_mapping_for_char(
     // Rust ranges are end-exclusive, so range 0..10 covers positions 0-9.
     // When cursor is exactly at a boundary (e.g., position 10 between 0..10 and 10..20),
     // prefer the NEXT mapping so cursor goes "down" to new content.
-    let idx = offset_map
-        .binary_search_by(|mapping| {
-            if mapping.char_range.end <= char_offset {
-                // Cursor is at or after end of this mapping - look forward
-                std::cmp::Ordering::Less
-            } else if mapping.char_range.start > char_offset {
-                // Cursor is before this mapping
-                std::cmp::Ordering::Greater
+    let result = offset_map.binary_search_by(|mapping| {
+        if mapping.char_range.end <= char_offset {
+            // Cursor is at or after end of this mapping - look forward
+            std::cmp::Ordering::Less
+        } else if mapping.char_range.start > char_offset {
+            // Cursor is before this mapping
+            std::cmp::Ordering::Greater
+        } else {
+            // Cursor is within [start, end)
+            std::cmp::Ordering::Equal
+        }
+    });
+
+    let mapping = match result {
+        Ok(idx) => &offset_map[idx],
+        Err(idx) => {
+            // No exact match - cursor is at boundary between mappings (or past end)
+            // If cursor is exactly at end of previous mapping, return that mapping
+            // This handles cursor at end of document or end of last mapping
+            if idx > 0 && offset_map[idx - 1].char_range.end == char_offset {
+                &offset_map[idx - 1]
             } else {
-                // Cursor is within [start, end)
-                std::cmp::Ordering::Equal
+                return None;
             }
-        })
-        .ok()?;
+        }
+    };
 
-    let mapping = &offset_map[idx];
     let should_snap = mapping.is_invisible();
-
     Some((mapping, should_snap))
 }
 
