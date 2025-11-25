@@ -60,6 +60,15 @@ fn is_boundary_affecting(edit: &EditInfo) -> bool {
     false
 }
 
+/// Apply a signed delta to a usize, saturating at 0 on underflow.
+fn apply_delta(val: usize, delta: isize) -> usize {
+    if delta >= 0 {
+        val.saturating_add(delta as usize)
+    } else {
+        val.saturating_sub((-delta) as usize)
+    }
+}
+
 /// Adjust a cached paragraph's positions after an earlier edit.
 fn adjust_paragraph_positions(
     cached: &CachedParagraph,
@@ -68,23 +77,23 @@ fn adjust_paragraph_positions(
 ) -> ParagraphRender {
     let mut adjusted_map = cached.offset_map.clone();
     for mapping in &mut adjusted_map {
-        mapping.char_range.start = (mapping.char_range.start as isize + char_delta) as usize;
-        mapping.char_range.end = (mapping.char_range.end as isize + char_delta) as usize;
-        mapping.byte_range.start = (mapping.byte_range.start as isize + byte_delta) as usize;
-        mapping.byte_range.end = (mapping.byte_range.end as isize + byte_delta) as usize;
+        mapping.char_range.start = apply_delta(mapping.char_range.start, char_delta);
+        mapping.char_range.end = apply_delta(mapping.char_range.end, char_delta);
+        mapping.byte_range.start = apply_delta(mapping.byte_range.start, byte_delta);
+        mapping.byte_range.end = apply_delta(mapping.byte_range.end, byte_delta);
     }
 
     let mut adjusted_syntax = cached.syntax_spans.clone();
     for span in &mut adjusted_syntax {
-        span.char_range.start = (span.char_range.start as isize + char_delta) as usize;
-        span.char_range.end = (span.char_range.end as isize + char_delta) as usize;
+        span.char_range.start = apply_delta(span.char_range.start, char_delta);
+        span.char_range.end = apply_delta(span.char_range.end, char_delta);
     }
 
     ParagraphRender {
-        byte_range: (cached.byte_range.start as isize + byte_delta) as usize
-            ..(cached.byte_range.end as isize + byte_delta) as usize,
-        char_range: (cached.char_range.start as isize + char_delta) as usize
-            ..(cached.char_range.end as isize + char_delta) as usize,
+        byte_range: apply_delta(cached.byte_range.start, byte_delta)
+            ..apply_delta(cached.byte_range.end, byte_delta),
+        char_range: apply_delta(cached.char_range.start, char_delta)
+            ..apply_delta(cached.char_range.end, char_delta),
         html: cached.html.clone(),
         offset_map: adjusted_map,
         syntax_spans: adjusted_syntax,
@@ -159,25 +168,25 @@ pub fn render_paragraphs_incremental(
             .paragraphs
             .iter()
             .map(|p| {
-                if p.char_range.end <= edit_pos {
-                    // Before edit - no change
+                if p.char_range.end < edit_pos {
+                    // Before edit - no change (edit is strictly after this paragraph)
                     (p.byte_range.clone(), p.char_range.clone())
-                } else if p.char_range.start >= edit_pos {
-                    // After edit - shift by delta
+                } else if p.char_range.start > edit_pos {
+                    // After edit - shift by delta (edit is strictly before this paragraph)
                     // Calculate byte delta (approximation: assume 1 byte per char for ASCII)
                     // This is imprecise but boundaries are rediscovered on slow path anyway
                     let byte_delta = char_delta; // TODO: proper byte calculation
                     (
-                        (p.byte_range.start as isize + byte_delta) as usize
-                            ..(p.byte_range.end as isize + byte_delta) as usize,
-                        (p.char_range.start as isize + char_delta) as usize
-                            ..(p.char_range.end as isize + char_delta) as usize,
+                        apply_delta(p.byte_range.start, byte_delta)
+                            ..apply_delta(p.byte_range.end, byte_delta),
+                        apply_delta(p.char_range.start, char_delta)
+                            ..apply_delta(p.char_range.end, char_delta),
                     )
                 } else {
-                    // Edit is within this paragraph - expand its end
+                    // Edit is at or within this paragraph - expand its end
                     (
-                        p.byte_range.start..(p.byte_range.end as isize + char_delta) as usize,
-                        p.char_range.start..(p.char_range.end as isize + char_delta) as usize,
+                        p.byte_range.start..apply_delta(p.byte_range.end, char_delta),
+                        p.char_range.start..apply_delta(p.char_range.end, char_delta),
                     )
                 }
             })

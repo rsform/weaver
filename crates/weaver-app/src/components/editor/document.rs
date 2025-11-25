@@ -2,7 +2,7 @@
 //!
 //! Uses Loro CRDT for text storage with built-in undo/redo support.
 
-use loro::{LoroDoc, LoroResult, LoroText, UndoManager};
+use loro::{cursor::{Cursor, Side}, ExportMode, LoroDoc, LoroResult, LoroText, UndoManager};
 
 /// Single source of truth for editor state.
 ///
@@ -21,8 +21,13 @@ pub struct EditorDocument {
     /// Undo manager for the document.
     undo_mgr: UndoManager,
 
-    /// Current cursor position (char offset)
+    /// Current cursor position (char offset) - fast local cache.
+    /// This is the authoritative position for immediate operations.
     pub cursor: CursorState,
+
+    /// CRDT-aware cursor that tracks position through remote edits and undo/redo.
+    /// Recreated after our own edits, queried after undo/redo/remote edits.
+    loro_cursor: Option<Cursor>,
 
     /// Active selection if any
     pub selection: Option<Selection>,
@@ -127,6 +132,9 @@ impl EditorDocument {
         undo_mgr.set_merge_interval(300); // 300ms merge window
         undo_mgr.set_max_undo_steps(100);
 
+        // Create initial Loro cursor at position 0
+        let loro_cursor = text.get_cursor(0, Side::default());
+
         Self {
             doc,
             text,
@@ -135,6 +143,7 @@ impl EditorDocument {
                 offset: 0,
                 affinity: Affinity::Before,
             },
+            loro_cursor,
             selection: None,
             composition: None,
             last_edit: None,
@@ -230,14 +239,33 @@ impl EditorDocument {
 
     /// Undo the last operation.
     /// Returns true if an undo was performed.
+    /// Automatically updates cursor position from the Loro cursor.
     pub fn undo(&mut self) -> LoroResult<bool> {
-        self.undo_mgr.undo()
+        // Sync Loro cursor to current position BEFORE undo
+        // so it tracks through the undo operation
+        self.sync_loro_cursor();
+
+        let result = self.undo_mgr.undo()?;
+        if result {
+            // After undo, query Loro cursor for new position
+            self.sync_cursor_from_loro();
+        }
+        Ok(result)
     }
 
     /// Redo the last undone operation.
     /// Returns true if a redo was performed.
+    /// Automatically updates cursor position from the Loro cursor.
     pub fn redo(&mut self) -> LoroResult<bool> {
-        self.undo_mgr.redo()
+        // Sync Loro cursor to current position BEFORE redo
+        self.sync_loro_cursor();
+
+        let result = self.undo_mgr.redo()?;
+        if result {
+            // After redo, query Loro cursor for new position
+            self.sync_cursor_from_loro();
+        }
+        Ok(result)
     }
 
     /// Check if undo is available.
@@ -255,6 +283,98 @@ impl EditorDocument {
     pub fn slice(&self, start: usize, end: usize) -> Option<String> {
         self.text.slice(start, end).ok()
     }
+
+    /// Sync the Loro cursor to the current cursor.offset position.
+    /// Call this after OUR edits where we know the new cursor position.
+    pub fn sync_loro_cursor(&mut self) {
+        self.loro_cursor = self.text.get_cursor(self.cursor.offset, Side::default());
+    }
+
+    /// Update cursor.offset from the Loro cursor's tracked position.
+    /// Call this after undo/redo or remote edits where the position may have shifted.
+    /// Returns the new offset, or None if the cursor couldn't be resolved.
+    pub fn sync_cursor_from_loro(&mut self) -> Option<usize> {
+        let loro_cursor = self.loro_cursor.as_ref()?;
+        let result = self.doc.get_cursor_pos(loro_cursor).ok()?;
+        let new_offset = result.current.pos;
+        self.cursor.offset = new_offset.min(self.len_chars());
+        Some(self.cursor.offset)
+    }
+
+    /// Get the Loro cursor for serialization.
+    pub fn loro_cursor(&self) -> Option<&Cursor> {
+        self.loro_cursor.as_ref()
+    }
+
+    /// Set the Loro cursor (used when restoring from storage).
+    pub fn set_loro_cursor(&mut self, cursor: Option<Cursor>) {
+        self.loro_cursor = cursor;
+        // Sync cursor.offset from the restored Loro cursor
+        if self.loro_cursor.is_some() {
+            self.sync_cursor_from_loro();
+        }
+    }
+
+    /// Export the document as a binary snapshot.
+    /// This captures all CRDT state including undo history.
+    pub fn export_snapshot(&self) -> Vec<u8> {
+        self.doc.export(ExportMode::Snapshot).unwrap_or_default()
+    }
+
+    /// Create a new EditorDocument from a binary snapshot.
+    /// Falls back to empty document if import fails.
+    ///
+    /// If `loro_cursor` is provided, it will be used to restore the cursor position.
+    /// Otherwise, falls back to `fallback_offset`.
+    pub fn from_snapshot(
+        snapshot: &[u8],
+        loro_cursor: Option<Cursor>,
+        fallback_offset: usize,
+    ) -> Self {
+        let doc = LoroDoc::new();
+
+        if !snapshot.is_empty() {
+            if let Err(e) = doc.import(snapshot) {
+                tracing::warn!("Failed to import snapshot: {:?}, creating empty doc", e);
+            }
+        }
+
+        let text = doc.get_text("content");
+
+        // Set up undo manager
+        let mut undo_mgr = UndoManager::new(&doc);
+        undo_mgr.set_merge_interval(300);
+        undo_mgr.set_max_undo_steps(100);
+
+        // Try to restore cursor from Loro cursor, fall back to offset
+        let max_offset = text.len_unicode();
+        let cursor_offset = if let Some(ref lc) = loro_cursor {
+            doc.get_cursor_pos(lc)
+                .map(|r| r.current.pos)
+                .unwrap_or(fallback_offset)
+        } else {
+            fallback_offset
+        };
+
+        let cursor = CursorState {
+            offset: cursor_offset.min(max_offset),
+            affinity: Affinity::Before,
+        };
+
+        // If no Loro cursor provided, create one at the restored position
+        let loro_cursor = loro_cursor.or_else(|| text.get_cursor(cursor.offset, Side::default()));
+
+        Self {
+            doc,
+            text,
+            undo_mgr,
+            cursor,
+            loro_cursor,
+            selection: None,
+            composition: None,
+            last_edit: None,
+        }
+    }
 }
 
 // EditorDocument can't derive Clone because LoroDoc/LoroText/UndoManager don't implement Clone.
@@ -266,6 +386,8 @@ impl Clone for EditorDocument {
         let content = self.to_string();
         let mut new_doc = Self::new(content);
         new_doc.cursor = self.cursor;
+        // Recreate Loro cursor at the same position in the new doc
+        new_doc.sync_loro_cursor();
         new_doc.selection = self.selection;
         new_doc.composition = self.composition.clone();
         new_doc.last_edit = self.last_edit.clone();
