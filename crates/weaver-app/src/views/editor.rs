@@ -1,6 +1,6 @@
 //! Editor view - wraps the MarkdownEditor component for the /editor route.
 
-use crate::components::editor::MarkdownEditor;
+use crate::components::{editor::MarkdownEditor, record_view::CodeView};
 use dioxus::prelude::*;
 
 /// Editor page view.
@@ -12,7 +12,9 @@ pub fn Editor() -> Element {
     rsx! {
         EditorCss {}
         div { class: "editor-page",
+            h1 { style: "margin-left: 6rem;", "Markdown Editor Test" }
             MarkdownEditor { initial_content: None }
+
         }
     }
 }

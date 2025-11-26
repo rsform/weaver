@@ -1936,26 +1936,26 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                             let para_char_start = self.last_char_offset;
 
                             // Create a minimal paragraph for the empty blockquote
-                            // let node_id = self.gen_node_id();
-                            // write!(&mut self.writer, "<p id=\"{}\"", node_id)?;
+                            let node_id = self.gen_node_id();
+                            write!(&mut self.writer, "<div id=\"{}\"", node_id)?;
                             // self.begin_node(node_id.clone());
 
                             // // Record start-of-node mapping for cursor positioning
-                            // self.offset_maps.push(OffsetMapping {
-                            //     byte_range: para_byte_start..para_byte_start,
-                            //     char_range: para_char_start..para_char_start,
-                            //     node_id: node_id.clone(),
-                            //     char_offset_in_node: 0,
-                            //     child_index: Some(0),
-                            //     utf16_len: 0,
-                            // });
+                            self.offset_maps.push(OffsetMapping {
+                                byte_range: para_byte_start..para_byte_start,
+                                char_range: para_char_start..para_char_start,
+                                node_id: node_id.clone(),
+                                char_offset_in_node: gt_pos,
+                                child_index: Some(0),
+                                utf16_len: 0,
+                            });
 
                             // Emit the > as block syntax
                             let syntax = &raw_text[gt_pos..gt_pos + 1];
                             self.emit_inner_syntax(syntax, para_byte_start, SyntaxType::Block)?;
 
-                            // self.write("</p>\n")?;
-                            // self.end_node();
+                            self.write("</div>\n")?;
+                            self.end_node();
 
                             // Record paragraph boundary for incremental rendering
                             let byte_range = para_byte_start..bq_range.end;
