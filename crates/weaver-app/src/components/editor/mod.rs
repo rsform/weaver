@@ -42,14 +42,13 @@ use dioxus::prelude::*;
 /// - LocalStorage auto-save with debouncing
 /// - Keyboard shortcuts (Ctrl+B for bold, Ctrl+I for italic)
 ///
-/// # Phase 1 Limitations
+/// # Phase 1 Limitations (mostly resolved)
 /// - Cursor jumps to end after each keystroke (acceptable for MVP)
-/// - All formatting characters visible (no hiding based on cursor position)
+/// - All formatting characters visible (no hiding based on cursor position) - RESOLVED
 /// - No proper grapheme cluster handling
-/// - No IME composition support
-/// - No undo/redo
+/// - No undo/redo - RESOLVED (Loro UndoManager)
 /// - No selection with Shift+Arrow
-/// - No mouse selection
+/// - No mouse selection - RESOLVED
 #[component]
 pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     // Try to restore from localStorage (includes CRDT state for undo history)
@@ -101,8 +100,23 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     // Update DOM when paragraphs change (incremental rendering)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
+        tracing::info!("DOM update effect triggered");
+
         // Read document once to avoid multiple borrows
         let doc = document();
+
+        tracing::info!(
+            composition_active = doc.composition.is_some(),
+            cursor = doc.cursor.offset,
+            "DOM update: checking state"
+        );
+
+        // Skip DOM updates during IME composition - browser controls the preview
+        if doc.composition.is_some() {
+            tracing::info!("skipping DOM update during composition");
+            return;
+        }
+
         let cursor_offset = doc.cursor.offset;
         let selection = doc.selection;
         drop(doc); // Release borrow before other operations
@@ -124,8 +138,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             // Use requestAnimationFrame to wait for browser paint
             if let Some(window) = web_sys::window() {
                 let closure = Closure::once(move || {
-                    if let Err(e) =
-                        cursor::restore_cursor_position(cursor_offset, &map, editor_id)
+                    if let Err(e) = cursor::restore_cursor_position(cursor_offset, &map, editor_id)
                     {
                         tracing::warn!("Cursor restoration failed: {:?}", e);
                     }
@@ -140,12 +153,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
         cached_paragraphs.set(new_paras.clone());
 
         // Update syntax visibility after DOM changes
-        update_syntax_visibility(
-            cursor_offset,
-            selection.as_ref(),
-            &spans,
-            &new_paras,
-        );
+        update_syntax_visibility(cursor_offset, selection.as_ref(), &spans, &new_paras);
     });
 
     // Track last saved frontiers to detect changes (peek-only, no subscriptions)
@@ -170,15 +178,16 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
             if needs_save {
                 // Sync cursor and extract data for save
-                let (content, cursor_offset, loro_cursor, snapshot_bytes) = document.with_mut(|doc| {
-                    doc.sync_loro_cursor();
-                    (
-                        doc.to_string(),
-                        doc.cursor.offset,
-                        doc.loro_cursor().cloned(),
-                        doc.export_snapshot(),
-                    )
-                });
+                let (content, cursor_offset, loro_cursor, snapshot_bytes) =
+                    document.with_mut(|doc| {
+                        doc.sync_loro_cursor();
+                        (
+                            doc.to_string(),
+                            doc.cursor.offset,
+                            doc.loro_cursor().cloned(),
+                            doc.export_snapshot(),
+                        )
+                    });
 
                 use gloo_storage::Storage as _; // bring trait into scope for LocalStorage::set
                 let snapshot_b64 = if snapshot_bytes.is_empty() {
@@ -220,6 +229,24 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                     // DOM populated via web-sys in use_effect for incremental updates
 
                     onkeydown: move |evt| {
+                        use dioxus::prelude::keyboard_types::Key;
+
+                        // During IME composition, let browser handle everything
+                        // Exception: Escape cancels composition
+                        if document.peek().composition.is_some() {
+                            tracing::info!(
+                                key = ?evt.key(),
+                                "keydown during composition - delegating to browser"
+                            );
+                            if evt.key() == Key::Escape {
+                                tracing::info!("Escape pressed - cancelling composition");
+                                document.with_mut(|doc| {
+                                    doc.composition = None;
+                                });
+                            }
+                            return;
+                        }
+
                         // Only prevent default for operations that modify content
                         // Let browser handle arrow keys, Home/End naturally
                         if should_intercept_key(&evt) {
@@ -279,6 +306,89 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                     oncopy: move |evt| {
                         handle_copy(evt, &document);
                     },
+
+                    onblur: move |_| {
+                        // Cancel any in-progress IME composition on focus loss
+                        let had_composition = document.peek().composition.is_some();
+                        if had_composition {
+                            tracing::info!("onblur: clearing active composition");
+                        }
+                        document.with_mut(|doc| {
+                            doc.composition = None;
+                        });
+                    },
+
+                    oncompositionstart: move |evt: CompositionEvent| {
+                        let data = evt.data().data();
+                        tracing::info!(
+                            data = %data,
+                            "compositionstart"
+                        );
+                        document.with_mut(|doc| {
+                            // Delete selection if present (composition replaces it)
+                            if let Some(sel) = doc.selection.take() {
+                                let (start, end) =
+                                    (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                                tracing::info!(
+                                    start,
+                                    end,
+                                    "compositionstart: deleting selection"
+                                );
+                                let _ = doc.remove_tracked(start, end.saturating_sub(start));
+                                doc.cursor.offset = start;
+                            }
+
+                            tracing::info!(
+                                cursor = doc.cursor.offset,
+                                "compositionstart: setting composition state"
+                            );
+                            doc.composition = Some(CompositionState {
+                                start_offset: doc.cursor.offset,
+                                text: data,
+                            });
+                        });
+                    },
+
+                    oncompositionupdate: move |evt: CompositionEvent| {
+                        let data = evt.data().data();
+                        tracing::info!(
+                            data = %data,
+                            "compositionupdate"
+                        );
+                        document.with_mut(|doc| {
+                            if let Some(ref mut comp) = doc.composition {
+                                comp.text = data;
+                            } else {
+                                tracing::info!("compositionupdate without active composition state");
+                            }
+                        });
+                    },
+
+                    oncompositionend: move |evt: CompositionEvent| {
+                        let final_text = evt.data().data();
+                        tracing::info!(
+                            data = %final_text,
+                            "compositionend"
+                        );
+                        document.with_mut(|doc| {
+                            if let Some(comp) = doc.composition.take() {
+                                tracing::info!(
+                                    start_offset = comp.start_offset,
+                                    final_text = %final_text,
+                                    chars = final_text.chars().count(),
+                                    "compositionend: inserting text"
+                                );
+
+                                if !final_text.is_empty() {
+                                    let _ = doc.insert_tracked(comp.start_offset, &final_text);
+                                    doc.cursor.offset =
+                                        comp.start_offset + final_text.chars().count();
+                                }
+                            } else {
+                                tracing::info!("compositionend without active composition state");
+                            }
+                        });
+                    },
                 }
 
 
@@ -306,8 +416,12 @@ fn should_intercept_key(evt: &Event<KeyboardData>) -> bool {
     // Handle Ctrl/Cmd shortcuts
     if mods.ctrl() || mods.meta() {
         if let Key::Character(ch) = &key {
-            // Intercept our shortcuts: formatting (b/i), undo/redo (z/y)
-            return matches!(ch.as_str(), "b" | "i" | "z" | "y");
+            // Intercept our shortcuts: formatting (b/i), undo/redo (z/y), HTML export (e)
+            match ch.as_str() {
+                "b" | "i" | "z" | "y" => return true,
+                "e" => return true, // Ctrl+E for HTML export/copy
+                _ => {}
+            }
         }
         // Let browser handle other Ctrl/Cmd shortcuts (paste, copy, cut, etc.)
         return false;
@@ -536,6 +650,8 @@ fn update_syntax_visibility(
 
 /// Handle paste events and insert text at cursor
 fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
+    evt.prevent_default();
+
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         use dioxus::web::WebEventExt;
@@ -544,7 +660,14 @@ fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>
         let base_evt = evt.as_web_event();
         if let Some(clipboard_evt) = base_evt.dyn_ref::<web_sys::ClipboardEvent>() {
             if let Some(data_transfer) = clipboard_evt.clipboard_data() {
-                if let Ok(text) = data_transfer.get_data("text/plain") {
+                // Try our custom type first (internal paste), fall back to text/plain
+                let text = data_transfer
+                    .get_data("text/x-weaver-md")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| data_transfer.get_data("text/plain").ok());
+
+                if let Some(text) = text {
                     document.with_mut(|doc| {
                         // Delete selection if present
                         if let Some(sel) = doc.selection {
@@ -568,6 +691,8 @@ fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>
 
 /// Handle cut events - extract text, write to clipboard, then delete
 fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
+    evt.prevent_default();
+
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         use dioxus::web::WebEventExt;
@@ -575,16 +700,19 @@ fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) 
 
         let base_evt = evt.as_web_event();
         if let Some(clipboard_evt) = base_evt.dyn_ref::<web_sys::ClipboardEvent>() {
-            document.with_mut(|doc| {
+            let cut_text = document.with_mut(|doc| {
                 if let Some(sel) = doc.selection {
                     let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
                     if start != end {
-                        // Extract text
+                        // Extract text and strip zero-width chars
                         let selected_text = doc.slice(start, end).unwrap_or_default();
+                        let clean_text = selected_text
+                            .replace('\u{200C}', "")
+                            .replace('\u{200B}', "");
 
-                        // Write to clipboard BEFORE deleting
+                        // Write to clipboard BEFORE deleting (sync fallback)
                         if let Some(data_transfer) = clipboard_evt.clipboard_data() {
-                            if let Err(e) = data_transfer.set_data("text/plain", &selected_text) {
+                            if let Err(e) = data_transfer.set_data("text/plain", &clean_text) {
                                 tracing::warn!("[CUT] Failed to set clipboard data: {:?}", e);
                             }
                         }
@@ -593,9 +721,21 @@ fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) 
                         let _ = doc.remove_tracked(start, end.saturating_sub(start));
                         doc.cursor.offset = start;
                         doc.selection = None;
+
+                        return Some(clean_text);
                     }
                 }
+                None
             });
+
+            // Async: also write custom MIME type for internal paste detection
+            if let Some(text) = cut_text {
+                wasm_bindgen_futures::spawn_local(async move {
+                    if let Err(e) = write_clipboard_with_custom_type(&text).await {
+                        tracing::debug!("[CUT] Async clipboard write failed: {:?}", e);
+                    }
+                });
+            }
         }
     }
 
@@ -626,12 +766,20 @@ fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
                         .replace('\u{200C}', "")
                         .replace('\u{200B}', "");
 
-                    // Write to clipboard
+                    // Sync fallback: write text/plain via DataTransfer
                     if let Some(data_transfer) = clipboard_evt.clipboard_data() {
                         if let Err(e) = data_transfer.set_data("text/plain", &clean_text) {
                             tracing::warn!("[COPY] Failed to set clipboard data: {:?}", e);
                         }
                     }
+
+                    // Async: also write custom MIME type for internal paste detection
+                    let text_for_async = clean_text.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        if let Err(e) = write_clipboard_with_custom_type(&text_for_async).await {
+                            tracing::debug!("[COPY] Async clipboard write failed: {:?}", e);
+                        }
+                    });
 
                     // Prevent browser's default copy (which would copy rendered HTML)
                     evt.prevent_default();
@@ -646,9 +794,100 @@ fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
     }
 }
 
+/// Copy markdown as rendered HTML to clipboard
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+async fn copy_as_html(markdown: &str) -> Result<(), wasm_bindgen::JsValue> {
+    use js_sys::Array;
+    use wasm_bindgen::JsValue;
+    use web_sys::{Blob, BlobPropertyBag, ClipboardItem};
+
+    // Render markdown to HTML using ClientWriter
+    let parser = markdown_weaver::Parser::new(markdown).into_offset_iter();
+    let mut html = String::new();
+    weaver_renderer::atproto::ClientWriter::<_, _, ()>::new(
+        parser.map(|(evt, _range)| evt),
+        &mut html,
+    )
+    .run()
+    .map_err(|e| JsValue::from_str(&format!("render error: {e}")))?;
+
+    let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
+    let clipboard = window.navigator().clipboard();
+
+    // Create blobs for both HTML and plain text (raw HTML for inspection)
+    let parts = Array::new();
+    parts.push(&JsValue::from_str(&html));
+
+    let mut html_opts = BlobPropertyBag::new();
+    html_opts.type_("text/html");
+    let html_blob = Blob::new_with_str_sequence_and_options(&parts, &html_opts)?;
+
+    let mut text_opts = BlobPropertyBag::new();
+    text_opts.type_("text/plain");
+    let text_blob = Blob::new_with_str_sequence_and_options(&parts, &text_opts)?;
+
+    // Create ClipboardItem with both types
+    let item_data = js_sys::Object::new();
+    js_sys::Reflect::set(&item_data, &JsValue::from_str("text/html"), &html_blob)?;
+    js_sys::Reflect::set(&item_data, &JsValue::from_str("text/plain"), &text_blob)?;
+
+    let clipboard_item = ClipboardItem::new_with_record_from_str_to_blob_promise(&item_data)?;
+    let items = Array::new();
+    items.push(&clipboard_item);
+
+    wasm_bindgen_futures::JsFuture::from(clipboard.write(&items)).await?;
+    tracing::info!("[COPY HTML] Success - {} bytes of HTML", html.len());
+    Ok(())
+}
+
+/// Write text to clipboard with both text/plain and custom MIME type
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+async fn write_clipboard_with_custom_type(text: &str) -> Result<(), wasm_bindgen::JsValue> {
+    use js_sys::{Array, Object, Reflect};
+    use wasm_bindgen::JsValue;
+    use web_sys::{Blob, BlobPropertyBag, ClipboardItem};
+
+    let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
+    let navigator = window.navigator();
+    let clipboard = navigator.clipboard();
+
+    // Create blobs for each MIME type
+    let text_parts = Array::new();
+    text_parts.push(&JsValue::from_str(text));
+
+    let mut text_opts = BlobPropertyBag::new();
+    text_opts.type_("text/plain");
+    let text_blob = Blob::new_with_str_sequence_and_options(&text_parts, &text_opts)?;
+
+    let mut custom_opts = BlobPropertyBag::new();
+    custom_opts.type_("text/x-weaver-md");
+    let custom_blob = Blob::new_with_str_sequence_and_options(&text_parts, &custom_opts)?;
+
+    // Create ClipboardItem with both types
+    let item_data = Object::new();
+    Reflect::set(&item_data, &JsValue::from_str("text/plain"), &text_blob)?;
+    Reflect::set(
+        &item_data,
+        &JsValue::from_str("text/x-weaver-md"),
+        &custom_blob,
+    )?;
+
+    let clipboard_item = ClipboardItem::new_with_record_from_str_to_blob_promise(&item_data)?;
+    let items = Array::new();
+    items.push(&clipboard_item);
+
+    let promise = clipboard.write(&items);
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+
+    Ok(())
+}
+
 /// Extract a slice of text from a string by char indices
 fn extract_text_slice(text: &str, start: usize, end: usize) -> String {
-    text.chars().skip(start).take(end.saturating_sub(start)).collect()
+    text.chars()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
 }
 
 /// Handle keyboard events and update document state
@@ -697,6 +936,27 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                             doc.selection = None;
                             return;
                         }
+                        "e" => {
+                            // Ctrl+E = copy as HTML (export)
+                            if let Some(sel) = doc.selection {
+                                let (start, end) =
+                                    (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                                if start != end {
+                                    if let Some(markdown) = doc.slice(start, end) {
+                                        let clean_md = markdown
+                                            .replace('\u{200C}', "")
+                                            .replace('\u{200B}', "");
+                                        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                                        wasm_bindgen_futures::spawn_local(async move {
+                                            if let Err(e) = copy_as_html(&clean_md).await {
+                                                tracing::warn!("[COPY HTML] Failed: {:?}", e);
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                            return;
+                        }
                         _ => {}
                     }
                 }
@@ -707,8 +967,28 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                     let _ = doc.replace_tracked(start, end.saturating_sub(start), &ch);
                     doc.cursor.offset = start + ch.chars().count();
                 } else {
-                    let _ = doc.insert_tracked(doc.cursor.offset, &ch);
-                    doc.cursor.offset += ch.chars().count();
+                    // Clean up any preceding zero-width chars (gap scaffolding)
+                    let mut delete_start = doc.cursor.offset;
+                    while delete_start > 0 {
+                        match get_char_at(doc.loro_text(), delete_start - 1) {
+                            Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
+                            _ => break,
+                        }
+                    }
+
+                    let zw_count = doc.cursor.offset - delete_start;
+                    if zw_count > 0 {
+                        // Splice: delete zero-width chars and insert new char in one op
+                        let _ = doc.replace_tracked(delete_start, zw_count, &ch);
+                        doc.cursor.offset = delete_start + ch.chars().count();
+                    } else if doc.cursor.offset == doc.len_chars() {
+                        // Fast path: append at end
+                        let _ = doc.push_tracked(&ch);
+                        doc.cursor.offset += ch.chars().count();
+                    } else {
+                        let _ = doc.insert_tracked(doc.cursor.offset, &ch);
+                        doc.cursor.offset += ch.chars().count();
+                    }
                 }
             }
 
@@ -758,7 +1038,8 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                         }
 
                         // Delete from where we stopped to end (including any trailing zero-width)
-                        let _ = doc.remove_tracked(delete_start, delete_end.saturating_sub(delete_start));
+                        let _ = doc
+                            .remove_tracked(delete_start, delete_end.saturating_sub(delete_start));
                         doc.cursor.offset = delete_start;
                     } else {
                         // Normal backspace - delete one char
@@ -809,7 +1090,11 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                         let delete_end = (line_end + 1).min(doc.len_chars());
 
                         // Use replace_tracked to atomically delete line and insert paragraph break
-                        let _ = doc.replace_tracked(line_start, delete_end.saturating_sub(line_start), "\n\n\u{200C}\n");
+                        let _ = doc.replace_tracked(
+                            line_start,
+                            delete_end.saturating_sub(line_start),
+                            "\n\n\u{200C}\n",
+                        );
                         doc.cursor.offset = line_start + 2;
                     } else {
                         // Non-empty item - continue list
@@ -910,11 +1195,7 @@ fn detect_list_context(text: &loro::LoroText, cursor_offset: usize) -> Option<Li
 /// Check if the current list item is empty (just the marker, no content after cursor).
 ///
 /// Used to determine whether Enter should continue the list or exit it.
-fn is_list_item_empty(
-    text: &loro::LoroText,
-    cursor_offset: usize,
-    ctx: &ListContext,
-) -> bool {
+fn is_list_item_empty(text: &loro::LoroText, cursor_offset: usize, ctx: &ListContext) -> bool {
     let line_start = find_line_start(text, cursor_offset);
     let line_end = find_line_end(text, cursor_offset);
 

@@ -17,7 +17,7 @@ const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
 #[component]
 pub fn Navbar() -> Element {
     let route = use_route::<Route>();
-    tracing::debug!("Route: {:?}", route);
+    tracing::trace!("Route: {:?}", route);
 
     let mut auth_state = use_context::<Signal<crate::auth::AuthState>>();
     let (route_handle_res, route_handle) = use_load_handle(match &route {

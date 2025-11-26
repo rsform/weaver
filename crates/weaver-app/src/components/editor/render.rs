@@ -87,6 +87,11 @@ fn adjust_paragraph_positions(
     for span in &mut adjusted_syntax {
         span.char_range.start = apply_delta(span.char_range.start, char_delta);
         span.char_range.end = apply_delta(span.char_range.end, char_delta);
+        // Also adjust formatted_range if present (used for inline visibility)
+        if let Some(ref mut fr) = span.formatted_range {
+            fr.start = apply_delta(fr.start, char_delta);
+            fr.end = apply_delta(fr.end, char_delta);
+        }
     }
 
     ParagraphRender {
