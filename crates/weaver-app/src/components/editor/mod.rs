@@ -9,6 +9,7 @@ mod document;
 mod formatting;
 mod offset_map;
 mod paragraph;
+mod platform;
 mod render;
 mod storage;
 mod toolbar;
@@ -29,6 +30,8 @@ pub use visibility::VisibilityState;
 pub use writer::{SyntaxSpanInfo, SyntaxType, WriterResult};
 
 use dioxus::prelude::*;
+
+use crate::components::record_view::CodeView;
 
 /// Main markdown editor component.
 ///
@@ -219,6 +222,100 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
         interval.forget();
     });
 
+    // Set up beforeinput listener for iOS/Android virtual keyboard quirks
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    use_effect(move || {
+        use wasm_bindgen::JsCast;
+        use wasm_bindgen::prelude::*;
+
+        let plat = platform::platform();
+
+        // Only needed on mobile
+        if !plat.mobile {
+            return;
+        }
+
+        let window = match web_sys::window() {
+            Some(w) => w,
+            None => return,
+        };
+        let dom_document = match window.document() {
+            Some(d) => d,
+            None => return,
+        };
+        let editor = match dom_document.get_element_by_id(editor_id) {
+            Some(e) => e,
+            None => return,
+        };
+
+        let mut document_signal = document;
+        let cached_paras = cached_paragraphs;
+
+        let closure = Closure::wrap(Box::new(move |evt: web_sys::InputEvent| {
+            let input_type = evt.input_type();
+            tracing::debug!(input_type = %input_type, "beforeinput");
+
+            let plat = platform::platform();
+
+            // iOS workaround: Virtual keyboard sends insertParagraph/insertLineBreak
+            // without proper keydown events. Handle them here.
+            if plat.ios && (input_type == "insertParagraph" || input_type == "insertLineBreak") {
+                tracing::debug!("iOS: intercepting {} via beforeinput", input_type);
+                evt.prevent_default();
+
+                // Handle as Enter key
+                document_signal.with_mut(|doc| {
+                    if let Some(sel) = doc.selection.take() {
+                        let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                        let _ = doc.remove_tracked(start, end.saturating_sub(start));
+                        doc.cursor.offset = start;
+                    }
+
+                    if input_type == "insertLineBreak" {
+                        // Soft break (like Shift+Enter)
+                        let _ = doc.insert_tracked(doc.cursor.offset, "  \n\u{200C}");
+                        doc.cursor.offset += 3;
+                    } else {
+                        // Paragraph break
+                        let _ = doc.insert_tracked(doc.cursor.offset, "\n\n");
+                        doc.cursor.offset += 2;
+                    }
+                });
+            }
+
+            // Android workaround: When swipe keyboard picks a suggestion,
+            // DOM mutations fire before selection moves. We detect this pattern
+            // and defer cursor sync.
+            if plat.android && input_type == "insertText" {
+                // Check if this might be a suggestion pick (has data that looks like a word)
+                if let Some(data) = evt.data() {
+                    if data.contains(' ') || data.len() > 3 {
+                        tracing::debug!("Android: possible suggestion pick, deferring cursor sync");
+                        // Defer cursor sync by 20ms to let selection settle
+                        let paras = cached_paras;
+                        let doc_sig = document_signal;
+                        let window = web_sys::window();
+                        if let Some(window) = window {
+                            let closure = Closure::once(move || {
+                                let paras = paras();
+                                sync_cursor_from_dom(&mut doc_sig.clone(), editor_id, &paras);
+                            });
+                            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                                closure.as_ref().unchecked_ref(),
+                                20,
+                            );
+                            closure.forget();
+                        }
+                    }
+                }
+            }
+        }) as Box<dyn FnMut(web_sys::InputEvent)>);
+
+        let _ = editor
+            .add_event_listener_with_callback("beforeinput", closure.as_ref().unchecked_ref());
+        closure.forget();
+    });
+
     rsx! {
         Stylesheet { href: asset!("/assets/styling/editor.css") }
         div { class: "markdown-editor-container",
@@ -236,20 +333,54 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
                     onkeydown: move |evt| {
                         use dioxus::prelude::keyboard_types::Key;
+                        use std::time::Duration;
 
-                        // During IME composition, let browser handle everything
-                        // Exception: Escape cancels composition
+                        let plat = platform::platform();
+                        let mods = evt.modifiers();
+                        let has_modifier = mods.ctrl() || mods.meta() || mods.alt();
+
+                        // During IME composition:
+                        // - Allow modifier shortcuts (Ctrl+B, Ctrl+Z, etc.)
+                        // - Allow Escape to cancel composition
+                        // - Block text input (let browser handle composition preview)
                         if document.peek().composition.is_some() {
-                            tracing::debug!(
-                                key = ?evt.key(),
-                                "keydown during composition - delegating to browser"
-                            );
                             if evt.key() == Key::Escape {
                                 tracing::debug!("Escape pressed - cancelling composition");
                                 document.with_mut(|doc| {
                                     doc.composition = None;
                                 });
+                                return;
                             }
+
+                            // Allow modifier shortcuts through during composition
+                            if !has_modifier {
+                                tracing::debug!(
+                                    key = ?evt.key(),
+                                    "keydown during composition - delegating to browser"
+                                );
+                                return;
+                            }
+                            // Fall through to handle the shortcut
+                        }
+
+                        // Safari workaround: After Japanese IME composition ends, both
+                        // compositionend and keydown fire for Enter. Ignore keydown
+                        // within 500ms of composition end to prevent double-newline.
+                        if plat.safari && evt.key() == Key::Enter {
+                            if let Some(ended_at) = document.peek().composition_ended_at {
+                                if ended_at.elapsed() < Duration::from_millis(500) {
+                                    tracing::debug!(
+                                        "Safari: ignoring Enter within 500ms of compositionend"
+                                    );
+                                    return;
+                                }
+                            }
+                        }
+
+                        // Android workaround: Chrome Android gets confused by Enter during/after
+                        // composition. Defer Enter handling to onkeypress instead.
+                        if plat.android && evt.key() == Key::Enter {
+                            tracing::debug!("Android: deferring Enter to keypress");
                             return;
                         }
 
@@ -345,6 +476,20 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                         );
                     },
 
+                    // Android workaround: Handle Enter in keypress instead of keydown.
+                    // Chrome Android fires confused composition events on Enter in keydown,
+                    // but keypress fires after composition state settles.
+                    onkeypress: move |evt| {
+                        use dioxus::prelude::keyboard_types::Key;
+
+                        let plat = platform::platform();
+                        if plat.android && evt.key() == Key::Enter {
+                            tracing::debug!("Android: handling Enter in keypress");
+                            evt.prevent_default();
+                            handle_keydown(evt, &mut document);
+                        }
+                    },
+
                     onpaste: move |evt| {
                         handle_paste(evt, &mut document);
                     },
@@ -421,6 +566,9 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                             "compositionend"
                         );
                         document.with_mut(|doc| {
+                            // Record when composition ended for Safari timing workaround
+                            doc.composition_ended_at = Some(web_time::Instant::now());
+
                             if let Some(comp) = doc.composition.take() {
                                 tracing::debug!(
                                     start_offset = comp.start_offset,
@@ -468,6 +616,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                 }
             }
         }
+
     }
 }
 

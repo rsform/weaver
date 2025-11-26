@@ -9970,6 +9970,7 @@ dependencies = [
  "weaver-common",
  "weaver-renderer",
  "web-sys",
+ "web-time",
  "webbrowser",
 ]
 

@@ -2,7 +2,10 @@
 //!
 //! Uses Loro CRDT for text storage with built-in undo/redo support.
 
-use loro::{cursor::{Cursor, Side}, ExportMode, LoroDoc, LoroResult, LoroText, UndoManager};
+use loro::{
+    ExportMode, LoroDoc, LoroResult, LoroText, UndoManager,
+    cursor::{Cursor, Side},
+};
 
 /// Single source of truth for editor state.
 ///
@@ -34,6 +37,10 @@ pub struct EditorDocument {
 
     /// IME composition state (for Phase 3)
     pub composition: Option<CompositionState>,
+
+    /// Timestamp when the last composition ended.
+    /// Used for Safari workaround: ignore Enter keydown within 500ms of compositionend.
+    pub composition_ended_at: Option<web_time::Instant>,
 
     /// Most recent edit info for incremental rendering optimization.
     /// Used to determine if we can skip full re-parsing.
@@ -128,7 +135,8 @@ impl EditorDocument {
 
         // Insert initial content if any
         if !content.is_empty() {
-            text.insert(0, &content).expect("failed to insert initial content");
+            text.insert(0, &content)
+                .expect("failed to insert initial content");
         }
 
         // Set up undo manager with merge interval for batching keystrokes
@@ -150,6 +158,7 @@ impl EditorDocument {
             loro_cursor,
             selection: None,
             composition: None,
+            composition_ended_at: None,
             last_edit: None,
         }
     }
@@ -221,11 +230,7 @@ impl EditorDocument {
     /// Remove text range and record edit info for incremental rendering.
     pub fn remove_tracked(&mut self, start: usize, len: usize) -> LoroResult<()> {
         let content = self.text.to_string();
-        let contains_newline = content
-            .chars()
-            .skip(start)
-            .take(len)
-            .any(|c| c == '\n');
+        let contains_newline = content.chars().skip(start).take(len).any(|c| c == '\n');
         let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
 
         let result = self.text.delete(start, len);
@@ -243,11 +248,7 @@ impl EditorDocument {
     /// Replace text (delete then insert) and record combined edit info.
     pub fn replace_tracked(&mut self, start: usize, len: usize, text: &str) -> LoroResult<()> {
         let content = self.text.to_string();
-        let delete_has_newline = content
-            .chars()
-            .skip(start)
-            .take(len)
-            .any(|c| c == '\n');
+        let delete_has_newline = content.chars().skip(start).take(len).any(|c| c == '\n');
         let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
 
         let len_before = self.text.len_unicode();
@@ -415,6 +416,7 @@ impl EditorDocument {
             loro_cursor,
             selection: None,
             composition: None,
+            composition_ended_at: None,
             last_edit: None,
         }
     }
@@ -433,6 +435,7 @@ impl Clone for EditorDocument {
         new_doc.sync_loro_cursor();
         new_doc.selection = self.selection;
         new_doc.composition = self.composition.clone();
+        new_doc.composition_ended_at = self.composition_ended_at;
         new_doc.last_edit = self.last_edit.clone();
         new_doc
     }
