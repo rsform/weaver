@@ -426,6 +426,322 @@ fn regression_bug11_gap_paragraphs_for_whitespace() {
 }
 
 // =============================================================================
+// Syntax Span Edge Case Tests
+// =============================================================================
+
+#[test]
+fn test_invalid_heading_no_space() {
+    // "#text" without space is NOT a valid heading - should be plain text
+    // The '#' should NOT be wrapped in a syntax span
+    let result = render_test("#text");
+
+    // Should be a single paragraph with plain text
+    assert_eq!(result.len(), 1, "Should have 1 paragraph");
+
+    // HTML should NOT contain md-syntax-block for the #
+    assert!(
+        !result[0].html.contains("md-syntax-block"),
+        "Invalid heading '#text' should NOT have block syntax span. HTML: {}",
+        result[0].html
+    );
+
+    // The # should be visible as regular text content
+    assert!(
+        result[0].html.contains("#text") || result[0].html.contains("&num;text"),
+        "The '#text' should appear as regular text. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_valid_heading_with_space() {
+    // "# text" WITH space IS a valid heading
+    let result = render_test("# Heading");
+
+    // Should have heading syntax span
+    assert!(
+        result[0].html.contains("md-syntax-block"),
+        "Valid heading should have block syntax span. HTML: {}",
+        result[0].html
+    );
+
+    // Should have <h1> tag
+    assert!(
+        result[0].html.contains("<h1"),
+        "Valid heading should render as h1. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_hash_in_middle_of_text() {
+    // "#" in middle of text should not be treated as heading syntax
+    let result = render_test("Some #hashtag here");
+
+    assert!(
+        !result[0].html.contains("md-syntax-block"),
+        "# in middle of text should NOT be block syntax. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_unclosed_bold() {
+    // "**text" without closing ** should be plain text, not bold
+    let result = render_test("**unclosed bold");
+
+    // Should NOT have <strong> tag
+    assert!(
+        !result[0].html.contains("<strong>"),
+        "Unclosed ** should NOT render as bold. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_unclosed_italic() {
+    // "*text" without closing * should be plain text, not italic
+    let result = render_test("*unclosed italic");
+
+    // Should NOT have <em> tag
+    assert!(
+        !result[0].html.contains("<em>"),
+        "Unclosed * should NOT render as italic. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_asterisk_not_emphasis() {
+    // Single * surrounded by spaces is not emphasis
+    let result = render_test("5 * 3 = 15");
+
+    // Should NOT have <em> tag
+    assert!(
+        !result[0].html.contains("<em>"),
+        "Math expression with * should NOT be italic. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_list_marker_needs_space() {
+    // "-text" without space is NOT a list item
+    let result = render_test("-not-a-list");
+
+    // Should NOT have <li> or <ul> tags
+    assert!(
+        !result[0].html.contains("<li>") && !result[0].html.contains("<ul>"),
+        "'-text' without space should NOT be a list. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_valid_list_with_space() {
+    // "- text" WITH space IS a valid list item
+    let result = render_test("- List item");
+
+    // Should have list markup
+    assert!(
+        result[0].html.contains("<li>") || result[0].html.contains("<ul>"),
+        "Valid list should have list markup. HTML: {}",
+        result[0].html
+    );
+
+    // Should have block syntax span for the marker
+    assert!(
+        result[0].html.contains("md-syntax-block"),
+        "List marker should have block syntax span. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_number_dot_needs_space() {
+    // "1.text" without space is NOT an ordered list
+    let result = render_test("1.not-a-list");
+
+    // Should NOT have <ol> tag
+    assert!(
+        !result[0].html.contains("<ol>"),
+        "'1.text' without space should NOT be ordered list. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_hash_with_zero_width_char() {
+    // "#\u{200B}text" - zero-width space after # should NOT make it a valid heading
+    let result = render_test("#\u{200B}text");
+
+    // Debug: print what we got
+    eprintln!("HTML for '#\\u{{200B}}text': {}", result[0].html);
+
+    // Should NOT be a heading - zero-width space is not a real space
+    assert!(
+        !result[0].html.contains("<h1"),
+        "# followed by zero-width space should NOT be h1. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_hash_with_zwj() {
+    // Test with zero-width joiner
+    let result = render_test("#\u{200C}text");
+
+    eprintln!("HTML for '#\\u{{200C}}text': {}", result[0].html);
+
+    assert!(
+        !result[0].html.contains("<h1"),
+        "# followed by ZWNJ should NOT be h1. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_hash_space_then_zero_width() {
+    // "# \u{200B}" - valid heading marker, but content is just zero-width
+    let result = render_test("# \u{200B}");
+
+    eprintln!("HTML for '# \\u{{200B}}': {}", result[0].html);
+    eprintln!("Syntax spans: {:?}", result[0].offset_map);
+
+    // This IS a valid heading (has space after #), even if content is "invisible"
+    // The question is: should we hide the # syntax in this case?
+}
+
+#[test]
+fn test_hash_alone() {
+    // Just "#" at EOL IS a valid empty heading (standard CommonMark behavior)
+    let result = render_test("#");
+    eprintln!("HTML for '#': {}", result[0].html);
+
+    // This IS a heading - empty headings are valid
+    assert!(
+        result[0].html.contains("<h1"),
+        "'#' alone IS a valid empty h1. HTML: {}",
+        result[0].html
+    );
+}
+
+#[test]
+fn test_heading_to_non_heading_transition() {
+    // Simulates typing: start with "#" (heading), then add "t" to make "#t" (not heading)
+    // This tests that the syntax spans are correctly updated on content change.
+    use loro::LoroDoc;
+    use super::render::render_paragraphs_incremental;
+
+    let doc = LoroDoc::new();
+    let text = doc.get_text("content");
+
+    // Initial state: "#" is a valid empty heading
+    text.insert(0, "#").unwrap();
+    let (paras1, cache1) = render_paragraphs_incremental(&text, None, None);
+
+    eprintln!("State 1 ('#'): {}", paras1[0].html);
+    assert!(paras1[0].html.contains("<h1"), "# alone should be heading");
+    assert!(
+        paras1[0].html.contains("md-syntax-block"),
+        "# should have syntax span"
+    );
+
+    // Transition: add "t" to make "#t" - no longer a heading
+    text.insert(1, "t").unwrap();
+    let (paras2, _cache2) = render_paragraphs_incremental(&text, Some(&cache1), None);
+
+    eprintln!("State 2 ('#t'): {}", paras2[0].html);
+    assert!(
+        !paras2[0].html.contains("<h1"),
+        "#t should NOT be heading. HTML: {}",
+        paras2[0].html
+    );
+    assert!(
+        !paras2[0].html.contains("md-syntax-block"),
+        "#t should NOT have block syntax span. HTML: {}",
+        paras2[0].html
+    );
+}
+
+#[test]
+fn test_hash_space_alone() {
+    // "# " (hash + space, no content) - IS this a heading?
+    let result = render_test("# ");
+    eprintln!("HTML for '# ': {}", result[0].html);
+
+    // Document actual behavior - this determines if empty headings are valid
+}
+
+#[test]
+fn test_empty_blockquote() {
+    // Just ">" alone - empty blockquote
+    // BUG: Currently produces 0 paragraphs, making the > invisible!
+    let result = render_test(">");
+    eprintln!("Paragraphs for '>': {:?}", result.len());
+    for (i, p) in result.iter().enumerate() {
+        eprintln!("  Para {}: html={}, char_range={:?}", i, p.html, p.char_range);
+    }
+
+    // Empty blockquote should still produce at least one paragraph
+    // containing the > syntax so it can be rendered and edited
+    assert!(
+        !result.is_empty(),
+        "Empty blockquote should produce at least one paragraph, got 0"
+    );
+}
+
+#[test]
+fn test_blockquote_needs_space_or_newline() {
+    // ">text" directly attached might not be a blockquote depending on parser
+    // This test documents expected behavior
+    let result = render_test(">quote");
+
+    // Whether this is a blockquote depends on the parser - document actual behavior
+    insta::assert_yaml_snapshot!(result, @r#"
+    - byte_range:
+        - 6
+        - 6
+      char_range:
+        - 0
+        - 6
+      html: "<blockquote>\n<p id=\"n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"1\">&gt;</span>quote</p>\n</blockquote>\n"
+      offset_map:
+        - byte_range:
+            - 7
+            - 7
+          char_range:
+            - 0
+            - 0
+          node_id: n0
+          char_offset_in_node: 0
+          child_index: 0
+          utf16_len: 0
+        - byte_range:
+            - 6
+            - 7
+          char_range:
+            - 0
+            - 1
+          node_id: n0
+          char_offset_in_node: 0
+          child_index: ~
+          utf16_len: 1
+        - byte_range:
+            - 7
+            - 12
+          char_range:
+            - 1
+            - 6
+          node_id: n0
+          char_offset_in_node: 1
+          child_index: ~
+          utf16_len: 5
+      source_hash: 6279293067953035109
+    "#);
+}
+
+// =============================================================================
 // Char Range Coverage Tests
 // =============================================================================
 

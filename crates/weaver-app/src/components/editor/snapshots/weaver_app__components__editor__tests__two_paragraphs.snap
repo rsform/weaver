@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 17
-  html: "<p id=\"n0\">First paragraph.<span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"16\" data-char-end=\"17\">\n</span></p>\n"
+  html: "<p id=\"n0\">First paragraph.\n</p>\n"
   offset_map:
     - byte_range:
         - 0

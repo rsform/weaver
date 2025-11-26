@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 26
-  html: "<ul>\n<li data-node-id=\"n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\">- </span>Item 1<span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"8\" data-char-end=\"9\">\n</span></li>\n<li data-node-id=\"n1\"><span class=\"md-syntax-block\" data-syn-id=\"s2\" data-char-start=\"9\" data-char-end=\"11\">- </span>Item 2<span class=\"md-syntax-inline\" data-syn-id=\"s3\" data-char-start=\"17\" data-char-end=\"18\">\n</span></li>\n<li data-node-id=\"n2\"><span class=\"md-syntax-block\" data-syn-id=\"s4\" data-char-start=\"18\" data-char-end=\"20\">- </span>Item 3</li>\n</ul>\n"
+  html: "<ul>\n<li data-node-id=\"n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\">- </span>Item 1\n</li>\n<li data-node-id=\"n1\"><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"9\" data-char-end=\"11\">- </span>Item 2\n</li>\n<li data-node-id=\"n2\"><span class=\"md-syntax-block\" data-syn-id=\"s2\" data-char-start=\"18\" data-char-end=\"20\">- </span>Item 3</li>\n</ul>\n"
   offset_map:
     - byte_range:
         - 0

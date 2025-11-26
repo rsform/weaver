@@ -100,12 +100,12 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     // Update DOM when paragraphs change (incremental rendering)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
-        tracing::info!("DOM update effect triggered");
+        tracing::debug!("DOM update effect triggered");
 
         // Read document once to avoid multiple borrows
         let doc = document();
 
-        tracing::info!(
+        tracing::debug!(
             composition_active = doc.composition.is_some(),
             cursor = doc.cursor.offset,
             "DOM update: checking state"
@@ -113,9 +113,15 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
         // Skip DOM updates during IME composition - browser controls the preview
         if doc.composition.is_some() {
-            tracing::info!("skipping DOM update during composition");
+            tracing::debug!("skipping DOM update during composition");
             return;
         }
+
+        tracing::debug!(
+            cursor = doc.cursor.offset,
+            len = doc.len_chars(),
+            "DOM update proceeding (not in composition)"
+        );
 
         let cursor_offset = doc.cursor.offset;
         let selection = doc.selection;
@@ -234,12 +240,12 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                         // During IME composition, let browser handle everything
                         // Exception: Escape cancels composition
                         if document.peek().composition.is_some() {
-                            tracing::info!(
+                            tracing::debug!(
                                 key = ?evt.key(),
                                 "keydown during composition - delegating to browser"
                             );
                             if evt.key() == Key::Escape {
-                                tracing::info!("Escape pressed - cancelling composition");
+                                tracing::debug!("Escape pressed - cancelling composition");
                                 document.with_mut(|doc| {
                                     doc.composition = None;
                                 });
@@ -257,17 +263,21 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
                     onkeyup: move |evt| {
                         use dioxus::prelude::keyboard_types::Key;
-                        // Only sync cursor from DOM after navigation keys
-                        // Content-modifying keys update cursor directly in handle_keydown
-                        let dominated = matches!(
+
+                        // Navigation keys (with or without Shift for selection)
+                        let navigation = matches!(
                             evt.key(),
                             Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown |
                             Key::Home | Key::End | Key::PageUp | Key::PageDown
                         );
-                        if dominated {
+
+                        // Cmd/Ctrl+A for select all
+                        let select_all = (evt.modifiers().meta() || evt.modifiers().ctrl())
+                            && matches!(evt.key(), Key::Character(ref c) if c == "a");
+
+                        if navigation || select_all {
                             let paras = cached_paragraphs();
                             sync_cursor_from_dom(&mut document, editor_id, &paras);
-                            // Update syntax visibility after cursor sync
                             let doc = document();
                             let spans = syntax_spans();
                             update_syntax_visibility(
@@ -279,12 +289,52 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                         }
                     },
 
-                    onclick: move |_evt| {
-                        // After mouse click or drag selection, sync cursor from DOM
-                        // (click fires after mouseup, so this handles both cases)
+                    onselect: move |_evt| {
+                        tracing::debug!("onselect fired");
                         let paras = cached_paragraphs();
                         sync_cursor_from_dom(&mut document, editor_id, &paras);
-                        // Update syntax visibility after cursor sync
+                        let doc = document();
+                        let spans = syntax_spans();
+                        update_syntax_visibility(
+                            doc.cursor.offset,
+                            doc.selection.as_ref(),
+                            &spans,
+                            &paras,
+                        );
+                    },
+
+                    onselectstart: move |_evt| {
+                        tracing::debug!("onselectstart fired");
+                        let paras = cached_paragraphs();
+                        sync_cursor_from_dom(&mut document, editor_id, &paras);
+                        let doc = document();
+                        let spans = syntax_spans();
+                        update_syntax_visibility(
+                            doc.cursor.offset,
+                            doc.selection.as_ref(),
+                            &spans,
+                            &paras,
+                        );
+                    },
+
+                    onselectionchange: move |_evt| {
+                        tracing::debug!("onselectionchange fired");
+                        let paras = cached_paragraphs();
+                        sync_cursor_from_dom(&mut document, editor_id, &paras);
+                        let doc = document();
+                        let spans = syntax_spans();
+                        update_syntax_visibility(
+                            doc.cursor.offset,
+                            doc.selection.as_ref(),
+                            &spans,
+                            &paras,
+                        );
+                    },
+
+                    onclick: move |_evt| {
+                        tracing::debug!("onclick fired");
+                        let paras = cached_paragraphs();
+                        sync_cursor_from_dom(&mut document, editor_id, &paras);
                         let doc = document();
                         let spans = syntax_spans();
                         update_syntax_visibility(
@@ -311,7 +361,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                         // Cancel any in-progress IME composition on focus loss
                         let had_composition = document.peek().composition.is_some();
                         if had_composition {
-                            tracing::info!("onblur: clearing active composition");
+                            tracing::debug!("onblur: clearing active composition");
                         }
                         document.with_mut(|doc| {
                             doc.composition = None;
@@ -320,7 +370,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
                     oncompositionstart: move |evt: CompositionEvent| {
                         let data = evt.data().data();
-                        tracing::info!(
+                        tracing::debug!(
                             data = %data,
                             "compositionstart"
                         );
@@ -329,7 +379,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                             if let Some(sel) = doc.selection.take() {
                                 let (start, end) =
                                     (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                                tracing::info!(
+                                tracing::debug!(
                                     start,
                                     end,
                                     "compositionstart: deleting selection"
@@ -338,7 +388,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                                 doc.cursor.offset = start;
                             }
 
-                            tracing::info!(
+                            tracing::debug!(
                                 cursor = doc.cursor.offset,
                                 "compositionstart: setting composition state"
                             );
@@ -351,7 +401,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
                     oncompositionupdate: move |evt: CompositionEvent| {
                         let data = evt.data().data();
-                        tracing::info!(
+                        tracing::debug!(
                             data = %data,
                             "compositionupdate"
                         );
@@ -359,20 +409,20 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                             if let Some(ref mut comp) = doc.composition {
                                 comp.text = data;
                             } else {
-                                tracing::info!("compositionupdate without active composition state");
+                                tracing::debug!("compositionupdate without active composition state");
                             }
                         });
                     },
 
                     oncompositionend: move |evt: CompositionEvent| {
                         let final_text = evt.data().data();
-                        tracing::info!(
+                        tracing::debug!(
                             data = %final_text,
                             "compositionend"
                         );
                         document.with_mut(|doc| {
                             if let Some(comp) = doc.composition.take() {
-                                tracing::info!(
+                                tracing::debug!(
                                     start_offset = comp.start_offset,
                                     final_text = %final_text,
                                     chars = final_text.chars().count(),
@@ -380,18 +430,34 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                                 );
 
                                 if !final_text.is_empty() {
-                                    let _ = doc.insert_tracked(comp.start_offset, &final_text);
-                                    doc.cursor.offset =
-                                        comp.start_offset + final_text.chars().count();
+                                    let mut delete_start = comp.start_offset;
+                                    while delete_start > 0 {
+                                        match get_char_at(doc.loro_text(), delete_start - 1) {
+                                            Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
+                                            _ => break,
+                                        }
+                                    }
+
+                                    let zw_count = doc.cursor.offset - delete_start;
+                                    if zw_count > 0 {
+                                        // Splice: delete zero-width chars and insert new char in one op
+                                        let _ = doc.replace_tracked(delete_start, zw_count, &final_text);
+                                        doc.cursor.offset = delete_start + final_text.chars().count();
+                                    } else if doc.cursor.offset == doc.len_chars() {
+                                        // Fast path: append at end
+                                        let _ = doc.push_tracked(&final_text);
+                                        doc.cursor.offset = comp.start_offset + final_text.chars().count();
+                                    } else {
+                                        let _ = doc.insert_tracked(doc.cursor.offset, &final_text);
+                                        doc.cursor.offset = comp.start_offset + final_text.chars().count();
+                                    }
                                 }
                             } else {
-                                tracing::info!("compositionend without active composition state");
+                                tracing::debug!("compositionend without active composition state");
                             }
                         });
                     },
                 }
-
-
             }
 
             EditorToolbar {
@@ -534,6 +600,16 @@ fn dom_position_to_rope_offset(
     let node_id = loop {
         if let Some(element) = current_node.dyn_ref::<web_sys::Element>() {
             if element == editor_element {
+                // Selection is on the editor container itself (e.g., Cmd+A select all)
+                // Return boundary position based on offset:
+                // offset 0 = start of editor, offset == child count = end of editor
+                let child_count = editor_element.child_element_count() as usize;
+                if offset_in_text_node == 0 {
+                    return Some(0); // Start of document
+                } else if offset_in_text_node >= child_count {
+                    // End of document - find last paragraph's end
+                    return paragraphs.last().map(|p| p.char_range.end);
+                }
                 break None;
             }
 
@@ -1029,7 +1105,7 @@ fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument
                         while delete_start > 0 {
                             let ch = get_char_at(doc.loro_text(), delete_start - 1);
                             match ch {
-                                Some(' ') | Some('\t') | Some('\u{200C}') | Some('\u{200B}') => {
+                                Some('\u{200C}') | Some('\u{200B}') => {
                                     delete_start -= 1;
                                 }
                                 Some('\n') => break, // stop at another newline
@@ -1307,8 +1383,11 @@ fn update_paragraph_dom(
         if let Some(old_para) = old_paragraphs.get(idx) {
             // Paragraph exists - check if changed
             if new_para.source_hash != old_para.source_hash {
-                // Changed - update innerHTML
+                // Changed - clear and update innerHTML
+                // We clear first to ensure any browser-added content (from IME composition,
+                // contenteditable quirks, etc.) is fully removed before setting new content
                 if let Some(elem) = document.get_element_by_id(&para_id) {
+                    elem.set_text_content(None); // Clear completely
                     elem.set_inner_html(&new_para.html);
                 }
 

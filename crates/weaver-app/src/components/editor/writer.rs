@@ -359,7 +359,10 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             {
                 opening_span.formatted_range = Some(formatted_range.clone());
             } else {
-                tracing::warn!("[FINALIZE_PAIRED] Could not find opening span {}", opening_syn_id);
+                tracing::warn!(
+                    "[FINALIZE_PAIRED] Could not find opening span {}",
+                    opening_syn_id
+                );
             }
 
             // Update the closing span's formatted_range (the most recent one)
@@ -397,54 +400,83 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     return Ok(());
                 }
 
-                let syntax_type = classify_syntax(syntax);
-                let class = match syntax_type {
-                    SyntaxType::Inline => "md-syntax-inline",
-                    SyntaxType::Block => "md-syntax-block",
-                };
+                // Whitespace-only content (trailing spaces, newlines) should be emitted
+                // as plain text, not wrapped in a hideable syntax span
+                let is_whitespace_only = syntax.trim().is_empty();
 
-                // Generate unique ID for this syntax span
-                let syn_id = self.gen_syn_id();
+                if is_whitespace_only {
+                    // Emit as plain text with tracking span (not hideable)
+                    let created_node = if self.current_node_id.is_none() {
+                        let node_id = self.gen_node_id();
+                        write!(&mut self.writer, "<span id=\"{}\">", node_id)?;
+                        self.begin_node(node_id);
+                        true
+                    } else {
+                        false
+                    };
 
-                // If we're outside any node, create a wrapper span for tracking
-                let created_node = if self.current_node_id.is_none() {
-                    let node_id = self.gen_node_id();
-                    write!(
-                        &mut self.writer,
-                        "<span id=\"{}\" class=\"{}\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
-                        node_id, class, syn_id, char_start, char_end
-                    )?;
-                    self.begin_node(node_id);
-                    true
+                    escape_html(&mut self.writer, syntax)?;
+
+                    if created_node {
+                        self.write("</span>")?;
+                        self.end_node();
+                    }
+
+                    // Record offset mapping but no syntax span info
+                    self.record_mapping(range.clone(), char_start..char_end);
+                    self.last_char_offset = char_end;
+                    self.last_byte_offset = range.end;
                 } else {
-                    write!(
-                        &mut self.writer,
-                        "<span class=\"{}\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
-                        class, syn_id, char_start, char_end
-                    )?;
-                    false
-                };
+                    // Real syntax - wrap in hideable span
+                    let syntax_type = classify_syntax(syntax);
+                    let class = match syntax_type {
+                        SyntaxType::Inline => "md-syntax-inline",
+                        SyntaxType::Block => "md-syntax-block",
+                    };
 
-                escape_html(&mut self.writer, syntax)?;
-                self.write("</span>")?;
+                    // Generate unique ID for this syntax span
+                    let syn_id = self.gen_syn_id();
 
-                // Record syntax span info for visibility toggling
-                self.syntax_spans.push(SyntaxSpanInfo {
-                    syn_id,
-                    char_range: char_start..char_end,
-                    syntax_type,
-                    formatted_range: None,
-                });
+                    // If we're outside any node, create a wrapper span for tracking
+                    let created_node = if self.current_node_id.is_none() {
+                        let node_id = self.gen_node_id();
+                        write!(
+                            &mut self.writer,
+                            "<span id=\"{}\" class=\"{}\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                            node_id, class, syn_id, char_start, char_end
+                        )?;
+                        self.begin_node(node_id);
+                        true
+                    } else {
+                        write!(
+                            &mut self.writer,
+                            "<span class=\"{}\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                            class, syn_id, char_start, char_end
+                        )?;
+                        false
+                    };
 
-                // Record offset mapping for this syntax
-                self.record_mapping(range.clone(), char_start..char_end);
-                self.last_char_offset = char_end;
-                self.last_byte_offset = range.end; // Mark bytes as processed
-
-                // Close wrapper if we created one
-                if created_node {
+                    escape_html(&mut self.writer, syntax)?;
                     self.write("</span>")?;
-                    self.end_node();
+
+                    // Record syntax span info for visibility toggling
+                    self.syntax_spans.push(SyntaxSpanInfo {
+                        syn_id,
+                        char_range: char_start..char_end,
+                        syntax_type,
+                        formatted_range: None,
+                    });
+
+                    // Record offset mapping for this syntax
+                    self.record_mapping(range.clone(), char_start..char_end);
+                    self.last_char_offset = char_end;
+                    self.last_byte_offset = range.end;
+
+                    // Close wrapper if we created one
+                    if created_node {
+                        self.write("</span>")?;
+                        self.end_node();
+                    }
                 }
             }
         }
@@ -585,7 +617,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
             // Only add checkpoint if we've advanced
             if char_range.end > last_checkpoint.0 {
-                self.utf16_checkpoints.push((char_range.end, new_utf16_offset));
+                self.utf16_checkpoints
+                    .push((char_range.end, new_utf16_offset));
             }
 
             let mapping = OffsetMapping {
@@ -675,19 +708,19 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
 
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                        "<span class=\"md-placeholder\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
                         syn_id, char_start, char_end
                     )?;
                     escape_html(&mut self.writer, trailing)?;
                     self.write("</span>")?;
 
                     // Record syntax span info
-                    self.syntax_spans.push(SyntaxSpanInfo {
-                        syn_id,
-                        char_range: char_start..char_end,
-                        syntax_type: SyntaxType::Inline,
-                        formatted_range: None,
-                    });
+                    // self.syntax_spans.push(SyntaxSpanInfo {
+                    //     syn_id,
+                    //     char_range: char_start..char_end,
+                    //     syntax_type: SyntaxType::Inline,
+                    //     formatted_range: None,
+                    // });
 
                     // Record mapping if we have a node
                     if let Some(ref node_id) = self.current_node_id {
@@ -984,19 +1017,19 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     let syn_id = self.gen_syn_id();
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                        "<span class=\"md-placeholder\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
                         syn_id, char_start, char_end
                     )?;
                     escape_html(&mut self.writer, spaces)?;
                     self.write("</span>")?;
 
                     // Record syntax span info
-                    self.syntax_spans.push(SyntaxSpanInfo {
-                        syn_id,
-                        char_range: char_start..char_end,
-                        syntax_type: SyntaxType::Inline,
-                        formatted_range: None,
-                    });
+                    // self.syntax_spans.push(SyntaxSpanInfo {
+                    //     syn_id,
+                    //     char_range: char_start..char_end,
+                    //     syntax_type: SyntaxType::Inline,
+                    //     formatted_range: None,
+                    // });
 
                     // Count this span as a child
                     self.current_node_child_count += 1;
@@ -1013,7 +1046,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     self.current_node_child_count += 1;
 
                     // After <br>, emit plain zero-width space for cursor positioning
-                    self.write("\u{200B}")?;
+                    self.write(" ")?;
+                    //self.write("\u{200B}")?;
 
                     // Count the zero-width space text node as a child
                     self.current_node_child_count += 1;
@@ -1228,7 +1262,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 // Record paragraph start for boundary tracking
                 // BUT skip if inside a list - list owns the paragraph boundary
                 if self.list_depth == 0 {
-                    self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
+                    self.current_paragraph_start =
+                        Some((self.last_byte_offset, self.last_char_offset));
                 }
 
                 let node_id = self.gen_node_id();
@@ -1268,7 +1303,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                                 }
                             } else {
                                 // Just > and maybe a space
-                                (gt_pos + 2).min(raw_text.len())
+                                (gt_pos + 1).min(raw_text.len())
                             };
 
                             let syntax = &raw_text[gt_pos..syntax_end];
@@ -1890,7 +1925,47 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     Ok(())
                 }
             }
-            TagEnd::BlockQuote(_) => self.write("</blockquote>\n"),
+            TagEnd::BlockQuote(_) => {
+                // If pending_blockquote_range is still set, the blockquote was empty
+                // (no paragraph inside). Emit the > as its own minimal paragraph.
+                if let Some(bq_range) = self.pending_blockquote_range.take() {
+                    if bq_range.start < bq_range.end {
+                        let raw_text = &self.source[bq_range.clone()];
+                        if let Some(gt_pos) = raw_text.find('>') {
+                            let para_byte_start = bq_range.start + gt_pos;
+                            let para_char_start = self.last_char_offset;
+
+                            // Create a minimal paragraph for the empty blockquote
+                            // let node_id = self.gen_node_id();
+                            // write!(&mut self.writer, "<p id=\"{}\"", node_id)?;
+                            // self.begin_node(node_id.clone());
+
+                            // // Record start-of-node mapping for cursor positioning
+                            // self.offset_maps.push(OffsetMapping {
+                            //     byte_range: para_byte_start..para_byte_start,
+                            //     char_range: para_char_start..para_char_start,
+                            //     node_id: node_id.clone(),
+                            //     char_offset_in_node: 0,
+                            //     child_index: Some(0),
+                            //     utf16_len: 0,
+                            // });
+
+                            // Emit the > as block syntax
+                            let syntax = &raw_text[gt_pos..gt_pos + 1];
+                            self.emit_inner_syntax(syntax, para_byte_start, SyntaxType::Block)?;
+
+                            // self.write("</p>\n")?;
+                            // self.end_node();
+
+                            // Record paragraph boundary for incremental rendering
+                            let byte_range = para_byte_start..bq_range.end;
+                            let char_range = para_char_start..self.last_char_offset;
+                            self.paragraph_ranges.push((byte_range, char_range));
+                        }
+                    }
+                }
+                self.write("</blockquote>\n")
+            }
             TagEnd::CodeBlock => {
                 use std::sync::LazyLock;
                 use syntect::parsing::SyntaxSet;
