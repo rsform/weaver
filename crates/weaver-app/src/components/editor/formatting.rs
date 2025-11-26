@@ -1,5 +1,7 @@
 //! Formatting actions and utilities for applying markdown formatting.
 
+use crate::components::editor::{ListContext, detect_list_context, find_line_end};
+
 use super::document::EditorDocument;
 
 /// Formatting actions available in the editor.
@@ -114,16 +116,46 @@ pub fn apply_formatting(doc: &mut EditorDocument, action: FormatAction) {
             doc.selection = None;
         }
         FormatAction::BulletList => {
-            let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
-            let _ = doc.insert_tracked(line_start, "- ");
-            doc.cursor.offset += 2;
-            doc.selection = None;
+            if let Some(ctx) = detect_list_context(doc.loro_text(), doc.cursor.offset) {
+                let continuation = match ctx {
+                    ListContext::Unordered { indent, marker } => {
+                        format!("\n{}{} ", indent, marker)
+                    }
+                    ListContext::Ordered { .. } => {
+                        format!("\n\n - ")
+                    }
+                };
+                let len = continuation.chars().count();
+                let _ = doc.insert_tracked(doc.cursor.offset, &continuation);
+                doc.cursor.offset += len;
+                doc.selection = None;
+            } else {
+                let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
+                let _ = doc.insert_tracked(line_start, " - ");
+                doc.cursor.offset += 3;
+                doc.selection = None;
+            }
         }
         FormatAction::NumberedList => {
-            let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
-            let _ = doc.insert_tracked(line_start, "1. ");
-            doc.cursor.offset += 3;
-            doc.selection = None;
+            if let Some(ctx) = detect_list_context(doc.loro_text(), doc.cursor.offset) {
+                let continuation = match ctx {
+                    ListContext::Unordered { .. } => {
+                        format!("\n\n1. ")
+                    }
+                    ListContext::Ordered { indent, number } => {
+                        format!("\n{}{}. ", indent, number + 1)
+                    }
+                };
+                let len = continuation.chars().count();
+                let _ = doc.insert_tracked(doc.cursor.offset, &continuation);
+                doc.cursor.offset += len;
+                doc.selection = None;
+            } else {
+                let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
+                let _ = doc.insert_tracked(line_start, "1. ");
+                doc.cursor.offset += 3;
+                doc.selection = None;
+            }
         }
         FormatAction::Quote => {
             let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
