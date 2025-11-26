@@ -52,6 +52,8 @@ serde_ipld_dagcbor = { version = "0.6" }
 loro = "1.9.1"
 markdown-weaver-escape = { workspace = true }
 web-time = "1.1"
+urlencoding = "2.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry"] }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 webbrowser = "1.0.6"
@@ -59,6 +61,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+tracing-wasm = "0.2"
 #sqlite-wasm-rs = { version = "0.4", default-features = false, features = ["precompiled", "relaxed-idb"] }
 time = { version = "0.3", features = ["wasm-bindgen"] }
 console_error_panic_hook = "0.1"

@@ -7,10 +7,12 @@
 mod cursor;
 mod document;
 mod formatting;
+mod log_buffer;
 mod offset_map;
 mod paragraph;
 mod platform;
 mod render;
+mod report;
 mod storage;
 mod toolbar;
 mod visibility;
@@ -28,6 +30,8 @@ pub use storage::{EditorSnapshot, clear_storage, load_from_storage, save_to_stor
 pub use toolbar::EditorToolbar;
 pub use visibility::VisibilityState;
 pub use writer::{SyntaxSpanInfo, SyntaxType, WriterResult};
+pub use report::ReportButton;
+pub use log_buffer::LogCaptureLayer;
 
 use dioxus::prelude::*;
 

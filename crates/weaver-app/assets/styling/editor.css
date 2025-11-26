@@ -116,3 +116,147 @@ li:has(.md-syntax-block:not(.hidden)) {
     line-height: 1em;
     vertical-align: baseline;
 }
+
+/* Editor page header with report button */
+.editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 6rem;
+    background: var(--color-base);
+}
+
+.editor-header h1 {
+    margin: 0;
+    color: var(--color-text);
+}
+
+/* Bug report button and dialog */
+.report-bug-button {
+    padding: 0.5rem 1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text);
+    cursor: pointer;
+    margin-right: 3.5rem;
+    font-size: 0.9rem;
+    font-family: var(--font-body);
+}
+
+.report-bug-button:hover {
+    background: var(--color-overlay);
+}
+
+.report-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.report-dialog {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    max-width: 1000px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    color: var(--color-text);
+}
+
+.report-dialog h2 {
+    margin: 0 0 1rem 0;
+    color: var(--color-emphasis);
+}
+
+.report-section {
+    margin-bottom: 1rem;
+}
+
+.report-section label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.report-section h4 {
+    margin: 0.5rem 0;
+    color: var(--color-subtle);
+}
+
+.report-section pre {
+    background: var(--color-base);
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    overflow-y: auto;
+    color: var(--color-text);
+}
+
+.report-comment {
+    width: 100%;
+    padding: 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-base);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    resize: vertical;
+}
+
+.report-details {
+    margin: 1rem 0;
+}
+
+.report-details summary {
+    cursor: pointer;
+    color: var(--color-muted);
+}
+
+.report-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
+.report-cancel {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text);
+    cursor: pointer;
+    font-family: var(--font-body);
+}
+
+.report-cancel:hover {
+    background: var(--color-overlay);
+}
+
+.report-submit {
+    padding: 0.5rem 1rem;
+    background: var(--color-primary);
+    border: none;
+    border-radius: 4px;
+    color: var(--color-base);
+    cursor: pointer;
+    font-weight: 500;
+    font-family: var(--font-body);
+}
+
+.report-submit:hover {
+    opacity: 0.9;
+}
