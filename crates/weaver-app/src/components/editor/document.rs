@@ -201,6 +201,23 @@ impl EditorDocument {
         result
     }
 
+    /// Push text to end of document. Faster than insert for appending.
+    pub fn push_tracked(&mut self, text: &str) -> LoroResult<()> {
+        let pos = self.text.len_unicode();
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(pos);
+        let result = self.text.push_str(text);
+        let len_after = self.text.len_unicode();
+        self.last_edit = Some(EditInfo {
+            edit_char_pos: pos,
+            inserted_len: text.chars().count(),
+            deleted_len: 0,
+            contains_newline: text.contains('\n'),
+            in_block_syntax_zone,
+            doc_len_after: len_after,
+        });
+        result
+    }
+
     /// Remove text range and record edit info for incremental rendering.
     pub fn remove_tracked(&mut self, start: usize, len: usize) -> LoroResult<()> {
         let content = self.text.to_string();

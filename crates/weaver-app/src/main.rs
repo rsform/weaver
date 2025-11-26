@@ -168,7 +168,6 @@ const THEME_DEFAULTS_CSS: Asset = asset!("/assets/styling/theme-defaults.css");
 
 #[component]
 fn App() -> Element {
-    tracing::debug!("App component rendering");
     #[allow(unused)]
     let fetcher = use_context_provider(|| {
         fetch::Fetcher::new(OAuthClient::new(
