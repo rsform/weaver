@@ -100,6 +100,34 @@ fn main() {
     #[cfg(target_arch = "wasm32")]
     console_error_panic_hook::set_once();
 
+    // Set up tracing subscriber with both console output and log capture (wasm only)
+    // Must happen before dioxus::launch so dioxus skips its own init
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        use tracing::Level;
+        use tracing::subscriber::set_global_default;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::Registry;
+
+        let console_level = if cfg!(debug_assertions) {
+            Level::DEBUG
+        } else {
+            Level::INFO
+        };
+
+        let wasm_layer = tracing_wasm::WASMLayer::new(
+            tracing_wasm::WASMLayerConfigBuilder::new()
+                .set_max_level(console_level)
+                .build(),
+        );
+
+        let reg = Registry::default()
+            .with(wasm_layer)
+            .with(components::editor::LogCaptureLayer);
+
+        let _ = set_global_default(reg);
+    }
+
     #[cfg(feature = "server")]
     std::panic::set_hook(Box::new(|panic_info| {
         tracing::error!("PANIC: {:?}", panic_info);
