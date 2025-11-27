@@ -565,3 +565,50 @@ li:has(.md-syntax-block:not(.hidden)) {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Image upload dialog */
+.image-preview-container {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+.image-preview {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 4px;
+    object-fit: contain;
+}
+
+.image-alt-input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.image-alt-input-container label {
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.image-alt-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-base);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    resize: vertical;
+}
+
+.image-alt-input::placeholder {
+    color: var(--color-muted);
+}
+
+.dialog-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}

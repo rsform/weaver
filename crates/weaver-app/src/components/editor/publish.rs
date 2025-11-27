@@ -3,10 +3,15 @@
 //! Handles creating/updating AT Protocol notebook entries from editor state.
 
 use dioxus::prelude::*;
-use jacquard::types::string::{AtUri, Datetime};
+use jacquard::types::ident::AtIdentifier;
+use jacquard::types::string::{AtUri, Datetime, Nsid};
+use jacquard::{IntoStatic, prelude::*, to_data};
+use weaver_api::com_atproto::repo::{create_record::CreateRecord, put_record::PutRecord};
 use weaver_api::sh_weaver::embed::images::Images;
 use weaver_api::sh_weaver::notebook::entry::{Entry, EntryEmbeds};
 use weaver_common::{WeaverError, WeaverExt};
+
+const ENTRY_NSID: &str = "sh.weaver.notebook.entry";
 
 use crate::auth::AuthState;
 use crate::fetch::Fetcher;
@@ -33,10 +38,15 @@ impl PublishResult {
 
 /// Publish an entry to the AT Protocol.
 ///
+/// Supports three modes:
+/// - With notebook_title: uses `upsert_entry` to publish to a notebook
+/// - Without notebook but with entry_uri in doc: uses `put_record` to update existing
+/// - Without notebook and no entry_uri: uses `create_record` for free-floating entry
+///
 /// # Arguments
 /// * `fetcher` - The authenticated fetcher/client
 /// * `doc` - The editor document containing entry data
-/// * `notebook_title` - Title of the notebook to publish to
+/// * `notebook_title` - Optional title of the notebook to publish to
 /// * `draft_key` - Storage key for the draft (for cleanup)
 ///
 /// # Returns
@@ -44,7 +54,7 @@ impl PublishResult {
 pub async fn publish_entry(
     fetcher: &Fetcher,
     doc: &EditorDocument,
-    notebook_title: &str,
+    notebook_title: Option<&str>,
     draft_key: &str,
 ) -> Result<PublishResult, WeaverError> {
     // Get images from the document
@@ -95,12 +105,72 @@ pub async fn publish_entry(
         .maybe_tags(tags)
         .maybe_embeds(entry_embeds)
         .build();
+    let entry_data = to_data(&entry).unwrap();
 
-    // Publish via upsert_entry
     let client = fetcher.get_client();
-    let (uri, was_created) = client
-        .upsert_entry(notebook_title, &doc.title(), entry)
-        .await?;
+    let result = if let Some(notebook) = notebook_title {
+        // Publish to a notebook via upsert_entry
+        let (uri, was_created) = client.upsert_entry(notebook, &doc.title(), entry).await?;
+
+        if was_created {
+            PublishResult::Created(uri)
+        } else {
+            PublishResult::Updated(uri)
+        }
+    } else if let Some(existing_uri) = doc.entry_uri() {
+        // Update existing free-floating entry
+        let did = fetcher
+            .current_did()
+            .await
+            .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
+
+        let rkey = existing_uri
+            .rkey()
+            .ok_or_else(|| WeaverError::InvalidNotebook("Entry URI missing rkey".into()))?;
+
+        let collection = Nsid::new(ENTRY_NSID).map_err(|e| WeaverError::AtprotoString(e))?;
+
+        let request = PutRecord::new()
+            .repo(AtIdentifier::Did(did))
+            .collection(collection)
+            .rkey(rkey.clone())
+            .record(entry_data)
+            .build();
+
+        let response = fetcher
+            .send(request)
+            .await
+            .map_err(jacquard::client::AgentError::from)?;
+        let output = response
+            .into_output()
+            .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
+
+        PublishResult::Updated(output.uri.into_static())
+    } else {
+        // Create new free-floating entry
+        let did = fetcher
+            .current_did()
+            .await
+            .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
+
+        let collection = Nsid::new(ENTRY_NSID).map_err(|e| WeaverError::AtprotoString(e))?;
+
+        let request = CreateRecord::new()
+            .repo(AtIdentifier::Did(did))
+            .collection(collection)
+            .record(entry_data)
+            .build();
+
+        let response = fetcher
+            .send(request)
+            .await
+            .map_err(jacquard::client::AgentError::from)?;
+        let output = response
+            .into_output()
+            .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
+
+        PublishResult::Created(output.uri.into_static())
+    };
 
     // Cleanup: delete PublishedBlob records (entry's embed refs now keep blobs alive)
     // TODO: Implement when image upload is added
@@ -113,11 +183,7 @@ pub async fn publish_entry(
     // Clear local draft
     delete_draft(draft_key);
 
-    if was_created {
-        Ok(PublishResult::Created(uri))
-    } else {
-        Ok(PublishResult::Updated(uri))
-    }
+    Ok(result)
 }
 
 /// Simple slug generation from title.
@@ -161,6 +227,7 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
 
     let mut show_dialog = use_signal(|| false);
     let mut notebook_title = use_signal(|| String::from("Default"));
+    let mut use_notebook = use_signal(|| true);
     let mut is_publishing = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
     let mut success_uri: Signal<Option<AtUri<'static>>> = use_signal(|| None);
@@ -168,6 +235,9 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
     let is_authenticated = auth_state.read().is_authenticated();
     let doc = props.document;
     let draft_key = props.draft_key.clone();
+
+    // Check if we're editing an existing entry
+    let is_editing_existing = doc().entry_uri().is_some();
 
     // Validate that we have required fields
     let can_publish = {
@@ -189,7 +259,11 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
     let do_publish = move |_| {
         let fetcher = fetcher.clone();
         let draft_key = draft_key_clone.clone();
-        let notebook = notebook_title();
+        let notebook = if use_notebook() {
+            Some(notebook_title())
+        } else {
+            None
+        };
 
         spawn(async move {
             is_publishing.set(true);
@@ -198,7 +272,7 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
             // Get document snapshot for publishing
             let doc_snapshot = doc();
 
-            match publish_entry(&fetcher, &doc_snapshot, &notebook, &draft_key).await {
+            match publish_entry(&fetcher, &doc_snapshot, notebook.as_deref(), &draft_key).await {
                 Ok(result) => {
                     success_uri.set(Some(result.uri().clone()));
                 }
@@ -253,14 +327,33 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
                         }
                     } else {
                         div { class: "publish-form",
-                            div { class: "publish-field",
-                                label { "Notebook" }
-                                input {
-                                    r#type: "text",
-                                    class: "publish-input",
-                                    placeholder: "Notebook title...",
-                                    value: "{notebook_title}",
-                                    oninput: move |e| notebook_title.set(e.value()),
+                            if is_editing_existing {
+                                div { class: "publish-info",
+                                    p { "Updating existing entry" }
+                                }
+                            }
+
+                            div { class: "publish-field publish-checkbox",
+                                label {
+                                    input {
+                                        r#type: "checkbox",
+                                        checked: use_notebook(),
+                                        onchange: move |e| use_notebook.set(e.checked()),
+                                    }
+                                    " Publish to notebook"
+                                }
+                            }
+
+                            if use_notebook() {
+                                div { class: "publish-field",
+                                    label { "Notebook" }
+                                    input {
+                                        r#type: "text",
+                                        class: "publish-input",
+                                        placeholder: "Notebook title...",
+                                        value: "{notebook_title}",
+                                        oninput: move |e| notebook_title.set(e.value()),
+                                    }
                                 }
                             }
 
@@ -288,7 +381,7 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
                                 button {
                                     class: "publish-submit",
                                     onclick: do_publish,
-                                    disabled: is_publishing() || notebook_title().trim().is_empty(),
+                                    disabled: is_publishing() || (use_notebook() && notebook_title().trim().is_empty()),
                                     if is_publishing() {
                                         "Publishing..."
                                     } else {

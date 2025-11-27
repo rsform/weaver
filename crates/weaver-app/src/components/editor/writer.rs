@@ -103,11 +103,141 @@ impl EmbedContentProvider for () {
     }
 }
 
+/// Resolves image URLs to CDN URLs based on stored images.
+///
+/// The markdown may reference images by name (e.g., "photo.jpg" or "/notebook/image.png").
+/// This trait maps those names to the actual CDN URL using the blob CID and owner DID.
+pub trait ImageResolver {
+    /// Resolve an image URL from markdown to a CDN URL.
+    ///
+    /// Returns `Some(cdn_url)` if the image is found, `None` to use the original URL.
+    fn resolve_image_url(&self, url: &str) -> Option<String>;
+}
+
+impl ImageResolver for () {
+    fn resolve_image_url(&self, _url: &str) -> Option<String> {
+        None
+    }
+}
+
+/// Concrete image resolver that maps image names to URLs.
+///
+/// Supports two states for images:
+/// - Pending: uses data URL for immediate preview while upload is in progress
+/// - Uploaded: uses CDN URL format `https://cdn.bsky.app/img/feed_fullsize/plain/{did}/{cid}@{format}`
+///
+/// Image URLs in markdown use the format `/image/{name}`.
+#[derive(Clone, Default)]
+pub struct EditorImageResolver {
+    /// Pending images: name -> data URL (still uploading)
+    pending: std::collections::HashMap<String, String>,
+    /// Uploaded images: name -> (CID string, DID string, format)
+    uploaded: std::collections::HashMap<String, (String, String, String)>,
+}
+
+impl EditorImageResolver {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a pending image with a data URL for immediate preview.
+    ///
+    /// # Arguments
+    /// * `name` - The image name used in markdown (e.g., "photo.jpg")
+    /// * `data_url` - The base64 data URL for preview
+    pub fn add_pending(&mut self, name: String, data_url: String) {
+        self.pending.insert(name, data_url);
+    }
+
+    /// Promote a pending image to uploaded status.
+    ///
+    /// Removes from pending and adds to uploaded with CDN info.
+    pub fn promote_to_uploaded(&mut self, name: &str, cid: String, did: String, format: String) {
+        self.pending.remove(name);
+        self.uploaded.insert(name.to_string(), (cid, did, format));
+    }
+
+    /// Add an already-uploaded image.
+    ///
+    /// # Arguments
+    /// * `name` - The name/URL used in markdown (e.g., "photo.jpg")
+    /// * `cid` - The blob CID
+    /// * `did` - The DID of the blob owner
+    /// * `format` - The image format (e.g., "jpeg", "png")
+    pub fn add_uploaded(&mut self, name: String, cid: String, did: String, format: String) {
+        self.uploaded.insert(name, (cid, did, format));
+    }
+
+    /// Check if an image is pending upload.
+    pub fn is_pending(&self, name: &str) -> bool {
+        self.pending.contains_key(name)
+    }
+
+    /// Build a resolver from editor images and user DID.
+    pub fn from_images<'a>(
+        images: impl IntoIterator<Item = &'a super::document::EditorImage>,
+        user_did: &str,
+    ) -> Self {
+        let mut resolver = Self::new();
+        for editor_image in images {
+            // Get the name from the Image (use alt text as fallback if name is empty)
+            let name = editor_image
+                .image
+                .name
+                .as_ref()
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| editor_image.image.alt.to_string());
+
+            if name.is_empty() {
+                continue;
+            }
+
+            // Get CID and format from the blob ref
+            let blob = editor_image.image.image.blob();
+            let cid = blob.cid().to_string();
+            let format = blob
+                .mime_type
+                .0
+                .strip_prefix("image/")
+                .unwrap_or("jpeg")
+                .to_string();
+
+            resolver.add_uploaded(name, cid, user_did.to_string(), format);
+        }
+        resolver
+    }
+}
+
+impl ImageResolver for EditorImageResolver {
+    fn resolve_image_url(&self, url: &str) -> Option<String> {
+        // Extract image name from /image/{name} format
+        let name = url.strip_prefix("/image/").unwrap_or(url);
+
+        // Check pending first (data URL for immediate preview)
+        if let Some(data_url) = self.pending.get(name) {
+            return Some(data_url.clone());
+        }
+
+        // Then check uploaded (CDN URL)
+        let (cid, did, format) = self.uploaded.get(name)?;
+        Some(format!(
+            "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@{}",
+            did, cid, format
+        ))
+    }
+}
+
+impl ImageResolver for &EditorImageResolver {
+    fn resolve_image_url(&self, url: &str) -> Option<String> {
+        (*self).resolve_image_url(url)
+    }
+}
+
 /// HTML writer that preserves markdown formatting characters.
 ///
 /// This writer processes offset-iter events to detect gaps (consumed formatting)
 /// and emits them as styled spans for visibility in the editor.
-pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E = ()> {
+pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E = (), R = ()> {
     source: &'a str,
     source_text: &'a LoroText,
     events: I,
@@ -125,6 +255,7 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: St
     numbers: HashMap<String, usize>,
 
     embed_provider: Option<E>,
+    image_resolver: Option<R>,
 
     code_buffer: Option<(Option<String>, String)>, // (lang, content)
     code_buffer_byte_range: Option<Range<usize>>,  // byte range of buffered code content
@@ -172,8 +303,13 @@ enum TableState {
     Body,
 }
 
-impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedContentProvider>
-    EditorWriter<'a, I, W, E>
+impl<
+        'a,
+        I: Iterator<Item = (Event<'a>, Range<usize>)>,
+        W: StrWrite,
+        E: EmbedContentProvider,
+        R: ImageResolver,
+    > EditorWriter<'a, I, W, E, R>
 {
     pub fn new(source: &'a str, source_text: &'a LoroText, events: I, writer: W) -> Self {
         Self::new_with_node_offset(source, source_text, events, writer, 0)
@@ -211,6 +347,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             table_cell_index: 0,
             numbers: HashMap::new(),
             embed_provider: None,
+            image_resolver: None,
             code_buffer: None,
             code_buffer_byte_range: None,
             code_buffer_char_range: None,
@@ -256,6 +393,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             table_cell_index: 0,
             numbers: HashMap::new(),
             embed_provider: None,
+            image_resolver: None,
             code_buffer: None,
             code_buffer_byte_range: None,
             code_buffer_char_range: None,
@@ -280,7 +418,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
     }
 
     /// Add an embed content provider
-    pub fn with_embed_provider(self, provider: E) -> EditorWriter<'a, I, W, E> {
+    pub fn with_embed_provider(self, provider: E) -> EditorWriter<'a, I, W, E, R> {
         EditorWriter {
             source: self.source,
             source_text: self.source_text,
@@ -295,6 +433,50 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
             table_cell_index: self.table_cell_index,
             numbers: self.numbers,
             embed_provider: Some(provider),
+            image_resolver: self.image_resolver,
+            code_buffer: self.code_buffer,
+            code_buffer_byte_range: self.code_buffer_byte_range,
+            code_buffer_char_range: self.code_buffer_char_range,
+            pending_blockquote_range: self.pending_blockquote_range,
+            render_tables_as_markdown: self.render_tables_as_markdown,
+            table_start_offset: self.table_start_offset,
+            offset_maps: self.offset_maps,
+            next_node_id: self.next_node_id,
+            current_node_id: self.current_node_id,
+            current_node_char_offset: self.current_node_char_offset,
+            current_node_child_count: self.current_node_child_count,
+            utf16_checkpoints: self.utf16_checkpoints,
+            paragraph_ranges: self.paragraph_ranges,
+            current_paragraph_start: self.current_paragraph_start,
+            list_depth: self.list_depth,
+            boundary_only: self.boundary_only,
+            syntax_spans: self.syntax_spans,
+            next_syn_id: self.next_syn_id,
+            pending_inline_formats: self.pending_inline_formats,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Add an image resolver for mapping markdown image URLs to CDN URLs
+    pub fn with_image_resolver<R2: ImageResolver>(
+        self,
+        resolver: R2,
+    ) -> EditorWriter<'a, I, W, E, R2> {
+        EditorWriter {
+            source: self.source,
+            source_text: self.source_text,
+            events: self.events,
+            writer: self.writer,
+            last_byte_offset: self.last_byte_offset,
+            last_char_offset: self.last_char_offset,
+            end_newline: self.end_newline,
+            in_non_writing_block: self.in_non_writing_block,
+            table_state: self.table_state,
+            table_alignments: self.table_alignments,
+            table_cell_index: self.table_cell_index,
+            numbers: self.numbers,
+            embed_provider: self.embed_provider,
+            image_resolver: Some(resolver),
             code_buffer: self.code_buffer,
             code_buffer_byte_range: self.code_buffer_byte_range,
             code_buffer_char_range: self.code_buffer_char_range,
@@ -1753,7 +1935,16 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 }
 
                 self.write("<img src=\"")?;
-                escape_href(&mut self.writer, &dest_url)?;
+                // Try to resolve image URL via resolver, fall back to original
+                let resolved_url = self
+                    .image_resolver
+                    .as_ref()
+                    .and_then(|r| r.resolve_image_url(&dest_url));
+                if let Some(ref cdn_url) = resolved_url {
+                    escape_href(&mut self.writer, cdn_url)?;
+                } else {
+                    escape_href(&mut self.writer, &dest_url)?;
+                }
                 self.write("\" alt=\"")?;
                 // Consume text events for alt attribute
                 self.raw_text()?;
@@ -2139,8 +2330,13 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
     }
 }
 
-impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedContentProvider>
-    EditorWriter<'a, I, W, E>
+impl<
+        'a,
+        I: Iterator<Item = (Event<'a>, Range<usize>)>,
+        W: StrWrite,
+        E: EmbedContentProvider,
+        R: ImageResolver,
+    > EditorWriter<'a, I, W, E, R>
 {
     fn write_embed(
         &mut self,

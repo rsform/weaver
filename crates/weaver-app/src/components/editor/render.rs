@@ -7,7 +7,7 @@
 use super::document::EditInfo;
 use super::offset_map::{OffsetMapping, RenderResult};
 use super::paragraph::{ParagraphRender, hash_source, text_slice_to_string};
-use super::writer::{EditorWriter, SyntaxSpanInfo};
+use super::writer::{EditorImageResolver, EditorWriter, ImageResolver, SyntaxSpanInfo};
 use loro::LoroText;
 use markdown_weaver::Parser;
 use std::ops::Range;
@@ -112,9 +112,10 @@ fn adjust_paragraph_positions(
 /// For "safe" edits (no boundary changes), skips boundary rediscovery entirely.
 ///
 /// # Arguments
-/// - `rope`: The document rope to render
+/// - `text`: The document text to render
 /// - `cache`: Previous render cache (if any)
 /// - `edit`: Information about the most recent edit (if any)
+/// - `image_resolver`: Optional resolver for mapping image URLs to data/CDN URLs
 ///
 /// # Returns
 /// Tuple of (rendered paragraphs, updated cache)
@@ -122,6 +123,7 @@ pub fn render_paragraphs_incremental(
     text: &LoroText,
     cache: Option<&RenderCache>,
     edit: Option<&EditInfo>,
+    image_resolver: Option<&EditorImageResolver>,
 ) -> (Vec<ParagraphRender>, RenderCache) {
     let source = text.to_string();
 
@@ -297,6 +299,9 @@ pub fn render_paragraphs_incremental(
                 .into_offset_iter();
             let mut output = String::new();
 
+            // Use provided resolver or empty default
+            let resolver = image_resolver.cloned().unwrap_or_default();
+
             let (mut offset_map, mut syntax_spans) =
                 match EditorWriter::<_, _, ()>::new_with_offsets(
                     &para_source,
@@ -306,6 +311,7 @@ pub fn render_paragraphs_incremental(
                     node_id_offset,
                     syn_id_offset,
                 )
+                .with_image_resolver(&resolver)
                 .run()
                 {
                     Ok(result) => {

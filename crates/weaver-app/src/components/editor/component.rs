@@ -1,8 +1,14 @@
 //! The main MarkdownEditor component.
 
 use dioxus::prelude::*;
+use jacquard::cowstr::ToCowStr;
+use jacquard::types::blob::BlobRef;
+use weaver_api::sh_weaver::embed::images::Image;
+use weaver_common::WeaverExt;
 
+use crate::auth::AuthState;
 use crate::components::editor::ReportButton;
+use crate::fetch::Fetcher;
 
 use super::document::{CompositionState, EditorDocument};
 use super::dom_sync::{sync_cursor_from_dom, update_paragraph_dom};
@@ -17,7 +23,7 @@ use super::render;
 use super::storage;
 use super::toolbar::EditorToolbar;
 use super::visibility::update_syntax_visibility;
-use super::writer::SyntaxSpanInfo;
+use super::writer::{EditorImageResolver, SyntaxSpanInfo};
 
 /// Main markdown editor component.
 ///
@@ -32,6 +38,10 @@ use super::writer::SyntaxSpanInfo;
 /// - Keyboard shortcuts (Ctrl+B for bold, Ctrl+I for italic)
 #[component]
 pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
+    // Context for authenticated API calls
+    let fetcher = use_context::<Fetcher>();
+    let auth_state = use_context::<Signal<AuthState>>();
+
     // Try to restore from localStorage (includes CRDT state for undo history)
     // Use "current" as the default draft key for now
     let draft_key = "current";
@@ -44,14 +54,18 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     // Cache for incremental paragraph rendering
     let mut render_cache = use_signal(|| render::RenderCache::default());
 
+    // Image resolver for mapping /image/{name} to data URLs or CDN URLs
+    let mut image_resolver = use_signal(EditorImageResolver::default);
+
     // Render paragraphs with incremental caching
     let paragraphs = use_memo(move || {
         let doc = document();
         let cache = render_cache.peek();
         let edit = doc.last_edit.as_ref();
+        let resolver = image_resolver();
 
         let (paras, new_cache) =
-            render::render_paragraphs_incremental(doc.loro_text(), Some(&cache), edit);
+            render::render_paragraphs_incremental(doc.loro_text(), Some(&cache), edit, Some(&resolver));
 
         // Update cache for next render (write-only via spawn to avoid reactive loop)
         dioxus::prelude::spawn(async move {
@@ -161,7 +175,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             let needs_save = {
                 let last_frontiers = last_saved_frontiers.peek();
                 match &*last_frontiers {
-                    None => true, // First save
+                    None => true,
                     Some(last) => &current_frontiers != last,
                 }
             }; // drop last_frontiers borrow here
@@ -169,7 +183,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             if needs_save {
                 document.with_mut(|doc| {
                     doc.sync_loro_cursor();
-                    let _ = storage::save_to_storage(doc, draft_key, None);
+                    let _ = storage::save_to_storage(doc, draft_key);
                 });
 
                 // Update last saved frontiers
@@ -650,6 +664,112 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                     document.with_mut(|doc| {
                         formatting::apply_formatting(doc, action);
                     });
+                },
+                on_image: move |uploaded: super::image_upload::UploadedImage| {
+                    // Build data URL for immediate preview
+                    use base64::{Engine, engine::general_purpose::STANDARD};
+                    let data_url = format!(
+                        "data:{};base64,{}",
+                        uploaded.mime_type,
+                        STANDARD.encode(&uploaded.data)
+                    );
+
+                    // Add to resolver for immediate display
+                    let name = uploaded.name.clone();
+                    image_resolver.with_mut(|resolver| {
+                        resolver.add_pending(name.clone(), data_url);
+                    });
+
+                    // Insert markdown image syntax at cursor
+                    let alt_text = if uploaded.alt.is_empty() {
+                        name.clone()
+                    } else {
+                        uploaded.alt.clone()
+                    };
+                    let markdown = format!("![{}](/image/{})", alt_text, name);
+
+                    document.with_mut(|doc| {
+                        let pos = doc.cursor.offset;
+                        let _ = doc.insert_tracked(pos, &markdown);
+                        doc.cursor.offset = pos + markdown.chars().count();
+                    });
+
+                    // Upload to PDS in background if authenticated
+                    let is_authenticated = auth_state.read().is_authenticated();
+                    if is_authenticated {
+                        let fetcher = fetcher.clone();
+                        let name_for_upload = name.clone();
+                        let alt_for_upload = alt_text.clone();
+                        let data = uploaded.data.clone();
+
+                        spawn(async move {
+                            let client = fetcher.get_client();
+
+                            // Upload blob and create temporary PublishedBlob record
+                            match client.publish_blob(data, &name_for_upload, None).await {
+                                Ok((strong_ref, published_blob)) => {
+                                    // Extract the blob from PublishedBlob
+                                    let blob = match published_blob.upload {
+                                        BlobRef::Blob(b) => b,
+                                        _ => {
+                                            tracing::warn!("Unexpected BlobRef variant");
+                                            return;
+                                        }
+                                    };
+
+                                    // Get format from mime type
+                                    let format = blob
+                                        .mime_type
+                                        .0
+                                        .strip_prefix("image/")
+                                        .unwrap_or("jpeg")
+                                        .to_string();
+
+                                    // Get DID from fetcher
+                                    let did = match fetcher.current_did().await {
+                                        Some(d) => d.to_string(),
+                                        None => {
+                                            tracing::warn!("No DID available");
+                                            return;
+                                        }
+                                    };
+
+                                    let cid = blob.cid().to_string();
+
+                                    // Build Image using the builder API
+                                    let name_for_resolver = name_for_upload.clone();
+                                    let image = Image::new()
+                                        .alt(alt_for_upload.to_cowstr())
+                                        .image(BlobRef::Blob(blob))
+                                        .name(name_for_upload.to_cowstr())
+                                        .build();
+
+                                    // Add to document
+                                    document.with_mut(|doc| {
+                                        doc.add_image(&image, Some(&strong_ref.uri));
+                                    });
+
+                                    // Promote from pending to uploaded in resolver
+                                    image_resolver.with_mut(|resolver| {
+                                        resolver.promote_to_uploaded(
+                                            &name_for_resolver,
+                                            cid,
+                                            did,
+                                            format,
+                                        );
+                                    });
+
+                                    tracing::info!(name = %name_for_resolver, "Image uploaded to PDS");
+                                }
+                                Err(e) => {
+                                    tracing::error!(error = %e, "Failed to upload image");
+                                    // Image stays as data URL - will work for preview but not publish
+                                }
+                            }
+                        });
+                    } else {
+                        tracing::info!(name = %name, "Image added with data URL (not authenticated)");
+                    }
                 }
             }
 
