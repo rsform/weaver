@@ -56,6 +56,22 @@ pub struct SyntaxSpanInfo {
     pub formatted_range: Option<Range<usize>>,
 }
 
+impl SyntaxSpanInfo {
+    /// Adjust all position fields by a character delta.
+    ///
+    /// This adjusts both `char_range` and `formatted_range` (if present) together,
+    /// ensuring they stay in sync. Use this instead of manually adjusting fields
+    /// to avoid forgetting one.
+    pub fn adjust_positions(&mut self, char_delta: isize) {
+        self.char_range.start = (self.char_range.start as isize + char_delta) as usize;
+        self.char_range.end = (self.char_range.end as isize + char_delta) as usize;
+        if let Some(ref mut fr) = self.formatted_range {
+            fr.start = (fr.start as isize + char_delta) as usize;
+            fr.end = (fr.end as isize + char_delta) as usize;
+        }
+    }
+}
+
 /// Classify syntax text as inline or block level
 fn classify_syntax(text: &str) -> SyntaxType {
     let trimmed = text.trim_start();
@@ -838,13 +854,20 @@ impl<
             // the closing syntax must be emitted AFTER the closing HTML tag, not before.
             // Otherwise the closing `**` span ends up INSIDE the <strong> element.
             // These tags handle their own closing syntax in end_tag().
+            // Image and Embed handle ALL their syntax in the Start event, so exclude them too.
             use markdown_weaver::TagEnd;
-            let is_inline_format_end = matches!(
+            let is_self_handled_end = matches!(
                 &event,
-                Event::End(TagEnd::Strong | TagEnd::Emphasis | TagEnd::Strikethrough)
+                Event::End(
+                    TagEnd::Strong
+                        | TagEnd::Emphasis
+                        | TagEnd::Strikethrough
+                        | TagEnd::Image
+                        | TagEnd::Embed
+                )
             );
 
-            if matches!(&event, Event::End(_)) && !is_inline_format_end {
+            if matches!(&event, Event::End(_)) && !is_self_handled_end {
                 // Emit gap from last_byte_offset to range.end
                 self.emit_gap_before(range.end)?;
             } else if !matches!(&event, Event::End(_)) {
@@ -976,6 +999,25 @@ impl<
         Ok(())
     }
 
+    /// Consume events until End tag without writing anything.
+    /// Used when we've already extracted content from source and just need to advance the iterator.
+    fn consume_until_end(&mut self) {
+        use Event::*;
+        let mut nest = 0;
+        while let Some((event, _range)) = self.events.next() {
+            match event {
+                Start(_) => nest += 1,
+                End(_) => {
+                    if nest == 0 {
+                        break;
+                    }
+                    nest -= 1;
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn process_event(&mut self, event: Event<'_>, range: Range<usize>) -> Result<(), W::Error> {
         use Event::*;
 
@@ -1026,12 +1068,13 @@ impl<
                 }
             }
             Code(text) => {
-                let char_start = self.last_char_offset;
+                let format_start = self.last_char_offset;
                 let raw_text = &self.source[range.clone()];
 
-                // Emit opening backtick and track it
-                if raw_text.starts_with('`') {
+                // Track opening span index so we can set formatted_range later
+                let opening_span_idx = if raw_text.starts_with('`') {
                     let syn_id = self.gen_syn_id();
+                    let char_start = self.last_char_offset;
                     let backtick_char_end = char_start + 1;
                     write!(
                         &mut self.writer,
@@ -1042,10 +1085,13 @@ impl<
                         syn_id,
                         char_range: char_start..backtick_char_end,
                         syntax_type: SyntaxType::Inline,
-                        formatted_range: None,
+                        formatted_range: None, // Set after we know the full range
                     });
                     self.last_char_offset += 1;
-                }
+                    Some(self.syntax_spans.len() - 1)
+                } else {
+                    None
+                };
 
                 self.write("<code>")?;
 
@@ -1070,20 +1116,31 @@ impl<
                         "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">`</span>",
                         syn_id, backtick_char_start, backtick_char_end
                     )?;
+
+                    // Now we know the full formatted range
+                    let formatted_range = format_start..backtick_char_end;
+
                     self.syntax_spans.push(SyntaxSpanInfo {
                         syn_id,
                         char_range: backtick_char_start..backtick_char_end,
                         syntax_type: SyntaxType::Inline,
-                        formatted_range: None,
+                        formatted_range: Some(formatted_range.clone()),
                     });
+
+                    // Update opening span with formatted_range
+                    if let Some(idx) = opening_span_idx {
+                        self.syntax_spans[idx].formatted_range = Some(formatted_range);
+                    }
+
                     self.last_char_offset += 1;
                 }
             }
             InlineMath(text) => {
+                let format_start = self.last_char_offset;
                 let raw_text = &self.source[range.clone()];
 
-                // Emit opening $ and track it
-                if raw_text.starts_with('$') {
+                // Track opening span index so we can set formatted_range later
+                let opening_span_idx = if raw_text.starts_with('$') {
                     let syn_id = self.gen_syn_id();
                     let char_start = self.last_char_offset;
                     let char_end = char_start + 1;
@@ -1096,10 +1153,13 @@ impl<
                         syn_id,
                         char_range: char_start..char_end,
                         syntax_type: SyntaxType::Inline,
-                        formatted_range: None,
+                        formatted_range: None, // Set after we know the full range
                     });
                     self.last_char_offset += 1;
-                }
+                    Some(self.syntax_spans.len() - 1)
+                } else {
+                    None
+                };
 
                 self.write(r#"<span class="math math-inline">"#)?;
                 let text_char_len = text.chars().count();
@@ -1117,12 +1177,22 @@ impl<
                         "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">$</span>",
                         syn_id, char_start, char_end
                     )?;
+
+                    // Now we know the full formatted range
+                    let formatted_range = format_start..char_end;
+
                     self.syntax_spans.push(SyntaxSpanInfo {
                         syn_id,
                         char_range: char_start..char_end,
                         syntax_type: SyntaxType::Inline,
-                        formatted_range: None,
+                        formatted_range: Some(formatted_range.clone()),
                     });
+
+                    // Update opening span with formatted_range
+                    if let Some(idx) = opening_span_idx {
+                        self.syntax_spans[idx].formatted_range = Some(formatted_range);
+                    }
+
                     self.last_char_offset += 1;
                 }
             }
@@ -1377,13 +1447,21 @@ impl<
                         None
                     }
                 }
-                Tag::Link { .. } => {
-                    if raw_text.starts_with('[') {
+                Tag::Link { link_type, .. } => {
+                    if matches!(link_type, LinkType::WikiLink { .. }) {
+                        if raw_text.starts_with("[[") {
+                            Some("[[")
+                        } else {
+                            None
+                        }
+                    } else if raw_text.starts_with('[') {
                         Some("[")
                     } else {
                         None
                     }
                 }
+                // Note: Tag::Image and Tag::Embed handle their own syntax spans
+                // in their respective handlers, so don't emit here
                 _ => None,
             };
 
@@ -1425,9 +1503,11 @@ impl<
                 let byte_end = range.start + syntax_byte_len;
                 self.record_mapping(byte_start..byte_end, char_start..char_end);
 
-                // For paired inline syntax (Strong, Emphasis, Strikethrough),
-                // track the opening span so we can set formatted_range when closing
-                if matches!(tag, Tag::Strong | Tag::Emphasis | Tag::Strikethrough) {
+                // For paired inline syntax, track opening span for formatted_range
+                if matches!(
+                    tag,
+                    Tag::Strong | Tag::Emphasis | Tag::Strikethrough | Tag::Link { .. }
+                ) {
                     self.pending_inline_formats.push((syn_id, char_start));
                 }
 
@@ -1911,31 +1991,107 @@ impl<
                 attrs,
                 ..
             } => {
-                // Emit opening ![
-                if range.start < range.end {
-                    let raw_text = &self.source[range.clone()];
-                    if raw_text.starts_with("![") {
-                        let syn_id = self.gen_syn_id();
-                        let char_start = self.last_char_offset;
-                        let char_end = char_start + 2;
+                // Image rendering: all syntax elements share one syn_id for visibility toggling
+                // Structure: ![  alt text  ](url)  <img>  cursor-landing
+                let raw_text = &self.source[range.clone()];
+                let syn_id = self.gen_syn_id();
+                let opening_char_start = self.last_char_offset;
 
-                        write!(
-                            &mut self.writer,
-                            "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">![</span>",
-                            syn_id, char_start, char_end
-                        )?;
+                // Find the alt text and closing syntax positions
+                let paren_pos = raw_text.rfind("](").unwrap_or(raw_text.len());
+                let alt_text = if raw_text.starts_with("![") && paren_pos > 2 {
+                    &raw_text[2..paren_pos]
+                } else {
+                    ""
+                };
+                let closing_syntax = if paren_pos < raw_text.len() {
+                    &raw_text[paren_pos..]
+                } else {
+                    ""
+                };
 
-                        self.syntax_spans.push(SyntaxSpanInfo {
-                            syn_id,
-                            char_range: char_start..char_end,
-                            syntax_type: SyntaxType::Inline,
-                            formatted_range: None,
-                        });
-                    }
+                // Calculate char positions
+                let alt_char_len = alt_text.chars().count();
+                let closing_char_len = closing_syntax.chars().count();
+                let opening_char_end = opening_char_start + 2; // "!["
+                let alt_char_start = opening_char_end;
+                let alt_char_end = alt_char_start + alt_char_len;
+                let closing_char_start = alt_char_end;
+                let closing_char_end = closing_char_start + closing_char_len;
+                let formatted_range = opening_char_start..closing_char_end;
+
+                // 1. Emit opening ![ syntax span
+                if raw_text.starts_with("![") {
+                    write!(
+                        &mut self.writer,
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">![</span>",
+                        syn_id, opening_char_start, opening_char_end
+                    )?;
+
+                    self.syntax_spans.push(SyntaxSpanInfo {
+                        syn_id: syn_id.clone(),
+                        char_range: opening_char_start..opening_char_end,
+                        syntax_type: SyntaxType::Inline,
+                        formatted_range: Some(formatted_range.clone()),
+                    });
+
+                    // Record offset mapping for ![
+                    self.record_mapping(
+                        range.start..range.start + 2,
+                        opening_char_start..opening_char_end,
+                    );
                 }
 
+                // 2. Emit alt text span (same syn_id, editable when visible)
+                if !alt_text.is_empty() {
+                    write!(
+                        &mut self.writer,
+                        "<span class=\"image-alt\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                        syn_id, alt_char_start, alt_char_end
+                    )?;
+                    escape_html(&mut self.writer, alt_text)?;
+                    self.write("</span>")?;
+
+                    self.syntax_spans.push(SyntaxSpanInfo {
+                        syn_id: syn_id.clone(),
+                        char_range: alt_char_start..alt_char_end,
+                        syntax_type: SyntaxType::Inline,
+                        formatted_range: Some(formatted_range.clone()),
+                    });
+
+                    // Record offset mapping for alt text
+                    self.record_mapping(
+                        range.start + 2..range.start + 2 + alt_text.len(),
+                        alt_char_start..alt_char_end,
+                    );
+                }
+
+                // 3. Emit closing ](url) syntax span
+                if !closing_syntax.is_empty() {
+                    write!(
+                        &mut self.writer,
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                        syn_id, closing_char_start, closing_char_end
+                    )?;
+                    escape_html(&mut self.writer, closing_syntax)?;
+                    self.write("</span>")?;
+
+                    self.syntax_spans.push(SyntaxSpanInfo {
+                        syn_id: syn_id.clone(),
+                        char_range: closing_char_start..closing_char_end,
+                        syntax_type: SyntaxType::Inline,
+                        formatted_range: Some(formatted_range.clone()),
+                    });
+
+                    // Record offset mapping for ](url)
+                    self.record_mapping(
+                        range.start + paren_pos..range.end,
+                        closing_char_start..closing_char_end,
+                    );
+                }
+
+                // 4. Emit <img> element (no syn_id - always visible)
                 self.write("<img src=\"")?;
-                // Try to resolve image URL via resolver, fall back to original
                 let resolved_url = self
                     .image_resolver
                     .as_ref()
@@ -1946,8 +2102,7 @@ impl<
                     escape_href(&mut self.writer, &dest_url)?;
                 }
                 self.write("\" alt=\"")?;
-                // Consume text events for alt attribute
-                self.raw_text()?;
+                escape_html(&mut self.writer, alt_text)?;
                 self.write("\"")?;
                 if !title.is_empty() {
                     self.write(" title=\"")?;
@@ -1975,32 +2130,14 @@ impl<
                 }
                 self.write(" />")?;
 
-                // Emit closing ](url)
-                if range.start < range.end {
-                    let raw_text = &self.source[range];
-                    if let Some(paren_pos) = raw_text.rfind("](") {
-                        let syntax = &raw_text[paren_pos..];
-                        let syn_id = self.gen_syn_id();
-                        let char_start = self.last_char_offset;
-                        let syntax_char_len = syntax.chars().count();
-                        let char_end = char_start + syntax_char_len;
+                // Consume the text events for alt (they're still in the iterator)
+                // Use consume_until_end() since we already wrote alt text from source
+                self.consume_until_end();
 
-                        write!(
-                            &mut self.writer,
-                            "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
-                            syn_id, char_start, char_end
-                        )?;
-                        escape_html(&mut self.writer, syntax)?;
-                        self.write("</span>")?;
+                // Update offsets
+                self.last_char_offset = closing_char_end;
+                self.last_byte_offset = range.end;
 
-                        self.syntax_spans.push(SyntaxSpanInfo {
-                            syn_id,
-                            char_range: char_start..char_end,
-                            syntax_type: SyntaxType::Inline,
-                            formatted_range: None,
-                        });
-                    }
-                }
                 Ok(())
             }
             Tag::Embed {
@@ -2009,7 +2146,7 @@ impl<
                 title,
                 id,
                 attrs,
-            } => self.write_embed(embed_type, dest_url, title, id, attrs),
+            } => self.write_embed(range, embed_type, dest_url, title, id, attrs),
             Tag::WeaverBlock(_, _) => {
                 self.in_non_writing_block = true;
                 Ok(())
@@ -2305,7 +2442,37 @@ impl<
                 self.finalize_paired_inline_format();
                 Ok(())
             }
-            TagEnd::Link => self.write("</a>"),
+            TagEnd::Link => {
+                self.write("</a>")?;
+                // Check if this is a wiki link (ends with ]]) vs regular link (ends with ))
+                let raw_text = &self.source[range.clone()];
+                if raw_text.ends_with("]]") {
+                    // WikiLink: emit ]] as closing syntax
+                    let syn_id = self.gen_syn_id();
+                    let char_start = self.last_char_offset;
+                    let char_end = char_start + 2;
+
+                    write!(
+                        &mut self.writer,
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">]]</span>",
+                        syn_id, char_start, char_end
+                    )?;
+
+                    self.syntax_spans.push(SyntaxSpanInfo {
+                        syn_id,
+                        char_range: char_start..char_end,
+                        syntax_type: SyntaxType::Inline,
+                        formatted_range: None, // Will be set by finalize
+                    });
+
+                    self.last_char_offset = char_end;
+                    self.last_byte_offset = range.end;
+                } else {
+                    self.emit_gap_before(range.end)?;
+                }
+                self.finalize_paired_inline_format();
+                Ok(())
+            }
             TagEnd::Image => Ok(()), // No-op: raw_text() already consumed the End(Image) event
             TagEnd::Embed => Ok(()),
             TagEnd::WeaverBlock(_) => {
@@ -2340,12 +2507,51 @@ impl<
 {
     fn write_embed(
         &mut self,
+        range: Range<usize>,
         embed_type: EmbedType,
         dest_url: CowStr<'_>,
         title: CowStr<'_>,
         id: CowStr<'_>,
         attrs: Option<markdown_weaver::WeaverAttributes<'_>>,
     ) -> Result<(), W::Error> {
+        // Track opening span index for formatted_range
+        let opening_span_idx: Option<usize>;
+        let opening_char_start: usize;
+
+        // Emit opening ![[
+        if range.start < range.end {
+            let raw_text = &self.source[range.clone()];
+            if raw_text.starts_with("![[") {
+                let syn_id = self.gen_syn_id();
+                let char_start = self.last_char_offset;
+                let char_end = char_start + 3; // "![["
+
+                write!(
+                    &mut self.writer,
+                    "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">![[</span>",
+                    syn_id, char_start, char_end
+                )?;
+
+                opening_span_idx = Some(self.syntax_spans.len());
+                opening_char_start = char_start;
+                self.syntax_spans.push(SyntaxSpanInfo {
+                    syn_id,
+                    char_range: char_start..char_end,
+                    syntax_type: SyntaxType::Inline,
+                    formatted_range: None,
+                });
+
+                self.last_char_offset = char_end;
+                self.last_byte_offset = range.start + 3;
+            } else {
+                opening_span_idx = None;
+                opening_char_start = self.last_char_offset;
+            }
+        } else {
+            opening_span_idx = None;
+            opening_char_start = self.last_char_offset;
+        }
+
         // Try to get content from attributes first
         let content_from_attrs = if let Some(ref attrs) = attrs {
             attrs
@@ -2413,6 +2619,42 @@ impl<
             }
             self.write("></iframe>")?;
         }
+
+        // Emit closing ]]
+        if range.start < range.end {
+            let raw_text = &self.source[range.clone()];
+            if raw_text.ends_with("]]") {
+                let syn_id = self.gen_syn_id();
+                let char_start = self.last_char_offset;
+                let char_end = char_start + 2; // "]]"
+
+                write!(
+                    &mut self.writer,
+                    "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">]]</span>",
+                    syn_id, char_start, char_end
+                )?;
+
+                // Set formatted_range on both opening and closing spans
+                let formatted_range = opening_char_start..char_end;
+                self.syntax_spans.push(SyntaxSpanInfo {
+                    syn_id,
+                    char_range: char_start..char_end,
+                    syntax_type: SyntaxType::Inline,
+                    formatted_range: Some(formatted_range.clone()),
+                });
+
+                // Update opening span's formatted_range
+                if let Some(idx) = opening_span_idx {
+                    if let Some(span) = self.syntax_spans.get_mut(idx) {
+                        span.formatted_range = Some(formatted_range);
+                    }
+                }
+
+                self.last_char_offset = char_end;
+                self.last_byte_offset = range.end;
+            }
+        }
+
         Ok(())
     }
 }

@@ -227,7 +227,8 @@
 
 /* Hidden syntax spans - collapsed when cursor is not near */
 .md-syntax-inline.hidden,
-.md-syntax-block.hidden {
+.md-syntax-block.hidden,
+.image-alt.hidden {
     display: none;
 }
 

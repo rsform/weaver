@@ -2,7 +2,18 @@
 //!
 //! Uses Loro CRDT for text storage with built-in undo/redo support.
 //! Mirrors the `sh.weaver.notebook.entry` schema for AT Protocol integration.
+//!
+//! # Reactive Architecture
+//!
+//! Individual fields are wrapped in Dioxus Signals for fine-grained reactivity:
+//! - Cursor/selection changes don't trigger content re-renders
+//! - Content changes (via `last_edit`) trigger paragraph memo re-evaluation
+//! - The document struct itself is NOT wrapped in a Signal - use `use_hook`
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use dioxus::prelude::*;
 use loro::{
     ExportMode, LoroDoc, LoroList, LoroMap, LoroResult, LoroText, LoroValue, ToJson, UndoManager,
     cursor::{Cursor, Side},
@@ -30,12 +41,26 @@ pub struct EditorImage {
 /// Contains the document text (backed by Loro CRDT), cursor position,
 /// selection, and IME composition state. Mirrors the `sh.weaver.notebook.entry`
 /// schema with CRDT containers for each field.
-#[derive(Debug)]
+///
+/// # Reactive Architecture
+///
+/// The document itself is NOT wrapped in a Signal. Instead, individual fields
+/// that need reactivity are wrapped in Signals:
+/// - `cursor`, `selection`, `composition` - high-frequency, cursor-only updates
+/// - `last_edit` - triggers paragraph re-renders when content changes
+///
+/// Use `use_hook(|| EditorDocument::new(...))` in components, not `use_signal`.
+///
+/// # Cloning
+///
+/// EditorDocument is cheap to clone - Loro types are Arc-backed handles,
+/// and Signals are Copy. Closures can capture clones without overhead.
+#[derive(Clone)]
 pub struct EditorDocument {
     /// The Loro document containing all editor state.
     doc: LoroDoc,
 
-    // --- Entry schema containers ---
+    // --- Entry schema containers (Loro handles interior mutability) ---
     /// Markdown content (maps to entry.content)
     content: LoroText,
 
@@ -60,31 +85,35 @@ pub struct EditorDocument {
     /// None for new entries that haven't been published yet.
     entry_uri: Option<AtUri<'static>>,
 
-    // --- Editor state ---
+    // --- Editor state (non-reactive) ---
     /// Undo manager for the document.
-    undo_mgr: UndoManager,
-
-    /// Current cursor position (char offset) - fast local cache.
-    /// This is the authoritative position for immediate operations.
-    pub cursor: CursorState,
+    undo_mgr: Rc<RefCell<UndoManager>>,
 
     /// CRDT-aware cursor that tracks position through remote edits and undo/redo.
     /// Recreated after our own edits, queried after undo/redo/remote edits.
     loro_cursor: Option<Cursor>,
 
-    /// Active selection if any
-    pub selection: Option<Selection>,
+    // --- Reactive editor state (Signal-wrapped for fine-grained updates) ---
+    /// Current cursor position. Signal so cursor changes don't dirty content memos.
+    pub cursor: Signal<CursorState>,
 
-    /// IME composition state (for Phase 3)
-    pub composition: Option<CompositionState>,
+    /// Active selection if any. Signal for same reason as cursor.
+    pub selection: Signal<Option<Selection>>,
+
+    /// IME composition state. Signal so composition updates are isolated.
+    pub composition: Signal<Option<CompositionState>>,
 
     /// Timestamp when the last composition ended.
     /// Used for Safari workaround: ignore Enter keydown within 500ms of compositionend.
-    pub composition_ended_at: Option<web_time::Instant>,
+    pub composition_ended_at: Signal<Option<web_time::Instant>>,
 
     /// Most recent edit info for incremental rendering optimization.
-    /// Used to determine if we can skip full re-parsing.
-    pub last_edit: Option<EditInfo>,
+    /// Signal so paragraphs memo can subscribe to content changes only.
+    pub last_edit: Signal<Option<EditInfo>>,
+
+    /// Pending snap direction for cursor restoration after edits.
+    /// Set by input handlers, consumed by cursor restoration.
+    pub pending_snap: Signal<Option<super::offset_map::SnapDirection>>,
 }
 
 /// Cursor state including position and affinity.
@@ -121,7 +150,8 @@ pub struct CompositionState {
 }
 
 /// Information about the most recent edit, used for incremental rendering optimization.
-#[derive(Clone, Debug, Default)]
+/// Derives PartialEq so it can be used with Dioxus memos for change detection.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct EditInfo {
     /// Character offset where the edit occurred
     pub edit_char_pos: usize,
@@ -170,6 +200,10 @@ impl EditorDocument {
 
     /// Create a new editor document with the given content.
     /// Sets `created_at` to current time.
+    ///
+    /// # Note
+    /// This creates Dioxus Signals for reactive fields. Call from within
+    /// a component using `use_hook(|| EditorDocument::new(...))`.
     pub fn new(initial_content: String) -> Self {
         let doc = LoroDoc::new();
 
@@ -211,16 +245,18 @@ impl EditorDocument {
             tags,
             embeds,
             entry_uri: None,
-            undo_mgr,
-            cursor: CursorState {
+            undo_mgr: Rc::new(RefCell::new(undo_mgr)),
+            loro_cursor,
+            // Reactive editor state - wrapped in Signals
+            cursor: Signal::new(CursorState {
                 offset: 0,
                 affinity: Affinity::Before,
-            },
-            loro_cursor,
-            selection: None,
-            composition: None,
-            composition_ended_at: None,
-            last_edit: None,
+            }),
+            selection: Signal::new(None),
+            composition: Signal::new(None),
+            composition_ended_at: Signal::new(None),
+            last_edit: Signal::new(None),
+            pending_snap: Signal::new(None),
         }
     }
 
@@ -284,7 +320,8 @@ impl EditorDocument {
     }
 
     /// Set the entry title (replaces existing).
-    pub fn set_title(&mut self, new_title: &str) {
+    /// Takes &self because Loro has interior mutability.
+    pub fn set_title(&self, new_title: &str) {
         let current_len = self.title.len_unicode();
         if current_len > 0 {
             self.title.delete(0, current_len).ok();
@@ -298,7 +335,8 @@ impl EditorDocument {
     }
 
     /// Set the URL path/slug (replaces existing).
-    pub fn set_path(&mut self, new_path: &str) {
+    /// Takes &self because Loro has interior mutability.
+    pub fn set_path(&self, new_path: &str) {
         let current_len = self.path.len_unicode();
         if current_len > 0 {
             self.path.delete(0, current_len).ok();
@@ -312,7 +350,8 @@ impl EditorDocument {
     }
 
     /// Set the created_at timestamp (usually only called once on creation or when loading).
-    pub fn set_created_at(&mut self, datetime: &str) {
+    /// Takes &self because Loro has interior mutability.
+    pub fn set_created_at(&self, datetime: &str) {
         let current_len = self.created_at.len_unicode();
         if current_len > 0 {
             self.created_at.delete(0, current_len).ok();
@@ -346,7 +385,8 @@ impl EditorDocument {
     }
 
     /// Add a tag (if not already present).
-    pub fn add_tag(&mut self, tag: &str) {
+    /// Takes &self because Loro has interior mutability.
+    pub fn add_tag(&self, tag: &str) {
         let existing = self.tags();
         if !existing.iter().any(|t| t == tag) {
             self.tags.push(LoroValue::String(tag.into())).ok();
@@ -354,7 +394,8 @@ impl EditorDocument {
     }
 
     /// Remove a tag by value.
-    pub fn remove_tag(&mut self, tag: &str) {
+    /// Takes &self because Loro has interior mutability.
+    pub fn remove_tag(&self, tag: &str) {
         let len = self.tags.len();
         for i in (0..len).rev() {
             if let Some(loro::ValueOrContainer::Value(LoroValue::String(s))) = self.tags.get(i) {
@@ -367,7 +408,8 @@ impl EditorDocument {
     }
 
     /// Clear all tags.
-    pub fn clear_tags(&mut self) {
+    /// Takes &self because Loro has interior mutability.
+    pub fn clear_tags(&self) {
         let len = self.tags.len();
         if len > 0 {
             self.tags.delete(0, len).ok();
@@ -484,14 +526,14 @@ impl EditorDocument {
         let len_before = self.content.len_unicode();
         let result = self.content.insert(pos, text);
         let len_after = self.content.len_unicode();
-        self.last_edit = Some(EditInfo {
+        self.last_edit.set(Some(EditInfo {
             edit_char_pos: pos,
             inserted_len: len_after.saturating_sub(len_before),
             deleted_len: 0,
             contains_newline: text.contains('\n'),
             in_block_syntax_zone,
             doc_len_after: len_after,
-        });
+        }));
         result
     }
 
@@ -501,14 +543,14 @@ impl EditorDocument {
         let in_block_syntax_zone = self.is_in_block_syntax_zone(pos);
         let result = self.content.push_str(text);
         let len_after = self.content.len_unicode();
-        self.last_edit = Some(EditInfo {
+        self.last_edit.set(Some(EditInfo {
             edit_char_pos: pos,
             inserted_len: text.chars().count(),
             deleted_len: 0,
             contains_newline: text.contains('\n'),
             in_block_syntax_zone,
             doc_len_after: len_after,
-        });
+        }));
         result
     }
 
@@ -519,14 +561,14 @@ impl EditorDocument {
         let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
 
         let result = self.content.delete(start, len);
-        self.last_edit = Some(EditInfo {
+        self.last_edit.set(Some(EditInfo {
             edit_char_pos: start,
             inserted_len: 0,
             deleted_len: len,
             contains_newline,
             in_block_syntax_zone,
             doc_len_after: self.content.len_unicode(),
-        });
+        }));
         result
     }
 
@@ -545,14 +587,14 @@ impl EditorDocument {
         // because: len_after = len_before - deleted + inserted
         let inserted_len = (len_after + len).saturating_sub(len_before);
 
-        self.last_edit = Some(EditInfo {
+        self.last_edit.set(Some(EditInfo {
             edit_char_pos: start,
             inserted_len,
             deleted_len: len,
             contains_newline: delete_has_newline || text.contains('\n'),
             in_block_syntax_zone,
             doc_len_after: len_after,
-        });
+        }));
         Ok(())
     }
 
@@ -564,10 +606,12 @@ impl EditorDocument {
         // so it tracks through the undo operation
         self.sync_loro_cursor();
 
-        let result = self.undo_mgr.undo()?;
+        let result = self.undo_mgr.borrow_mut().undo()?;
         if result {
             // After undo, query Loro cursor for new position
             self.sync_cursor_from_loro();
+            // Signal content change for re-render
+            self.last_edit.set(None);
         }
         Ok(result)
     }
@@ -579,22 +623,24 @@ impl EditorDocument {
         // Sync Loro cursor to current position BEFORE redo
         self.sync_loro_cursor();
 
-        let result = self.undo_mgr.redo()?;
+        let result = self.undo_mgr.borrow_mut().redo()?;
         if result {
             // After redo, query Loro cursor for new position
             self.sync_cursor_from_loro();
+            // Signal content change for re-render
+            self.last_edit.set(None);
         }
         Ok(result)
     }
 
     /// Check if undo is available.
     pub fn can_undo(&self) -> bool {
-        self.undo_mgr.can_undo()
+        self.undo_mgr.borrow().can_undo()
     }
 
     /// Check if redo is available.
     pub fn can_redo(&self) -> bool {
-        self.undo_mgr.can_redo()
+        self.undo_mgr.borrow().can_redo()
     }
 
     /// Get a slice of the content text.
@@ -606,7 +652,8 @@ impl EditorDocument {
     /// Sync the Loro cursor to the current cursor.offset position.
     /// Call this after OUR edits where we know the new cursor position.
     pub fn sync_loro_cursor(&mut self) {
-        self.loro_cursor = self.content.get_cursor(self.cursor.offset, Side::default());
+        let offset = self.cursor.read().offset;
+        self.loro_cursor = self.content.get_cursor(offset, Side::default());
     }
 
     /// Update cursor.offset from the Loro cursor's tracked position.
@@ -615,9 +662,9 @@ impl EditorDocument {
     pub fn sync_cursor_from_loro(&mut self) -> Option<usize> {
         let loro_cursor = self.loro_cursor.as_ref()?;
         let result = self.doc.get_cursor_pos(loro_cursor).ok()?;
-        let new_offset = result.current.pos;
-        self.cursor.offset = new_offset.min(self.len_chars());
-        Some(self.cursor.offset)
+        let new_offset = result.current.pos.min(self.len_chars());
+        self.cursor.with_mut(|c| c.offset = new_offset);
+        Some(new_offset)
     }
 
     /// Get the Loro cursor for serialization.
@@ -646,6 +693,12 @@ impl EditorDocument {
         self.doc.state_frontiers()
     }
 
+    /// Get the last edit info for incremental rendering.
+    /// Reading this creates a reactive dependency on content changes.
+    pub fn last_edit(&self) -> Option<EditInfo> {
+        self.last_edit.read().clone()
+    }
+
     /// Create a new EditorDocument from a binary snapshot.
     /// Falls back to empty document if import fails.
     ///
@@ -655,6 +708,10 @@ impl EditorDocument {
     /// Note: Undo/redo is session-only. The UndoManager tracks operations as they
     /// happen in real-time; it cannot rebuild history from imported CRDT ops.
     /// For cross-session "undo", use time travel via `doc.checkout(frontiers)`.
+    ///
+    /// # Note
+    /// This creates Dioxus Signals for reactive fields. Call from within
+    /// a component using `use_hook`.
     pub fn from_snapshot(
         snapshot: &[u8],
         loro_cursor: Option<Cursor>,
@@ -691,14 +748,14 @@ impl EditorDocument {
             fallback_offset
         };
 
-        let cursor = CursorState {
+        let cursor_state = CursorState {
             offset: cursor_offset.min(max_offset),
             affinity: Affinity::Before,
         };
 
         // If no Loro cursor provided, create one at the restored position
         let loro_cursor =
-            loro_cursor.or_else(|| content.get_cursor(cursor.offset, Side::default()));
+            loro_cursor.or_else(|| content.get_cursor(cursor_state.offset, Side::default()));
 
         Self {
             doc,
@@ -709,35 +766,23 @@ impl EditorDocument {
             tags,
             embeds,
             entry_uri: None,
-            undo_mgr,
-            cursor,
+            undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
-            selection: None,
-            composition: None,
-            composition_ended_at: None,
-            last_edit: None,
+            // Reactive editor state - wrapped in Signals
+            cursor: Signal::new(cursor_state),
+            selection: Signal::new(None),
+            composition: Signal::new(None),
+            composition_ended_at: Signal::new(None),
+            last_edit: Signal::new(None),
+            pending_snap: Signal::new(None),
         }
     }
 }
 
-// EditorDocument can't derive Clone because LoroDoc/LoroText/UndoManager don't implement Clone.
-// This is intentional - the document should be the single source of truth.
-
-impl Clone for EditorDocument {
-    fn clone(&self) -> Self {
-        // Use snapshot export/import for a complete clone including all containers
-        let snapshot = self.export_snapshot();
-        let mut new_doc =
-            Self::from_snapshot(&snapshot, self.loro_cursor.clone(), self.cursor.offset);
-
-        // Copy non-CRDT state
-        new_doc.cursor = self.cursor;
-        new_doc.sync_loro_cursor();
-        new_doc.selection = self.selection;
-        new_doc.composition = self.composition.clone();
-        new_doc.composition_ended_at = self.composition_ended_at;
-        new_doc.last_edit = self.last_edit.clone();
-        new_doc.entry_uri = self.entry_uri.clone();
-        new_doc
+impl PartialEq for EditorDocument {
+    fn eq(&self, _other: &Self) -> bool {
+        // EditorDocument uses interior mutability, so we can't meaningfully compare.
+        // Return false to ensure components re-render when passed as props.
+        false
     }
 }

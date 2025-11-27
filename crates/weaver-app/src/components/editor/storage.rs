@@ -9,6 +9,7 @@
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use dioxus::prelude::*;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use gloo_storage::{LocalStorage, Storage};
 use jacquard::IntoStatic;
@@ -86,7 +87,7 @@ pub fn save_to_storage(
         title: doc.title(),
         snapshot: snapshot_b64,
         cursor: doc.loro_cursor().cloned(),
-        cursor_offset: doc.cursor.offset,
+        cursor_offset: doc.cursor.read().offset,
         editing_uri: doc.entry_uri().map(|u| u.to_string()),
     };
     LocalStorage::set(storage_key(key), &snapshot)
@@ -129,7 +130,7 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
 
     // Fallback: create new doc from text content
     let mut doc = EditorDocument::new(snapshot.content);
-    doc.cursor.offset = snapshot.cursor_offset.min(doc.len_chars());
+    doc.cursor.write().offset = snapshot.cursor_offset.min(doc.len_chars());
     doc.sync_loro_cursor();
     doc.set_entry_uri(entry_uri);
     Some(doc)
