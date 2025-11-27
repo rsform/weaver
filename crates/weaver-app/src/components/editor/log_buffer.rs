@@ -9,8 +9,8 @@ use std::fmt::Write as FmtWrite;
 
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
+use tracing_subscriber::layer::Context;
 
 /// Maximum number of log entries to keep.
 const MAX_ENTRIES: usize = 100;
@@ -36,7 +36,9 @@ impl<S: Subscriber> Layer<S> for LogCaptureLayer {
         let target = metadata.target();
 
         // Only buffer debug+ logs from our modules
-        let is_our_module = CAPTURED_PREFIXES.iter().any(|prefix| target.starts_with(prefix));
+        let is_our_module = CAPTURED_PREFIXES
+            .iter()
+            .any(|prefix| target.starts_with(prefix));
         if !is_our_module || *level > BUFFER_MIN_LEVEL {
             return;
         }

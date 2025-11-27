@@ -106,8 +106,8 @@ fn main() {
     {
         use tracing::Level;
         use tracing::subscriber::set_global_default;
-        use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::Registry;
+        use tracing_subscriber::layer::SubscriberExt;
 
         let console_level = if cfg!(debug_assertions) {
             Level::DEBUG

@@ -44,4 +44,3 @@ pub fn hash_source(text: &str) -> u64 {
 pub fn text_slice_to_string(text: &LoroText, range: Range<usize>) -> String {
     text.slice(range.start, range.end).unwrap_or_default()
 }
-

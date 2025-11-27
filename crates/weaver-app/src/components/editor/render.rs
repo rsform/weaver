@@ -181,7 +181,11 @@ pub fn render_paragraphs_incremental(
 
         // Compute delta from actual length difference, not edit info
         // This handles stale edits gracefully (delta = 0 if lengths match)
-        let cached_len = cache.paragraphs.last().map(|p| p.char_range.end).unwrap_or(0);
+        let cached_len = cache
+            .paragraphs
+            .last()
+            .map(|p| p.char_range.end)
+            .unwrap_or(0);
         let char_delta = current_len as isize - cached_len as isize;
 
         // Adjust each cached paragraph's range
