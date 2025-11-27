@@ -7,7 +7,7 @@
 //! 3. Walking text nodes to find the UTF-16 offset within the element
 //! 4. Setting cursor with web_sys Selection API
 
-use super::offset_map::{OffsetMapping, find_mapping_for_char};
+use super::offset_map::{OffsetMapping, SnapDirection, find_mapping_for_char, find_nearest_valid_position};
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen::JsCast;
@@ -18,6 +18,7 @@ use wasm_bindgen::JsCast;
 /// - `char_offset`: Cursor position as char offset in document
 /// - `offset_map`: Mappings from source to DOM positions
 /// - `editor_id`: DOM ID of the contenteditable element
+/// - `snap_direction`: Optional direction hint for snapping from invisible content
 ///
 /// # Algorithm
 /// 1. Find offset mapping containing char_offset
@@ -29,6 +30,7 @@ pub fn restore_cursor_position(
     char_offset: usize,
     offset_map: &[OffsetMapping],
     editor_id: &str,
+    snap_direction: Option<SnapDirection>,
 ) -> Result<(), wasm_bindgen::JsValue> {
     // Empty document - no cursor to restore
     if offset_map.is_empty() {
@@ -51,9 +53,27 @@ pub fn restore_cursor_position(
         return Ok(());
     }
 
-    // Find mapping for this cursor position
-    let (mapping, _should_snap) = find_mapping_for_char(offset_map, char_offset)
-        .ok_or("no mapping found for cursor offset")?;
+    // Find mapping for this cursor position, snapping if needed
+    let (mapping, char_offset) = match find_mapping_for_char(offset_map, char_offset) {
+        Some((m, false)) => (m, char_offset), // Valid position, use as-is
+        Some((m, true)) => {
+            // Position is on invisible content, snap to nearest valid
+            if let Some(snapped) = find_nearest_valid_position(offset_map, char_offset, snap_direction) {
+                tracing::trace!(
+                    target: "weaver::cursor",
+                    original_offset = char_offset,
+                    snapped_offset = snapped.char_offset(),
+                    direction = ?snapped.snapped,
+                    "snapping cursor from invisible content"
+                );
+                (snapped.mapping, snapped.char_offset())
+            } else {
+                // Fallback to original mapping if no valid snap target
+                (m, char_offset)
+            }
+        }
+        None => return Err("no mapping found for cursor offset".into()),
+    };
 
     tracing::trace!(
         target: "weaver::cursor",
@@ -160,6 +180,7 @@ pub fn restore_cursor_position(
     _char_offset: usize,
     _offset_map: &[OffsetMapping],
     _editor_id: &str,
+    _snap_direction: Option<SnapDirection>,
 ) -> Result<(), String> {
     Ok(())
 }

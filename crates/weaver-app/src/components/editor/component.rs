@@ -11,7 +11,8 @@ use crate::components::editor::ReportButton;
 use crate::fetch::Fetcher;
 
 use super::document::{CompositionState, EditorDocument};
-use super::dom_sync::{sync_cursor_from_dom, update_paragraph_dom};
+use super::dom_sync::{sync_cursor_from_dom, sync_cursor_from_dom_with_direction, update_paragraph_dom};
+use super::offset_map::SnapDirection;
 use super::formatting;
 use super::input::{
     get_char_at, handle_copy, handle_cut, handle_keydown, handle_paste, should_intercept_key,
@@ -45,7 +46,8 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     // Try to restore from localStorage (includes CRDT state for undo history)
     // Use "current" as the default draft key for now
     let draft_key = "current";
-    let mut document = use_signal(move || {
+    // Document is NOT in a signal - its fields are individually reactive
+    let mut document = use_hook(|| {
         storage::load_from_storage(draft_key)
             .unwrap_or_else(|| EditorDocument::new(initial_content.clone().unwrap_or_default()))
     });
@@ -58,14 +60,19 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     let mut image_resolver = use_signal(EditorImageResolver::default);
 
     // Render paragraphs with incremental caching
+    // Reads document.last_edit signal - creates dependency on content changes only
+    let doc_for_memo = document.clone();
     let paragraphs = use_memo(move || {
-        let doc = document();
+        let edit = doc_for_memo.last_edit(); // Signal read - reactive dependency
         let cache = render_cache.peek();
-        let edit = doc.last_edit.as_ref();
         let resolver = image_resolver();
 
-        let (paras, new_cache) =
-            render::render_paragraphs_incremental(doc.loro_text(), Some(&cache), edit, Some(&resolver));
+        let (paras, new_cache) = render::render_paragraphs_incremental(
+            doc_for_memo.loro_text(),
+            Some(&cache),
+            edit.as_ref(),
+            Some(&resolver),
+        );
 
         // Update cache for next render (write-only via spawn to avoid reactive loop)
         dioxus::prelude::spawn(async move {
@@ -96,33 +103,31 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
     // Update DOM when paragraphs change (incremental rendering)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let mut doc_for_dom = document.clone();
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
         tracing::debug!("DOM update effect triggered");
 
-        // Read document once to avoid multiple borrows
-        let doc = document();
-
         tracing::debug!(
-            composition_active = doc.composition.is_some(),
-            cursor = doc.cursor.offset,
+            composition_active = doc_for_dom.composition.read().is_some(),
+            cursor = doc_for_dom.cursor.read().offset,
             "DOM update: checking state"
         );
 
         // Skip DOM updates during IME composition - browser controls the preview
-        if doc.composition.is_some() {
+        if doc_for_dom.composition.read().is_some() {
             tracing::debug!("skipping DOM update during composition");
             return;
         }
 
         tracing::debug!(
-            cursor = doc.cursor.offset,
-            len = doc.len_chars(),
+            cursor = doc_for_dom.cursor.read().offset,
+            len = doc_for_dom.len_chars(),
             "DOM update proceeding (not in composition)"
         );
 
-        let cursor_offset = doc.cursor.offset;
-        let selection = doc.selection;
-        drop(doc); // Release borrow before other operations
+        let cursor_offset = doc_for_dom.cursor.read().offset;
+        let selection = *doc_for_dom.selection.read();
 
         let new_paras = paragraphs();
         let map = offset_map();
@@ -138,11 +143,14 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             use wasm_bindgen::JsCast;
             use wasm_bindgen::prelude::*;
 
+            // Read and consume pending snap direction
+            let snap_direction = doc_for_dom.pending_snap.write().take();
+
             // Use requestAnimationFrame to wait for browser paint
             if let Some(window) = web_sys::window() {
                 let closure = Closure::once(move || {
                     if let Err(e) =
-                        super::cursor::restore_cursor_position(cursor_offset, &map, editor_id)
+                        super::cursor::restore_cursor_position(cursor_offset, &map, editor_id, snap_direction)
                     {
                         tracing::warn!("Cursor restoration failed: {:?}", e);
                     }
@@ -165,11 +173,13 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
     // Auto-save with periodic check (no reactive dependency to avoid loops)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let doc_for_autosave = document.clone();
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
         // Check every 500ms if there are unsaved changes
+        let mut doc = doc_for_autosave.clone();
         let interval = gloo_timers::callback::Interval::new(500, move || {
-            // Peek both signals without creating reactive dependencies
-            let current_frontiers = document.peek().state_frontiers();
+            let current_frontiers = doc.state_frontiers();
 
             // Only save if frontiers changed (document was edited)
             let needs_save = {
@@ -181,10 +191,8 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             }; // drop last_frontiers borrow here
 
             if needs_save {
-                document.with_mut(|doc| {
-                    doc.sync_loro_cursor();
-                    let _ = storage::save_to_storage(doc, draft_key);
-                });
+                doc.sync_loro_cursor();
+                let _ = storage::save_to_storage(&doc, draft_key);
 
                 // Update last saved frontiers
                 last_saved_frontiers.set(Some(current_frontiers));
@@ -194,6 +202,8 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     });
 
     // Set up beforeinput listener for iOS/Android virtual keyboard quirks
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let doc_for_beforeinput = document.clone();
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
         use wasm_bindgen::JsCast;
@@ -219,7 +229,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             None => return,
         };
 
-        let mut document_signal = document;
+        let mut doc = doc_for_beforeinput.clone();
         let cached_paras = cached_paragraphs;
 
         let closure = Closure::wrap(Box::new(move |evt: web_sys::InputEvent| {
@@ -235,23 +245,23 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                 evt.prevent_default();
 
                 // Handle as Enter key
-                document_signal.with_mut(|doc| {
-                    if let Some(sel) = doc.selection.take() {
-                        let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                        let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                        doc.cursor.offset = start;
-                    }
+                let sel = doc.selection.write().take();
+                if let Some(sel) = sel {
+                    let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
+                    doc.cursor.write().offset = start;
+                }
 
-                    if input_type == "insertLineBreak" {
-                        // Soft break (like Shift+Enter)
-                        let _ = doc.insert_tracked(doc.cursor.offset, "  \n\u{200C}");
-                        doc.cursor.offset += 3;
-                    } else {
-                        // Paragraph break
-                        let _ = doc.insert_tracked(doc.cursor.offset, "\n\n");
-                        doc.cursor.offset += 2;
-                    }
-                });
+                let cursor_offset = doc.cursor.read().offset;
+                if input_type == "insertLineBreak" {
+                    // Soft break (like Shift+Enter)
+                    let _ = doc.insert_tracked(cursor_offset, "  \n\u{200C}");
+                    doc.cursor.write().offset = cursor_offset + 3;
+                } else {
+                    // Paragraph break
+                    let _ = doc.insert_tracked(cursor_offset, "\n\n");
+                    doc.cursor.write().offset = cursor_offset + 2;
+                }
             }
 
             // Android workaround: When swipe keyboard picks a suggestion,
@@ -264,12 +274,12 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                         tracing::debug!("Android: possible suggestion pick, deferring cursor sync");
                         // Defer cursor sync by 20ms to let selection settle
                         let paras = cached_paras;
-                        let doc_sig = document_signal;
+                        let mut doc_for_timeout = doc.clone();
                         let window = web_sys::window();
                         if let Some(window) = window {
                             let closure = Closure::once(move || {
                                 let paras = paras();
-                                sync_cursor_from_dom(&mut doc_sig.clone(), editor_id, &paras);
+                                sync_cursor_from_dom(&mut doc_for_timeout, editor_id, &paras);
                             });
                             let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
                                 closure.as_ref().unchecked_ref(),
@@ -299,9 +309,12 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                     r#type: "text",
                     class: "title-input",
                     placeholder: "Entry title...",
-                    value: "{document().title()}",
-                    oninput: move |e| {
-                        document.with_mut(|doc| doc.set_title(&e.value()));
+                    value: "{document.title()}",
+                    oninput: {
+                        let doc = document.clone();
+                        move |e| {
+                            doc.set_title(&e.value());
+                        }
                     },
                 }
             }
@@ -314,9 +327,12 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                             r#type: "text",
                             class: "path-input",
                             placeholder: "url-slug",
-                            value: "{document().path()}",
-                            oninput: move |e| {
-                                document.with_mut(|doc| doc.set_path(&e.value()));
+                            value: "{document.path()}",
+                            oninput: {
+                                let doc = document.clone();
+                                move |e| {
+                                    doc.set_path(&e.value());
+                                }
                             },
                         }
                     }
@@ -324,16 +340,17 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                     div { class: "meta-tags",
                         label { "Tags" }
                         div { class: "tags-container",
-                            for tag in document().tags() {
+                            for tag in document.tags() {
                                 span {
                                     class: "tag-chip",
                                     "{tag}"
                                     button {
                                         class: "tag-remove",
                                         onclick: {
+                                            let doc = document.clone();
                                             let tag_to_remove = tag.clone();
                                             move |_| {
-                                                document.with_mut(|doc| doc.remove_tag(&tag_to_remove));
+                                                doc.remove_tag(&tag_to_remove);
                                             }
                                         },
                                         "×"
@@ -346,13 +363,16 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                                 placeholder: "Add tag...",
                                 value: "{new_tag}",
                                 oninput: move |e| new_tag.set(e.value()),
-                                onkeydown: move |e| {
-                                    use dioxus::prelude::keyboard_types::Key;
-                                    if e.key() == Key::Enter && !new_tag().trim().is_empty() {
-                                        e.prevent_default();
-                                        let tag = new_tag().trim().to_string();
-                                        document.with_mut(|doc| doc.add_tag(&tag));
-                                        new_tag.set(String::new());
+                                onkeydown: {
+                                    let doc = document.clone();
+                                    move |e| {
+                                        use dioxus::prelude::keyboard_types::Key;
+                                        if e.key() == Key::Enter && !new_tag().trim().is_empty() {
+                                            e.prevent_default();
+                                            let tag = new_tag().trim().to_string();
+                                            doc.add_tag(&tag);
+                                            new_tag.set(String::new());
+                                        }
                                     }
                                 },
                             }
@@ -360,7 +380,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                     }
 
                     PublishButton {
-                        document: document,
+                        document: document.clone(),
                         draft_key: draft_key.to_string(),
                     }
                 }
@@ -372,197 +392,244 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                         class: "editor-content",
                         contenteditable: "true",
 
-                        onkeydown: move |evt| {
-                        use dioxus::prelude::keyboard_types::Key;
-                        use std::time::Duration;
+                        onkeydown: {
+                        let mut doc = document.clone();
+                        move |evt| {
+                            use dioxus::prelude::keyboard_types::Key;
+                            use std::time::Duration;
 
-                        let plat = platform::platform();
-                        let mods = evt.modifiers();
-                        let has_modifier = mods.ctrl() || mods.meta() || mods.alt();
+                            let plat = platform::platform();
+                            let mods = evt.modifiers();
+                            let has_modifier = mods.ctrl() || mods.meta() || mods.alt();
 
-                        // During IME composition:
-                        // - Allow modifier shortcuts (Ctrl+B, Ctrl+Z, etc.)
-                        // - Allow Escape to cancel composition
-                        // - Block text input (let browser handle composition preview)
-                        if document.peek().composition.is_some() {
-                            if evt.key() == Key::Escape {
-                                tracing::debug!("Escape pressed - cancelling composition");
-                                document.with_mut(|doc| {
-                                    doc.composition = None;
-                                });
-                                return;
-                            }
+                            // During IME composition:
+                            // - Allow modifier shortcuts (Ctrl+B, Ctrl+Z, etc.)
+                            // - Allow Escape to cancel composition
+                            // - Block text input (let browser handle composition preview)
+                            if doc.composition.read().is_some() {
+                                if evt.key() == Key::Escape {
+                                    tracing::debug!("Escape pressed - cancelling composition");
+                                    doc.composition.set(None);
+                                    return;
+                                }
 
-                            // Allow modifier shortcuts through during composition
-                            if !has_modifier {
-                                tracing::debug!(
-                                    key = ?evt.key(),
-                                    "keydown during composition - delegating to browser"
-                                );
-                                return;
-                            }
-                            // Fall through to handle the shortcut
-                        }
-
-                        // Safari workaround: After Japanese IME composition ends, both
-                        // compositionend and keydown fire for Enter. Ignore keydown
-                        // within 500ms of composition end to prevent double-newline.
-                        if plat.safari && evt.key() == Key::Enter {
-                            if let Some(ended_at) = document.peek().composition_ended_at {
-                                if ended_at.elapsed() < Duration::from_millis(500) {
+                                // Allow modifier shortcuts through during composition
+                                if !has_modifier {
                                     tracing::debug!(
-                                        "Safari: ignoring Enter within 500ms of compositionend"
+                                        key = ?evt.key(),
+                                        "keydown during composition - delegating to browser"
                                     );
                                     return;
                                 }
+                                // Fall through to handle the shortcut
                             }
-                        }
 
-                        // Android workaround: Chrome Android gets confused by Enter during/after
-                        // composition. Defer Enter handling to onkeypress instead.
-                        if plat.android && evt.key() == Key::Enter {
-                            tracing::debug!("Android: deferring Enter to keypress");
-                            return;
-                        }
+                            // Safari workaround: After Japanese IME composition ends, both
+                            // compositionend and keydown fire for Enter. Ignore keydown
+                            // within 500ms of composition end to prevent double-newline.
+                            if plat.safari && evt.key() == Key::Enter {
+                                if let Some(ended_at) = *doc.composition_ended_at.read() {
+                                    if ended_at.elapsed() < Duration::from_millis(500) {
+                                        tracing::debug!(
+                                            "Safari: ignoring Enter within 500ms of compositionend"
+                                        );
+                                        return;
+                                    }
+                                }
+                            }
 
-                        // Only prevent default for operations that modify content
-                        // Let browser handle arrow keys, Home/End naturally
-                        if should_intercept_key(&evt) {
-                            evt.prevent_default();
-                            handle_keydown(evt, &mut document);
+                            // Android workaround: Chrome Android gets confused by Enter during/after
+                            // composition. Defer Enter handling to onkeypress instead.
+                            if plat.android && evt.key() == Key::Enter {
+                                tracing::debug!("Android: deferring Enter to keypress");
+                                return;
+                            }
+
+                            // Only prevent default for operations that modify content
+                            // Let browser handle arrow keys, Home/End naturally
+                            if should_intercept_key(&evt) {
+                                evt.prevent_default();
+                                handle_keydown(evt, &mut doc);
+                            }
                         }
                     },
 
-                    onkeyup: move |evt| {
-                        use dioxus::prelude::keyboard_types::Key;
+                    onkeyup: {
+                        let mut doc = document.clone();
+                        move |evt| {
+                            use dioxus::prelude::keyboard_types::Key;
 
-                        // Navigation keys (with or without Shift for selection)
-                        let navigation = matches!(
-                            evt.key(),
-                            Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown |
-                            Key::Home | Key::End | Key::PageUp | Key::PageDown
-                        );
+                            // Arrow keys with direction hint for snapping
+                            let direction_hint = match evt.key() {
+                                Key::ArrowLeft | Key::ArrowUp => Some(SnapDirection::Backward),
+                                Key::ArrowRight | Key::ArrowDown => Some(SnapDirection::Forward),
+                                _ => None,
+                            };
 
-                        // Cmd/Ctrl+A for select all
-                        let select_all = (evt.modifiers().meta() || evt.modifiers().ctrl())
-                            && matches!(evt.key(), Key::Character(ref c) if c == "a");
+                            // Navigation keys (with or without Shift for selection)
+                            let navigation = matches!(
+                                evt.key(),
+                                Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown |
+                                Key::Home | Key::End | Key::PageUp | Key::PageDown
+                            );
 
-                        if navigation || select_all {
+                            // Cmd/Ctrl+A for select all
+                            let select_all = (evt.modifiers().meta() || evt.modifiers().ctrl())
+                                && matches!(evt.key(), Key::Character(ref c) if c == "a");
+
+                            if navigation || select_all {
+                                let paras = cached_paragraphs();
+                                if let Some(dir) = direction_hint {
+                                    sync_cursor_from_dom_with_direction(&mut doc, editor_id, &paras, Some(dir));
+                                } else {
+                                    sync_cursor_from_dom(&mut doc, editor_id, &paras);
+                                }
+                                let spans = syntax_spans();
+                                let cursor_offset = doc.cursor.read().offset;
+                                let selection = *doc.selection.read();
+                                update_syntax_visibility(
+                                    cursor_offset,
+                                    selection.as_ref(),
+                                    &spans,
+                                    &paras,
+                                );
+                            }
+                        }
+                    },
+
+                    onselect: {
+                        let mut doc = document.clone();
+                        move |_evt| {
+                            tracing::debug!("onselect fired");
                             let paras = cached_paragraphs();
-                            sync_cursor_from_dom(&mut document, editor_id, &paras);
-                            let doc = document();
+                            sync_cursor_from_dom(&mut doc, editor_id, &paras);
                             let spans = syntax_spans();
+                            let cursor_offset = doc.cursor.read().offset;
+                            let selection = *doc.selection.read();
                             update_syntax_visibility(
-                                doc.cursor.offset,
-                                doc.selection.as_ref(),
+                                cursor_offset,
+                                selection.as_ref(),
                                 &spans,
                                 &paras,
                             );
                         }
                     },
 
-                    onselect: move |_evt| {
-                        tracing::debug!("onselect fired");
-                        let paras = cached_paragraphs();
-                        sync_cursor_from_dom(&mut document, editor_id, &paras);
-                        let doc = document();
-                        let spans = syntax_spans();
-                        update_syntax_visibility(
-                            doc.cursor.offset,
-                            doc.selection.as_ref(),
-                            &spans,
-                            &paras,
-                        );
+                    onselectstart: {
+                        let mut doc = document.clone();
+                        move |_evt| {
+                            tracing::debug!("onselectstart fired");
+                            let paras = cached_paragraphs();
+                            sync_cursor_from_dom(&mut doc, editor_id, &paras);
+                            let spans = syntax_spans();
+                            let cursor_offset = doc.cursor.read().offset;
+                            let selection = *doc.selection.read();
+                            update_syntax_visibility(
+                                cursor_offset,
+                                selection.as_ref(),
+                                &spans,
+                                &paras,
+                            );
+                        }
                     },
 
-                    onselectstart: move |_evt| {
-                        tracing::debug!("onselectstart fired");
-                        let paras = cached_paragraphs();
-                        sync_cursor_from_dom(&mut document, editor_id, &paras);
-                        let doc = document();
-                        let spans = syntax_spans();
-                        update_syntax_visibility(
-                            doc.cursor.offset,
-                            doc.selection.as_ref(),
-                            &spans,
-                            &paras,
-                        );
+                    onselectionchange: {
+                        let mut doc = document.clone();
+                        move |_evt| {
+                            tracing::debug!("onselectionchange fired");
+                            let paras = cached_paragraphs();
+                            sync_cursor_from_dom(&mut doc, editor_id, &paras);
+                            let spans = syntax_spans();
+                            let cursor_offset = doc.cursor.read().offset;
+                            let selection = *doc.selection.read();
+                            update_syntax_visibility(
+                                cursor_offset,
+                                selection.as_ref(),
+                                &spans,
+                                &paras,
+                            );
+                        }
                     },
 
-                    onselectionchange: move |_evt| {
-                        tracing::debug!("onselectionchange fired");
-                        let paras = cached_paragraphs();
-                        sync_cursor_from_dom(&mut document, editor_id, &paras);
-                        let doc = document();
-                        let spans = syntax_spans();
-                        update_syntax_visibility(
-                            doc.cursor.offset,
-                            doc.selection.as_ref(),
-                            &spans,
-                            &paras,
-                        );
-                    },
-
-                    onclick: move |_evt| {
-                        tracing::debug!("onclick fired");
-                        let paras = cached_paragraphs();
-                        sync_cursor_from_dom(&mut document, editor_id, &paras);
-                        let doc = document();
-                        let spans = syntax_spans();
-                        update_syntax_visibility(
-                            doc.cursor.offset,
-                            doc.selection.as_ref(),
-                            &spans,
-                            &paras,
-                        );
+                    onclick: {
+                        let mut doc = document.clone();
+                        move |_evt| {
+                            tracing::debug!("onclick fired");
+                            let paras = cached_paragraphs();
+                            sync_cursor_from_dom(&mut doc, editor_id, &paras);
+                            let spans = syntax_spans();
+                            let cursor_offset = doc.cursor.read().offset;
+                            let selection = *doc.selection.read();
+                            update_syntax_visibility(
+                                cursor_offset,
+                                selection.as_ref(),
+                                &spans,
+                                &paras,
+                            );
+                        }
                     },
 
                     // Android workaround: Handle Enter in keypress instead of keydown.
                     // Chrome Android fires confused composition events on Enter in keydown,
                     // but keypress fires after composition state settles.
-                    onkeypress: move |evt| {
-                        use dioxus::prelude::keyboard_types::Key;
+                    onkeypress: {
+                        let mut doc = document.clone();
+                        move |evt| {
+                            use dioxus::prelude::keyboard_types::Key;
 
-                        let plat = platform::platform();
-                        if plat.android && evt.key() == Key::Enter {
-                            tracing::debug!("Android: handling Enter in keypress");
-                            evt.prevent_default();
-                            handle_keydown(evt, &mut document);
+                            let plat = platform::platform();
+                            if plat.android && evt.key() == Key::Enter {
+                                tracing::debug!("Android: handling Enter in keypress");
+                                evt.prevent_default();
+                                handle_keydown(evt, &mut doc);
+                            }
                         }
                     },
 
-                    onpaste: move |evt| {
-                        handle_paste(evt, &mut document);
-                    },
-
-                    oncut: move |evt| {
-                        handle_cut(evt, &mut document);
-                    },
-
-                    oncopy: move |evt| {
-                        handle_copy(evt, &document);
-                    },
-
-                    onblur: move |_| {
-                        // Cancel any in-progress IME composition on focus loss
-                        let had_composition = document.peek().composition.is_some();
-                        if had_composition {
-                            tracing::debug!("onblur: clearing active composition");
+                    onpaste: {
+                        let mut doc = document.clone();
+                        move |evt| {
+                            handle_paste(evt, &mut doc);
                         }
-                        document.with_mut(|doc| {
-                            doc.composition = None;
-                        });
                     },
 
-                    oncompositionstart: move |evt: CompositionEvent| {
-                        let data = evt.data().data();
-                        tracing::debug!(
-                            data = %data,
-                            "compositionstart"
-                        );
-                        document.with_mut(|doc| {
+                    oncut: {
+                        let mut doc = document.clone();
+                        move |evt| {
+                            handle_cut(evt, &mut doc);
+                        }
+                    },
+
+                    oncopy: {
+                        let doc = document.clone();
+                        move |evt| {
+                            handle_copy(evt, &doc);
+                        }
+                    },
+
+                    onblur: {
+                        let mut doc = document.clone();
+                        move |_| {
+                            // Cancel any in-progress IME composition on focus loss
+                            let had_composition = doc.composition.read().is_some();
+                            if had_composition {
+                                tracing::debug!("onblur: clearing active composition");
+                            }
+                            doc.composition.set(None);
+                        }
+                    },
+
+                    oncompositionstart: {
+                        let mut doc = document.clone();
+                        move |evt: CompositionEvent| {
+                            let data = evt.data().data();
+                            tracing::debug!(
+                                data = %data,
+                                "compositionstart"
+                            );
                             // Delete selection if present (composition replaces it)
-                            if let Some(sel) = doc.selection.take() {
+                            let sel = doc.selection.write().take();
+                            if let Some(sel) = sel {
                                 let (start, end) =
                                     (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
                                 tracing::debug!(
@@ -571,46 +638,51 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                                     "compositionstart: deleting selection"
                                 );
                                 let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                                doc.cursor.offset = start;
+                                doc.cursor.write().offset = start;
                             }
 
+                            let cursor_offset = doc.cursor.read().offset;
                             tracing::debug!(
-                                cursor = doc.cursor.offset,
+                                cursor = cursor_offset,
                                 "compositionstart: setting composition state"
                             );
-                            doc.composition = Some(CompositionState {
-                                start_offset: doc.cursor.offset,
+                            doc.composition.set(Some(CompositionState {
+                                start_offset: cursor_offset,
                                 text: data,
-                            });
-                        });
+                            }));
+                        }
                     },
 
-                    oncompositionupdate: move |evt: CompositionEvent| {
-                        let data = evt.data().data();
-                        tracing::debug!(
-                            data = %data,
-                            "compositionupdate"
-                        );
-                        document.with_mut(|doc| {
-                            if let Some(ref mut comp) = doc.composition {
+                    oncompositionupdate: {
+                        let mut doc = document.clone();
+                        move |evt: CompositionEvent| {
+                            let data = evt.data().data();
+                            tracing::debug!(
+                                data = %data,
+                                "compositionupdate"
+                            );
+                            let mut comp_guard = doc.composition.write();
+                            if let Some(ref mut comp) = *comp_guard {
                                 comp.text = data;
                             } else {
                                 tracing::debug!("compositionupdate without active composition state");
                             }
-                        });
+                        }
                     },
 
-                    oncompositionend: move |evt: CompositionEvent| {
-                        let final_text = evt.data().data();
-                        tracing::debug!(
-                            data = %final_text,
-                            "compositionend"
-                        );
-                        document.with_mut(|doc| {
+                    oncompositionend: {
+                        let mut doc = document.clone();
+                        move |evt: CompositionEvent| {
+                            let final_text = evt.data().data();
+                            tracing::debug!(
+                                data = %final_text,
+                                "compositionend"
+                            );
                             // Record when composition ended for Safari timing workaround
-                            doc.composition_ended_at = Some(web_time::Instant::now());
+                            doc.composition_ended_at.set(Some(web_time::Instant::now()));
 
-                            if let Some(comp) = doc.composition.take() {
+                            let comp = doc.composition.write().take();
+                            if let Some(comp) = comp {
                                 tracing::debug!(
                                     start_offset = comp.start_offset,
                                     final_text = %final_text,
@@ -627,30 +699,31 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                                         }
                                     }
 
-                                    let zw_count = doc.cursor.offset - delete_start;
+                                    let cursor_offset = doc.cursor.read().offset;
+                                    let zw_count = cursor_offset - delete_start;
                                     if zw_count > 0 {
                                         // Splice: delete zero-width chars and insert new char in one op
                                         let _ = doc.replace_tracked(delete_start, zw_count, &final_text);
-                                        doc.cursor.offset = delete_start + final_text.chars().count();
-                                    } else if doc.cursor.offset == doc.len_chars() {
+                                        doc.cursor.write().offset = delete_start + final_text.chars().count();
+                                    } else if cursor_offset == doc.len_chars() {
                                         // Fast path: append at end
                                         let _ = doc.push_tracked(&final_text);
-                                        doc.cursor.offset = comp.start_offset + final_text.chars().count();
+                                        doc.cursor.write().offset = comp.start_offset + final_text.chars().count();
                                     } else {
-                                        let _ = doc.insert_tracked(doc.cursor.offset, &final_text);
-                                        doc.cursor.offset = comp.start_offset + final_text.chars().count();
+                                        let _ = doc.insert_tracked(cursor_offset, &final_text);
+                                        doc.cursor.write().offset = comp.start_offset + final_text.chars().count();
                                     }
                                 }
                             } else {
                                 tracing::debug!("compositionend without active composition state");
                             }
-                        });
+                        }
                     },
                     }
 
                     // Debug panel snug below editor
                     div { class: "editor-debug",
-                        div { "Cursor: {document().cursor.offset}, Chars: {document().len_chars()}" },
+                        div { "Cursor: {document.cursor.read().offset}, Chars: {document.len_chars()}" },
                         ReportButton {
                             email: "editor-bugs@weaver.sh".to_string(),
                             editor_id: "markdown-editor".to_string(),
@@ -660,117 +733,118 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
             // Toolbar in grid column 2, row 3
             EditorToolbar {
-                on_format: move |action| {
-                    document.with_mut(|doc| {
-                        formatting::apply_formatting(doc, action);
-                    });
-                },
-                on_image: move |uploaded: super::image_upload::UploadedImage| {
-                    // Build data URL for immediate preview
-                    use base64::{Engine, engine::general_purpose::STANDARD};
-                    let data_url = format!(
-                        "data:{};base64,{}",
-                        uploaded.mime_type,
-                        STANDARD.encode(&uploaded.data)
-                    );
-
-                    // Add to resolver for immediate display
-                    let name = uploaded.name.clone();
-                    image_resolver.with_mut(|resolver| {
-                        resolver.add_pending(name.clone(), data_url);
-                    });
-
-                    // Insert markdown image syntax at cursor
-                    let alt_text = if uploaded.alt.is_empty() {
-                        name.clone()
-                    } else {
-                        uploaded.alt.clone()
-                    };
-                    let markdown = format!("![{}](/image/{})", alt_text, name);
-
-                    document.with_mut(|doc| {
-                        let pos = doc.cursor.offset;
-                        let _ = doc.insert_tracked(pos, &markdown);
-                        doc.cursor.offset = pos + markdown.chars().count();
-                    });
-
-                    // Upload to PDS in background if authenticated
-                    let is_authenticated = auth_state.read().is_authenticated();
-                    if is_authenticated {
-                        let fetcher = fetcher.clone();
-                        let name_for_upload = name.clone();
-                        let alt_for_upload = alt_text.clone();
-                        let data = uploaded.data.clone();
-
-                        spawn(async move {
-                            let client = fetcher.get_client();
-
-                            // Upload blob and create temporary PublishedBlob record
-                            match client.publish_blob(data, &name_for_upload, None).await {
-                                Ok((strong_ref, published_blob)) => {
-                                    // Extract the blob from PublishedBlob
-                                    let blob = match published_blob.upload {
-                                        BlobRef::Blob(b) => b,
-                                        _ => {
-                                            tracing::warn!("Unexpected BlobRef variant");
-                                            return;
-                                        }
-                                    };
-
-                                    // Get format from mime type
-                                    let format = blob
-                                        .mime_type
-                                        .0
-                                        .strip_prefix("image/")
-                                        .unwrap_or("jpeg")
-                                        .to_string();
-
-                                    // Get DID from fetcher
-                                    let did = match fetcher.current_did().await {
-                                        Some(d) => d.to_string(),
-                                        None => {
-                                            tracing::warn!("No DID available");
-                                            return;
-                                        }
-                                    };
-
-                                    let cid = blob.cid().to_string();
-
-                                    // Build Image using the builder API
-                                    let name_for_resolver = name_for_upload.clone();
-                                    let image = Image::new()
-                                        .alt(alt_for_upload.to_cowstr())
-                                        .image(BlobRef::Blob(blob))
-                                        .name(name_for_upload.to_cowstr())
-                                        .build();
-
-                                    // Add to document
-                                    document.with_mut(|doc| {
-                                        doc.add_image(&image, Some(&strong_ref.uri));
-                                    });
-
-                                    // Promote from pending to uploaded in resolver
-                                    image_resolver.with_mut(|resolver| {
-                                        resolver.promote_to_uploaded(
-                                            &name_for_resolver,
-                                            cid,
-                                            did,
-                                            format,
-                                        );
-                                    });
-
-                                    tracing::info!(name = %name_for_resolver, "Image uploaded to PDS");
-                                }
-                                Err(e) => {
-                                    tracing::error!(error = %e, "Failed to upload image");
-                                    // Image stays as data URL - will work for preview but not publish
-                                }
-                            }
-                        });
-                    } else {
-                        tracing::info!(name = %name, "Image added with data URL (not authenticated)");
+                on_format: {
+                    let mut doc = document.clone();
+                    move |action| {
+                        formatting::apply_formatting(&mut doc, action);
                     }
-                }
+                },
+                on_image: {
+                    let mut doc = document.clone();
+                    move |uploaded: super::image_upload::UploadedImage| {
+                        // Build data URL for immediate preview
+                        use base64::{Engine, engine::general_purpose::STANDARD};
+                        let data_url = format!(
+                            "data:{};base64,{}",
+                            uploaded.mime_type,
+                            STANDARD.encode(&uploaded.data)
+                        );
+
+                        // Add to resolver for immediate display
+                        let name = uploaded.name.clone();
+                        image_resolver.with_mut(|resolver| {
+                            resolver.add_pending(name.clone(), data_url);
+                        });
+
+                        // Insert markdown image syntax at cursor
+                        let alt_text = if uploaded.alt.is_empty() {
+                            name.clone()
+                        } else {
+                            uploaded.alt.clone()
+                        };
+                        let markdown = format!("![{}](/image/{})", alt_text, name);
+
+                        let pos = doc.cursor.read().offset;
+                        let _ = doc.insert_tracked(pos, &markdown);
+                        doc.cursor.write().offset = pos + markdown.chars().count();
+
+                        // Upload to PDS in background if authenticated
+                        let is_authenticated = auth_state.read().is_authenticated();
+                        if is_authenticated {
+                            let fetcher = fetcher.clone();
+                            let name_for_upload = name.clone();
+                            let alt_for_upload = alt_text.clone();
+                            let data = uploaded.data.clone();
+                            let mut doc_for_spawn = doc.clone();
+
+                            spawn(async move {
+                                let client = fetcher.get_client();
+
+                                // Upload blob and create temporary PublishedBlob record
+                                match client.publish_blob(data, &name_for_upload, None).await {
+                                    Ok((strong_ref, published_blob)) => {
+                                        // Extract the blob from PublishedBlob
+                                        let blob = match published_blob.upload {
+                                            BlobRef::Blob(b) => b,
+                                            _ => {
+                                                tracing::warn!("Unexpected BlobRef variant");
+                                                return;
+                                            }
+                                        };
+
+                                        // Get format from mime type
+                                        let format = blob
+                                            .mime_type
+                                            .0
+                                            .strip_prefix("image/")
+                                            .unwrap_or("jpeg")
+                                            .to_string();
+
+                                        // Get DID from fetcher
+                                        let did = match fetcher.current_did().await {
+                                            Some(d) => d.to_string(),
+                                            None => {
+                                                tracing::warn!("No DID available");
+                                                return;
+                                            }
+                                        };
+
+                                        let cid = blob.cid().to_string();
+
+                                        // Build Image using the builder API
+                                        let name_for_resolver = name_for_upload.clone();
+                                        let image = Image::new()
+                                            .alt(alt_for_upload.to_cowstr())
+                                            .image(BlobRef::Blob(blob))
+                                            .name(name_for_upload.to_cowstr())
+                                            .build();
+
+                                        // Add to document
+                                        doc_for_spawn.add_image(&image, Some(&strong_ref.uri));
+
+                                        // Promote from pending to uploaded in resolver
+                                        image_resolver.with_mut(|resolver| {
+                                            resolver.promote_to_uploaded(
+                                                &name_for_resolver,
+                                                cid,
+                                                did,
+                                                format,
+                                            );
+                                        });
+
+                                        tracing::info!(name = %name_for_resolver, "Image uploaded to PDS");
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(error = %e, "Failed to upload image");
+                                        // Image stays as data URL - will work for preview but not publish
+                                    }
+                                }
+                            });
+                        } else {
+                            tracing::info!(name = %name, "Image added with data URL (not authenticated)");
+                        }
+                    }
+                },
             }
 
         }

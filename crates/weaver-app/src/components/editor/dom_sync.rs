@@ -6,14 +6,31 @@
 use dioxus::prelude::*;
 
 use super::document::{EditorDocument, Selection};
+use super::offset_map::{find_nearest_valid_position, is_valid_cursor_position, SnapDirection};
 use super::paragraph::ParagraphRender;
 
 /// Sync internal cursor and selection state from browser DOM selection.
+///
+/// The optional `direction_hint` is used when snapping cursor from invisible content.
+/// Pass `SnapDirection::Backward` for left/up arrow keys, `SnapDirection::Forward` for right/down.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub fn sync_cursor_from_dom(
-    document: &mut Signal<EditorDocument>,
+    doc: &mut EditorDocument,
     editor_id: &str,
     paragraphs: &[ParagraphRender],
+) {
+    sync_cursor_from_dom_with_direction(doc, editor_id, paragraphs, None);
+}
+
+/// Sync cursor with optional direction hint for snapping.
+///
+/// Use this when handling arrow keys to ensure cursor snaps in the expected direction.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub fn sync_cursor_from_dom_with_direction(
+    doc: &mut EditorDocument,
+    editor_id: &str,
+    paragraphs: &[ParagraphRender],
+    direction_hint: Option<SnapDirection>,
 ) {
     use wasm_bindgen::JsCast;
 
@@ -61,6 +78,7 @@ pub fn sync_cursor_from_dom(
         &anchor_node,
         anchor_offset,
         paragraphs,
+        direction_hint,
     );
     let focus_rope = dom_position_to_rope_offset(
         &dom_document,
@@ -68,31 +86,33 @@ pub fn sync_cursor_from_dom(
         &focus_node,
         focus_offset,
         paragraphs,
+        direction_hint,
     );
 
-    document.with_mut(|doc| {
-        match (anchor_rope, focus_rope) {
-            (Some(anchor), Some(focus)) => {
-                doc.cursor.offset = focus;
-                if anchor != focus {
-                    // There's an actual selection
-                    doc.selection = Some(Selection {
-                        anchor,
-                        head: focus,
-                    });
-                } else {
-                    // Collapsed selection (just cursor)
-                    doc.selection = None;
-                }
-            }
-            _ => {
-                tracing::warn!("Could not map DOM selection to rope offsets");
+    match (anchor_rope, focus_rope) {
+        (Some(anchor), Some(focus)) => {
+            doc.cursor.write().offset = focus;
+            if anchor != focus {
+                // There's an actual selection
+                doc.selection.set(Some(Selection {
+                    anchor,
+                    head: focus,
+                }));
+            } else {
+                // Collapsed selection (just cursor)
+                doc.selection.set(None);
             }
         }
-    });
+        _ => {
+            tracing::warn!("Could not map DOM selection to rope offsets");
+        }
+    }
 }
 
 /// Convert a DOM position (node + offset) to a rope char offset using offset maps.
+///
+/// The `direction_hint` is used when snapping from invisible content to determine
+/// which direction to prefer.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 fn dom_position_to_rope_offset(
     dom_document: &web_sys::Document,
@@ -100,6 +120,7 @@ fn dom_position_to_rope_offset(
     node: &web_sys::Node,
     offset_in_text_node: usize,
     paragraphs: &[ParagraphRender],
+    direction_hint: Option<SnapDirection>,
 ) -> Option<usize> {
     use wasm_bindgen::JsCast;
 
@@ -170,9 +191,32 @@ fn dom_position_to_rope_offset(
                     && utf16_offset_in_container <= mapping_end
                 {
                     let offset_in_mapping = utf16_offset_in_container - mapping_start;
-                    return Some(mapping.char_range.start + offset_in_mapping);
+                    let char_offset = mapping.char_range.start + offset_in_mapping;
+
+                    // Check if this position is valid (not on invisible content)
+                    if is_valid_cursor_position(&para.offset_map, char_offset) {
+                        return Some(char_offset);
+                    }
+
+                    // Position is on invisible content, snap to nearest valid
+                    if let Some(snapped) =
+                        find_nearest_valid_position(&para.offset_map, char_offset, direction_hint)
+                    {
+                        return Some(snapped.char_offset());
+                    }
+
+                    // Fallback to original if no snap target
+                    return Some(char_offset);
                 }
             }
+        }
+    }
+
+    // No mapping found - try to find any valid position in paragraphs
+    // This handles clicks on non-text elements like images
+    for para in paragraphs {
+        if let Some(snapped) = find_nearest_valid_position(&para.offset_map, para.char_range.start, direction_hint) {
+            return Some(snapped.char_offset());
         }
     }
 
@@ -181,9 +225,19 @@ fn dom_position_to_rope_offset(
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn sync_cursor_from_dom(
-    _document: &mut Signal<EditorDocument>,
+    _document: &mut EditorDocument,
     _editor_id: &str,
     _paragraphs: &[ParagraphRender],
+) {
+    // No-op on non-wasm
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub fn sync_cursor_from_dom_with_direction(
+    _document: &mut EditorDocument,
+    _editor_id: &str,
+    _paragraphs: &[ParagraphRender],
+    _direction_hint: Option<SnapDirection>,
 ) {
     // No-op on non-wasm
 }
@@ -265,6 +319,10 @@ pub fn update_paragraph_dom(
     }
 
     // Remove extra paragraphs if document got shorter
+    // Also mark cursor as needing restoration since structure changed
+    if new_paragraphs.len() < old_paragraphs.len() {
+        cursor_para_updated = true;
+    }
     for idx in new_paragraphs.len()..old_paragraphs.len() {
         let para_id = format!("para-{}", idx);
         if let Some(elem) = document.get_element_by_id(&para_id) {

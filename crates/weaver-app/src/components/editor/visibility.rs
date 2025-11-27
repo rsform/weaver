@@ -198,6 +198,8 @@ pub fn update_syntax_visibility(
     syntax_spans: &[SyntaxSpanInfo],
     paragraphs: &[ParagraphRender],
 ) {
+    use wasm_bindgen::JsCast;
+
     let visibility = VisibilityState::calculate(cursor_offset, selection, syntax_spans, paragraphs);
 
     let Some(window) = web_sys::window() else {
@@ -207,16 +209,30 @@ pub fn update_syntax_visibility(
         return;
     };
 
-    // Update each syntax span's visibility
-    for span in syntax_spans {
-        let selector = format!("[data-syn-id='{}']", span.syn_id);
-        if let Ok(Some(element)) = document.query_selector(&selector) {
-            let class_list = element.class_list();
-            if visibility.is_visible(&span.syn_id) {
-                let _ = class_list.remove_1("hidden");
-            } else {
-                let _ = class_list.add_1("hidden");
-            }
+    // Single querySelectorAll instead of N individual queries
+    let Ok(node_list) = document.query_selector_all("[data-syn-id]") else {
+        return;
+    };
+
+    for i in 0..node_list.length() {
+        let Some(node) = node_list.item(i) else {
+            continue;
+        };
+
+        // Cast to Element to access attributes and class_list
+        let Some(element) = node.dyn_ref::<web_sys::Element>() else {
+            continue;
+        };
+
+        let Some(syn_id) = element.get_attribute("data-syn-id") else {
+            continue;
+        };
+
+        let class_list = element.class_list();
+        if visibility.is_visible(&syn_id) {
+            let _ = class_list.remove_1("hidden");
+        } else {
+            let _ = class_list.add_1("hidden");
         }
     }
 }

@@ -153,6 +153,142 @@ pub fn find_mapping_for_char(
     Some((mapping, should_snap))
 }
 
+/// Direction hint for cursor snapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapDirection {
+    Backward,
+    Forward,
+}
+
+/// Result of finding a valid cursor position.
+#[derive(Debug, Clone)]
+pub struct SnappedPosition<'a> {
+    pub mapping: &'a OffsetMapping,
+    pub offset_in_mapping: usize,
+    pub snapped: Option<SnapDirection>,
+}
+
+impl SnappedPosition<'_> {
+    /// Get the absolute char offset for this position.
+    pub fn char_offset(&self) -> usize {
+        self.mapping.char_range.start + self.offset_in_mapping
+    }
+}
+
+/// Find the nearest valid cursor position to a char offset.
+///
+/// A valid position is one that maps to visible content (utf16_len > 0).
+/// If the position is already valid, returns it directly. Otherwise,
+/// searches in the preferred direction first, falling back to the other
+/// direction if needed.
+///
+/// # Arguments
+/// - `offset_map`: The offset mappings for the paragraph
+/// - `char_offset`: The target char offset
+/// - `preferred_direction`: Which direction to search first when snapping
+///
+/// # Returns
+/// The snapped position, or None if no valid position exists.
+pub fn find_nearest_valid_position(
+    offset_map: &[OffsetMapping],
+    char_offset: usize,
+    preferred_direction: Option<SnapDirection>,
+) -> Option<SnappedPosition<'_>> {
+    if offset_map.is_empty() {
+        return None;
+    }
+
+    // Try exact match first
+    if let Some((mapping, should_snap)) = find_mapping_for_char(offset_map, char_offset) {
+        if !should_snap {
+            // Position is valid, return it directly
+            let offset_in_mapping = char_offset.saturating_sub(mapping.char_range.start);
+            return Some(SnappedPosition {
+                mapping,
+                offset_in_mapping,
+                snapped: None,
+            });
+        }
+    }
+
+    // Position is invalid or not found - search for nearest valid
+    let search_order = match preferred_direction {
+        Some(SnapDirection::Backward) => [SnapDirection::Backward, SnapDirection::Forward],
+        Some(SnapDirection::Forward) | None => [SnapDirection::Forward, SnapDirection::Backward],
+    };
+
+    for direction in search_order {
+        if let Some(pos) = find_valid_in_direction(offset_map, char_offset, direction) {
+            return Some(pos);
+        }
+    }
+
+    None
+}
+
+/// Search for a valid position in a specific direction.
+fn find_valid_in_direction(
+    offset_map: &[OffsetMapping],
+    char_offset: usize,
+    direction: SnapDirection,
+) -> Option<SnappedPosition<'_>> {
+    match direction {
+        SnapDirection::Forward => {
+            // Find first visible mapping at or after char_offset
+            for mapping in offset_map {
+                if mapping.char_range.start >= char_offset && !mapping.is_invisible() {
+                    return Some(SnappedPosition {
+                        mapping,
+                        offset_in_mapping: 0,
+                        snapped: Some(SnapDirection::Forward),
+                    });
+                }
+                // Also check if char_offset falls within this visible mapping
+                if mapping.char_range.contains(&char_offset) && !mapping.is_invisible() {
+                    let offset_in_mapping = char_offset - mapping.char_range.start;
+                    return Some(SnappedPosition {
+                        mapping,
+                        offset_in_mapping,
+                        snapped: Some(SnapDirection::Forward),
+                    });
+                }
+            }
+            None
+        }
+        SnapDirection::Backward => {
+            // Find last visible mapping at or before char_offset
+            for mapping in offset_map.iter().rev() {
+                if mapping.char_range.end <= char_offset && !mapping.is_invisible() {
+                    // Snap to end of this mapping
+                    let offset_in_mapping = mapping.char_range.len();
+                    return Some(SnappedPosition {
+                        mapping,
+                        offset_in_mapping,
+                        snapped: Some(SnapDirection::Backward),
+                    });
+                }
+                // Also check if char_offset falls within this visible mapping
+                if mapping.char_range.contains(&char_offset) && !mapping.is_invisible() {
+                    let offset_in_mapping = char_offset - mapping.char_range.start;
+                    return Some(SnappedPosition {
+                        mapping,
+                        offset_in_mapping,
+                        snapped: Some(SnapDirection::Backward),
+                    });
+                }
+            }
+            None
+        }
+    }
+}
+
+/// Check if a char offset is at a valid (non-invisible) cursor position.
+pub fn is_valid_cursor_position(offset_map: &[OffsetMapping], char_offset: usize) -> bool {
+    find_mapping_for_char(offset_map, char_offset)
+        .map(|(m, should_snap)| !should_snap && m.utf16_len > 0)
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,5 +417,115 @@ mod tests {
         assert!(mapping.contains_char(12));
         assert!(mapping.contains_char(14));
         assert!(!mapping.contains_char(15));
+    }
+
+    fn make_test_mappings() -> Vec<OffsetMapping> {
+        vec![
+            OffsetMapping {
+                byte_range: 0..2,
+                char_range: 0..2,
+                node_id: "n0".to_string(),
+                char_offset_in_node: 0,
+                child_index: None,
+                utf16_len: 0, // invisible: "!["
+            },
+            OffsetMapping {
+                byte_range: 2..5,
+                char_range: 2..5,
+                node_id: "n0".to_string(),
+                char_offset_in_node: 0,
+                child_index: None,
+                utf16_len: 3, // visible: "alt"
+            },
+            OffsetMapping {
+                byte_range: 5..15,
+                char_range: 5..15,
+                node_id: "n0".to_string(),
+                char_offset_in_node: 3,
+                child_index: None,
+                utf16_len: 0, // invisible: "](url.png)"
+            },
+            OffsetMapping {
+                byte_range: 15..20,
+                char_range: 15..20,
+                node_id: "n0".to_string(),
+                char_offset_in_node: 3,
+                child_index: None,
+                utf16_len: 5, // visible: " text"
+            },
+        ]
+    }
+
+    #[test]
+    fn test_find_nearest_valid_position_exact_match() {
+        let mappings = make_test_mappings();
+
+        // Position 3 is in visible mapping (2..5)
+        let pos = find_nearest_valid_position(&mappings, 3, None).unwrap();
+        assert_eq!(pos.char_offset(), 3);
+        assert!(pos.snapped.is_none());
+    }
+
+    #[test]
+    fn test_find_nearest_valid_position_snap_forward() {
+        let mappings = make_test_mappings();
+
+        // Position 0 is invisible, should snap forward to 2
+        let pos = find_nearest_valid_position(&mappings, 0, Some(SnapDirection::Forward)).unwrap();
+        assert_eq!(pos.char_offset(), 2);
+        assert_eq!(pos.snapped, Some(SnapDirection::Forward));
+    }
+
+    #[test]
+    fn test_find_nearest_valid_position_snap_backward() {
+        let mappings = make_test_mappings();
+
+        // Position 10 is invisible (in 5..15), prefer backward to end of "alt" (position 5)
+        let pos = find_nearest_valid_position(&mappings, 10, Some(SnapDirection::Backward)).unwrap();
+        assert_eq!(pos.char_offset(), 5); // end of "alt" mapping
+        assert_eq!(pos.snapped, Some(SnapDirection::Backward));
+    }
+
+    #[test]
+    fn test_find_nearest_valid_position_default_forward() {
+        let mappings = make_test_mappings();
+
+        // Position 0 is invisible, None direction defaults to forward
+        let pos = find_nearest_valid_position(&mappings, 0, None).unwrap();
+        assert_eq!(pos.char_offset(), 2);
+        assert_eq!(pos.snapped, Some(SnapDirection::Forward));
+    }
+
+    #[test]
+    fn test_find_nearest_valid_position_snap_forward_from_invisible() {
+        let mappings = make_test_mappings();
+
+        // Position 10 is in invisible range (5..15), forward finds visible (15..20)
+        let pos = find_nearest_valid_position(&mappings, 10, Some(SnapDirection::Forward)).unwrap();
+        assert_eq!(pos.char_offset(), 15);
+        assert_eq!(pos.snapped, Some(SnapDirection::Forward));
+    }
+
+    #[test]
+    fn test_is_valid_cursor_position() {
+        let mappings = make_test_mappings();
+
+        // Invisible positions
+        assert!(!is_valid_cursor_position(&mappings, 0));
+        assert!(!is_valid_cursor_position(&mappings, 1));
+        assert!(!is_valid_cursor_position(&mappings, 10));
+
+        // Visible positions
+        assert!(is_valid_cursor_position(&mappings, 2));
+        assert!(is_valid_cursor_position(&mappings, 3));
+        assert!(is_valid_cursor_position(&mappings, 4));
+        assert!(is_valid_cursor_position(&mappings, 15));
+        assert!(is_valid_cursor_position(&mappings, 17));
+    }
+
+    #[test]
+    fn test_find_nearest_valid_position_empty() {
+        let mappings: Vec<OffsetMapping> = vec![];
+        assert!(find_nearest_valid_position(&mappings, 0, None).is_none());
     }
 }

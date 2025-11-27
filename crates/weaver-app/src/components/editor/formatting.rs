@@ -1,8 +1,8 @@
 //! Formatting actions and utilities for applying markdown formatting.
 
-use super::input::{ListContext, detect_list_context, find_line_end};
-
 use super::document::EditorDocument;
+use super::input::{ListContext, detect_list_context, find_line_end};
+use dioxus::prelude::*;
 
 /// Formatting actions available in the editor.
 #[derive(Clone, Debug, PartialEq)]
@@ -59,12 +59,13 @@ pub fn find_word_boundaries(text: &loro::LoroText, offset: usize) -> (usize, usi
 ///
 /// If there's a selection, wrap it. Otherwise, expand to word boundaries and wrap.
 pub fn apply_formatting(doc: &mut EditorDocument, action: FormatAction) {
-    let (start, end) = if let Some(sel) = doc.selection {
+    let cursor_offset = doc.cursor.read().offset;
+    let (start, end) = if let Some(sel) = *doc.selection.read() {
         // Use selection
         (sel.anchor.min(sel.head), sel.anchor.max(sel.head))
     } else {
         // Expand to word
-        find_word_boundaries(doc.loro_text(), doc.cursor.offset)
+        find_word_boundaries(doc.loro_text(), cursor_offset)
     };
 
     match action {
@@ -72,51 +73,51 @@ pub fn apply_formatting(doc: &mut EditorDocument, action: FormatAction) {
             // Insert end marker first so start position stays valid
             let _ = doc.insert_tracked(end, "**");
             let _ = doc.insert_tracked(start, "**");
-            doc.cursor.offset = end + 4;
-            doc.selection = None;
+            doc.cursor.write().offset = end + 4;
+            doc.selection.set(None);
         }
         FormatAction::Italic => {
             let _ = doc.insert_tracked(end, "*");
             let _ = doc.insert_tracked(start, "*");
-            doc.cursor.offset = end + 2;
-            doc.selection = None;
+            doc.cursor.write().offset = end + 2;
+            doc.selection.set(None);
         }
         FormatAction::Strikethrough => {
             let _ = doc.insert_tracked(end, "~~");
             let _ = doc.insert_tracked(start, "~~");
-            doc.cursor.offset = end + 4;
-            doc.selection = None;
+            doc.cursor.write().offset = end + 4;
+            doc.selection.set(None);
         }
         FormatAction::Code => {
             let _ = doc.insert_tracked(end, "`");
             let _ = doc.insert_tracked(start, "`");
-            doc.cursor.offset = end + 2;
-            doc.selection = None;
+            doc.cursor.write().offset = end + 2;
+            doc.selection.set(None);
         }
         FormatAction::Link => {
             // Insert [selected text](url)
             let _ = doc.insert_tracked(end, "](url)");
             let _ = doc.insert_tracked(start, "[");
-            doc.cursor.offset = end + 8; // Position cursor after ](url)
-            doc.selection = None;
+            doc.cursor.write().offset = end + 8; // Position cursor after ](url)
+            doc.selection.set(None);
         }
         FormatAction::Image => {
             // Insert ![alt text](url)
             let _ = doc.insert_tracked(end, "](url)");
             let _ = doc.insert_tracked(start, "![");
-            doc.cursor.offset = end + 9;
-            doc.selection = None;
+            doc.cursor.write().offset = end + 9;
+            doc.selection.set(None);
         }
         FormatAction::Heading(level) => {
             // Find start of current line
-            let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
+            let line_start = find_line_start(doc.loro_text(), cursor_offset);
             let prefix = "#".repeat(level as usize) + " ";
             let _ = doc.insert_tracked(line_start, &prefix);
-            doc.cursor.offset += prefix.len();
-            doc.selection = None;
+            doc.cursor.write().offset = cursor_offset + prefix.len();
+            doc.selection.set(None);
         }
         FormatAction::BulletList => {
-            if let Some(ctx) = detect_list_context(doc.loro_text(), doc.cursor.offset) {
+            if let Some(ctx) = detect_list_context(doc.loro_text(), cursor_offset) {
                 let continuation = match ctx {
                     ListContext::Unordered { indent, marker } => {
                         format!("\n{}{} ", indent, marker)
@@ -126,18 +127,18 @@ pub fn apply_formatting(doc: &mut EditorDocument, action: FormatAction) {
                     }
                 };
                 let len = continuation.chars().count();
-                let _ = doc.insert_tracked(doc.cursor.offset, &continuation);
-                doc.cursor.offset += len;
-                doc.selection = None;
+                let _ = doc.insert_tracked(cursor_offset, &continuation);
+                doc.cursor.write().offset = cursor_offset + len;
+                doc.selection.set(None);
             } else {
-                let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
+                let line_start = find_line_start(doc.loro_text(), cursor_offset);
                 let _ = doc.insert_tracked(line_start, " - ");
-                doc.cursor.offset += 3;
-                doc.selection = None;
+                doc.cursor.write().offset = cursor_offset + 3;
+                doc.selection.set(None);
             }
         }
         FormatAction::NumberedList => {
-            if let Some(ctx) = detect_list_context(doc.loro_text(), doc.cursor.offset) {
+            if let Some(ctx) = detect_list_context(doc.loro_text(), cursor_offset) {
                 let continuation = match ctx {
                     ListContext::Unordered { .. } => {
                         format!("\n\n1. ")
@@ -147,21 +148,21 @@ pub fn apply_formatting(doc: &mut EditorDocument, action: FormatAction) {
                     }
                 };
                 let len = continuation.chars().count();
-                let _ = doc.insert_tracked(doc.cursor.offset, &continuation);
-                doc.cursor.offset += len;
-                doc.selection = None;
+                let _ = doc.insert_tracked(cursor_offset, &continuation);
+                doc.cursor.write().offset = cursor_offset + len;
+                doc.selection.set(None);
             } else {
-                let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
+                let line_start = find_line_start(doc.loro_text(), cursor_offset);
                 let _ = doc.insert_tracked(line_start, "1. ");
-                doc.cursor.offset += 3;
-                doc.selection = None;
+                doc.cursor.write().offset = cursor_offset + 3;
+                doc.selection.set(None);
             }
         }
         FormatAction::Quote => {
-            let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
+            let line_start = find_line_start(doc.loro_text(), cursor_offset);
             let _ = doc.insert_tracked(line_start, "> ");
-            doc.cursor.offset += 2;
-            doc.selection = None;
+            doc.cursor.write().offset = cursor_offset + 2;
+            doc.selection.set(None);
         }
     }
 }

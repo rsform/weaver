@@ -85,13 +85,7 @@ fn adjust_paragraph_positions(
 
     let mut adjusted_syntax = cached.syntax_spans.clone();
     for span in &mut adjusted_syntax {
-        span.char_range.start = apply_delta(span.char_range.start, char_delta);
-        span.char_range.end = apply_delta(span.char_range.end, char_delta);
-        // Also adjust formatted_range if present (used for inline visibility)
-        if let Some(ref mut fr) = span.formatted_range {
-            fr.start = apply_delta(fr.start, char_delta);
-            fr.end = apply_delta(fr.end, char_delta);
-        }
+        span.adjust_positions(char_delta);
     }
 
     ParagraphRender {
@@ -284,8 +278,7 @@ pub fn render_paragraphs_incremental(
 
             let mut adjusted_syntax = cached.syntax_spans.clone();
             for span in &mut adjusted_syntax {
-                span.char_range.start = (span.char_range.start as isize + char_delta) as usize;
-                span.char_range.end = (span.char_range.end as isize + char_delta) as usize;
+                span.adjust_positions(char_delta);
             }
 
             (cached.html.clone(), adjusted_map, adjusted_syntax)
@@ -356,8 +349,7 @@ pub fn render_paragraphs_incremental(
                 mapping.char_range.end += para_char_start;
             }
             for span in &mut syntax_spans {
-                span.char_range.start += para_char_start;
-                span.char_range.end += para_char_start;
+                span.adjust_positions(para_char_start as isize);
             }
 
             (output, offset_map, syntax_spans)

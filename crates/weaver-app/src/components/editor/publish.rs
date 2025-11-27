@@ -213,8 +213,8 @@ fn slugify(title: &str) -> String {
 /// Props for the publish button component.
 #[derive(Props, Clone, PartialEq)]
 pub struct PublishButtonProps {
-    /// The editor document signal
-    pub document: Signal<EditorDocument>,
+    /// The editor document
+    pub document: EditorDocument,
     /// Storage key for the draft
     pub draft_key: String,
 }
@@ -233,17 +233,14 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
     let mut success_uri: Signal<Option<AtUri<'static>>> = use_signal(|| None);
 
     let is_authenticated = auth_state.read().is_authenticated();
-    let doc = props.document;
+    let doc = props.document.clone();
     let draft_key = props.draft_key.clone();
 
     // Check if we're editing an existing entry
-    let is_editing_existing = doc().entry_uri().is_some();
+    let is_editing_existing = doc.entry_uri().is_some();
 
     // Validate that we have required fields
-    let can_publish = {
-        let d = doc();
-        !d.title().trim().is_empty() && !d.content().trim().is_empty()
-    };
+    let can_publish = !doc.title().trim().is_empty() && !doc.content().trim().is_empty();
 
     let open_dialog = move |_| {
         error_message.set(None);
@@ -256,9 +253,11 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
     };
 
     let draft_key_clone = draft_key.clone();
+    let doc_for_publish = doc.clone();
     let do_publish = move |_| {
         let fetcher = fetcher.clone();
         let draft_key = draft_key_clone.clone();
+        let doc_snapshot = doc_for_publish.clone();
         let notebook = if use_notebook() {
             Some(notebook_title())
         } else {
@@ -268,9 +267,6 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
         spawn(async move {
             is_publishing.set(true);
             error_message.set(None);
-
-            // Get document snapshot for publishing
-            let doc_snapshot = doc();
 
             match publish_entry(&fetcher, &doc_snapshot, notebook.as_deref(), &draft_key).await {
                 Ok(result) => {
@@ -358,10 +354,10 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
                             }
 
                             div { class: "publish-preview",
-                                p { "Title: {doc().title()}" }
-                                p { "Path: {doc().path()}" }
-                                if !doc().tags().is_empty() {
-                                    p { "Tags: {doc().tags().join(\", \")}" }
+                                p { "Title: {doc.title()}" }
+                                p { "Path: {doc.path()}" }
+                                if !doc.tags().is_empty() {
+                                    p { "Tags: {doc.tags().join(\", \")}" }
                                 }
                             }
 

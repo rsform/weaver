@@ -6,6 +6,7 @@ use dioxus::prelude::*;
 
 use super::document::EditorDocument;
 use super::formatting::{self, FormatAction};
+use super::offset_map::SnapDirection;
 
 /// Check if we need to intercept this key event.
 /// Returns true for content-modifying operations, false for navigation.
@@ -37,248 +38,270 @@ pub fn should_intercept_key(evt: &Event<KeyboardData>) -> bool {
 }
 
 /// Handle keyboard events and update document state.
-pub fn handle_keydown(evt: Event<KeyboardData>, document: &mut Signal<EditorDocument>) {
+pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut EditorDocument) {
     use dioxus::prelude::keyboard_types::Key;
 
     let key = evt.key();
     let mods = evt.modifiers();
 
-    document.with_mut(|doc| {
-        match key {
-            Key::Character(ch) => {
-                // Keyboard shortcuts first
-                if mods.ctrl() {
-                    match ch.as_str() {
-                        "b" => {
-                            formatting::apply_formatting(doc, FormatAction::Bold);
-                            return;
-                        }
-                        "i" => {
-                            formatting::apply_formatting(doc, FormatAction::Italic);
-                            return;
-                        }
-                        "z" => {
-                            if mods.shift() {
-                                // Ctrl+Shift+Z = redo
-                                if let Ok(true) = doc.redo() {
-                                    doc.cursor.offset = doc.cursor.offset.min(doc.len_chars());
-                                }
-                            } else {
-                                // Ctrl+Z = undo
-                                if let Ok(true) = doc.undo() {
-                                    doc.cursor.offset = doc.cursor.offset.min(doc.len_chars());
-                                }
-                            }
-                            doc.selection = None;
-                            return;
-                        }
-                        "y" => {
-                            // Ctrl+Y = redo (alternative)
+    match key {
+        Key::Character(ch) => {
+            // Keyboard shortcuts first
+            if mods.ctrl() {
+                match ch.as_str() {
+                    "b" => {
+                        formatting::apply_formatting(doc, FormatAction::Bold);
+                        return;
+                    }
+                    "i" => {
+                        formatting::apply_formatting(doc, FormatAction::Italic);
+                        return;
+                    }
+                    "z" => {
+                        if mods.shift() {
+                            // Ctrl+Shift+Z = redo
                             if let Ok(true) = doc.redo() {
-                                doc.cursor.offset = doc.cursor.offset.min(doc.len_chars());
+                                let max = doc.len_chars();
+                                doc.cursor.with_mut(|c| c.offset = c.offset.min(max));
                             }
-                            doc.selection = None;
-                            return;
+                        } else {
+                            // Ctrl+Z = undo
+                            if let Ok(true) = doc.undo() {
+                                let max = doc.len_chars();
+                                doc.cursor.with_mut(|c| c.offset = c.offset.min(max));
+                            }
                         }
-                        "e" => {
-                            // Ctrl+E = copy as HTML (export)
-                            if let Some(sel) = doc.selection {
-                                let (start, end) =
-                                    (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                                if start != end {
-                                    if let Some(markdown) = doc.slice(start, end) {
-                                        let clean_md = markdown
-                                            .replace('\u{200C}', "")
-                                            .replace('\u{200B}', "");
-                                        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-                                        wasm_bindgen_futures::spawn_local(async move {
-                                            if let Err(e) = copy_as_html(&clean_md).await {
-                                                tracing::warn!("[COPY HTML] Failed: {:?}", e);
-                                            }
-                                        });
-                                    }
+                        doc.selection.set(None);
+                        return;
+                    }
+                    "y" => {
+                        // Ctrl+Y = redo (alternative)
+                        if let Ok(true) = doc.redo() {
+                            let max = doc.len_chars();
+                            doc.cursor.with_mut(|c| c.offset = c.offset.min(max));
+                        }
+                        doc.selection.set(None);
+                        return;
+                    }
+                    "e" => {
+                        // Ctrl+E = copy as HTML (export)
+                        if let Some(sel) = *doc.selection.read() {
+                            let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                            if start != end {
+                                if let Some(markdown) = doc.slice(start, end) {
+                                    let clean_md =
+                                        markdown.replace('\u{200C}', "").replace('\u{200B}', "");
+                                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        if let Err(e) = copy_as_html(&clean_md).await {
+                                            tracing::warn!("[COPY HTML] Failed: {:?}", e);
+                                        }
+                                    });
                                 }
                             }
-                            return;
                         }
-                        _ => {}
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Insert character at cursor (replacing selection if any)
+            let sel = doc.selection.write().take();
+            if let Some(sel) = sel {
+                let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                let _ = doc.replace_tracked(start, end.saturating_sub(start), &ch);
+                doc.cursor.write().offset = start + ch.chars().count();
+            } else {
+                // Clean up any preceding zero-width chars (gap scaffolding)
+                let cursor_offset = doc.cursor.read().offset;
+                let mut delete_start = cursor_offset;
+                while delete_start > 0 {
+                    match get_char_at(doc.loro_text(), delete_start - 1) {
+                        Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
+                        _ => break,
                     }
                 }
 
-                // Insert character at cursor (replacing selection if any)
-                if let Some(sel) = doc.selection.take() {
-                    let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    let _ = doc.replace_tracked(start, end.saturating_sub(start), &ch);
-                    doc.cursor.offset = start + ch.chars().count();
+                let zw_count = cursor_offset - delete_start;
+                if zw_count > 0 {
+                    // Splice: delete zero-width chars and insert new char in one op
+                    let _ = doc.replace_tracked(delete_start, zw_count, &ch);
+                    doc.cursor.write().offset = delete_start + ch.chars().count();
+                } else if cursor_offset == doc.len_chars() {
+                    // Fast path: append at end
+                    let _ = doc.push_tracked(&ch);
+                    doc.cursor.write().offset = cursor_offset + ch.chars().count();
                 } else {
-                    // Clean up any preceding zero-width chars (gap scaffolding)
-                    let mut delete_start = doc.cursor.offset;
+                    let _ = doc.insert_tracked(cursor_offset, &ch);
+                    doc.cursor.write().offset = cursor_offset + ch.chars().count();
+                }
+            }
+        }
+
+        Key::Backspace => {
+            // Snap backward after backspace (toward deleted content)
+            doc.pending_snap.set(Some(SnapDirection::Backward));
+
+            let sel = doc.selection.write().take();
+            if let Some(sel) = sel {
+                // Delete selection
+                let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                let _ = doc.remove_tracked(start, end.saturating_sub(start));
+                doc.cursor.write().offset = start;
+            } else if doc.cursor.read().offset > 0 {
+                let cursor_offset = doc.cursor.read().offset;
+                // Check if we're about to delete a newline
+                let prev_char = get_char_at(doc.loro_text(), cursor_offset - 1);
+
+                if prev_char == Some('\n') {
+                    let newline_pos = cursor_offset - 1;
+                    let mut delete_start = newline_pos;
+                    let mut delete_end = cursor_offset;
+
+                    // Check if there's another newline before this one (empty paragraph)
+                    // If so, delete both newlines to merge paragraphs
+                    if newline_pos > 0 {
+                        let prev_prev_char = get_char_at(doc.loro_text(), newline_pos - 1);
+                        if prev_prev_char == Some('\n') {
+                            // Empty paragraph case: delete both newlines
+                            delete_start = newline_pos - 1;
+                        }
+                    }
+
+                    // Also check if there's a zero-width char after cursor (inserted by Shift+Enter)
+                    if let Some(ch) = get_char_at(doc.loro_text(), delete_end) {
+                        if ch == '\u{200C}' || ch == '\u{200B}' {
+                            delete_end += 1;
+                        }
+                    }
+
+                    // Scan backwards through whitespace before the newline(s)
                     while delete_start > 0 {
-                        match get_char_at(doc.loro_text(), delete_start - 1) {
-                            Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
-                            _ => break,
+                        let ch = get_char_at(doc.loro_text(), delete_start - 1);
+                        match ch {
+                            Some('\u{200C}') | Some('\u{200B}') => {
+                                delete_start -= 1;
+                            }
+                            Some('\n') => break, // stop at another newline
+                            _ => break,          // stop at actual content
                         }
                     }
 
-                    let zw_count = doc.cursor.offset - delete_start;
-                    if zw_count > 0 {
-                        // Splice: delete zero-width chars and insert new char in one op
-                        let _ = doc.replace_tracked(delete_start, zw_count, &ch);
-                        doc.cursor.offset = delete_start + ch.chars().count();
-                    } else if doc.cursor.offset == doc.len_chars() {
-                        // Fast path: append at end
-                        let _ = doc.push_tracked(&ch);
-                        doc.cursor.offset += ch.chars().count();
-                    } else {
-                        let _ = doc.insert_tracked(doc.cursor.offset, &ch);
-                        doc.cursor.offset += ch.chars().count();
-                    }
-                }
-            }
-
-            Key::Backspace => {
-                if let Some(sel) = doc.selection {
-                    // Delete selection
-                    let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                    doc.cursor.offset = start;
-                    doc.selection = None;
-                } else if doc.cursor.offset > 0 {
-                    // Check if we're about to delete a newline
-                    let prev_char = get_char_at(doc.loro_text(), doc.cursor.offset - 1);
-
-                    if prev_char == Some('\n') {
-                        let newline_pos = doc.cursor.offset - 1;
-                        let mut delete_start = newline_pos;
-                        let mut delete_end = doc.cursor.offset;
-
-                        // Check if there's another newline before this one (empty paragraph)
-                        // If so, delete both newlines to merge paragraphs
-                        if newline_pos > 0 {
-                            let prev_prev_char = get_char_at(doc.loro_text(), newline_pos - 1);
-                            if prev_prev_char == Some('\n') {
-                                // Empty paragraph case: delete both newlines
-                                delete_start = newline_pos - 1;
-                            }
-                        }
-
-                        // Also check if there's a zero-width char after cursor (inserted by Shift+Enter)
-                        if let Some(ch) = get_char_at(doc.loro_text(), delete_end) {
-                            if ch == '\u{200C}' || ch == '\u{200B}' {
-                                delete_end += 1;
-                            }
-                        }
-
-                        // Scan backwards through whitespace before the newline(s)
-                        while delete_start > 0 {
-                            let ch = get_char_at(doc.loro_text(), delete_start - 1);
-                            match ch {
-                                Some('\u{200C}') | Some('\u{200B}') => {
-                                    delete_start -= 1;
-                                }
-                                Some('\n') => break, // stop at another newline
-                                _ => break,          // stop at actual content
-                            }
-                        }
-
-                        // Delete from where we stopped to end (including any trailing zero-width)
-                        let _ = doc
-                            .remove_tracked(delete_start, delete_end.saturating_sub(delete_start));
-                        doc.cursor.offset = delete_start;
-                    } else {
-                        // Normal backspace - delete one char
-                        let prev = doc.cursor.offset - 1;
-                        let _ = doc.remove_tracked(prev, 1);
-                        doc.cursor.offset = prev;
-                    }
-                }
-            }
-
-            Key::Delete => {
-                if let Some(sel) = doc.selection.take() {
-                    // Delete selection
-                    let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                    doc.cursor.offset = start;
-                } else if doc.cursor.offset < doc.len_chars() {
-                    // Delete next char
-                    let _ = doc.remove_tracked(doc.cursor.offset, 1);
-                }
-            }
-
-            // Arrow keys handled by browser, synced in onkeyup
-            Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown => {
-                // Browser handles these naturally
-            }
-
-            Key::Enter => {
-                if let Some(sel) = doc.selection.take() {
-                    let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                    doc.cursor.offset = start;
-                }
-
-                if mods.shift() {
-                    // Shift+Enter: hard line break (soft break)
-                    let _ = doc.insert_tracked(doc.cursor.offset, "  \n\u{200C}");
-                    doc.cursor.offset += 3;
-                } else if let Some(ctx) = detect_list_context(doc.loro_text(), doc.cursor.offset) {
-                    // We're in a list item
-                    if is_list_item_empty(doc.loro_text(), doc.cursor.offset, &ctx) {
-                        // Empty item - exit list by removing marker and inserting paragraph break
-                        let line_start = find_line_start(doc.loro_text(), doc.cursor.offset);
-                        let line_end = find_line_end(doc.loro_text(), doc.cursor.offset);
-
-                        // Delete the empty list item line INCLUDING its trailing newline
-                        // line_end points to the newline, so +1 to include it
-                        let delete_end = (line_end + 1).min(doc.len_chars());
-
-                        // Use replace_tracked to atomically delete line and insert paragraph break
-                        let _ = doc.replace_tracked(
-                            line_start,
-                            delete_end.saturating_sub(line_start),
-                            "\n\n\u{200C}\n",
-                        );
-                        doc.cursor.offset = line_start + 2;
-                    } else {
-                        // Non-empty item - continue list
-                        let continuation = match ctx {
-                            ListContext::Unordered { indent, marker } => {
-                                format!("\n{}{} ", indent, marker)
-                            }
-                            ListContext::Ordered { indent, number } => {
-                                format!("\n{}{}. ", indent, number + 1)
-                            }
-                        };
-                        let len = continuation.chars().count();
-                        let _ = doc.insert_tracked(doc.cursor.offset, &continuation);
-                        doc.cursor.offset += len;
-                    }
+                    // Delete from where we stopped to end (including any trailing zero-width)
+                    let _ =
+                        doc.remove_tracked(delete_start, delete_end.saturating_sub(delete_start));
+                    doc.cursor.write().offset = delete_start;
                 } else {
-                    // Not in a list - normal paragraph break
-                    let _ = doc.insert_tracked(doc.cursor.offset, "\n\n");
-                    doc.cursor.offset += 2;
+                    // Normal backspace - delete one char
+                    let prev = cursor_offset - 1;
+                    let _ = doc.remove_tracked(prev, 1);
+                    doc.cursor.write().offset = prev;
                 }
             }
+        }
 
-            // Home/End handled by browser, synced in onkeyup
-            Key::Home | Key::End => {
-                // Browser handles these naturally
+        Key::Delete => {
+            // Snap forward after delete (toward remaining content)
+            doc.pending_snap.set(Some(SnapDirection::Forward));
+
+            let sel = doc.selection.write().take();
+            if let Some(sel) = sel {
+                // Delete selection
+                let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                let _ = doc.remove_tracked(start, end.saturating_sub(start));
+                doc.cursor.write().offset = start;
+            } else {
+                let cursor_offset = doc.cursor.read().offset;
+                if cursor_offset < doc.len_chars() {
+                    // Delete next char
+                    let _ = doc.remove_tracked(cursor_offset, 1);
+                }
+            }
+        }
+
+        // Arrow keys handled by browser, synced in onkeyup
+        Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown => {
+            // Browser handles these naturally
+        }
+
+        Key::Enter => {
+            // Snap forward after enter (into new paragraph/line)
+            doc.pending_snap.set(Some(SnapDirection::Forward));
+
+            let sel = doc.selection.write().take();
+            if let Some(sel) = sel {
+                let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                let _ = doc.remove_tracked(start, end.saturating_sub(start));
+                doc.cursor.write().offset = start;
             }
 
-            _ => {}
+            let cursor_offset = doc.cursor.read().offset;
+            if mods.shift() {
+                // Shift+Enter: hard line break (soft break)
+                let _ = doc.insert_tracked(cursor_offset, "  \n\u{200C}");
+                doc.cursor.write().offset = cursor_offset + 3;
+            } else if let Some(ctx) = detect_list_context(doc.loro_text(), cursor_offset) {
+                // We're in a list item
+                if is_list_item_empty(doc.loro_text(), cursor_offset, &ctx) {
+                    // Empty item - exit list by removing marker and inserting paragraph break
+                    let line_start = find_line_start(doc.loro_text(), cursor_offset);
+                    let line_end = find_line_end(doc.loro_text(), cursor_offset);
+
+                    // Delete the empty list item line INCLUDING its trailing newline
+                    // line_end points to the newline, so +1 to include it
+                    let delete_end = (line_end + 1).min(doc.len_chars());
+
+                    // Use replace_tracked to atomically delete line and insert paragraph break
+                    let _ = doc.replace_tracked(
+                        line_start,
+                        delete_end.saturating_sub(line_start),
+                        "\n\n\u{200C}\n",
+                    );
+                    doc.cursor.write().offset = line_start + 2;
+                } else {
+                    // Non-empty item - continue list
+                    let continuation = match ctx {
+                        ListContext::Unordered { indent, marker } => {
+                            format!("\n{}{} ", indent, marker)
+                        }
+                        ListContext::Ordered { indent, number } => {
+                            format!("\n{}{}. ", indent, number + 1)
+                        }
+                    };
+                    let len = continuation.chars().count();
+                    let _ = doc.insert_tracked(cursor_offset, &continuation);
+                    doc.cursor.write().offset = cursor_offset + len;
+                }
+            } else {
+                // Not in a list - normal paragraph break
+                let _ = doc.insert_tracked(cursor_offset, "\n\n");
+                doc.cursor.write().offset = cursor_offset + 2;
+            }
         }
 
-        // Sync Loro cursor when edits affect paragraph boundaries
-        // This ensures cursor position is tracked correctly through structural changes
-        if doc.last_edit.as_ref().is_some_and(|e| e.contains_newline) {
-            doc.sync_loro_cursor();
+        // Home/End handled by browser, synced in onkeyup
+        Key::Home | Key::End => {
+            // Browser handles these naturally
         }
-    });
+
+        _ => {}
+    }
+
+    // Sync Loro cursor when edits affect paragraph boundaries
+    // This ensures cursor position is tracked correctly through structural changes
+    if doc
+        .last_edit
+        .read()
+        .as_ref()
+        .is_some_and(|e| e.contains_newline)
+    {
+        doc.sync_loro_cursor();
+    }
 }
 
 /// Handle paste events and insert text at cursor.
-pub fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
+pub fn handle_paste(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
     evt.prevent_default();
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -297,19 +320,18 @@ pub fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocum
                     .or_else(|| data_transfer.get_data("text/plain").ok());
 
                 if let Some(text) = text {
-                    document.with_mut(|doc| {
-                        // Delete selection if present
-                        if let Some(sel) = doc.selection {
-                            let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                            let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                            doc.cursor.offset = start;
-                            doc.selection = None;
-                        }
+                    // Delete selection if present
+                    let sel = doc.selection.write().take();
+                    if let Some(sel) = sel {
+                        let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                        let _ = doc.remove_tracked(start, end.saturating_sub(start));
+                        doc.cursor.write().offset = start;
+                    }
 
-                        // Insert pasted text
-                        let _ = doc.insert_tracked(doc.cursor.offset, &text);
-                        doc.cursor.offset += text.chars().count();
-                    });
+                    // Insert pasted text
+                    let cursor_offset = doc.cursor.read().offset;
+                    let _ = doc.insert_tracked(cursor_offset, &text);
+                    doc.cursor.write().offset = cursor_offset + text.chars().count();
                 }
             }
         } else {
@@ -319,7 +341,7 @@ pub fn handle_paste(evt: Event<ClipboardData>, document: &mut Signal<EditorDocum
 }
 
 /// Handle cut events - extract text, write to clipboard, then delete.
-pub fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocument>) {
+pub fn handle_cut(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
     evt.prevent_default();
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -329,8 +351,9 @@ pub fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocumen
 
         let base_evt = evt.as_web_event();
         if let Some(clipboard_evt) = base_evt.dyn_ref::<web_sys::ClipboardEvent>() {
-            let cut_text = document.with_mut(|doc| {
-                if let Some(sel) = doc.selection {
+            let cut_text = {
+                let sel = doc.selection.write().take();
+                if let Some(sel) = sel {
                     let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
                     if start != end {
                         // Extract text and strip zero-width chars
@@ -348,14 +371,16 @@ pub fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocumen
 
                         // Now delete
                         let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                        doc.cursor.offset = start;
-                        doc.selection = None;
+                        doc.cursor.write().offset = start;
 
-                        return Some(clean_text);
+                        Some(clean_text)
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
-                None
-            });
+            };
 
             // Async: also write custom MIME type for internal paste detection
             if let Some(text) = cut_text {
@@ -375,7 +400,7 @@ pub fn handle_cut(evt: Event<ClipboardData>, document: &mut Signal<EditorDocumen
 }
 
 /// Handle copy events - extract text, clean it up, write to clipboard.
-pub fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>) {
+pub fn handle_copy(evt: Event<ClipboardData>, doc: &EditorDocument) {
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         use dioxus::web::WebEventExt;
@@ -383,8 +408,8 @@ pub fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>)
 
         let base_evt = evt.as_web_event();
         if let Some(clipboard_evt) = base_evt.dyn_ref::<web_sys::ClipboardEvent>() {
-            let doc = document.read();
-            if let Some(sel) = doc.selection {
+            let sel = *doc.selection.read();
+            if let Some(sel) = sel {
                 let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
                 if start != end {
                     // Extract text
@@ -419,7 +444,7 @@ pub fn handle_copy(evt: Event<ClipboardData>, document: &Signal<EditorDocument>)
 
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     {
-        let _ = (evt, document); // suppress unused warnings
+        let _ = (evt, doc); // suppress unused warnings
     }
 }
 
