@@ -80,10 +80,7 @@ fn detect_platform() -> Platform {
     let chrome_version = extract_version(&user_agent, "chrome/");
 
     // Mobile detection
-    let mobile = ios
-        || android
-        || user_agent.contains("mobile")
-        || user_agent.contains("iemobile");
+    let mobile = ios || android || user_agent.contains("mobile") || user_agent.contains("iemobile");
 
     Platform {
         ios,

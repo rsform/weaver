@@ -1,6 +1,6 @@
 //! Formatting actions and utilities for applying markdown formatting.
 
-use crate::components::editor::{ListContext, detect_list_context, find_line_end};
+use super::input::{ListContext, detect_list_context, find_line_end};
 
 use super::document::EditorDocument;
 

@@ -27,8 +27,8 @@ impl ReportData {
             .map(|e| e.outer_html())
             .unwrap_or_default();
 
-        let editor_text = load_from_storage()
-            .map(|snapshot| snapshot.to_string())
+        let editor_text = load_from_storage("current")
+            .map(|doc| doc.content())
             .unwrap_or_default();
 
         let platform_info = {

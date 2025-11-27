@@ -418,11 +418,18 @@ fn regression_bug11_gap_paragraphs_for_whitespace() {
     // Test with extra whitespace (4 newlines = heading eats 1, leaves 3, gap = 3 > 2)
     let result = render_test("# Title\n\n\n\nContent"); // 4 newlines
     assert_eq!(result.len(), 3, "Expected 3 elements with extra whitespace");
-    assert!(result[1].html.contains("gap-"), "Middle element should be a gap");
+    assert!(
+        result[1].html.contains("gap-"),
+        "Middle element should be a gap"
+    );
 
     // Test standard break (3 newlines = heading eats 1, leaves 2, gap = 2 = MIN, no gap element)
     let result2 = render_test("# Title\n\n\nContent"); // 3 newlines
-    assert_eq!(result2.len(), 2, "Expected 2 elements with standard break equivalent");
+    assert_eq!(
+        result2.len(),
+        2,
+        "Expected 2 elements with standard break equivalent"
+    );
 }
 
 // =============================================================================
@@ -630,8 +637,8 @@ fn test_hash_alone() {
 fn test_heading_to_non_heading_transition() {
     // Simulates typing: start with "#" (heading), then add "t" to make "#t" (not heading)
     // This tests that the syntax spans are correctly updated on content change.
-    use loro::LoroDoc;
     use super::render::render_paragraphs_incremental;
+    use loro::LoroDoc;
 
     let doc = LoroDoc::new();
     let text = doc.get_text("content");
@@ -680,7 +687,10 @@ fn test_empty_blockquote() {
     let result = render_test(">");
     eprintln!("Paragraphs for '>': {:?}", result.len());
     for (i, p) in result.iter().enumerate() {
-        eprintln!("  Para {}: html={}, char_range={:?}", i, p.html, p.char_range);
+        eprintln!(
+            "  Para {}: html={}, char_range={:?}",
+            i, p.html, p.char_range
+        );
     }
 
     // Empty blockquote should still produce at least one paragraph
@@ -759,13 +769,21 @@ fn test_char_range_coverage_allows_paragraph_breaks() {
 
     // With standard \n\n break, we expect 2 paragraphs (no gap element)
     // Paragraph ranges include some trailing whitespace from markdown parsing
-    assert_eq!(paragraphs.len(), 2, "Expected 2 paragraphs for standard break");
+    assert_eq!(
+        paragraphs.len(),
+        2,
+        "Expected 2 paragraphs for standard break"
+    );
 
     // First paragraph ends before second starts, with gap for \n\n
     let gap_start = paragraphs[0].char_range.end;
     let gap_end = paragraphs[1].char_range.start;
     let gap_size = gap_end - gap_start;
-    assert!(gap_size <= 2, "Gap should be at most MIN_PARAGRAPH_BREAK (2), got {}", gap_size);
+    assert!(
+        gap_size <= 2,
+        "Gap should be at most MIN_PARAGRAPH_BREAK (2), got {}",
+        gap_size
+    );
 }
 
 #[test]
@@ -779,17 +797,25 @@ fn test_char_range_coverage_with_extra_whitespace() {
     let (paragraphs, _cache) = render_paragraphs_incremental(&text, None, None);
 
     // With extra newlines, we expect 3 elements: para, gap, para
-    assert_eq!(paragraphs.len(), 3, "Expected 3 elements with extra whitespace");
+    assert_eq!(
+        paragraphs.len(),
+        3,
+        "Expected 3 elements with extra whitespace"
+    );
 
     // Gap element should exist and cover whitespace zone
     let gap = &paragraphs[1];
     assert!(gap.html.contains("gap-"), "Second element should be a gap");
 
     // Gap should cover ALL whitespace (not just extra)
-    assert_eq!(gap.char_range.start, paragraphs[0].char_range.end,
-        "Gap should start where first paragraph ends");
-    assert_eq!(gap.char_range.end, paragraphs[2].char_range.start,
-        "Gap should end where second paragraph starts");
+    assert_eq!(
+        gap.char_range.start, paragraphs[0].char_range.end,
+        "Gap should start where first paragraph ends"
+    );
+    assert_eq!(
+        gap.char_range.end, paragraphs[2].char_range.start,
+        "Gap should end where second paragraph starts"
+    );
 }
 
 #[test]
@@ -999,8 +1025,8 @@ fn test_loro_char_to_utf16_conversion() {
     // UTF-16:    0     1    2    3    4     5     6,7    8     9    10
 
     assert_eq!(char_to_utf16(&text, 0), 0);
-    assert_eq!(char_to_utf16(&text, 6), 6);  // before emoji
-    assert_eq!(char_to_utf16(&text, 7), 8);  // after emoji (emoji is 2 UTF-16 units)
+    assert_eq!(char_to_utf16(&text, 6), 6); // before emoji
+    assert_eq!(char_to_utf16(&text, 7), 8); // after emoji (emoji is 2 UTF-16 units)
     assert_eq!(char_to_utf16(&text, 10), 11); // end
 }
 
@@ -1026,11 +1052,18 @@ fn test_loro_ascii_fast_path() {
         if text.len_unicode() == text.len_utf16() {
             return char_pos; // fast path
         }
-        text.slice(0, char_pos).map(|s| s.encode_utf16().count()).unwrap_or(0)
+        text.slice(0, char_pos)
+            .map(|s| s.encode_utf16().count())
+            .unwrap_or(0)
     }
 
     // All positions should be identity for ASCII
     for i in 0..=text.len_unicode() {
-        assert_eq!(char_to_utf16(&text, i), i, "ASCII fast path failed at pos {}", i);
+        assert_eq!(
+            char_to_utf16(&text, i),
+            i,
+            "ASCII fast path failed at pos {}",
+            i
+        );
     }
 }

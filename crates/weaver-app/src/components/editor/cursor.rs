@@ -7,7 +7,7 @@
 //! 3. Walking text nodes to find the UTF-16 offset within the element
 //! 4. Setting cursor with web_sys Selection API
 
-use super::offset_map::{find_mapping_for_char, OffsetMapping};
+use super::offset_map::{OffsetMapping, find_mapping_for_char};
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen::JsCast;
@@ -36,9 +36,17 @@ pub fn restore_cursor_position(
     }
 
     // Bounds check using offset map
-    let max_offset = offset_map.iter().map(|m| m.char_range.end).max().unwrap_or(0);
+    let max_offset = offset_map
+        .iter()
+        .map(|m| m.char_range.end)
+        .max()
+        .unwrap_or(0);
     if char_offset > max_offset {
-        tracing::warn!("cursor offset {} > max mapping offset {}", char_offset, max_offset);
+        tracing::warn!(
+            "cursor offset {} > max mapping offset {}",
+            char_offset,
+            max_offset
+        );
         // Don't error, just skip restoration - this can happen during edits
         return Ok(());
     }
@@ -70,9 +78,7 @@ pub fn restore_cursor_position(
         .ok_or_else(|| format!("element not found: {}", mapping.node_id))?;
 
     // Set selection using Range API
-    let selection = window
-        .get_selection()?
-        .ok_or("no selection object")?;
+    let selection = window.get_selection()?.ok_or("no selection object")?;
     let range = document.create_range()?;
 
     // Check if this is an element-based position (e.g., after <br />)
@@ -84,7 +90,8 @@ pub fn restore_cursor_position(
         let container_element = container.dyn_into::<web_sys::HtmlElement>()?;
         let offset_in_range = char_offset - mapping.char_range.start;
         let target_utf16_offset = mapping.char_offset_in_node + offset_in_range;
-        let (text_node, node_offset) = find_text_node_at_offset(&container_element, target_utf16_offset)?;
+        let (text_node, node_offset) =
+            find_text_node_at_offset(&container_element, target_utf16_offset)?;
         range.set_start(&text_node, node_offset as u32)?;
     }
 
@@ -114,10 +121,7 @@ fn find_text_node_at_offset(
 
     // Create tree walker to find text nodes
     // SHOW_TEXT = 4 (from DOM spec)
-    let walker = document.create_tree_walker_with_what_to_show(
-        container,
-        4,
-    )?;
+    let walker = document.create_tree_walker_with_what_to_show(container, 4)?;
 
     let mut accumulated_utf16 = 0;
     let mut last_node: Option<web_sys::Node> = None;

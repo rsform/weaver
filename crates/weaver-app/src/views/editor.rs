@@ -1,6 +1,6 @@
 //! Editor view - wraps the MarkdownEditor component for the /editor route.
 
-use crate::components::editor::{MarkdownEditor, ReportButton};
+use crate::components::editor::MarkdownEditor;
 use dioxus::prelude::*;
 
 /// Editor page view.
@@ -12,13 +12,6 @@ pub fn Editor() -> Element {
     rsx! {
         EditorCss {}
         div { class: "editor-page",
-            div { class: "editor-header",
-                h1 { "Markdown Editor Test" }
-                ReportButton {
-                    email: "editor-bugs@weaver.sh".to_string(),
-                    editor_id: "markdown-editor".to_string(),
-                }
-            }
             MarkdownEditor { initial_content: None }
         }
     }
@@ -46,4 +39,3 @@ pub fn EditorCss() -> Element {
         _ => rsx! {},
     }
 }
-
