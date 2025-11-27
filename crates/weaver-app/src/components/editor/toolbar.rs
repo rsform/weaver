@@ -1,13 +1,17 @@
 //! Editor toolbar component with formatting buttons.
 
 use super::formatting::FormatAction;
+use super::image_upload::{ImageUploadButton, UploadedImage};
 use dioxus::prelude::*;
 
 /// Editor toolbar with formatting buttons.
 ///
 /// Provides buttons for common markdown formatting operations.
 #[component]
-pub fn EditorToolbar(on_format: EventHandler<FormatAction>) -> Element {
+pub fn EditorToolbar(
+    on_format: EventHandler<FormatAction>,
+    on_image: EventHandler<UploadedImage>,
+) -> Element {
     rsx! {
         div { class: "editor-toolbar",
             button {
@@ -85,11 +89,8 @@ pub fn EditorToolbar(on_format: EventHandler<FormatAction>) -> Element {
                 onclick: move |_| on_format.call(FormatAction::Link),
                 "🔗"
             }
-            button {
-                class: "toolbar-button",
-                title: "Image",
-                onclick: move |_| on_format.call(FormatAction::Image),
-                "🖼"
+            ImageUploadButton {
+                on_image_selected: move |img| on_image.call(img),
             }
         }
     }

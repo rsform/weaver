@@ -55,6 +55,11 @@ pub struct EditorDocument {
     /// Contains nested containers: images (LoroList), externals (LoroList), etc.
     embeds: LoroMap,
 
+    // --- Entry tracking ---
+    /// AT-URI of the entry if editing an existing record.
+    /// None for new entries that haven't been published yet.
+    entry_uri: Option<AtUri<'static>>,
+
     // --- Editor state ---
     /// Undo manager for the document.
     undo_mgr: UndoManager,
@@ -205,6 +210,7 @@ impl EditorDocument {
             created_at,
             tags,
             embeds,
+            entry_uri: None,
             undo_mgr,
             cursor: CursorState {
                 offset: 0,
@@ -312,6 +318,18 @@ impl EditorDocument {
             self.created_at.delete(0, current_len).ok();
         }
         self.created_at.insert(0, datetime).ok();
+    }
+
+    // --- Entry URI accessors ---
+
+    /// Get the AT-URI of the entry if editing an existing record.
+    pub fn entry_uri(&self) -> Option<&AtUri<'static>> {
+        self.entry_uri.as_ref()
+    }
+
+    /// Set the AT-URI when editing an existing entry.
+    pub fn set_entry_uri(&mut self, uri: Option<AtUri<'static>>) {
+        self.entry_uri = uri;
     }
 
     // --- Tags accessors ---
@@ -690,6 +708,7 @@ impl EditorDocument {
             created_at,
             tags,
             embeds,
+            entry_uri: None,
             undo_mgr,
             cursor,
             loro_cursor,
@@ -718,6 +737,7 @@ impl Clone for EditorDocument {
         new_doc.composition = self.composition.clone();
         new_doc.composition_ended_at = self.composition_ended_at;
         new_doc.last_edit = self.last_edit.clone();
+        new_doc.entry_uri = self.entry_uri.clone();
         new_doc
     }
 }

@@ -9,6 +9,7 @@ mod cursor;
 mod document;
 mod dom_sync;
 mod formatting;
+mod image_upload;
 mod input;
 mod log_buffer;
 mod offset_map;
@@ -44,7 +45,7 @@ pub use paragraph::ParagraphRender;
 #[allow(unused_imports)]
 pub use render::{RenderCache, render_paragraphs_incremental};
 #[allow(unused_imports)]
-pub use writer::{SyntaxSpanInfo, SyntaxType, WriterResult};
+pub use writer::{EditorImageResolver, ImageResolver, SyntaxSpanInfo, SyntaxType, WriterResult};
 
 // Storage
 #[allow(unused_imports)]
@@ -54,6 +55,7 @@ pub use storage::{
 };
 
 // UI components
+pub use image_upload::{ImageUploadButton, UploadedImage};
 pub use publish::PublishButton;
 pub use report::ReportButton;
 #[allow(unused_imports)]

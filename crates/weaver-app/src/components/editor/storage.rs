@@ -11,6 +11,8 @@
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use gloo_storage::{LocalStorage, Storage};
+use jacquard::IntoStatic;
+use jacquard::types::string::AtUri;
 use loro::cursor::Cursor;
 use serde::{Deserialize, Serialize};
 
@@ -67,12 +69,10 @@ fn storage_key(key: &str) -> String {
 /// # Arguments
 /// * `doc` - The editor document to save
 /// * `key` - Storage key (e.g., "new:abc123" for new entries, or AT-URI for existing)
-/// * `editing_uri` - AT-URI if editing an existing entry
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn save_to_storage(
     doc: &EditorDocument,
     key: &str,
-    editing_uri: Option<&str>,
 ) -> Result<(), gloo_storage::errors::StorageError> {
     let snapshot_bytes = doc.export_snapshot();
     let snapshot_b64 = if snapshot_bytes.is_empty() {
@@ -87,7 +87,7 @@ pub fn save_to_storage(
         snapshot: snapshot_b64,
         cursor: doc.loro_cursor().cloned(),
         cursor_offset: doc.cursor.offset,
-        editing_uri: editing_uri.map(String::from),
+        editing_uri: doc.entry_uri().map(|u| u.to_string()),
     };
     LocalStorage::set(storage_key(key), &snapshot)
 }
@@ -103,16 +103,24 @@ pub fn save_to_storage(
 pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     let snapshot: EditorSnapshot = LocalStorage::get(storage_key(key)).ok()?;
 
+    // Parse entry_uri from the snapshot
+    let entry_uri = snapshot
+        .editing_uri
+        .as_ref()
+        .and_then(|s| AtUri::new(s).ok())
+        .map(|u| u.into_static());
+
     // Try to restore from CRDT snapshot first
     if let Some(ref snapshot_b64) = snapshot.snapshot {
         if let Ok(snapshot_bytes) = BASE64.decode(snapshot_b64) {
-            let doc = EditorDocument::from_snapshot(
+            let mut doc = EditorDocument::from_snapshot(
                 &snapshot_bytes,
                 snapshot.cursor.clone(),
                 snapshot.cursor_offset,
             );
             // Verify the content matches (sanity check)
             if doc.content() == snapshot.content {
+                doc.set_entry_uri(entry_uri);
                 return Some(doc);
             }
             tracing::warn!("Snapshot content mismatch, falling back to text content");
@@ -123,6 +131,7 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     let mut doc = EditorDocument::new(snapshot.content);
     doc.cursor.offset = snapshot.cursor_offset.min(doc.len_chars());
     doc.sync_loro_cursor();
+    doc.set_entry_uri(entry_uri);
     Some(doc)
 }
 
@@ -176,11 +185,7 @@ pub fn clear_all_drafts() {
 
 // Stub implementations for non-WASM targets
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
-pub fn save_to_storage(
-    _doc: &EditorDocument,
-    _key: &str,
-    _editing_uri: Option<&str>,
-) -> Result<(), String> {
+pub fn save_to_storage(_doc: &EditorDocument, _key: &str) -> Result<(), String> {
     Ok(())
 }
 
