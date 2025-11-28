@@ -1,11 +1,18 @@
-//! Entry publishing functionality for the markdown editor.
+//! Entry publishing and loading functionality for the markdown editor.
 //!
-//! Handles creating/updating AT Protocol notebook entries from editor state.
+//! Handles creating/updating/loading AT Protocol notebook entries.
 
 use dioxus::prelude::*;
+use jacquard::types::collection::Collection;
 use jacquard::types::ident::AtIdentifier;
-use jacquard::types::string::{AtUri, Datetime, Nsid};
-use jacquard::{IntoStatic, prelude::*, to_data};
+use jacquard::types::recordkey::RecordKey;
+use jacquard::types::string::{AtUri, Datetime, Nsid, Rkey};
+use jacquard::types::tid::Ticker;
+use jacquard::{IntoStatic, from_data, prelude::*, to_data};
+use regex_lite::Regex;
+use std::sync::LazyLock;
+use weaver_api::com_atproto::repo::get_record::GetRecord;
+use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::com_atproto::repo::{create_record::CreateRecord, put_record::PutRecord};
 use weaver_api::sh_weaver::embed::images::Images;
 use weaver_api::sh_weaver::notebook::entry::{Entry, EntryEmbeds};
@@ -13,11 +20,29 @@ use weaver_common::{WeaverError, WeaverExt};
 
 const ENTRY_NSID: &str = "sh.weaver.notebook.entry";
 
+/// Regex to match draft image paths: /image/{did}/draft/{blob_rkey}/{name}
+/// Captures: 1=did, 2=blob_rkey, 3=name
+static DRAFT_IMAGE_PATH_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"/image/([^/]+)/draft/([^/]+)/([^)\s]+)").unwrap());
+
+/// Rewrite draft image paths to published paths.
+///
+/// Converts `/image/{did}/draft/{blob_rkey}/{name}` to `/image/{did}/{entry_rkey}/{name}`
+fn rewrite_draft_paths(content: &str, entry_rkey: &str) -> String {
+    DRAFT_IMAGE_PATH_REGEX
+        .replace_all(content, |caps: &regex_lite::Captures| {
+            let did = &caps[1];
+            let name = &caps[3];
+            format!("/image/{}/{}/{}", did, entry_rkey, name)
+        })
+        .into_owned()
+}
+
 use crate::auth::AuthState;
 use crate::fetch::Fetcher;
 
 use super::document::EditorDocument;
-use super::storage::delete_draft;
+use super::storage::{delete_draft, save_to_storage};
 
 /// Result of a publish operation.
 #[derive(Clone, Debug)]
@@ -36,6 +61,92 @@ impl PublishResult {
     }
 }
 
+/// Result of fetching an entry for editing.
+/// Contains the entry data and URI, but NOT an EditorDocument.
+/// The document must be created in a reactive context (use_hook) to properly initialize Signals.
+#[derive(Clone, PartialEq)]
+pub struct LoadedEntry {
+    pub entry: Entry<'static>,
+    pub entry_ref: StrongRef<'static>,
+}
+
+/// Fetch an existing entry from the PDS for editing.
+///
+/// Returns the entry data and URI. The caller should create an `EditorDocument`
+/// from this data using `EditorDocument::from_entry()` inside a reactive context.
+///
+/// # Arguments
+/// * `fetcher` - The fetcher for making API calls
+/// * `uri` - The AT-URI of the entry to load (e.g., `at://did:plc:xxx/sh.weaver.notebook.entry/rkey`)
+///
+/// # Returns
+/// The entry and its URI, or an error.
+pub async fn load_entry_for_editing(
+    fetcher: &Fetcher,
+    uri: &AtUri<'_>,
+) -> Result<LoadedEntry, WeaverError> {
+    // Parse the AT-URI components
+    let ident = uri.authority();
+    let rkey = uri
+        .rkey()
+        .ok_or_else(|| WeaverError::InvalidNotebook("Entry URI missing rkey".into()))?;
+
+    // Resolve DID and PDS
+    let (did, pds_url) = match ident {
+        AtIdentifier::Did(d) => {
+            let pds = fetcher
+                .client
+                .pds_for_did(d)
+                .await
+                .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve DID: {}", e)))?;
+            (d.clone(), pds)
+        }
+        AtIdentifier::Handle(h) => {
+            let (did, pds) = fetcher
+                .client
+                .pds_for_handle(h)
+                .await
+                .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve handle: {}", e)))?;
+            (did, pds)
+        }
+    };
+
+    // Fetch the entry record
+    let request = GetRecord::new()
+        .repo(AtIdentifier::Did(did))
+        .collection(Nsid::raw(<Entry as Collection>::NSID))
+        .rkey(rkey.clone())
+        .build();
+
+    let response = fetcher
+        .client
+        .xrpc(pds_url)
+        .send(&request)
+        .await
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to fetch entry: {}", e)))?;
+
+    let record = response
+        .into_output()
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to parse response: {}", e)))?;
+
+    // Deserialize the entry
+    let entry: Entry = from_data(&record.value)
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to deserialize entry: {}", e)))?;
+
+    // Build StrongRef from URI and CID
+    let entry_ref = StrongRef::new()
+        .uri(uri.clone().into_static())
+        .cid(record.cid.ok_or_else(|| {
+            WeaverError::InvalidNotebook("Entry response missing CID".into())
+        })?.into_static())
+        .build();
+
+    Ok(LoadedEntry {
+        entry: entry.into_static(),
+        entry_ref,
+    })
+}
+
 /// Publish an entry to the AT Protocol.
 ///
 /// Supports three modes:
@@ -43,9 +154,14 @@ impl PublishResult {
 /// - Without notebook but with entry_uri in doc: uses `put_record` to update existing
 /// - Without notebook and no entry_uri: uses `create_record` for free-floating entry
 ///
+/// Draft image paths (`/image/{did}/draft/{blob_rkey}/{name}`) are rewritten to
+/// published paths (`/image/{did}/{entry_rkey}/{name}`) before publishing.
+///
+/// On successful create, sets `doc.entry_uri` so subsequent publishes update the same record.
+///
 /// # Arguments
 /// * `fetcher` - The authenticated fetcher/client
-/// * `doc` - The editor document containing entry data
+/// * `doc` - The editor document containing entry data (mutable to update entry_uri)
 /// * `notebook_title` - Optional title of the notebook to publish to
 /// * `draft_key` - Storage key for the draft (for cleanup)
 ///
@@ -53,7 +169,7 @@ impl PublishResult {
 /// The AT-URI of the created/updated entry, or an error.
 pub async fn publish_entry(
     fetcher: &Fetcher,
-    doc: &EditorDocument,
+    doc: &mut EditorDocument,
     notebook_title: Option<&str>,
     draft_key: &str,
 ) -> Result<PublishResult, WeaverError> {
@@ -96,37 +212,55 @@ pub async fn publish_entry(
         }
     };
 
-    // Build the entry
-    let entry = Entry::new()
-        .content(doc.content())
-        .title(doc.title())
-        .path(path)
-        .created_at(Datetime::now())
-        .maybe_tags(tags)
-        .maybe_embeds(entry_embeds)
-        .build();
-    let entry_data = to_data(&entry).unwrap();
-
     let client = fetcher.get_client();
     let result = if let Some(notebook) = notebook_title {
         // Publish to a notebook via upsert_entry
-        let (uri, was_created) = client.upsert_entry(notebook, &doc.title(), entry).await?;
+        // TODO: Need to handle path rewriting for notebook case
+        // For now, use content as-is (notebook entries use different path scheme anyway)
+        let entry = Entry::new()
+            .content(doc.content())
+            .title(doc.title())
+            .path(path)
+            .created_at(Datetime::now())
+            .maybe_tags(tags)
+            .maybe_embeds(entry_embeds)
+            .build();
+
+        let (entry_ref, was_created) = client.upsert_entry(notebook, &doc.title(), entry).await?;
+        let uri = entry_ref.uri.clone();
+
+        // Set entry_ref so subsequent publishes update this record
+        doc.set_entry_ref(Some(entry_ref));
 
         if was_created {
             PublishResult::Created(uri)
         } else {
             PublishResult::Updated(uri)
         }
-    } else if let Some(existing_uri) = doc.entry_uri() {
-        // Update existing free-floating entry
+    } else if let Some(existing_ref) = doc.entry_ref() {
+        // Update existing free-floating entry - use existing rkey for path rewriting
         let did = fetcher
             .current_did()
             .await
             .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
 
-        let rkey = existing_uri
+        let rkey = existing_ref
+            .uri
             .rkey()
             .ok_or_else(|| WeaverError::InvalidNotebook("Entry URI missing rkey".into()))?;
+
+        // Rewrite draft image paths to published paths
+        let content = rewrite_draft_paths(&doc.content(), rkey.0.as_str());
+
+        let entry = Entry::new()
+            .content(content)
+            .title(doc.title())
+            .path(path)
+            .created_at(Datetime::now())
+            .maybe_tags(tags)
+            .maybe_embeds(entry_embeds)
+            .build();
+        let entry_data = to_data(&entry).unwrap();
 
         let collection = Nsid::new(ENTRY_NSID).map_err(|e| WeaverError::AtprotoString(e))?;
 
@@ -145,19 +279,46 @@ pub async fn publish_entry(
             .into_output()
             .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
 
+        // Update entry_ref with new CID
+        let updated_ref = StrongRef::new()
+            .uri(output.uri.clone().into_static())
+            .cid(output.cid.into_static())
+            .build();
+        doc.set_entry_ref(Some(updated_ref));
+
         PublishResult::Updated(output.uri.into_static())
     } else {
-        // Create new free-floating entry
+        // Create new free-floating entry - pre-generate rkey for path rewriting
         let did = fetcher
             .current_did()
             .await
             .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
 
+        // Pre-generate TID for the entry rkey
+        let entry_tid = Ticker::new().next(None);
+        let entry_rkey_str = entry_tid.as_str();
+
+        // Rewrite draft image paths to published paths
+        let content = rewrite_draft_paths(&doc.content(), entry_rkey_str);
+
+        let entry = Entry::new()
+            .content(content)
+            .title(doc.title())
+            .path(path)
+            .created_at(Datetime::now())
+            .maybe_tags(tags)
+            .maybe_embeds(entry_embeds)
+            .build();
+        let entry_data = to_data(&entry).unwrap();
+
         let collection = Nsid::new(ENTRY_NSID).map_err(|e| WeaverError::AtprotoString(e))?;
+        let rkey = RecordKey::any(entry_rkey_str)
+            .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
 
         let request = CreateRecord::new()
             .repo(AtIdentifier::Did(did))
             .collection(collection)
+            .rkey(rkey)
             .record(entry_data)
             .build();
 
@@ -169,7 +330,14 @@ pub async fn publish_entry(
             .into_output()
             .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
 
-        PublishResult::Created(output.uri.into_static())
+        let uri = output.uri.into_static();
+        // Set entry_ref so subsequent publishes update this record
+        let entry_ref = StrongRef::new()
+            .uri(uri.clone())
+            .cid(output.cid.into_static())
+            .build();
+        doc.set_entry_ref(Some(entry_ref));
+        PublishResult::Created(uri)
     };
 
     // Cleanup: delete PublishedBlob records (entry's embed refs now keep blobs alive)
@@ -180,8 +348,14 @@ pub async fn publish_entry(
     //     }
     // }
 
-    // Clear local draft
+    // Delete the old draft key
     delete_draft(draft_key);
+
+    // Save with the new uri-based key so continued editing is tracked by entry URI
+    let new_key = result.uri().to_string();
+    if let Err(e) = save_to_storage(doc, &new_key) {
+        tracing::warn!("Failed to save draft after publish: {e}");
+    }
 
     Ok(result)
 }
@@ -237,7 +411,7 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
     let draft_key = props.draft_key.clone();
 
     // Check if we're editing an existing entry
-    let is_editing_existing = doc.entry_uri().is_some();
+    let is_editing_existing = doc.entry_ref().is_some();
 
     // Validate that we have required fields
     let can_publish = !doc.title().trim().is_empty() && !doc.content().trim().is_empty();
@@ -268,7 +442,8 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
             is_publishing.set(true);
             error_message.set(None);
 
-            match publish_entry(&fetcher, &doc_snapshot, notebook.as_deref(), &draft_key).await {
+            let mut doc_snapshot = doc_snapshot;
+            match publish_entry(&fetcher, &mut doc_snapshot, notebook.as_deref(), &draft_key).await {
                 Ok(result) => {
                     success_uri.set(Some(result.uri().clone()));
                 }

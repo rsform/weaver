@@ -19,6 +19,7 @@ mod publish;
 mod render;
 mod report;
 mod storage;
+mod sync;
 mod toolbar;
 mod visibility;
 mod writer;

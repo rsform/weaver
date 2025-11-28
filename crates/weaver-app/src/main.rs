@@ -54,8 +54,8 @@ enum Route {
     #[layout(Navbar)]
         #[route("/")]
         Home {},
-        #[route("/editor")]
-        Editor {},
+        #[route("/editor?:entry")]
+        Editor { entry: Option<String> },
         #[layout(ErrorLayout)]
         #[nest("/record")]
           #[layout(RecordIndex)]
@@ -304,12 +304,23 @@ pub async fn favicon() -> axum::response::Response {
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 #[get("/{notebook}/image/{name}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
 pub async fn image_named(notebook: SmolStr, name: SmolStr) -> Result<axum::response::Response> {
-    use axum::{http::header::CONTENT_TYPE, response::IntoResponse};
+    use axum::{
+        http::header::{CACHE_CONTROL, CONTENT_TYPE},
+        response::IntoResponse,
+    };
     use mime_sniffer::MimeTypeSniffer;
     if let Some(bytes) = blob_cache.get_named(&name) {
         let blob = bytes.clone();
         let mime = blob.sniff_mime_type().unwrap_or("image/jpg");
-        Ok(([(CONTENT_TYPE, mime)], bytes).into_response())
+        // Blobs are immutable by CID - cache aggressively
+        Ok((
+            [
+                (CONTENT_TYPE, mime),
+                (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            bytes,
+        )
+            .into_response())
     } else {
         Err(CapturedError::from_display("no image"))
     }
@@ -318,14 +329,159 @@ pub async fn image_named(notebook: SmolStr, name: SmolStr) -> Result<axum::respo
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 #[get("/{notebook}/blob/{cid}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
 pub async fn blob(notebook: SmolStr, cid: SmolStr) -> Result<axum::response::Response> {
-    use axum::{http::header::CONTENT_TYPE, response::IntoResponse};
+    use axum::{
+        http::header::{CACHE_CONTROL, CONTENT_TYPE},
+        response::IntoResponse,
+    };
     use mime_sniffer::MimeTypeSniffer;
     if let Some(bytes) = blob_cache.get_cid(&Cid::new_owned(cid.as_bytes())?) {
         let blob = bytes.clone();
         let mime = blob.sniff_mime_type().unwrap_or("application/octet-stream");
-        Ok(([(CONTENT_TYPE, mime)], bytes).into_response())
+        // Blobs are immutable by CID - cache aggressively
+        Ok((
+            [
+                (CONTENT_TYPE, mime),
+                (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            bytes,
+        )
+            .into_response())
     } else {
         Err(CapturedError::from_display("no blob"))
+    }
+}
+
+// New image routes with unified /image/ prefix
+// Route: /image/{notebook}/{name} - notebook entry image by name
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+#[get("/image/{notebook}/{name}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
+pub async fn image_notebook(notebook: SmolStr, name: SmolStr) -> Result<axum::response::Response> {
+    use axum::{
+        http::header::{CACHE_CONTROL, CONTENT_TYPE},
+        response::IntoResponse,
+    };
+    use mime_sniffer::MimeTypeSniffer;
+    
+    // Try name-based lookup first (backwards compat with cached entries)
+    if let Some(bytes) = blob_cache.get_named(&name) {
+        let blob = bytes.clone();
+        let mime = blob.sniff_mime_type().unwrap_or("image/jpg");
+        return Ok((
+            [
+                (CONTENT_TYPE, mime),
+                (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            bytes,
+        )
+            .into_response());
+    }
+    
+    // Try to resolve from notebook
+    match blob_cache.resolve_from_notebook(&notebook, &name).await {
+        Ok(bytes) => {
+            let blob = bytes.clone();
+            let mime = blob.sniff_mime_type().unwrap_or("image/jpg");
+            Ok((
+                [
+                    (CONTENT_TYPE, mime),
+                    (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+                ],
+                bytes,
+            )
+                .into_response())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+// Route: /image/{ident}/draft/{blob_rkey} - draft image (unpublished)
+// Route: /image/{ident}/draft/{blob_rkey}/{name} - draft image with name
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+#[get("/image/{ident}/draft/{blob_rkey}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
+pub async fn image_draft(ident: SmolStr, blob_rkey: SmolStr) -> Result<axum::response::Response> {
+    use axum::{
+        http::header::{CACHE_CONTROL, CONTENT_TYPE},
+        response::IntoResponse,
+    };
+    use mime_sniffer::MimeTypeSniffer;
+    
+    let at_ident = AtIdentifier::new_owned(ident.clone())
+        .map_err(|e| CapturedError::from_display(format!("Invalid identifier '{}': {}", ident, e)))?;
+    
+    match blob_cache.resolve_from_draft(&at_ident, &blob_rkey).await {
+        Ok(bytes) => {
+            let blob = bytes.clone();
+            let mime = blob.sniff_mime_type().unwrap_or("image/jpg");
+            Ok((
+                [
+                    (CONTENT_TYPE, mime),
+                    (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+                ],
+                bytes,
+            )
+                .into_response())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+#[get("/image/{ident}/draft/{blob_rkey}/{name}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
+pub async fn image_draft_named(ident: SmolStr, blob_rkey: SmolStr, name: SmolStr) -> Result<axum::response::Response> {
+    use axum::{
+        http::header::{CACHE_CONTROL, CONTENT_TYPE},
+        response::IntoResponse,
+    };
+    use mime_sniffer::MimeTypeSniffer;
+    
+    // Name is optional/decorative for drafts, just use the blob_rkey
+    let at_ident = AtIdentifier::new_owned(ident.clone())
+        .map_err(|e| CapturedError::from_display(format!("Invalid identifier '{}': {}", ident, e)))?;
+    
+    match blob_cache.resolve_from_draft(&at_ident, &blob_rkey).await {
+        Ok(bytes) => {
+            let blob = bytes.clone();
+            let mime = blob.sniff_mime_type().unwrap_or("image/jpg");
+            Ok((
+                [
+                    (CONTENT_TYPE, mime),
+                    (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+                ],
+                bytes,
+            )
+                .into_response())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+// Route: /image/{ident}/{rkey}/{name} - published entry image
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+#[get("/image/{ident}/{rkey}/{name}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
+pub async fn image_entry(ident: SmolStr, rkey: SmolStr, name: SmolStr) -> Result<axum::response::Response> {
+    use axum::{
+        http::header::{CACHE_CONTROL, CONTENT_TYPE},
+        response::IntoResponse,
+    };
+    use mime_sniffer::MimeTypeSniffer;
+    
+    let at_ident = AtIdentifier::new_owned(ident.clone())
+        .map_err(|e| CapturedError::from_display(format!("Invalid identifier '{}': {}", ident, e)))?;
+    
+    match blob_cache.resolve_from_entry(&at_ident, &rkey, &name).await {
+        Ok(bytes) => {
+            let blob = bytes.clone();
+            let mime = blob.sniff_mime_type().unwrap_or("image/jpg");
+            Ok((
+                [
+                    (CONTENT_TYPE, mime),
+                    (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+                ],
+                bytes,
+            )
+                .into_response())
+        }
+        Err(e) => Err(e),
     }
 }
 

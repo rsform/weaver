@@ -145,6 +145,8 @@ pub enum DocRefValue<'a> {
     NotebookRef(Box<crate::sh_weaver::edit::NotebookRef<'a>>),
     #[serde(rename = "sh.weaver.edit.defs#entryRef")]
     EntryRef(Box<crate::sh_weaver::edit::EntryRef<'a>>),
+    #[serde(rename = "sh.weaver.edit.defs#draftRef")]
+    DraftRef(Box<crate::sh_weaver::edit::DraftRef<'a>>),
 }
 
 fn lexicon_doc_sh_weaver_edit_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc<
@@ -174,9 +176,44 @@ fn lexicon_doc_sh_weaver_edit_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc<
                                 description: None,
                                 refs: vec![
                                     ::jacquard_common::CowStr::new_static("#notebookRef"),
-                                    ::jacquard_common::CowStr::new_static("#entryRef")
+                                    ::jacquard_common::CowStr::new_static("#entryRef"),
+                                    ::jacquard_common::CowStr::new_static("#draftRef")
                                 ],
                                 closed: None,
+                            }),
+                        );
+                        map
+                    },
+                }),
+            );
+            map.insert(
+                ::jacquard_common::smol_str::SmolStr::new_static("draftRef"),
+                ::jacquard_lexicon::lexicon::LexUserType::Object(::jacquard_lexicon::lexicon::LexObject {
+                    description: None,
+                    required: Some(
+                        vec![
+                            ::jacquard_common::smol_str::SmolStr::new_static("draft_key")
+                        ],
+                    ),
+                    nullable: None,
+                    properties: {
+                        #[allow(unused_mut)]
+                        let mut map = ::std::collections::BTreeMap::new();
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
+                                "draft_key",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                description: None,
+                                format: None,
+                                default: None,
+                                min_length: None,
+                                max_length: Some(200usize),
+                                min_graphemes: None,
+                                max_graphemes: None,
+                                r#enum: None,
+                                r#const: None,
+                                known_values: None,
                             }),
                         );
                         map
@@ -188,16 +225,14 @@ fn lexicon_doc_sh_weaver_edit_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc<
                 ::jacquard_lexicon::lexicon::LexUserType::Object(::jacquard_lexicon::lexicon::LexObject {
                     description: None,
                     required: Some(
-                        vec![
-                            ::jacquard_common::smol_str::SmolStr::new_static("notebook")
-                        ],
+                        vec![::jacquard_common::smol_str::SmolStr::new_static("entry")],
                     ),
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
                         let mut map = ::std::collections::BTreeMap::new();
                         map.insert(
-                            ::jacquard_common::smol_str::SmolStr::new_static("notebook"),
+                            ::jacquard_common::smol_str::SmolStr::new_static("entry"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
                                 description: None,
                                 r#ref: ::jacquard_common::CowStr::new_static(
@@ -265,12 +300,59 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for DocRef<'a> {
     Clone,
     PartialEq,
     Eq,
+    jacquard_derive::IntoStatic,
+    Default
+)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftRef<'a> {
+    #[serde(borrow)]
+    pub draft_key: jacquard_common::CowStr<'a>,
+}
+
+impl<'a> ::jacquard_lexicon::schema::LexiconSchema for DraftRef<'a> {
+    fn nsid() -> &'static str {
+        "sh.weaver.edit.defs"
+    }
+    fn def_name() -> &'static str {
+        "draftRef"
+    }
+    fn lexicon_doc() -> ::jacquard_lexicon::lexicon::LexiconDoc<'static> {
+        lexicon_doc_sh_weaver_edit_defs()
+    }
+    fn validate(
+        &self,
+    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+        {
+            let value = &self.draft_key;
+            #[allow(unused_comparisons)]
+            if <str>::len(value.as_ref()) > 200usize {
+                return Err(::jacquard_lexicon::validation::ConstraintError::MaxLength {
+                    path: ::jacquard_lexicon::validation::ValidationPath::from_field(
+                        "draft_key",
+                    ),
+                    max: 200usize,
+                    actual: <str>::len(value.as_ref()),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[jacquard_derive::lexicon]
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
     jacquard_derive::IntoStatic
 )]
 #[serde(rename_all = "camelCase")]
 pub struct EntryRef<'a> {
     #[serde(borrow)]
-    pub notebook: crate::com_atproto::repo::strong_ref::StrongRef<'a>,
+    pub entry: crate::com_atproto::repo::strong_ref::StrongRef<'a>,
 }
 
 pub mod entry_ref_state {
@@ -283,25 +365,25 @@ pub mod entry_ref_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Notebook;
+        type Entry;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Notebook = Unset;
+        type Entry = Unset;
     }
-    ///State transition - sets the `notebook` field to Set
-    pub struct SetNotebook<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetNotebook<S> {}
-    impl<S: State> State for SetNotebook<S> {
-        type Notebook = Set<members::notebook>;
+    ///State transition - sets the `entry` field to Set
+    pub struct SetEntry<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetEntry<S> {}
+    impl<S: State> State for SetEntry<S> {
+        type Entry = Set<members::entry>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `notebook` field
-        pub struct notebook(());
+        ///Marker type for the `entry` field
+        pub struct entry(());
     }
 }
 
@@ -335,13 +417,13 @@ impl<'a> EntryRefBuilder<'a, entry_ref_state::Empty> {
 impl<'a, S> EntryRefBuilder<'a, S>
 where
     S: entry_ref_state::State,
-    S::Notebook: entry_ref_state::IsUnset,
+    S::Entry: entry_ref_state::IsUnset,
 {
-    /// Set the `notebook` field (required)
-    pub fn notebook(
+    /// Set the `entry` field (required)
+    pub fn entry(
         mut self,
         value: impl Into<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
-    ) -> EntryRefBuilder<'a, entry_ref_state::SetNotebook<S>> {
+    ) -> EntryRefBuilder<'a, entry_ref_state::SetEntry<S>> {
         self.__unsafe_private_named.0 = ::core::option::Option::Some(value.into());
         EntryRefBuilder {
             _phantom_state: ::core::marker::PhantomData,
@@ -354,12 +436,12 @@ where
 impl<'a, S> EntryRefBuilder<'a, S>
 where
     S: entry_ref_state::State,
-    S::Notebook: entry_ref_state::IsSet,
+    S::Entry: entry_ref_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> EntryRef<'a> {
         EntryRef {
-            notebook: self.__unsafe_private_named.0.unwrap(),
+            entry: self.__unsafe_private_named.0.unwrap(),
             extra_data: Default::default(),
         }
     }
@@ -372,7 +454,7 @@ where
         >,
     ) -> EntryRef<'a> {
         EntryRef {
-            notebook: self.__unsafe_private_named.0.unwrap(),
+            entry: self.__unsafe_private_named.0.unwrap(),
             extra_data: Some(extra_data),
         }
     }

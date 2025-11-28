@@ -8,7 +8,7 @@
       "properties": {
         "value": {
           "type": "union",
-          "refs": ["#notebookRef", "#entryRef"]
+          "refs": ["#notebookRef", "#entryRef", "#draftRef"]
         }
       }
     },
@@ -24,11 +24,22 @@
     },
     "entryRef": {
       "type": "object",
-      "required": ["notebook"],
+      "required": ["entry"],
       "properties": {
-        "notebook": {
+        "entry": {
           "type": "ref",
           "ref": "com.atproto.repo.strongRef"
+        }
+      }
+    },
+
+    "draftRef": {
+      "type": "object",
+      "required": ["draft_key"],
+      "properties": {
+        "draft_key": {
+          "type": "string",
+          "maxLength": 200
         }
       }
     }

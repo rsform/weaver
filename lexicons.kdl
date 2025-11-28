@@ -5,10 +5,17 @@ output {
 }
 
 
-source "bluesky" type="git" priority=101 {
-    repo "https://github.com/bluesky-social/atproto"
-    pattern "**/*.json"
+// source "bluesky" type="git" priority=101 {
+//     repo "https://github.com/bluesky-social/atproto"
+//     pattern "**/*.json"
+// }
+
+source "weaver" type="local" priority=100 {
+    //path "./lexicons"
+    path "/home/orual/Projects/weaver.sh/crates/weaver-api/lexicons"
+
 }
+
 
 source "weaver" type="local" priority=200 {
     path "./lexicons"

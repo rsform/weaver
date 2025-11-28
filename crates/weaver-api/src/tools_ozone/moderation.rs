@@ -628,6 +628,15 @@ fn lexicon_doc_tools_ozone_moderation_defs() -> ::jacquard_lexicon::lexicon::Lex
                         #[allow(unused_mut)]
                         let mut map = ::std::collections::BTreeMap::new();
                         map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static("access"),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                description: None,
+                                r#ref: ::jacquard_common::CowStr::new_static(
+                                    "app.bsky.ageassurance.defs#access",
+                                ),
+                            }),
+                        );
+                        map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
                                 "attemptId",
                             ),
@@ -677,6 +686,27 @@ fn lexicon_doc_tools_ozone_moderation_defs() -> ::jacquard_lexicon::lexicon::Lex
                                 description: Some(
                                     ::jacquard_common::CowStr::new_static(
                                         "The user agent used when completing the AA flow.",
+                                    ),
+                                ),
+                                format: None,
+                                default: None,
+                                min_length: None,
+                                max_length: None,
+                                min_graphemes: None,
+                                max_graphemes: None,
+                                r#enum: None,
+                                r#const: None,
+                                known_values: None,
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
+                                "countryCode",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                description: Some(
+                                    ::jacquard_common::CowStr::new_static(
+                                        "The ISO 3166-1 alpha-2 country code provided when beginning the Age Assurance flow.",
                                     ),
                                 ),
                                 format: None,
@@ -752,11 +782,32 @@ fn lexicon_doc_tools_ozone_moderation_defs() -> ::jacquard_lexicon::lexicon::Lex
                             }),
                         );
                         map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static(
+                                "regionCode",
+                            ),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                description: Some(
+                                    ::jacquard_common::CowStr::new_static(
+                                        "The ISO 3166-2 region code provided when beginning the Age Assurance flow.",
+                                    ),
+                                ),
+                                format: None,
+                                default: None,
+                                min_length: None,
+                                max_length: None,
+                                min_graphemes: None,
+                                max_graphemes: None,
+                                r#enum: None,
+                                r#const: None,
+                                known_values: None,
+                            }),
+                        );
+                        map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("status"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
                                 description: Some(
                                     ::jacquard_common::CowStr::new_static(
-                                        "The status of the age assurance process.",
+                                        "The status of the Age Assurance process.",
                                     ),
                                 ),
                                 format: None,
@@ -794,6 +845,15 @@ fn lexicon_doc_tools_ozone_moderation_defs() -> ::jacquard_lexicon::lexicon::Lex
                     properties: {
                         #[allow(unused_mut)]
                         let mut map = ::std::collections::BTreeMap::new();
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static("access"),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                description: None,
+                                r#ref: ::jacquard_common::CowStr::new_static(
+                                    "app.bsky.ageassurance.defs#access",
+                                ),
+                            }),
+                        );
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("comment"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
@@ -4990,6 +5050,9 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for AccountStrike<'a> {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AgeAssuranceEvent<'a> {
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub access: std::option::Option<crate::app_bsky::ageassurance::Access<'a>>,
     /// The unique identifier for this instance of the age assurance flow, in UUID format.
     #[serde(borrow)]
     pub attempt_id: jacquard_common::CowStr<'a>,
@@ -5001,6 +5064,10 @@ pub struct AgeAssuranceEvent<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub complete_ua: std::option::Option<jacquard_common::CowStr<'a>>,
+    /// The ISO 3166-1 alpha-2 country code provided when beginning the Age Assurance flow.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub country_code: std::option::Option<jacquard_common::CowStr<'a>>,
     /// The date and time of this write operation.
     pub created_at: jacquard_common::types::string::Datetime,
     /// The IP address used when initiating the AA flow.
@@ -5011,7 +5078,11 @@ pub struct AgeAssuranceEvent<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub init_ua: std::option::Option<jacquard_common::CowStr<'a>>,
-    /// The status of the age assurance process.
+    /// The ISO 3166-2 region code provided when beginning the Age Assurance flow.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub region_code: std::option::Option<jacquard_common::CowStr<'a>>,
+    /// The status of the Age Assurance process.
     #[serde(borrow)]
     pub status: jacquard_common::CowStr<'a>,
 }
@@ -5078,10 +5149,13 @@ pub mod age_assurance_event_state {
 pub struct AgeAssuranceEventBuilder<'a, S: age_assurance_event_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
+        ::core::option::Option<crate::app_bsky::ageassurance::Access<'a>>,
+        ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<jacquard_common::types::string::Datetime>,
+        ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<jacquard_common::CowStr<'a>>,
         ::core::option::Option<jacquard_common::CowStr<'a>>,
@@ -5101,9 +5175,39 @@ impl<'a> AgeAssuranceEventBuilder<'a, age_assurance_event_state::Empty> {
     pub fn new() -> Self {
         AgeAssuranceEventBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None, None, None),
+            __unsafe_private_named: (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
             _phantom: ::core::marker::PhantomData,
         }
+    }
+}
+
+impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
+    /// Set the `access` field (optional)
+    pub fn access(
+        mut self,
+        value: impl Into<Option<crate::app_bsky::ageassurance::Access<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.0 = value.into();
+        self
+    }
+    /// Set the `access` field to an Option value (optional)
+    pub fn maybe_access(
+        mut self,
+        value: Option<crate::app_bsky::ageassurance::Access<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.0 = value;
+        self
     }
 }
 
@@ -5117,7 +5221,7 @@ where
         mut self,
         value: impl Into<jacquard_common::CowStr<'a>>,
     ) -> AgeAssuranceEventBuilder<'a, age_assurance_event_state::SetAttemptId<S>> {
-        self.__unsafe_private_named.0 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.1 = ::core::option::Option::Some(value.into());
         AgeAssuranceEventBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -5132,7 +5236,7 @@ impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::CowStr<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.1 = value.into();
+        self.__unsafe_private_named.2 = value.into();
         self
     }
     /// Set the `completeIp` field to an Option value (optional)
@@ -5140,7 +5244,7 @@ impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::CowStr<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.1 = value;
+        self.__unsafe_private_named.2 = value;
         self
     }
 }
@@ -5151,7 +5255,7 @@ impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::CowStr<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.2 = value.into();
+        self.__unsafe_private_named.3 = value.into();
         self
     }
     /// Set the `completeUa` field to an Option value (optional)
@@ -5159,7 +5263,26 @@ impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::CowStr<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.2 = value;
+        self.__unsafe_private_named.3 = value;
+        self
+    }
+}
+
+impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
+    /// Set the `countryCode` field (optional)
+    pub fn country_code(
+        mut self,
+        value: impl Into<Option<jacquard_common::CowStr<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.4 = value.into();
+        self
+    }
+    /// Set the `countryCode` field to an Option value (optional)
+    pub fn maybe_country_code(
+        mut self,
+        value: Option<jacquard_common::CowStr<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.4 = value;
         self
     }
 }
@@ -5174,7 +5297,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::string::Datetime>,
     ) -> AgeAssuranceEventBuilder<'a, age_assurance_event_state::SetCreatedAt<S>> {
-        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.5 = ::core::option::Option::Some(value.into());
         AgeAssuranceEventBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -5189,12 +5312,12 @@ impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::CowStr<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value.into();
+        self.__unsafe_private_named.6 = value.into();
         self
     }
     /// Set the `initIp` field to an Option value (optional)
     pub fn maybe_init_ip(mut self, value: Option<jacquard_common::CowStr<'a>>) -> Self {
-        self.__unsafe_private_named.4 = value;
+        self.__unsafe_private_named.6 = value;
         self
     }
 }
@@ -5205,12 +5328,31 @@ impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::CowStr<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value.into();
+        self.__unsafe_private_named.7 = value.into();
         self
     }
     /// Set the `initUa` field to an Option value (optional)
     pub fn maybe_init_ua(mut self, value: Option<jacquard_common::CowStr<'a>>) -> Self {
-        self.__unsafe_private_named.5 = value;
+        self.__unsafe_private_named.7 = value;
+        self
+    }
+}
+
+impl<'a, S: age_assurance_event_state::State> AgeAssuranceEventBuilder<'a, S> {
+    /// Set the `regionCode` field (optional)
+    pub fn region_code(
+        mut self,
+        value: impl Into<Option<jacquard_common::CowStr<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.8 = value.into();
+        self
+    }
+    /// Set the `regionCode` field to an Option value (optional)
+    pub fn maybe_region_code(
+        mut self,
+        value: Option<jacquard_common::CowStr<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.8 = value;
         self
     }
 }
@@ -5225,7 +5367,7 @@ where
         mut self,
         value: impl Into<jacquard_common::CowStr<'a>>,
     ) -> AgeAssuranceEventBuilder<'a, age_assurance_event_state::SetStatus<S>> {
-        self.__unsafe_private_named.6 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.9 = ::core::option::Option::Some(value.into());
         AgeAssuranceEventBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -5244,13 +5386,16 @@ where
     /// Build the final struct
     pub fn build(self) -> AgeAssuranceEvent<'a> {
         AgeAssuranceEvent {
-            attempt_id: self.__unsafe_private_named.0.unwrap(),
-            complete_ip: self.__unsafe_private_named.1,
-            complete_ua: self.__unsafe_private_named.2,
-            created_at: self.__unsafe_private_named.3.unwrap(),
-            init_ip: self.__unsafe_private_named.4,
-            init_ua: self.__unsafe_private_named.5,
-            status: self.__unsafe_private_named.6.unwrap(),
+            access: self.__unsafe_private_named.0,
+            attempt_id: self.__unsafe_private_named.1.unwrap(),
+            complete_ip: self.__unsafe_private_named.2,
+            complete_ua: self.__unsafe_private_named.3,
+            country_code: self.__unsafe_private_named.4,
+            created_at: self.__unsafe_private_named.5.unwrap(),
+            init_ip: self.__unsafe_private_named.6,
+            init_ua: self.__unsafe_private_named.7,
+            region_code: self.__unsafe_private_named.8,
+            status: self.__unsafe_private_named.9.unwrap(),
             extra_data: Default::default(),
         }
     }
@@ -5263,13 +5408,16 @@ where
         >,
     ) -> AgeAssuranceEvent<'a> {
         AgeAssuranceEvent {
-            attempt_id: self.__unsafe_private_named.0.unwrap(),
-            complete_ip: self.__unsafe_private_named.1,
-            complete_ua: self.__unsafe_private_named.2,
-            created_at: self.__unsafe_private_named.3.unwrap(),
-            init_ip: self.__unsafe_private_named.4,
-            init_ua: self.__unsafe_private_named.5,
-            status: self.__unsafe_private_named.6.unwrap(),
+            access: self.__unsafe_private_named.0,
+            attempt_id: self.__unsafe_private_named.1.unwrap(),
+            complete_ip: self.__unsafe_private_named.2,
+            complete_ua: self.__unsafe_private_named.3,
+            country_code: self.__unsafe_private_named.4,
+            created_at: self.__unsafe_private_named.5.unwrap(),
+            init_ip: self.__unsafe_private_named.6,
+            init_ua: self.__unsafe_private_named.7,
+            region_code: self.__unsafe_private_named.8,
+            status: self.__unsafe_private_named.9.unwrap(),
             extra_data: Some(extra_data),
         }
     }
@@ -5306,6 +5454,9 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for AgeAssuranceEvent<'a> {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AgeAssuranceOverrideEvent<'a> {
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub access: std::option::Option<crate::app_bsky::ageassurance::Access<'a>>,
     /// Comment describing the reason for the override.
     #[serde(borrow)]
     pub comment: jacquard_common::CowStr<'a>,
@@ -12247,20 +12398,28 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for ScheduledActionView<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SubjectReviewState<'a> {
-    ReviewOpen,
-    ReviewEscalated,
-    ReviewClosed,
-    ReviewNone,
+    ToolsOzoneModerationDefsReviewOpen,
+    ToolsOzoneModerationDefsReviewEscalated,
+    ToolsOzoneModerationDefsReviewClosed,
+    ToolsOzoneModerationDefsReviewNone,
     Other(jacquard_common::CowStr<'a>),
 }
 
 impl<'a> SubjectReviewState<'a> {
     pub fn as_str(&self) -> &str {
         match self {
-            Self::ReviewOpen => "#reviewOpen",
-            Self::ReviewEscalated => "#reviewEscalated",
-            Self::ReviewClosed => "#reviewClosed",
-            Self::ReviewNone => "#reviewNone",
+            Self::ToolsOzoneModerationDefsReviewOpen => {
+                "tools.ozone.moderation.defs#reviewOpen"
+            }
+            Self::ToolsOzoneModerationDefsReviewEscalated => {
+                "tools.ozone.moderation.defs#reviewEscalated"
+            }
+            Self::ToolsOzoneModerationDefsReviewClosed => {
+                "tools.ozone.moderation.defs#reviewClosed"
+            }
+            Self::ToolsOzoneModerationDefsReviewNone => {
+                "tools.ozone.moderation.defs#reviewNone"
+            }
             Self::Other(s) => s.as_ref(),
         }
     }
@@ -12269,10 +12428,18 @@ impl<'a> SubjectReviewState<'a> {
 impl<'a> From<&'a str> for SubjectReviewState<'a> {
     fn from(s: &'a str) -> Self {
         match s {
-            "#reviewOpen" => Self::ReviewOpen,
-            "#reviewEscalated" => Self::ReviewEscalated,
-            "#reviewClosed" => Self::ReviewClosed,
-            "#reviewNone" => Self::ReviewNone,
+            "tools.ozone.moderation.defs#reviewOpen" => {
+                Self::ToolsOzoneModerationDefsReviewOpen
+            }
+            "tools.ozone.moderation.defs#reviewEscalated" => {
+                Self::ToolsOzoneModerationDefsReviewEscalated
+            }
+            "tools.ozone.moderation.defs#reviewClosed" => {
+                Self::ToolsOzoneModerationDefsReviewClosed
+            }
+            "tools.ozone.moderation.defs#reviewNone" => {
+                Self::ToolsOzoneModerationDefsReviewNone
+            }
             _ => Self::Other(jacquard_common::CowStr::from(s)),
         }
     }
@@ -12281,10 +12448,18 @@ impl<'a> From<&'a str> for SubjectReviewState<'a> {
 impl<'a> From<String> for SubjectReviewState<'a> {
     fn from(s: String) -> Self {
         match s.as_str() {
-            "#reviewOpen" => Self::ReviewOpen,
-            "#reviewEscalated" => Self::ReviewEscalated,
-            "#reviewClosed" => Self::ReviewClosed,
-            "#reviewNone" => Self::ReviewNone,
+            "tools.ozone.moderation.defs#reviewOpen" => {
+                Self::ToolsOzoneModerationDefsReviewOpen
+            }
+            "tools.ozone.moderation.defs#reviewEscalated" => {
+                Self::ToolsOzoneModerationDefsReviewEscalated
+            }
+            "tools.ozone.moderation.defs#reviewClosed" => {
+                Self::ToolsOzoneModerationDefsReviewClosed
+            }
+            "tools.ozone.moderation.defs#reviewNone" => {
+                Self::ToolsOzoneModerationDefsReviewNone
+            }
             _ => Self::Other(jacquard_common::CowStr::from(s)),
         }
     }
@@ -12322,10 +12497,18 @@ impl jacquard_common::IntoStatic for SubjectReviewState<'_> {
     type Output = SubjectReviewState<'static>;
     fn into_static(self) -> Self::Output {
         match self {
-            SubjectReviewState::ReviewOpen => SubjectReviewState::ReviewOpen,
-            SubjectReviewState::ReviewEscalated => SubjectReviewState::ReviewEscalated,
-            SubjectReviewState::ReviewClosed => SubjectReviewState::ReviewClosed,
-            SubjectReviewState::ReviewNone => SubjectReviewState::ReviewNone,
+            SubjectReviewState::ToolsOzoneModerationDefsReviewOpen => {
+                SubjectReviewState::ToolsOzoneModerationDefsReviewOpen
+            }
+            SubjectReviewState::ToolsOzoneModerationDefsReviewEscalated => {
+                SubjectReviewState::ToolsOzoneModerationDefsReviewEscalated
+            }
+            SubjectReviewState::ToolsOzoneModerationDefsReviewClosed => {
+                SubjectReviewState::ToolsOzoneModerationDefsReviewClosed
+            }
+            SubjectReviewState::ToolsOzoneModerationDefsReviewNone => {
+                SubjectReviewState::ToolsOzoneModerationDefsReviewNone
+            }
             SubjectReviewState::Other(v) => SubjectReviewState::Other(v.into_static()),
         }
     }

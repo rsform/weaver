@@ -10,19 +10,23 @@
 //! - Content changes (via `last_edit`) trigger paragraph memo re-evaluation
 //! - The document struct itself is NOT wrapped in a Signal - use `use_hook`
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
 use loro::{
-    ExportMode, LoroDoc, LoroList, LoroMap, LoroResult, LoroText, LoroValue, ToJson, UndoManager,
+    ExportMode, Frontiers, LoroDoc, LoroList, LoroMap, LoroResult, LoroText, LoroValue, ToJson,
+    UndoManager, VersionVector,
     cursor::{Cursor, Side},
 };
 
 use jacquard::IntoStatic;
 use jacquard::from_json_value;
 use jacquard::types::string::AtUri;
+use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::embed::images::Image;
+use weaver_api::sh_weaver::notebook::entry::Entry;
 
 /// Helper for working with editor images.
 /// Constructed from LoroMap data, NOT serialized directly.
@@ -80,10 +84,26 @@ pub struct EditorDocument {
     /// Contains nested containers: images (LoroList), externals (LoroList), etc.
     embeds: LoroMap,
 
-    // --- Entry tracking ---
-    /// AT-URI of the entry if editing an existing record.
+    // --- Entry tracking (reactive) ---
+    /// StrongRef to the entry if editing an existing record.
     /// None for new entries that haven't been published yet.
-    entry_uri: Option<AtUri<'static>>,
+    /// Signal so cloned docs share the same state after publish.
+    pub entry_ref: Signal<Option<StrongRef<'static>>>,
+
+    // --- Edit sync state (for PDS sync) ---
+    /// StrongRef to the sh.weaver.edit.root record for this edit session.
+    /// None if we haven't synced to PDS yet.
+    pub edit_root: Signal<Option<StrongRef<'static>>>,
+
+    /// StrongRef to the most recent sh.weaver.edit.diff record.
+    /// Used for the `prev` field when creating new diffs.
+    /// None if no diffs have been created yet (only root exists).
+    pub last_diff: Signal<Option<StrongRef<'static>>>,
+
+    /// Version vector at the time of last sync to PDS.
+    /// Used to export only changes since last sync.
+    /// None if never synced.
+    last_synced_version: Option<VersionVector>,
 
     // --- Editor state (non-reactive) ---
     /// Undo manager for the document.
@@ -244,7 +264,10 @@ impl EditorDocument {
             created_at,
             tags,
             embeds,
-            entry_uri: None,
+            entry_ref: Signal::new(None),
+            edit_root: Signal::new(None),
+            last_diff: Signal::new(None),
+            last_synced_version: None,
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             // Reactive editor state - wrapped in Signals
@@ -258,6 +281,44 @@ impl EditorDocument {
             last_edit: Signal::new(None),
             pending_snap: Signal::new(None),
         }
+    }
+
+    /// Create an EditorDocument from a fetched Entry.
+    ///
+    /// MUST be called from within a reactive context (e.g., `use_hook`) to
+    /// properly initialize Dioxus Signals.
+    ///
+    /// # Arguments
+    /// * `entry` - The entry record fetched from PDS
+    /// * `entry_ref` - StrongRef to the entry (URI + CID)
+    pub fn from_entry(entry: &Entry<'_>, entry_ref: StrongRef<'static>) -> Self {
+        let mut doc = Self::new(entry.content.to_string());
+
+        // Set metadata
+        doc.set_title(&entry.title);
+        doc.set_path(&entry.path);
+        doc.set_created_at(&entry.created_at.to_string());
+
+        // Add tags
+        if let Some(ref tags) = entry.tags {
+            for tag in tags.iter() {
+                doc.add_tag(tag.as_ref());
+            }
+        }
+
+        // Add existing images (no published_blob_uri needed - they're already in the entry)
+        if let Some(ref embeds) = entry.embeds {
+            if let Some(ref images) = embeds.images {
+                for img in &images.images {
+                    doc.add_image(&img.clone().into_static(), None);
+                }
+            }
+        }
+
+        // Set the entry_ref so subsequent publishes update this record
+        doc.set_entry_ref(Some(entry_ref));
+
+        doc
     }
 
     /// Generate current datetime as ISO 8601 string.
@@ -359,16 +420,16 @@ impl EditorDocument {
         self.created_at.insert(0, datetime).ok();
     }
 
-    // --- Entry URI accessors ---
+    // --- Entry ref accessors ---
 
-    /// Get the AT-URI of the entry if editing an existing record.
-    pub fn entry_uri(&self) -> Option<&AtUri<'static>> {
-        self.entry_uri.as_ref()
+    /// Get the StrongRef to the entry if editing an existing record.
+    pub fn entry_ref(&self) -> Option<StrongRef<'static>> {
+        self.entry_ref.read().clone()
     }
 
-    /// Set the AT-URI when editing an existing entry.
-    pub fn set_entry_uri(&mut self, uri: Option<AtUri<'static>>) {
-        self.entry_uri = uri;
+    /// Set the StrongRef when editing an existing entry.
+    pub fn set_entry_ref(&mut self, entry: Option<StrongRef<'static>>) {
+        self.entry_ref.set(entry);
     }
 
     // --- Tags accessors ---
@@ -689,14 +750,102 @@ impl EditorDocument {
 
     /// Get the current state frontiers for change detection.
     /// Frontiers represent the "version" of the document state.
-    pub fn state_frontiers(&self) -> loro::Frontiers {
+    pub fn state_frontiers(&self) -> Frontiers {
         self.doc.state_frontiers()
+    }
+
+    /// Get the current version vector.
+    pub fn version_vector(&self) -> VersionVector {
+        self.doc.oplog_vv()
     }
 
     /// Get the last edit info for incremental rendering.
     /// Reading this creates a reactive dependency on content changes.
     pub fn last_edit(&self) -> Option<EditInfo> {
         self.last_edit.read().clone()
+    }
+
+    // --- Edit sync methods ---
+
+    /// Get the edit root StrongRef if set.
+    pub fn edit_root(&self) -> Option<StrongRef<'static>> {
+        self.edit_root.read().clone()
+    }
+
+    /// Set the edit root after creating or finding the root record.
+    pub fn set_edit_root(&mut self, root: Option<StrongRef<'static>>) {
+        self.edit_root.set(root);
+    }
+
+    /// Get the last diff StrongRef if set.
+    pub fn last_diff(&self) -> Option<StrongRef<'static>> {
+        self.last_diff.read().clone()
+    }
+
+    /// Set the last diff after creating a new diff record.
+    pub fn set_last_diff(&mut self, diff: Option<StrongRef<'static>>) {
+        self.last_diff.set(diff);
+    }
+
+    /// Check if there are unsynchronized changes since the last sync.
+    pub fn has_unsync_changes(&self) -> bool {
+        match &self.last_synced_version {
+            Some(synced_vv) => self.doc.oplog_vv() != *synced_vv,
+            None => true, // Never synced, so there are changes
+        }
+    }
+
+    /// Export updates since the last sync.
+    /// Returns None if there are no changes to export.
+    /// After successful upload, call `mark_synced()` to update the sync marker.
+    pub fn export_updates_since_sync(&self) -> Option<Vec<u8>> {
+        let from_vv = self.last_synced_version.clone().unwrap_or_default();
+        let current_vv = self.doc.oplog_vv();
+
+        // No changes since last sync
+        if from_vv == current_vv {
+            return None;
+        }
+
+        let updates = self
+            .doc
+            .export(ExportMode::Updates {
+                from: Cow::Owned(from_vv),
+            })
+            .ok()?;
+
+        // Don't return empty updates
+        if updates.is_empty() {
+            return None;
+        }
+
+        Some(updates)
+    }
+
+    /// Mark the current state as synced.
+    /// Call this after successfully uploading a diff to the PDS.
+    pub fn mark_synced(&mut self) {
+        self.last_synced_version = Some(self.doc.oplog_vv());
+    }
+
+    /// Import updates from a PDS diff blob.
+    /// Used when loading edit history from the PDS.
+    pub fn import_updates(&mut self, updates: &[u8]) -> LoroResult<()> {
+        self.doc.import(updates)?;
+        Ok(())
+    }
+
+    /// Set the sync state when loading from PDS.
+    /// This sets the version marker to the current state so we don't
+    /// re-upload what we just downloaded.
+    pub fn set_synced_from_pds(
+        &mut self,
+        edit_root: StrongRef<'static>,
+        last_diff: Option<StrongRef<'static>>,
+    ) {
+        self.edit_root.set(Some(edit_root));
+        self.last_diff.set(last_diff);
+        self.last_synced_version = Some(self.doc.oplog_vv());
     }
 
     /// Create a new EditorDocument from a binary snapshot.
@@ -765,7 +914,10 @@ impl EditorDocument {
             created_at,
             tags,
             embeds,
-            entry_uri: None,
+            entry_ref: Signal::new(None),
+            edit_root: Signal::new(None),
+            last_diff: Signal::new(None),
+            last_synced_version: None,
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             // Reactive editor state - wrapped in Signals

@@ -19,6 +19,10 @@
             "type": "ref",
             "ref": "com.atproto.repo.strongRef"
           },
+          "prev": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
           "doc": {
             "type": "ref",
             "ref": "sh.weaver.edit.defs#docRef"

@@ -5,14 +5,14 @@ use dioxus::prelude::*;
 
 /// Editor page view.
 ///
-/// Displays the markdown editor at the /editor route for testing during development.
-/// Eventually this will be integrated into the notebook editing workflow.
+/// Displays the markdown editor at the /editor route.
+/// Optionally loads an existing entry for editing via `?entry={at-uri}`.
 #[component]
-pub fn Editor() -> Element {
+pub fn Editor(entry: Option<String>) -> Element {
     rsx! {
         EditorCss {}
         div { class: "editor-page",
-            MarkdownEditor { initial_content: None }
+            MarkdownEditor { entry_uri: entry }
         }
     }
 }

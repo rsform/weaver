@@ -47,6 +47,7 @@ syntect = { workspace = true, default-features = false, features = ["default-fan
 # diesel_migrations = { version = "2.3", features = ["sqlite"] }
 tokio = { version = "1.28", features = ["sync"] }
 serde_html_form = "0.2.8"
+regex-lite = "0.1"
 tracing.workspace = true
 serde_ipld_dagcbor = { version = "0.6" }
 loro = "1.9.1"

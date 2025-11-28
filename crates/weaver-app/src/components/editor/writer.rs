@@ -7,6 +7,7 @@
 //! represent consumed formatting characters.
 
 use super::offset_map::{OffsetMapping, RenderResult};
+use jacquard::types::{ident::AtIdentifier, string::Rkey};
 use loro::LoroText;
 use markdown_weaver::{
     Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, Tag,
@@ -138,17 +139,35 @@ impl ImageResolver for () {
 
 /// Concrete image resolver that maps image names to URLs.
 ///
-/// Supports two states for images:
+/// Resolved image path type
+#[derive(Clone, Debug)]
+enum ResolvedImage {
+    /// Data URL for immediate preview (still uploading)
+    Pending(String),
+    /// Draft image: `/image/{ident}/draft/{blob_rkey}/{name}`
+    Draft {
+        blob_rkey: Rkey<'static>,
+        ident: AtIdentifier<'static>,
+    },
+    /// Published image: `/image/{ident}/{entry_rkey}/{name}`
+    Published {
+        entry_rkey: Rkey<'static>,
+        ident: AtIdentifier<'static>,
+    },
+}
+
+/// Resolves image paths in the editor.
+///
+/// Supports three states for images:
 /// - Pending: uses data URL for immediate preview while upload is in progress
-/// - Uploaded: uses CDN URL format `https://cdn.bsky.app/img/feed_fullsize/plain/{did}/{cid}@{format}`
+/// - Draft: uses path format `/image/{did}/draft/{blob_rkey}/{name}`
+/// - Published: uses path format `/image/{did}/{entry_rkey}/{name}`
 ///
 /// Image URLs in markdown use the format `/image/{name}`.
 #[derive(Clone, Default)]
 pub struct EditorImageResolver {
-    /// Pending images: name -> data URL (still uploading)
-    pending: std::collections::HashMap<String, String>,
-    /// Uploaded images: name -> (CID string, DID string, format)
-    uploaded: std::collections::HashMap<String, (String, String, String)>,
+    /// All resolved images: name -> resolved path info
+    images: std::collections::HashMap<String, ResolvedImage>,
 }
 
 impl EditorImageResolver {
@@ -162,38 +181,81 @@ impl EditorImageResolver {
     /// * `name` - The image name used in markdown (e.g., "photo.jpg")
     /// * `data_url` - The base64 data URL for preview
     pub fn add_pending(&mut self, name: String, data_url: String) {
-        self.pending.insert(name, data_url);
+        self.images.insert(name, ResolvedImage::Pending(data_url));
     }
 
-    /// Promote a pending image to uploaded status.
+    /// Promote a pending image to uploaded (draft) status.
     ///
-    /// Removes from pending and adds to uploaded with CDN info.
-    pub fn promote_to_uploaded(&mut self, name: &str, cid: String, did: String, format: String) {
-        self.pending.remove(name);
-        self.uploaded.insert(name.to_string(), (cid, did, format));
+    /// # Arguments
+    /// * `name` - The image name used in markdown
+    /// * `blob_rkey` - The rkey of the PublishedBlob record
+    /// * `ident` - The AT identifier (DID or handle) of the blob owner
+    pub fn promote_to_uploaded(
+        &mut self,
+        name: &str,
+        blob_rkey: Rkey<'static>,
+        ident: AtIdentifier<'static>,
+    ) {
+        self.images.insert(
+            name.to_string(),
+            ResolvedImage::Draft { blob_rkey, ident },
+        );
     }
 
-    /// Add an already-uploaded image.
+    /// Add an already-uploaded draft image.
     ///
     /// # Arguments
     /// * `name` - The name/URL used in markdown (e.g., "photo.jpg")
-    /// * `cid` - The blob CID
-    /// * `did` - The DID of the blob owner
-    /// * `format` - The image format (e.g., "jpeg", "png")
-    pub fn add_uploaded(&mut self, name: String, cid: String, did: String, format: String) {
-        self.uploaded.insert(name, (cid, did, format));
+    /// * `blob_rkey` - The rkey of the PublishedBlob record
+    /// * `ident` - The AT identifier (DID or handle) of the blob owner
+    pub fn add_uploaded(
+        &mut self,
+        name: String,
+        blob_rkey: Rkey<'static>,
+        ident: AtIdentifier<'static>,
+    ) {
+        self.images
+            .insert(name, ResolvedImage::Draft { blob_rkey, ident });
+    }
+
+    /// Add a published image.
+    ///
+    /// # Arguments
+    /// * `name` - The name/URL used in markdown (e.g., "photo.jpg")
+    /// * `entry_rkey` - The rkey of the entry record containing this image
+    /// * `ident` - The AT identifier (DID or handle) of the entry owner
+    pub fn add_published(
+        &mut self,
+        name: String,
+        entry_rkey: Rkey<'static>,
+        ident: AtIdentifier<'static>,
+    ) {
+        self.images
+            .insert(name, ResolvedImage::Published { entry_rkey, ident });
     }
 
     /// Check if an image is pending upload.
     pub fn is_pending(&self, name: &str) -> bool {
-        self.pending.contains_key(name)
+        matches!(self.images.get(name), Some(ResolvedImage::Pending(_)))
     }
 
-    /// Build a resolver from editor images and user DID.
+    /// Build a resolver from editor images and user identifier.
+    ///
+    /// # Arguments
+    /// * `images` - Iterator of editor images
+    /// * `ident` - The AT identifier (DID or handle) of the user
+    /// * `entry_rkey` - If Some, images are resolved as published (`/image/{ident}/{entry_rkey}/{name}`).
+    ///                  If None, images are resolved as drafts using their `published_blob_uri`.
+    ///
+    /// For draft mode (entry_rkey=None), only images with a `published_blob_uri` are included.
+    /// For published mode (entry_rkey=Some), all images are included.
     pub fn from_images<'a>(
         images: impl IntoIterator<Item = &'a super::document::EditorImage>,
-        user_did: &str,
+        ident: AtIdentifier<'static>,
+        entry_rkey: Option<Rkey<'static>>,
     ) -> Self {
+        use jacquard::IntoStatic;
+
         let mut resolver = Self::new();
         for editor_image in images {
             // Get the name from the Image (use alt text as fallback if name is empty)
@@ -208,17 +270,23 @@ impl EditorImageResolver {
                 continue;
             }
 
-            // Get CID and format from the blob ref
-            let blob = editor_image.image.image.blob();
-            let cid = blob.cid().to_string();
-            let format = blob
-                .mime_type
-                .0
-                .strip_prefix("image/")
-                .unwrap_or("jpeg")
-                .to_string();
-
-            resolver.add_uploaded(name, cid, user_did.to_string(), format);
+            match &entry_rkey {
+                // Published mode: use entry rkey for all images
+                Some(rkey) => {
+                    resolver.add_published(name, rkey.clone(), ident.clone());
+                }
+                // Draft mode: use published_blob_uri rkey
+                None => {
+                    let blob_rkey = match &editor_image.published_blob_uri {
+                        Some(uri) => match uri.rkey() {
+                            Some(rkey) => rkey.0.clone().into_static(),
+                            None => continue,
+                        },
+                        None => continue,
+                    };
+                    resolver.add_uploaded(name, blob_rkey, ident.clone());
+                }
+            }
         }
         resolver
     }
@@ -229,17 +297,16 @@ impl ImageResolver for EditorImageResolver {
         // Extract image name from /image/{name} format
         let name = url.strip_prefix("/image/").unwrap_or(url);
 
-        // Check pending first (data URL for immediate preview)
-        if let Some(data_url) = self.pending.get(name) {
-            return Some(data_url.clone());
+        let resolved = self.images.get(name)?;
+        match resolved {
+            ResolvedImage::Pending(data_url) => Some(data_url.clone()),
+            ResolvedImage::Draft { blob_rkey, ident } => {
+                Some(format!("/image/{}/draft/{}/{}", ident, blob_rkey, name))
+            }
+            ResolvedImage::Published { entry_rkey, ident } => {
+                Some(format!("/image/{}/{}/{}", ident, entry_rkey, name))
+            }
         }
-
-        // Then check uploaded (CDN URL)
-        let (cid, did, format) = self.uploaded.get(name)?;
-        Some(format!(
-            "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@{}",
-            did, cid, format
-        ))
     }
 }
 
