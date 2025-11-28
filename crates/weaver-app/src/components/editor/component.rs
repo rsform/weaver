@@ -1,8 +1,10 @@
 //! The main MarkdownEditor component.
 
 use dioxus::prelude::*;
+use jacquard::IntoStatic;
 use jacquard::cowstr::ToCowStr;
 use jacquard::types::blob::BlobRef;
+use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::embed::images::Image;
 use weaver_common::WeaverExt;
 
@@ -11,25 +13,113 @@ use crate::components::editor::ReportButton;
 use crate::fetch::Fetcher;
 
 use super::document::{CompositionState, EditorDocument};
-use super::dom_sync::{sync_cursor_from_dom, sync_cursor_from_dom_with_direction, update_paragraph_dom};
-use super::offset_map::SnapDirection;
+use super::dom_sync::{
+    sync_cursor_from_dom, sync_cursor_from_dom_with_direction, update_paragraph_dom,
+};
 use super::formatting;
 use super::input::{
     get_char_at, handle_copy, handle_cut, handle_keydown, handle_paste, should_intercept_key,
 };
+use super::offset_map::SnapDirection;
 use super::paragraph::ParagraphRender;
 use super::platform;
-use super::publish::PublishButton;
+use super::publish::{LoadedEntry, PublishButton, load_entry_for_editing};
 use super::render;
 use super::storage;
 use super::toolbar::EditorToolbar;
 use super::visibility::update_syntax_visibility;
 use super::writer::{EditorImageResolver, SyntaxSpanInfo};
 
-/// Main markdown editor component.
+/// Result of loading an entry - either loaded, failed, or not needed.
+#[derive(Clone, PartialEq)]
+enum LoadResult {
+    Loaded(LoadedEntry),
+    Failed,
+    NotNeeded,
+}
+
+/// Wrapper component that handles loading an existing entry before rendering the editor.
 ///
 /// # Props
-/// - `initial_content`: Optional initial markdown content
+/// - `initial_content`: Optional initial markdown content (for new entries)
+/// - `entry_uri`: Optional AT-URI of an existing entry to edit
+#[component]
+pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>) -> Element {
+    let fetcher = use_context::<Fetcher>();
+
+    // Determine draft key - use entry URI if editing existing, otherwise "current"
+    let draft_key = entry_uri.clone().unwrap_or_else(|| "current".to_string());
+
+    // Check if we have a local draft first
+    let has_local_draft = use_hook(|| storage::load_from_storage(&draft_key).is_some());
+
+    // If we have an entry_uri but no local draft, we need to fetch from PDS
+    let needs_fetch = entry_uri.is_some() && !has_local_draft;
+
+    // Resource returns the load result
+    let entry_resource = use_resource(move || {
+        let fetcher = fetcher.clone();
+        let uri_str = entry_uri.clone();
+        async move {
+            if !needs_fetch {
+                return LoadResult::NotNeeded;
+            }
+            if let Some(uri_str) = uri_str {
+                if let Ok(uri) = jacquard::types::string::AtUri::new(&uri_str) {
+                    match load_entry_for_editing(&fetcher, &uri).await {
+                        Ok(loaded) => return LoadResult::Loaded(loaded),
+                        Err(e) => {
+                            tracing::error!("Failed to load entry: {}", e);
+                            return LoadResult::Failed;
+                        }
+                    }
+                }
+            }
+            LoadResult::Failed
+        }
+    });
+
+    // Render based on resource state
+    match &*entry_resource.read() {
+        Some(LoadResult::Loaded(loaded)) => {
+            rsx! {
+                MarkdownEditorInner {
+                    key: "{draft_key}",
+                    draft_key: draft_key.clone(),
+                    loaded_entry: Some(loaded.clone()),
+                    initial_content: None,
+                }
+            }
+        }
+        Some(LoadResult::Failed) => {
+            rsx! {
+                div { class: "editor-error",
+                    "Failed to load entry. It may not exist or you may not have access."
+                }
+            }
+        }
+        Some(LoadResult::NotNeeded) => {
+            rsx! {
+                MarkdownEditorInner {
+                    key: "{draft_key}",
+                    draft_key: draft_key.clone(),
+                    loaded_entry: None,
+                    initial_content: initial_content.clone(),
+                }
+            }
+        }
+        None => {
+            // Still loading
+            rsx! {
+                div { class: "editor-loading",
+                    "Loading entry..."
+                }
+            }
+        }
+    }
+}
+
+/// Inner markdown editor component (actual editor implementation).
 ///
 /// # Features
 /// - Loro CRDT-based text storage with undo/redo support
@@ -38,18 +128,26 @@ use super::writer::{EditorImageResolver, SyntaxSpanInfo};
 /// - LocalStorage auto-save with debouncing
 /// - Keyboard shortcuts (Ctrl+B for bold, Ctrl+I for italic)
 #[component]
-pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
+fn MarkdownEditorInner(
+    draft_key: String,
+    loaded_entry: Option<LoadedEntry>,
+    initial_content: Option<String>,
+) -> Element {
     // Context for authenticated API calls
     let fetcher = use_context::<Fetcher>();
     let auth_state = use_context::<Signal<AuthState>>();
 
-    // Try to restore from localStorage (includes CRDT state for undo history)
-    // Use "current" as the default draft key for now
-    let draft_key = "current";
-    // Document is NOT in a signal - its fields are individually reactive
     let mut document = use_hook(|| {
-        storage::load_from_storage(draft_key)
-            .unwrap_or_else(|| EditorDocument::new(initial_content.clone().unwrap_or_default()))
+        // Priority: loaded_entry > local storage > new with initial_content
+        if let Some(ref loaded) = loaded_entry {
+            let doc = EditorDocument::from_entry(&loaded.entry, loaded.entry_ref.clone());
+            // Save to local storage so future visits use the draft
+            storage::save_to_storage(&doc, &draft_key).ok();
+            doc
+        } else {
+            storage::load_from_storage(&draft_key)
+                .unwrap_or_else(|| EditorDocument::new(initial_content.clone().unwrap_or_default()))
+        }
     });
     let editor_id = "markdown-editor";
 
@@ -149,9 +247,12 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
             // Use requestAnimationFrame to wait for browser paint
             if let Some(window) = web_sys::window() {
                 let closure = Closure::once(move || {
-                    if let Err(e) =
-                        super::cursor::restore_cursor_position(cursor_offset, &map, editor_id, snap_direction)
-                    {
+                    if let Err(e) = super::cursor::restore_cursor_position(
+                        cursor_offset,
+                        &map,
+                        editor_id,
+                        snap_direction,
+                    ) {
                         tracing::warn!("Cursor restoration failed: {:?}", e);
                     }
                 });
@@ -175,9 +276,12 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let doc_for_autosave = document.clone();
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let draft_key_for_autosave = draft_key.clone();
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
         // Check every 500ms if there are unsaved changes
         let mut doc = doc_for_autosave.clone();
+        let draft_key = draft_key_for_autosave.clone();
         let interval = gloo_timers::callback::Interval::new(500, move || {
             let current_frontiers = doc.state_frontiers();
 
@@ -192,7 +296,7 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
 
             if needs_save {
                 doc.sync_loro_cursor();
-                let _ = storage::save_to_storage(&doc, draft_key);
+                let _ = storage::save_to_storage(&doc, &draft_key);
 
                 // Update last saved frontiers
                 last_saved_frontiers.set(Some(current_frontiers));
@@ -783,39 +887,29 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                                 // Upload blob and create temporary PublishedBlob record
                                 match client.publish_blob(data, &name_for_upload, None).await {
                                     Ok((strong_ref, published_blob)) => {
-                                        // Extract the blob from PublishedBlob
-                                        let blob = match published_blob.upload {
-                                            BlobRef::Blob(b) => b,
-                                            _ => {
-                                                tracing::warn!("Unexpected BlobRef variant");
-                                                return;
-                                            }
-                                        };
-
-                                        // Get format from mime type
-                                        let format = blob
-                                            .mime_type
-                                            .0
-                                            .strip_prefix("image/")
-                                            .unwrap_or("jpeg")
-                                            .to_string();
-
                                         // Get DID from fetcher
                                         let did = match fetcher.current_did().await {
-                                            Some(d) => d.to_string(),
+                                            Some(d) => d,
                                             None => {
                                                 tracing::warn!("No DID available");
                                                 return;
                                             }
                                         };
 
-                                        let cid = blob.cid().to_string();
+                                        // Extract rkey from the AT-URI
+                                        let blob_rkey = match strong_ref.uri.rkey() {
+                                            Some(rkey) => rkey.0.clone().into_static(),
+                                            None => {
+                                                tracing::warn!("No rkey in PublishedBlob URI");
+                                                return;
+                                            }
+                                        };
 
                                         // Build Image using the builder API
                                         let name_for_resolver = name_for_upload.clone();
                                         let image = Image::new()
                                             .alt(alt_for_upload.to_cowstr())
-                                            .image(BlobRef::Blob(blob))
+                                            .image(published_blob.upload)
                                             .name(name_for_upload.to_cowstr())
                                             .build();
 
@@ -823,12 +917,12 @@ pub fn MarkdownEditor(initial_content: Option<String>) -> Element {
                                         doc_for_spawn.add_image(&image, Some(&strong_ref.uri));
 
                                         // Promote from pending to uploaded in resolver
+                                        let ident = AtIdentifier::Did(did);
                                         image_resolver.with_mut(|resolver| {
                                             resolver.promote_to_uploaded(
                                                 &name_for_resolver,
-                                                cid,
-                                                did,
-                                                format,
+                                                blob_rkey,
+                                                ident,
                                             );
                                         });
 

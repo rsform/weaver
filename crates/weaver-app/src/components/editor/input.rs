@@ -26,6 +26,10 @@ pub fn should_intercept_key(evt: &Event<KeyboardData>) -> bool {
                 _ => {}
             }
         }
+        // Intercept Cmd+Backspace (delete to start of line) and Cmd+Delete (delete to end)
+        if matches!(key, Key::Backspace | Key::Delete) {
+            return true;
+        }
         // Let browser handle other Ctrl/Cmd shortcuts (paste, copy, cut, etc.)
         return false;
     }
@@ -151,6 +155,17 @@ pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut EditorDocument) {
                 doc.cursor.write().offset = start;
             } else if doc.cursor.read().offset > 0 {
                 let cursor_offset = doc.cursor.read().offset;
+
+                // Cmd+Backspace: delete to start of line
+                if mods.meta() || mods.ctrl() {
+                    let line_start = find_line_start(doc.loro_text(), cursor_offset);
+                    if line_start < cursor_offset {
+                        let _ = doc.remove_tracked(line_start, cursor_offset - line_start);
+                        doc.cursor.write().offset = line_start;
+                    }
+                    return;
+                }
+
                 // Check if we're about to delete a newline
                 let prev_char = get_char_at(doc.loro_text(), cursor_offset - 1);
 
@@ -213,7 +228,18 @@ pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut EditorDocument) {
                 doc.cursor.write().offset = start;
             } else {
                 let cursor_offset = doc.cursor.read().offset;
-                if cursor_offset < doc.len_chars() {
+                let doc_len = doc.len_chars();
+
+                // Cmd+Delete: delete to end of line
+                if mods.meta() || mods.ctrl() {
+                    let line_end = find_line_end(doc.loro_text(), cursor_offset);
+                    if cursor_offset < line_end {
+                        let _ = doc.remove_tracked(cursor_offset, line_end - cursor_offset);
+                    }
+                    return;
+                }
+
+                if cursor_offset < doc_len {
                     // Delete next char
                     let _ = doc.remove_tracked(cursor_offset, 1);
                 }

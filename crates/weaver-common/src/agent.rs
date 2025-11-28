@@ -216,13 +216,13 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
     /// 3. If found: update the entry with new content
     /// 4. If not found: create new entry and append to notebook's entry_list
     ///
-    /// Returns (entry_uri, was_created)
+    /// Returns (entry_ref, was_created)
     fn upsert_entry(
         &self,
         notebook_title: &str,
         entry_title: &str,
         entry: entry::Entry<'_>,
-    ) -> impl Future<Output = Result<(AtUri<'static>, bool), WeaverError>>
+    ) -> impl Future<Output = Result<(StrongRef<'static>, bool), WeaverError>>
     where
         Self: Sized,
     {
@@ -244,31 +244,42 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 if let Ok(existing_entry) = existing.parse() {
                     if existing_entry.value.title == entry_title {
                         // Update existing entry
-                        self.update_record::<entry::Entry>(&entry_ref.uri, |e| {
-                            e.content = entry.content.clone();
-                            e.embeds = entry.embeds.clone();
-                            e.tags = entry.tags.clone();
-                        })
-                        .await?;
-                        return Ok((entry_ref.uri.clone().into_static(), false));
+                        let output = self
+                            .update_record::<entry::Entry>(&entry_ref.uri, |e| {
+                                e.content = entry.content.clone();
+                                e.embeds = entry.embeds.clone();
+                                e.tags = entry.tags.clone();
+                            })
+                            .await?;
+                        let updated_ref = StrongRef::new()
+                            .uri(output.uri.into_static())
+                            .cid(output.cid.into_static())
+                            .build();
+                        return Ok((updated_ref, false));
                     }
                 }
             }
 
             // Entry doesn't exist, create it
             let response = self.create_record(entry, None).await?;
-            let entry_uri = response.uri.clone();
+            let new_ref = StrongRef::new()
+                .uri(response.uri.clone().into_static())
+                .cid(response.cid.clone().into_static())
+                .build();
 
             // Add to notebook's entry_list
             use weaver_api::sh_weaver::notebook::book::Book;
-            let new_ref = StrongRef::new().uri(response.uri).cid(response.cid).build();
+            let notebook_entry_ref = StrongRef::new()
+                .uri(response.uri.into_static())
+                .cid(response.cid.into_static())
+                .build();
 
             self.update_record::<Book>(&notebook_uri, |book| {
-                book.entry_list.push(new_ref);
+                book.entry_list.push(notebook_entry_ref);
             })
             .await?;
 
-            Ok((entry_uri, true))
+            Ok((new_ref, true))
         }
     }
 

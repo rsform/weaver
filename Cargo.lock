@@ -9955,6 +9955,7 @@ dependencies = [
  "mini-moka 0.11.0",
  "n0-future",
  "regex",
+ "regex-lite",
  "reqwest",
  "serde",
  "serde_html_form",

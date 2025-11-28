@@ -20,6 +20,9 @@
 pub struct Diff<'a> {
     #[serde(borrow)]
     pub doc: crate::sh_weaver::edit::DocRef<'a>,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub prev: std::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     #[serde(borrow)]
     pub root: crate::com_atproto::repo::strong_ref::StrongRef<'a>,
     #[serde(borrow)]
@@ -90,6 +93,7 @@ pub struct DiffBuilder<'a, S: diff_state::State> {
     __unsafe_private_named: (
         ::core::option::Option<crate::sh_weaver::edit::DocRef<'a>>,
         ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
+        ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
         ::core::option::Option<jacquard_common::types::blob::BlobRef<'a>>,
     ),
     _phantom: ::core::marker::PhantomData<&'a ()>,
@@ -107,7 +111,7 @@ impl<'a> DiffBuilder<'a, diff_state::Empty> {
     pub fn new() -> Self {
         DiffBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None),
+            __unsafe_private_named: (None, None, None, None),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -132,6 +136,25 @@ where
     }
 }
 
+impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
+    /// Set the `prev` field (optional)
+    pub fn prev(
+        mut self,
+        value: impl Into<Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.1 = value.into();
+        self
+    }
+    /// Set the `prev` field to an Option value (optional)
+    pub fn maybe_prev(
+        mut self,
+        value: Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.1 = value;
+        self
+    }
+}
+
 impl<'a, S> DiffBuilder<'a, S>
 where
     S: diff_state::State,
@@ -142,7 +165,7 @@ where
         mut self,
         value: impl Into<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     ) -> DiffBuilder<'a, diff_state::SetRoot<S>> {
-        self.__unsafe_private_named.1 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.2 = ::core::option::Option::Some(value.into());
         DiffBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -161,7 +184,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::blob::BlobRef<'a>>,
     ) -> DiffBuilder<'a, diff_state::SetSnapshot<S>> {
-        self.__unsafe_private_named.2 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
         DiffBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -181,8 +204,9 @@ where
     pub fn build(self) -> Diff<'a> {
         Diff {
             doc: self.__unsafe_private_named.0.unwrap(),
-            root: self.__unsafe_private_named.1.unwrap(),
-            snapshot: self.__unsafe_private_named.2.unwrap(),
+            prev: self.__unsafe_private_named.1,
+            root: self.__unsafe_private_named.2.unwrap(),
+            snapshot: self.__unsafe_private_named.3.unwrap(),
             extra_data: Default::default(),
         }
     }
@@ -196,8 +220,9 @@ where
     ) -> Diff<'a> {
         Diff {
             doc: self.__unsafe_private_named.0.unwrap(),
-            root: self.__unsafe_private_named.1.unwrap(),
-            snapshot: self.__unsafe_private_named.2.unwrap(),
+            prev: self.__unsafe_private_named.1,
+            root: self.__unsafe_private_named.2.unwrap(),
+            snapshot: self.__unsafe_private_named.3.unwrap(),
             extra_data: Some(extra_data),
         }
     }
@@ -319,6 +344,15 @@ fn lexicon_doc_sh_weaver_edit_diff() -> ::jacquard_lexicon::lexicon::LexiconDoc<
                                     description: None,
                                     r#ref: ::jacquard_common::CowStr::new_static(
                                         "sh.weaver.edit.defs#docRef",
+                                    ),
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static("prev"),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                    description: None,
+                                    r#ref: ::jacquard_common::CowStr::new_static(
+                                        "com.atproto.repo.strongRef",
                                     ),
                                 }),
                             );

@@ -12,18 +12,31 @@
           "type": "union",
           "refs": [
             "#notebookRef",
-            "#entryRef"
+            "#entryRef",
+            "#draftRef"
           ]
+        }
+      }
+    },
+    "draftRef": {
+      "type": "object",
+      "required": [
+        "draft_key"
+      ],
+      "properties": {
+        "draft_key": {
+          "type": "string",
+          "maxLength": 200
         }
       }
     },
     "entryRef": {
       "type": "object",
       "required": [
-        "notebook"
+        "entry"
       ],
       "properties": {
-        "notebook": {
+        "entry": {
           "type": "ref",
           "ref": "com.atproto.repo.strongRef"
         }

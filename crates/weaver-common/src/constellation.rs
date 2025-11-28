@@ -26,29 +26,29 @@ pub struct GetBacklinksQuery<'a> {
     /// The link target
     ///
     /// can be an AT-URI, plain DID, or regular URI
-    subject: jacquard::types::uri::Uri<'a>,
+    pub subject: jacquard::types::uri::Uri<'a>,
     /// Filter links only from this link source
     ///
     /// eg.: `app.bsky.feed.like:subject.uri`
-    source: CowStr<'a>,
+    pub source: CowStr<'a>,
     #[serde(borrow)]
-    cursor: Option<CowStr<'a>>,
+    pub cursor: Option<CowStr<'a>>,
     /// Filter links only from these DIDs
     ///
     /// include multiple times to filter by multiple source DIDs
     #[serde(default)]
-    did: Vec<Did<'a>>,
+    pub did: Vec<Did<'a>>,
     /// Set the max number of links to return per page of results
     #[serde(default = "get_default_cursor_limit")]
-    limit: u64,
+    pub limit: u64,
     // TODO: allow reverse (er, forward) order as well
 }
 #[derive(Deserialize, Serialize, IntoStatic)]
 pub struct GetBacklinksResponse<'a> {
-    total: u64,
+    pub total: u64,
     #[serde(borrow)]
-    records: Vec<RecordId<'a>>,
-    cursor: Option<CowStr<'a>>,
+    pub records: Vec<RecordId<'a>>,
+    pub cursor: Option<CowStr<'a>>,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, IntoStatic)]

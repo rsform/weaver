@@ -13,7 +13,8 @@ use dioxus::prelude::*;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use gloo_storage::{LocalStorage, Storage};
 use jacquard::IntoStatic;
-use jacquard::types::string::AtUri;
+use jacquard::types::string::{AtUri, Cid};
+use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use loro::cursor::Cursor;
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +59,10 @@ pub struct EditorSnapshot {
     /// AT-URI if editing an existing entry (None for new entries)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editing_uri: Option<String>,
+
+    /// CID of the entry if editing an existing entry
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editing_cid: Option<String>,
 }
 
 /// Build the full storage key from a draft key.
@@ -88,7 +93,8 @@ pub fn save_to_storage(
         snapshot: snapshot_b64,
         cursor: doc.loro_cursor().cloned(),
         cursor_offset: doc.cursor.read().offset,
-        editing_uri: doc.entry_uri().map(|u| u.to_string()),
+        editing_uri: doc.entry_ref().map(|r| r.uri.to_string()),
+        editing_cid: doc.entry_ref().map(|r| r.cid.to_string()),
     };
     LocalStorage::set(storage_key(key), &snapshot)
 }
@@ -104,12 +110,16 @@ pub fn save_to_storage(
 pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     let snapshot: EditorSnapshot = LocalStorage::get(storage_key(key)).ok()?;
 
-    // Parse entry_uri from the snapshot
-    let entry_uri = snapshot
+    // Parse entry_ref from the snapshot (requires both URI and CID)
+    let entry_ref = snapshot
         .editing_uri
         .as_ref()
-        .and_then(|s| AtUri::new(s).ok())
-        .map(|u| u.into_static());
+        .zip(snapshot.editing_cid.as_ref())
+        .and_then(|(uri_str, cid_str)| {
+            let uri = AtUri::new(uri_str).ok()?.into_static();
+            let cid = Cid::new(cid_str.as_bytes()).ok()?.into_static();
+            Some(StrongRef::new().uri(uri).cid(cid).build())
+        });
 
     // Try to restore from CRDT snapshot first
     if let Some(ref snapshot_b64) = snapshot.snapshot {
@@ -121,7 +131,7 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
             );
             // Verify the content matches (sanity check)
             if doc.content() == snapshot.content {
-                doc.set_entry_uri(entry_uri);
+                doc.set_entry_ref(entry_ref.clone());
                 return Some(doc);
             }
             tracing::warn!("Snapshot content mismatch, falling back to text content");
@@ -132,7 +142,7 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     let mut doc = EditorDocument::new(snapshot.content);
     doc.cursor.write().offset = snapshot.cursor_offset.min(doc.len_chars());
     doc.sync_loro_cursor();
-    doc.set_entry_uri(entry_uri);
+    doc.set_entry_ref(entry_ref);
     Some(doc)
 }
 
