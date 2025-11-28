@@ -20,13 +20,18 @@
 pub struct Diff<'a> {
     #[serde(borrow)]
     pub doc: crate::sh_weaver::edit::DocRef<'a>,
+    /// An inline diff for for small edit batches. Either this or snapshot must be present to be valid
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub inline_diff: std::option::Option<bytes::Bytes>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub prev: std::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     #[serde(borrow)]
     pub root: crate::com_atproto::repo::strong_ref::StrongRef<'a>,
+    /// Diff from previous diff. Either this or inlineDiff must be present to be valid
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub snapshot: jacquard_common::types::blob::BlobRef<'a>,
+    pub snapshot: std::option::Option<jacquard_common::types::blob::BlobRef<'a>>,
 }
 
 pub mod diff_state {
@@ -39,7 +44,6 @@ pub mod diff_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Snapshot;
         type Root;
         type Doc;
     }
@@ -47,23 +51,13 @@ pub mod diff_state {
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Snapshot = Unset;
         type Root = Unset;
         type Doc = Unset;
-    }
-    ///State transition - sets the `snapshot` field to Set
-    pub struct SetSnapshot<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetSnapshot<S> {}
-    impl<S: State> State for SetSnapshot<S> {
-        type Snapshot = Set<members::snapshot>;
-        type Root = S::Root;
-        type Doc = S::Doc;
     }
     ///State transition - sets the `root` field to Set
     pub struct SetRoot<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetRoot<S> {}
     impl<S: State> State for SetRoot<S> {
-        type Snapshot = S::Snapshot;
         type Root = Set<members::root>;
         type Doc = S::Doc;
     }
@@ -71,15 +65,12 @@ pub mod diff_state {
     pub struct SetDoc<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetDoc<S> {}
     impl<S: State> State for SetDoc<S> {
-        type Snapshot = S::Snapshot;
         type Root = S::Root;
         type Doc = Set<members::doc>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `snapshot` field
-        pub struct snapshot(());
         ///Marker type for the `root` field
         pub struct root(());
         ///Marker type for the `doc` field
@@ -92,6 +83,7 @@ pub struct DiffBuilder<'a, S: diff_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
         ::core::option::Option<crate::sh_weaver::edit::DocRef<'a>>,
+        ::core::option::Option<bytes::Bytes>,
         ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
         ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
         ::core::option::Option<jacquard_common::types::blob::BlobRef<'a>>,
@@ -111,7 +103,7 @@ impl<'a> DiffBuilder<'a, diff_state::Empty> {
     pub fn new() -> Self {
         DiffBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None),
+            __unsafe_private_named: (None, None, None, None, None),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -137,12 +129,25 @@ where
 }
 
 impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
+    /// Set the `inlineDiff` field (optional)
+    pub fn inline_diff(mut self, value: impl Into<Option<bytes::Bytes>>) -> Self {
+        self.__unsafe_private_named.1 = value.into();
+        self
+    }
+    /// Set the `inlineDiff` field to an Option value (optional)
+    pub fn maybe_inline_diff(mut self, value: Option<bytes::Bytes>) -> Self {
+        self.__unsafe_private_named.1 = value;
+        self
+    }
+}
+
+impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
     /// Set the `prev` field (optional)
     pub fn prev(
         mut self,
         value: impl Into<Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.1 = value.into();
+        self.__unsafe_private_named.2 = value.into();
         self
     }
     /// Set the `prev` field to an Option value (optional)
@@ -150,7 +155,7 @@ impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
         mut self,
         value: Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.1 = value;
+        self.__unsafe_private_named.2 = value;
         self
     }
 }
@@ -165,25 +170,6 @@ where
         mut self,
         value: impl Into<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     ) -> DiffBuilder<'a, diff_state::SetRoot<S>> {
-        self.__unsafe_private_named.2 = ::core::option::Option::Some(value.into());
-        DiffBuilder {
-            _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: self.__unsafe_private_named,
-            _phantom: ::core::marker::PhantomData,
-        }
-    }
-}
-
-impl<'a, S> DiffBuilder<'a, S>
-where
-    S: diff_state::State,
-    S::Snapshot: diff_state::IsUnset,
-{
-    /// Set the `snapshot` field (required)
-    pub fn snapshot(
-        mut self,
-        value: impl Into<jacquard_common::types::blob::BlobRef<'a>>,
-    ) -> DiffBuilder<'a, diff_state::SetSnapshot<S>> {
         self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
         DiffBuilder {
             _phantom_state: ::core::marker::PhantomData,
@@ -193,10 +179,28 @@ where
     }
 }
 
+impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
+    /// Set the `snapshot` field (optional)
+    pub fn snapshot(
+        mut self,
+        value: impl Into<Option<jacquard_common::types::blob::BlobRef<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.4 = value.into();
+        self
+    }
+    /// Set the `snapshot` field to an Option value (optional)
+    pub fn maybe_snapshot(
+        mut self,
+        value: Option<jacquard_common::types::blob::BlobRef<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.4 = value;
+        self
+    }
+}
+
 impl<'a, S> DiffBuilder<'a, S>
 where
     S: diff_state::State,
-    S::Snapshot: diff_state::IsSet,
     S::Root: diff_state::IsSet,
     S::Doc: diff_state::IsSet,
 {
@@ -204,9 +208,10 @@ where
     pub fn build(self) -> Diff<'a> {
         Diff {
             doc: self.__unsafe_private_named.0.unwrap(),
-            prev: self.__unsafe_private_named.1,
-            root: self.__unsafe_private_named.2.unwrap(),
-            snapshot: self.__unsafe_private_named.3.unwrap(),
+            inline_diff: self.__unsafe_private_named.1,
+            prev: self.__unsafe_private_named.2,
+            root: self.__unsafe_private_named.3.unwrap(),
+            snapshot: self.__unsafe_private_named.4,
             extra_data: Default::default(),
         }
     }
@@ -220,9 +225,10 @@ where
     ) -> Diff<'a> {
         Diff {
             doc: self.__unsafe_private_named.0.unwrap(),
-            prev: self.__unsafe_private_named.1,
-            root: self.__unsafe_private_named.2.unwrap(),
-            snapshot: self.__unsafe_private_named.3.unwrap(),
+            inline_diff: self.__unsafe_private_named.1,
+            prev: self.__unsafe_private_named.2,
+            root: self.__unsafe_private_named.3.unwrap(),
+            snapshot: self.__unsafe_private_named.4,
             extra_data: Some(extra_data),
         }
     }
@@ -329,7 +335,6 @@ fn lexicon_doc_sh_weaver_edit_diff() -> ::jacquard_lexicon::lexicon::LexiconDoc<
                         description: None,
                         required: Some(
                             vec![
-                                ::jacquard_common::smol_str::SmolStr::new_static("snapshot"),
                                 ::jacquard_common::smol_str::SmolStr::new_static("root"),
                                 ::jacquard_common::smol_str::SmolStr::new_static("doc")
                             ],
@@ -345,6 +350,16 @@ fn lexicon_doc_sh_weaver_edit_diff() -> ::jacquard_lexicon::lexicon::LexiconDoc<
                                     r#ref: ::jacquard_common::CowStr::new_static(
                                         "sh.weaver.edit.defs#docRef",
                                     ),
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static(
+                                    "inlineDiff",
+                                ),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::Bytes(::jacquard_lexicon::lexicon::LexBytes {
+                                    description: None,
+                                    max_length: Some(8192usize),
+                                    min_length: None,
                                 }),
                             );
                             map.insert(
