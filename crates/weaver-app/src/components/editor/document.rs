@@ -194,6 +194,37 @@ pub struct EditInfo {
 /// Covers: `######` (6), ```` ``` ```` (3), `> ` (2), `- ` (2), `999. ` (5)
 const BLOCK_SYNTAX_ZONE: usize = 6;
 
+/// Pre-loaded document state that can be created outside of reactive context.
+///
+/// This struct holds the raw LoroDoc (which is safe outside reactive context)
+/// along with sync state metadata. Use `EditorDocument::from_loaded_state()` 
+/// inside a `use_hook` to convert this into a reactive EditorDocument.
+///
+/// Note: Clone is a shallow/reference clone for LoroDoc (Arc-backed).
+/// PartialEq always returns false since we can't meaningfully compare docs.
+#[derive(Clone)]
+pub struct LoadedDocState {
+    /// The Loro document with all content already loaded/merged.
+    pub doc: LoroDoc,
+    /// StrongRef to the entry if editing an existing record.
+    pub entry_ref: Option<StrongRef<'static>>,
+    /// StrongRef to the sh.weaver.edit.root record (for PDS sync).
+    pub edit_root: Option<StrongRef<'static>>,
+    /// StrongRef to the most recent sh.weaver.edit.diff record.
+    pub last_diff: Option<StrongRef<'static>>,
+    /// Whether the current doc state is synced with PDS.
+    /// False if local has changes not yet pushed to PDS.
+    pub is_synced: bool,
+}
+
+impl PartialEq for LoadedDocState {
+    fn eq(&self, _other: &Self) -> bool {
+        // LoadedDocState contains LoroDoc which can't be meaningfully compared.
+        // Return false to ensure components re-render when passed as props.
+        false
+    }
+}
+
 impl EditorDocument {
     /// Check if a character position is within the block-syntax zone of its line.
     fn is_in_block_syntax_zone(&self, pos: usize) -> bool {
@@ -787,8 +818,8 @@ impl EditorDocument {
         self.last_diff.set(diff);
     }
 
-    /// Check if there are unsynchronized changes since the last sync.
-    pub fn has_unsync_changes(&self) -> bool {
+    /// Check if there are unsynced changes since the last PDS sync.
+    pub fn has_unsynced_changes(&self) -> bool {
         match &self.last_synced_version {
             Some(synced_vv) => self.doc.oplog_vv() != *synced_vv,
             None => true, // Never synced, so there are changes
@@ -921,6 +952,68 @@ impl EditorDocument {
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             // Reactive editor state - wrapped in Signals
+            cursor: Signal::new(cursor_state),
+            selection: Signal::new(None),
+            composition: Signal::new(None),
+            composition_ended_at: Signal::new(None),
+            last_edit: Signal::new(None),
+            pending_snap: Signal::new(None),
+        }
+    }
+
+    /// Create an EditorDocument from pre-loaded state.
+    ///
+    /// Use this when loading from PDS/localStorage merge outside reactive context.
+    /// The `LoadedDocState` contains a pre-merged LoroDoc; this method wraps it
+    /// with the reactive Signals needed for the editor UI.
+    ///
+    /// # Note
+    /// This creates Dioxus Signals. Call from within a component using `use_hook`.
+    pub fn from_loaded_state(state: LoadedDocState) -> Self {
+        let doc = state.doc;
+
+        // Get all containers from the loaded doc
+        let content = doc.get_text("content");
+        let title = doc.get_text("title");
+        let path = doc.get_text("path");
+        let created_at = doc.get_text("created_at");
+        let tags = doc.get_list("tags");
+        let embeds = doc.get_map("embeds");
+
+        // Set up undo manager
+        let mut undo_mgr = UndoManager::new(&doc);
+        undo_mgr.set_merge_interval(300);
+        undo_mgr.set_max_undo_steps(100);
+
+        // Position cursor at end of content
+        let cursor_offset = content.len_unicode();
+        let cursor_state = CursorState {
+            offset: cursor_offset,
+            affinity: Affinity::Before,
+        };
+        let loro_cursor = content.get_cursor(cursor_offset, Side::default());
+
+        // Track sync state - if synced, record current version
+        let last_synced_version = if state.is_synced {
+            Some(doc.oplog_vv())
+        } else {
+            None
+        };
+
+        Self {
+            doc,
+            content,
+            title,
+            path,
+            created_at,
+            tags,
+            embeds,
+            entry_ref: Signal::new(state.entry_ref),
+            edit_root: Signal::new(state.edit_root),
+            last_diff: Signal::new(state.last_diff),
+            last_synced_version,
+            undo_mgr: Rc::new(RefCell::new(undo_mgr)),
+            loro_cursor,
             cursor: Signal::new(cursor_state),
             selection: Signal::new(None),
             composition: Signal::new(None),

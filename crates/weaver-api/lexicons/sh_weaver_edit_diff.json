@@ -9,7 +9,6 @@
       "record": {
         "type": "object",
         "required": [
-          "snapshot",
           "root",
           "doc"
         ],
@@ -17,6 +16,11 @@
           "doc": {
             "type": "ref",
             "ref": "sh.weaver.edit.defs#docRef"
+          },
+          "inlineDiff": {
+            "type": "bytes",
+            "description": "An inline diff for for small edit batches. Either this or snapshot must be present to be valid",
+            "maxLength": 8192
           },
           "prev": {
             "type": "ref",
@@ -28,6 +32,7 @@
           },
           "snapshot": {
             "type": "blob",
+            "description": "Diff from previous diff. Either this or inlineDiff must be present to be valid",
             "accept": [
               "*/*"
             ],

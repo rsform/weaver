@@ -389,6 +389,15 @@ li:has(.md-syntax-block:not(.hidden)) {
 }
 
 /* Publish button and dialog - matches report dialog theming */
+/* Actions container for sync status + publish button */
+.meta-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
 .publish-button {
     padding: 0.5rem 1rem;
     background: var(--color-primary);
@@ -398,8 +407,6 @@ li:has(.md-syntax-block:not(.hidden)) {
     cursor: pointer;
     font-weight: 500;
     font-family: var(--font-body);
-    margin-left: auto;
-    flex-shrink: 0;
 }
 
 .publish-button:hover:not(:disabled) {
@@ -612,4 +619,76 @@ li:has(.md-syntax-block:not(.hidden)) {
     gap: 1rem;
     justify-content: flex-end;
     margin-top: 1rem;
+}
+
+/* Sync status indicator */
+.sync-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s ease, opacity 0.2s ease;
+    user-select: none;
+}
+
+.sync-status:hover {
+    opacity: 0.8;
+}
+
+.sync-status .sync-icon {
+    font-size: 10px;
+    line-height: 1;
+}
+
+.sync-status .sync-label {
+    font-weight: 500;
+}
+
+/* Synced state - subtle success */
+.sync-status.synced {
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
+    color: var(--color-success);
+}
+
+/* Syncing state - in progress */
+.sync-status.syncing {
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+    color: var(--color-warning);
+    cursor: wait;
+}
+
+.sync-status.syncing .sync-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Unsynced state - has pending changes */
+.sync-status.unsynced {
+    background: color-mix(in srgb, var(--color-warning) 20%, transparent);
+    color: var(--color-warning);
+}
+
+/* Error state */
+.sync-status.error {
+    background: color-mix(in srgb, var(--color-error) 15%, transparent);
+    color: var(--color-error);
+}
+
+/* Disabled state */
+.sync-status.disabled {
+    background: var(--color-overlay);
+    color: var(--color-muted);
+    cursor: default;
+    opacity: 0.6;
+}
+
+.sync-status.disabled:hover {
+    opacity: 0.6;
 }

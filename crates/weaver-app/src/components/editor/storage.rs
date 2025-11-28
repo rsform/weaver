@@ -146,6 +146,54 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     Some(doc)
 }
 
+/// Data loaded from localStorage snapshot.
+pub struct LocalSnapshotData {
+    /// The raw CRDT snapshot bytes
+    pub snapshot: Vec<u8>,
+    /// Entry StrongRef if editing an existing entry
+    pub entry_ref: Option<StrongRef<'static>>,
+}
+
+/// Load snapshot data from LocalStorage (WASM only).
+///
+/// Unlike `load_from_storage`, this doesn't create an EditorDocument and is safe
+/// to call outside of reactive context. Use with `load_and_merge_document`.
+///
+/// # Arguments
+/// * `key` - Storage key (e.g., "new:abc123" for new entries, or AT-URI for existing)
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub fn load_snapshot_from_storage(key: &str) -> Option<LocalSnapshotData> {
+    let snapshot: EditorSnapshot = LocalStorage::get(storage_key(key)).ok()?;
+
+    // Try to get CRDT snapshot bytes
+    let snapshot_bytes = snapshot
+        .snapshot
+        .as_ref()
+        .and_then(|b64| BASE64.decode(b64).ok())?;
+
+    // Try to reconstruct entry_ref from stored URI + CID
+    let entry_ref = snapshot
+        .editing_uri
+        .as_ref()
+        .zip(snapshot.editing_cid.as_ref())
+        .and_then(|(uri_str, cid_str)| {
+            let uri = AtUri::new(uri_str).ok()?.into_static();
+            let cid = Cid::new(cid_str.as_bytes()).ok()?.into_static();
+            Some(StrongRef::new().uri(uri).cid(cid).build())
+        });
+
+    Some(LocalSnapshotData {
+        snapshot: snapshot_bytes,
+        entry_ref,
+    })
+}
+
+/// Load snapshot data from LocalStorage (non-WASM stub).
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+pub fn load_snapshot_from_storage(_key: &str) -> Option<LocalSnapshotData> {
+    None
+}
+
 /// Delete a draft from LocalStorage (WASM only).
 ///
 /// # Arguments

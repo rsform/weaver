@@ -32,7 +32,7 @@ pub use component::MarkdownEditor;
 
 // Document types
 #[allow(unused_imports)]
-pub use document::{Affinity, CompositionState, CursorState, EditorDocument, Selection};
+pub use document::{Affinity, CompositionState, CursorState, EditorDocument, LoadedDocState, Selection};
 
 // Formatting
 #[allow(unused_imports)]
@@ -52,7 +52,14 @@ pub use writer::{EditorImageResolver, ImageResolver, SyntaxSpanInfo, SyntaxType,
 #[allow(unused_imports)]
 pub use storage::{
     DRAFT_KEY_PREFIX, EditorSnapshot, clear_all_drafts, delete_draft, list_drafts,
-    load_from_storage, save_to_storage,
+    load_from_storage, load_snapshot_from_storage, save_to_storage,
+};
+
+// Sync
+#[allow(unused_imports)]
+pub use sync::{
+    load_and_merge_document, load_edit_state_from_pds, sync_to_pds, 
+    PdsEditState, SyncState, SyncStatus,
 };
 
 // UI components

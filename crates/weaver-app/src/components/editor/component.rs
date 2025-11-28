@@ -23,22 +23,31 @@ use super::input::{
 use super::offset_map::SnapDirection;
 use super::paragraph::ParagraphRender;
 use super::platform;
+use super::document::LoadedDocState;
 use super::publish::{LoadedEntry, PublishButton, load_entry_for_editing};
 use super::render;
 use super::storage;
+use super::sync::{SyncStatus, load_and_merge_document};
 use super::toolbar::EditorToolbar;
 use super::visibility::update_syntax_visibility;
 use super::writer::{EditorImageResolver, SyntaxSpanInfo};
 
-/// Result of loading an entry - either loaded, failed, or not needed.
-#[derive(Clone, PartialEq)]
+/// Result of loading document state.
 enum LoadResult {
-    Loaded(LoadedEntry),
-    Failed,
-    NotNeeded,
+    /// Document state loaded (may be merged from PDS + localStorage)
+    Loaded(LoadedDocState),
+    /// Loading failed
+    Failed(String),
+    /// Still loading
+    Loading,
 }
 
-/// Wrapper component that handles loading an existing entry before rendering the editor.
+/// Wrapper component that handles loading document state before rendering the editor.
+///
+/// Loads and merges state from:
+/// - localStorage (local CRDT snapshot)
+/// - PDS edit state (if editing published entry)
+/// - Entry content (if no edit state exists)
 ///
 /// # Props
 /// - `initial_content`: Optional initial markdown content (for new entries)
@@ -47,72 +56,120 @@ enum LoadResult {
 pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>) -> Element {
     let fetcher = use_context::<Fetcher>();
 
-    // Determine draft key - use entry URI if editing existing, otherwise "current"
-    let draft_key = entry_uri.clone().unwrap_or_else(|| "current".to_string());
+    // Determine draft key - use entry URI if editing existing, otherwise generate TID
+    let draft_key = use_hook(|| {
+        entry_uri.clone().unwrap_or_else(|| {
+            format!("new:{}", jacquard::types::tid::Ticker::new().next(None).as_str())
+        })
+    });
 
-    // Check if we have a local draft first
-    let has_local_draft = use_hook(|| storage::load_from_storage(&draft_key).is_some());
+    // Parse entry URI once
+    let parsed_uri = entry_uri.as_ref().and_then(|s| {
+        jacquard::types::string::AtUri::new(s).ok().map(|u| u.into_static())
+    });
 
-    // If we have an entry_uri but no local draft, we need to fetch from PDS
-    let needs_fetch = entry_uri.is_some() && !has_local_draft;
+    // Clone draft_key for render (resource closure moves it)
+    let draft_key_for_render = draft_key.clone();
 
-    // Resource returns the load result
-    let entry_resource = use_resource(move || {
+    // Resource loads and merges document state
+    let load_resource = use_resource(move || {
         let fetcher = fetcher.clone();
-        let uri_str = entry_uri.clone();
+        let draft_key = draft_key.clone();
+        let entry_uri = parsed_uri.clone();
+        let initial_content = initial_content.clone();
+
         async move {
-            if !needs_fetch {
-                return LoadResult::NotNeeded;
-            }
-            if let Some(uri_str) = uri_str {
-                if let Ok(uri) = jacquard::types::string::AtUri::new(&uri_str) {
-                    match load_entry_for_editing(&fetcher, &uri).await {
-                        Ok(loaded) => return LoadResult::Loaded(loaded),
-                        Err(e) => {
-                            tracing::error!("Failed to load entry: {}", e);
-                            return LoadResult::Failed;
+            // Try to load merged state from PDS + localStorage
+            match load_and_merge_document(&fetcher, &draft_key, entry_uri.as_ref()).await {
+                Ok(Some(state)) => {
+                    tracing::debug!("Loaded merged document state");
+                    return LoadResult::Loaded(state);
+                }
+                Ok(None) => {
+                    // No existing state - check if we need to load entry content
+                    if let Some(ref uri) = entry_uri {
+                        // Try to load the entry content from PDS
+                        match load_entry_for_editing(&fetcher, uri).await {
+                            Ok(loaded) => {
+                                // Create LoadedDocState from entry
+                                let doc = loro::LoroDoc::new();
+                                let content = doc.get_text("content");
+                                let title = doc.get_text("title");
+                                let path = doc.get_text("path");
+                                let tags = doc.get_list("tags");
+
+                                content.insert(0, loaded.entry.content.as_ref()).ok();
+                                title.insert(0, loaded.entry.title.as_ref()).ok();
+                                path.insert(0, loaded.entry.path.as_ref()).ok();
+                                if let Some(ref entry_tags) = loaded.entry.tags {
+                                    for tag in entry_tags {
+                                        let tag_str: &str = tag.as_ref();
+                                        tags.push(tag_str).ok();
+                                    }
+                                }
+                                doc.commit();
+
+                                return LoadResult::Loaded(LoadedDocState {
+                                    doc,
+                                    entry_ref: Some(loaded.entry_ref),
+                                    edit_root: None,
+                                    last_diff: None,
+                                    is_synced: false,
+                                });
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to load entry: {}", e);
+                                return LoadResult::Failed(e.to_string());
+                            }
                         }
                     }
+
+                    // New document with initial content
+                    let doc = loro::LoroDoc::new();
+                    if let Some(ref content) = initial_content {
+                        let text = doc.get_text("content");
+                        text.insert(0, content).ok();
+                        doc.commit();
+                    }
+
+                    LoadResult::Loaded(LoadedDocState {
+                        doc,
+                        entry_ref: None,
+                        edit_root: None,
+                        last_diff: None,
+                        is_synced: false,
+                    })
+                }
+                Err(e) => {
+                    tracing::error!("Failed to load document state: {}", e);
+                    LoadResult::Failed(e.to_string())
                 }
             }
-            LoadResult::Failed
         }
     });
 
-    // Render based on resource state
-    match &*entry_resource.read() {
-        Some(LoadResult::Loaded(loaded)) => {
+    // Render based on load state
+    match &*load_resource.read() {
+        Some(LoadResult::Loaded(state)) => {
             rsx! {
                 MarkdownEditorInner {
-                    key: "{draft_key}",
-                    draft_key: draft_key.clone(),
-                    loaded_entry: Some(loaded.clone()),
-                    initial_content: None,
+                    key: "{draft_key_for_render}",
+                    draft_key: draft_key_for_render.clone(),
+                    loaded_state: state.clone(),
                 }
             }
         }
-        Some(LoadResult::Failed) => {
+        Some(LoadResult::Failed(err)) => {
             rsx! {
                 div { class: "editor-error",
-                    "Failed to load entry. It may not exist or you may not have access."
+                    "Failed to load: {err}"
                 }
             }
         }
-        Some(LoadResult::NotNeeded) => {
-            rsx! {
-                MarkdownEditorInner {
-                    key: "{draft_key}",
-                    draft_key: draft_key.clone(),
-                    loaded_entry: None,
-                    initial_content: initial_content.clone(),
-                }
-            }
-        }
-        None => {
-            // Still loading
+        Some(LoadResult::Loading) | None => {
             rsx! {
                 div { class: "editor-loading",
-                    "Loading entry..."
+                    "Loading..."
                 }
             }
         }
@@ -126,28 +183,23 @@ pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>
 /// - Event interception for full control over editing operations
 /// - Toolbar formatting buttons
 /// - LocalStorage auto-save with debouncing
+/// - PDS sync with auto-save
 /// - Keyboard shortcuts (Ctrl+B for bold, Ctrl+I for italic)
 #[component]
 fn MarkdownEditorInner(
     draft_key: String,
-    loaded_entry: Option<LoadedEntry>,
-    initial_content: Option<String>,
+    loaded_state: LoadedDocState,
 ) -> Element {
     // Context for authenticated API calls
     let fetcher = use_context::<Fetcher>();
     let auth_state = use_context::<Signal<AuthState>>();
 
+    // Create EditorDocument from loaded state (must be in use_hook for Signals)
     let mut document = use_hook(|| {
-        // Priority: loaded_entry > local storage > new with initial_content
-        if let Some(ref loaded) = loaded_entry {
-            let doc = EditorDocument::from_entry(&loaded.entry, loaded.entry_ref.clone());
-            // Save to local storage so future visits use the draft
-            storage::save_to_storage(&doc, &draft_key).ok();
-            doc
-        } else {
-            storage::load_from_storage(&draft_key)
-                .unwrap_or_else(|| EditorDocument::new(initial_content.clone().unwrap_or_default()))
-        }
+        let doc = EditorDocument::from_loaded_state(loaded_state.clone());
+        // Save to localStorage so we have a local backup
+        storage::save_to_storage(&doc, &draft_key).ok();
+        doc
     });
     let editor_id = "markdown-editor";
 
@@ -483,9 +535,16 @@ fn MarkdownEditorInner(
                         }
                     }
 
-                    PublishButton {
-                        document: document.clone(),
-                        draft_key: draft_key.to_string(),
+                    div { class: "meta-actions",
+                        SyncStatus {
+                            document: document.clone(),
+                            draft_key: draft_key.to_string(),
+                        }
+
+                        PublishButton {
+                            document: document.clone(),
+                            draft_key: draft_key.to_string(),
+                        }
                     }
                 }
 
