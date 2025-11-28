@@ -671,7 +671,7 @@ pub async fn load_and_merge_document(
                 entry_ref: local.entry_ref, // Restored from localStorage
                 edit_root: None,
                 last_diff: None,
-                is_synced: false, // Local-only, not synced to PDS
+                synced_version: None, // Local-only, never synced to PDS
             }))
         }
 
@@ -692,12 +692,15 @@ pub async fn load_and_merge_document(
                 }
             }
 
+            // Capture the version after loading all PDS state - this is our sync baseline
+            let synced_version = Some(doc.oplog_vv());
+
             Ok(Some(LoadedDocState {
                 doc,
                 entry_ref: None, // Entry ref comes from the entry itself, not edit state
                 edit_root: Some(pds.root_ref),
                 last_diff: pds.last_diff_ref,
-                is_synced: true, // Just loaded from PDS, fully synced
+                synced_version, // Just loaded from PDS, fully synced
             }))
         }
 
@@ -705,6 +708,19 @@ pub async fn load_and_merge_document(
             // Both exist - merge using CRDT
             tracing::debug!("Merging document from localStorage and PDS");
 
+            // First, reconstruct the PDS state to get its version vector
+            let pds_doc = LoroDoc::new();
+            if let Err(e) = pds_doc.import(&pds.root_snapshot) {
+                tracing::warn!("Failed to import PDS root snapshot for VV: {:?}", e);
+            }
+            for updates in &pds.diff_updates {
+                if let Err(e) = pds_doc.import(updates) {
+                    tracing::warn!("Failed to apply PDS diff for VV: {:?}", e);
+                }
+            }
+            let pds_version = pds_doc.oplog_vv();
+
+            // Now create the merged doc
             let doc = LoroDoc::new();
 
             // Import local snapshot first
@@ -724,12 +740,14 @@ pub async fn load_and_merge_document(
                 }
             }
 
+            // Use the PDS version as our sync baseline - any local changes
+            // beyond this will be detected as unsynced
             Ok(Some(LoadedDocState {
                 doc,
                 entry_ref: local.entry_ref, // Restored from localStorage
                 edit_root: Some(pds.root_ref),
                 last_diff: pds.last_diff_ref,
-                is_synced: false, // Local had state, may have unsynced changes
+                synced_version: Some(pds_version),
             }))
         }
     }

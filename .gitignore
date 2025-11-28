@@ -9,6 +9,7 @@
 .env
 .devenv
 CLAUDE.md
+AGENTS.md
 grant_proposal.md
 
 **/**.db

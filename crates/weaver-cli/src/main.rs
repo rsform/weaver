@@ -388,14 +388,14 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
         // Use WeaverExt to upsert entry (handles notebook + entry creation/updates)
         use jacquard::http_client::HttpClient;
         use weaver_common::WeaverExt;
-        let (entry_uri, was_created) = agent
+        let (entry_ref, was_created) = agent
             .upsert_entry(&title, entry_title.as_ref(), entry)
             .await?;
 
         if was_created {
-            println!("  ✓ Created new entry: {}", entry_uri.as_ref());
+            println!("  ✓ Created new entry: {}", entry_ref.uri.as_ref());
         } else {
-            println!("  ✓ Updated existing entry: {}", entry_uri.as_ref());
+            println!("  ✓ Updated existing entry: {}", entry_ref.uri.as_ref());
         }
     }
 

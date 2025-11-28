@@ -212,9 +212,10 @@ pub struct LoadedDocState {
     pub edit_root: Option<StrongRef<'static>>,
     /// StrongRef to the most recent sh.weaver.edit.diff record.
     pub last_diff: Option<StrongRef<'static>>,
-    /// Whether the current doc state is synced with PDS.
-    /// False if local has changes not yet pushed to PDS.
-    pub is_synced: bool,
+    /// Version vector of the last known PDS state.
+    /// Used to determine what changes need to be synced.
+    /// None if never synced to PDS.
+    pub synced_version: Option<VersionVector>,
 }
 
 impl PartialEq for LoadedDocState {
@@ -993,12 +994,8 @@ impl EditorDocument {
         };
         let loro_cursor = content.get_cursor(cursor_offset, Side::default());
 
-        // Track sync state - if synced, record current version
-        let last_synced_version = if state.is_synced {
-            Some(doc.oplog_vv())
-        } else {
-            None
-        };
+        // Use the synced version from state (tracks the PDS version vector)
+        let last_synced_version = state.synced_version;
 
         Self {
             doc,

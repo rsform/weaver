@@ -3,6 +3,7 @@
 use dioxus::prelude::*;
 use jacquard::IntoStatic;
 use jacquard::cowstr::ToCowStr;
+use jacquard::identity::resolver::IdentityResolver;
 use jacquard::types::blob::BlobRef;
 use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::embed::images::Image;
@@ -88,6 +89,30 @@ pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>
                 Ok(None) => {
                     // No existing state - check if we need to load entry content
                     if let Some(ref uri) = entry_uri {
+                        // Check that this entry belongs to the current user
+                        if let Some(current_did) = fetcher.current_did().await {
+                            let entry_authority = uri.authority();
+                            let is_own_entry = match entry_authority {
+                                AtIdentifier::Did(did) => did == &current_did,
+                                AtIdentifier::Handle(handle) => {
+                                    // Resolve handle to DID and compare
+                                    match fetcher.client.resolve_handle(handle).await {
+                                        Ok(resolved_did) => resolved_did == current_did,
+                                        Err(_) => false,
+                                    }
+                                }
+                            };
+                            if !is_own_entry {
+                                tracing::warn!(
+                                    "Cannot edit entry belonging to another user: {}",
+                                    entry_authority
+                                );
+                                return LoadResult::Failed(
+                                    "You can only edit your own entries".to_string()
+                                );
+                            }
+                        }
+
                         // Try to load the entry content from PDS
                         match load_entry_for_editing(&fetcher, uri).await {
                             Ok(loaded) => {
@@ -114,7 +139,7 @@ pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>
                                     entry_ref: Some(loaded.entry_ref),
                                     edit_root: None,
                                     last_diff: None,
-                                    is_synced: false,
+                                    synced_version: None, // Fresh from entry, never synced
                                 });
                             }
                             Err(e) => {
@@ -137,7 +162,7 @@ pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>
                         entry_ref: None,
                         edit_root: None,
                         last_diff: None,
-                        is_synced: false,
+                        synced_version: None, // New doc, never synced
                     })
                 }
                 Err(e) => {
