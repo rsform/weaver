@@ -6,7 +6,7 @@
 use dioxus::prelude::*;
 
 use super::document::{EditorDocument, Selection};
-use super::offset_map::{find_nearest_valid_position, is_valid_cursor_position, SnapDirection};
+use super::offset_map::{SnapDirection, find_nearest_valid_position, is_valid_cursor_position};
 use super::paragraph::ParagraphRender;
 
 /// Sync internal cursor and selection state from browser DOM selection.
@@ -72,7 +72,7 @@ pub fn sync_cursor_from_dom_with_direction(
     let focus_offset = selection.focus_offset() as usize;
 
     // Convert both DOM positions to rope offsets using cached paragraphs
-    let anchor_rope = dom_position_to_rope_offset(
+    let anchor_rope = dom_position_to_text_offset(
         &dom_document,
         &editor_element,
         &anchor_node,
@@ -80,7 +80,7 @@ pub fn sync_cursor_from_dom_with_direction(
         paragraphs,
         direction_hint,
     );
-    let focus_rope = dom_position_to_rope_offset(
+    let focus_rope = dom_position_to_text_offset(
         &dom_document,
         &editor_element,
         &focus_node,
@@ -114,7 +114,7 @@ pub fn sync_cursor_from_dom_with_direction(
 /// The `direction_hint` is used when snapping from invisible content to determine
 /// which direction to prefer.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-fn dom_position_to_rope_offset(
+pub fn dom_position_to_text_offset(
     dom_document: &web_sys::Document,
     editor_element: &web_sys::Element,
     node: &web_sys::Node,
@@ -215,7 +215,9 @@ fn dom_position_to_rope_offset(
     // No mapping found - try to find any valid position in paragraphs
     // This handles clicks on non-text elements like images
     for para in paragraphs {
-        if let Some(snapped) = find_nearest_valid_position(&para.offset_map, para.char_range.start, direction_hint) {
+        if let Some(snapped) =
+            find_nearest_valid_position(&para.offset_map, para.char_range.start, direction_hint)
+        {
             return Some(snapped.char_offset());
         }
     }

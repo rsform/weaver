@@ -13,18 +13,22 @@ use crate::auth::AuthState;
 use crate::components::editor::ReportButton;
 use crate::fetch::Fetcher;
 
-use super::document::{CompositionState, EditorDocument};
+use super::actions::{
+    execute_action, handle_keydown_with_bindings, EditorAction, Key, KeyCombo, KeybindingConfig,
+    KeydownResult, Range,
+};
+use super::beforeinput::{handle_beforeinput, BeforeInputContext, BeforeInputResult, InputType};
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use super::beforeinput::{get_data_from_event, get_target_range_from_event};
+use super::document::{CompositionState, EditorDocument, LoadedDocState};
 use super::dom_sync::{
     sync_cursor_from_dom, sync_cursor_from_dom_with_direction, update_paragraph_dom,
 };
 use super::formatting;
-use super::input::{
-    get_char_at, handle_copy, handle_cut, handle_keydown, handle_paste, should_intercept_key,
-};
+use super::input::{get_char_at, handle_copy, handle_cut, handle_paste};
 use super::offset_map::SnapDirection;
 use super::paragraph::ParagraphRender;
 use super::platform;
-use super::document::LoadedDocState;
 use super::publish::{LoadedEntry, PublishButton, load_entry_for_editing};
 use super::render;
 use super::storage;
@@ -382,20 +386,15 @@ fn MarkdownEditorInner(
         interval.forget();
     });
 
-    // Set up beforeinput listener for iOS/Android virtual keyboard quirks
+    // Set up beforeinput listener for all text input handling.
+    // This is the primary handler for text insertion, deletion, etc.
+    // Keydown only handles shortcuts now.
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let doc_for_beforeinput = document.clone();
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
         use wasm_bindgen::JsCast;
         use wasm_bindgen::prelude::*;
-
-        let plat = platform::platform();
-
-        // Only needed on mobile
-        if !plat.mobile {
-            return;
-        }
 
         let window = match web_sys::window() {
             Some(w) => w,
@@ -414,46 +413,84 @@ fn MarkdownEditorInner(
         let cached_paras = cached_paragraphs;
 
         let closure = Closure::wrap(Box::new(move |evt: web_sys::InputEvent| {
-            let input_type = evt.input_type();
-            tracing::debug!(input_type = %input_type, "beforeinput");
+            let input_type_str = evt.input_type();
+            tracing::debug!(input_type = %input_type_str, "beforeinput");
 
             let plat = platform::platform();
+            let input_type = InputType::from_str(&input_type_str);
+            let is_composing = evt.is_composing();
 
-            // iOS workaround: Virtual keyboard sends insertParagraph/insertLineBreak
-            // without proper keydown events. Handle them here.
-            if plat.ios && (input_type == "insertParagraph" || input_type == "insertLineBreak") {
-                tracing::debug!("iOS: intercepting {} via beforeinput", input_type);
-                evt.prevent_default();
+            // Get target range from the event if available
+            let paras = cached_paras.peek().clone();
+            let target_range = get_target_range_from_event(&evt, editor_id, &paras);
 
-                // Handle as Enter key
-                let sel = doc.selection.write().take();
-                if let Some(sel) = sel {
-                    let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                    doc.cursor.write().offset = start;
+            // Get data from the event
+            let data = get_data_from_event(&evt);
+
+            // Build context and handle
+            let ctx = BeforeInputContext {
+                input_type: input_type.clone(),
+                data,
+                target_range,
+                is_composing,
+                platform: &plat,
+            };
+
+            let result = handle_beforeinput(&mut doc, ctx);
+
+            match result {
+                BeforeInputResult::Handled => {
+                    evt.prevent_default();
                 }
+                BeforeInputResult::PassThrough => {
+                    // Let browser handle (e.g., during composition)
+                }
+                BeforeInputResult::HandledAsync => {
+                    evt.prevent_default();
+                    // Async follow-up will happen elsewhere
+                }
+                BeforeInputResult::DeferredCheck { fallback_action } => {
+                    // Android backspace workaround: let browser try first,
+                    // check in 50ms if anything happened, if not execute fallback
+                    let mut doc_for_timeout = doc.clone();
+                    let doc_len_before = doc.len_chars();
 
-                let cursor_offset = doc.cursor.read().offset;
-                if input_type == "insertLineBreak" {
-                    // Soft break (like Shift+Enter)
-                    let _ = doc.insert_tracked(cursor_offset, "  \n\u{200C}");
-                    doc.cursor.write().offset = cursor_offset + 3;
-                } else {
-                    // Paragraph break
-                    let _ = doc.insert_tracked(cursor_offset, "\n\n");
-                    doc.cursor.write().offset = cursor_offset + 2;
+                    let window = web_sys::window();
+                    if let Some(window) = window {
+                        let closure = Closure::once(move || {
+                            // Check if the document changed
+                            if doc_for_timeout.len_chars() == doc_len_before {
+                                // Nothing happened - execute fallback
+                                tracing::debug!("Android backspace fallback triggered");
+                                // Refocus to work around virtual keyboard issues
+                                if let Some(window) = web_sys::window() {
+                                    if let Some(doc) = window.document() {
+                                        if let Some(elem) = doc.get_element_by_id(editor_id) {
+                                            if let Some(html_elem) = elem.dyn_ref::<web_sys::HtmlElement>() {
+                                                let _ = html_elem.blur();
+                                                let _ = html_elem.focus();
+                                            }
+                                        }
+                                    }
+                                }
+                                execute_action(&mut doc_for_timeout, &fallback_action);
+                            }
+                        });
+                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                            closure.as_ref().unchecked_ref(),
+                            50,
+                        );
+                        closure.forget();
+                    }
                 }
             }
 
             // Android workaround: When swipe keyboard picks a suggestion,
-            // DOM mutations fire before selection moves. We detect this pattern
-            // and defer cursor sync.
-            if plat.android && input_type == "insertText" {
-                // Check if this might be a suggestion pick (has data that looks like a word)
+            // DOM mutations fire before selection moves. Defer cursor sync.
+            if plat.android && matches!(input_type, InputType::InsertText) {
                 if let Some(data) = evt.data() {
                     if data.contains(' ') || data.len() > 3 {
                         tracing::debug!("Android: possible suggestion pick, deferring cursor sync");
-                        // Defer cursor sync by 20ms to let selection settle
                         let paras = cached_paras;
                         let mut doc_for_timeout = doc.clone();
                         let window = web_sys::window();
@@ -582,6 +619,7 @@ fn MarkdownEditorInner(
 
                         onkeydown: {
                         let mut doc = document.clone();
+                        let keybindings = KeybindingConfig::default_for_platform(&platform::platform());
                         move |evt| {
                             use dioxus::prelude::keyboard_types::Key;
                             use std::time::Duration;
@@ -626,19 +664,29 @@ fn MarkdownEditorInner(
                                 }
                             }
 
-                            // Android workaround: Chrome Android gets confused by Enter during/after
-                            // composition. Defer Enter handling to onkeypress instead.
-                            if plat.android && evt.key() == Key::Enter {
-                                tracing::debug!("Android: deferring Enter to keypress");
-                                return;
+                            // Try keybindings first (for shortcuts like Ctrl+B, Ctrl+Z, etc.)
+                            let combo = KeyCombo::from_keyboard_event(&evt.data());
+                            let cursor_offset = doc.cursor.read().offset;
+                            let selection = *doc.selection.read();
+                            let range = selection
+                                .map(|s| Range::new(s.anchor.min(s.head), s.anchor.max(s.head)))
+                                .unwrap_or_else(|| Range::caret(cursor_offset));
+                            match handle_keydown_with_bindings(&mut doc, &keybindings, combo, range) {
+                                KeydownResult::Handled => {
+                                    evt.prevent_default();
+                                    return;
+                                }
+                                KeydownResult::PassThrough => {
+                                    // Navigation keys - let browser handle, sync in keyup
+                                    return;
+                                }
+                                KeydownResult::NotHandled => {
+                                    // Text input - let beforeinput handle it
+                                }
                             }
 
-                            // Only prevent default for operations that modify content
-                            // Let browser handle arrow keys, Home/End naturally
-                            if should_intercept_key(&evt) {
-                                evt.prevent_default();
-                                handle_keydown(evt, &mut doc);
-                            }
+                            // Text input keys: let beforeinput handle them
+                            // We don't prevent default here - beforeinput will do that
                         }
                     },
 
@@ -769,7 +817,16 @@ fn MarkdownEditorInner(
                             if plat.android && evt.key() == Key::Enter {
                                 tracing::debug!("Android: handling Enter in keypress");
                                 evt.prevent_default();
-                                handle_keydown(evt, &mut doc);
+                                
+                                // Get current range
+                                let range = if let Some(sel) = *doc.selection.read() {
+                                    Range::new(sel.anchor.min(sel.head), sel.anchor.max(sel.head))
+                                } else {
+                                    Range::caret(doc.cursor.read().offset)
+                                };
+                                
+                                let action = EditorAction::InsertParagraph { range };
+                                execute_action(&mut doc, &action);
                             }
                         }
                     },
