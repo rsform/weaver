@@ -4,6 +4,8 @@
 //! characters are hidden contextually based on cursor position, while still
 //! editing plain markdown text under the hood.
 
+mod actions;
+mod beforeinput;
 mod component;
 mod cursor;
 mod document;

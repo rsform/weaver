@@ -1322,7 +1322,37 @@ impl<
                 self.record_mapping(range.clone(), char_start..char_end);
                 self.last_char_offset = char_end;
             }
-            SoftBreak => self.write_newline()?,
+            SoftBreak => {
+                // Emit <br> for visual line break, plus a space for cursor positioning.
+                // This space maps to the \n so the cursor can land here when navigating.
+                let char_start = self.last_char_offset;
+
+                // Emit <br>
+                self.write("<br />")?;
+                self.current_node_child_count += 1;
+
+                // Emit space for cursor positioning - this gives the browser somewhere
+                // to place the cursor when navigating to this line
+                self.write(" ")?;
+                self.current_node_child_count += 1;
+
+                // Map the space to the newline position - cursor landing here means
+                // we're at the end of the line (after the \n)
+                if let Some(ref node_id) = self.current_node_id {
+                    let mapping = OffsetMapping {
+                        byte_range: range.clone(),
+                        char_range: char_start..char_start + 1,
+                        node_id: node_id.clone(),
+                        char_offset_in_node: self.current_node_char_offset,
+                        child_index: None,
+                        utf16_len: 1, // the space we emitted
+                    };
+                    self.offset_maps.push(mapping);
+                    self.current_node_char_offset += 1;
+                }
+
+                self.last_char_offset = char_start + 1; // +1 for the \n
+            }
             HardBreak => {
                 // Emit the two spaces as visible (dimmed) text, then <br>
                 let gap = &self.source[range.clone()];
