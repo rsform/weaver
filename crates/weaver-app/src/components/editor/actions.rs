@@ -704,7 +704,6 @@ impl KeybindingConfig {
             },
         );
 
-        // === Dedicated editing keys (for custom keyboards, etc.) ===
         bindings.insert(KeyCombo::new(Key::Undo), EditorAction::Undo);
         bindings.insert(KeyCombo::new(Key::Redo), EditorAction::Redo);
         bindings.insert(KeyCombo::new(Key::Copy), EditorAction::Copy);
@@ -722,20 +721,26 @@ impl KeybindingConfig {
 
     /// Look up an action for the given key combo, with the current range applied.
     pub fn lookup(&self, combo: KeyCombo, range: Range) -> Option<EditorAction> {
-        self.bindings.get(&combo).cloned().map(|a| a.with_range(range))
+        self.bindings
+            .get(&combo)
+            .cloned()
+            .map(|a| a.with_range(range))
     }
 
     /// Look up an action for the given key and modifiers, with the current range applied.
+    #[allow(dead_code)]
     pub fn lookup_key(&self, key: Key, modifiers: Modifiers, range: Range) -> Option<EditorAction> {
         self.lookup(KeyCombo::with_modifiers(key, modifiers), range)
     }
 
     /// Add or replace a keybinding.
+    #[allow(dead_code)]
     pub fn bind(&mut self, combo: KeyCombo, action: EditorAction) {
         self.bindings.insert(combo, action);
     }
 
     /// Remove a keybinding.
+    #[allow(dead_code)]
     pub fn unbind(&mut self, combo: KeyCombo) {
         self.bindings.remove(&combo);
     }
@@ -792,33 +797,67 @@ pub fn execute_action(doc: &mut EditorDocument, action: &EditorAction) -> bool {
             let range = range.normalize();
             doc.pending_snap.set(Some(SnapDirection::Forward));
 
+            let offset = range.start;
             if !range.is_caret() {
-                let _ = doc.remove_tracked(range.start, range.len());
+                let _ = doc.remove_tracked(offset, range.len());
             }
-
-            let mut offset = range.start;
 
             // Check if we're right after a soft break (newline + zero-width char).
             // If so, convert to paragraph break by replacing the zero-width char
             // with a newline.
-            let mut is_double_enter = false;
-            if offset >= 2 {
+            let is_double_enter = if offset >= 2 {
                 let prev_char = get_char_at(doc.loro_text(), offset - 1);
                 let prev_prev_char = get_char_at(doc.loro_text(), offset - 2);
                 if prev_char == Some('\u{200C}') && prev_prev_char == Some('\n') {
-                    // Replace zero-width char with newline
-                    let _ = doc.replace_tracked(offset - 1, 1, "\n");
-                    doc.cursor.write().offset = offset;
-                    is_double_enter = true;
+                    true
+                } else {
+                    false
                 }
-            }
+            } else {
+                false
+            };
 
             if !is_double_enter {
-                // Normal soft break: insert newline + zero-width char for cursor positioning.
-                // The renderer emits <br> for soft breaks, so we don't need
-                // trailing spaces for visual line breaks.
-                let _ = doc.insert_tracked(offset, "\n\u{200C}");
-                doc.cursor.write().offset = offset + 2;
+                // Check for list context
+                if let Some(ctx) = detect_list_context(doc.loro_text(), offset) {
+                    tracing::debug!("List context detected: {:?}", ctx);
+                    if is_list_item_empty(doc.loro_text(), offset, &ctx) {
+                        // Empty item - exit list
+                        let line_start = find_line_start(doc.loro_text(), offset);
+                        let line_end = find_line_end(doc.loro_text(), offset);
+                        let delete_end = (line_end + 1).min(doc.len_chars());
+
+                        let _ = doc.replace_tracked(
+                            line_start,
+                            delete_end.saturating_sub(line_start),
+                            "\n\n\u{200C}\n",
+                        );
+                        doc.cursor.write().offset = line_start + 2;
+                        tracing::debug!("empty list");
+                    } else {
+                        // Continue list
+                        let continuation = match ctx {
+                            super::input::ListContext::Unordered { indent, marker } => {
+                                format!("\n{}{} ", indent, marker)
+                            }
+                            super::input::ListContext::Ordered { indent, number } => {
+                                format!("\n{}{}. ", indent, number + 1)
+                            }
+                        };
+                        let len = continuation.chars().count();
+                        let _ = doc.insert_tracked(offset, &continuation);
+                        doc.cursor.write().offset = offset + len;
+                        tracing::debug!("continuation {}", continuation);
+                    }
+                } else {
+                    // Normal soft break: insert newline + zero-width char for cursor positioning.
+                    let _ = doc.insert_tracked(offset, "\n\u{200C}");
+                    doc.cursor.write().offset = offset + 2;
+                }
+            } else {
+                // Replace zero-width char with newline
+                let _ = doc.replace_tracked(offset - 1, 1, "\n");
+                doc.cursor.write().offset = offset;
             }
 
             doc.selection.set(None);
@@ -829,11 +868,10 @@ pub fn execute_action(doc: &mut EditorDocument, action: &EditorAction) -> bool {
             let range = range.normalize();
             doc.pending_snap.set(Some(SnapDirection::Forward));
 
-            if !range.is_caret() {
-                let _ = doc.remove_tracked(range.start, range.len());
-            }
-
             let cursor_offset = range.start;
+            if !range.is_caret() {
+                let _ = doc.remove_tracked(cursor_offset, range.len());
+            }
 
             // Check for list context
             if let Some(ctx) = detect_list_context(doc.loro_text(), cursor_offset) {
