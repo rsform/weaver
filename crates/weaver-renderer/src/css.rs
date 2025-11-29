@@ -148,7 +148,7 @@ a {{
 
 /* Lists */
 ul, ol {{
-    margin-left: 2rem;
+    margin-left: 1rem;
     margin-bottom: 1rem;
 }}
 
