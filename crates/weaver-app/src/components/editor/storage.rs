@@ -71,10 +71,6 @@ fn storage_key(key: &str) -> String {
 }
 
 /// Save editor state to LocalStorage (WASM only).
-///
-/// # Arguments
-/// * `doc` - The editor document to save
-/// * `key` - Storage key (e.g., "new:abc123" for new entries, or AT-URI for existing)
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn save_to_storage(
     doc: &EditorDocument,
@@ -103,9 +99,6 @@ pub fn save_to_storage(
 ///
 /// Returns an EditorDocument restored from CRDT snapshot if available,
 /// otherwise falls back to just the text content.
-///
-/// # Arguments
-/// * `key` - Storage key (e.g., "new:abc123" for new entries, or AT-URI for existing)
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     let snapshot: EditorSnapshot = LocalStorage::get(storage_key(key)).ok()?;
@@ -158,9 +151,6 @@ pub struct LocalSnapshotData {
 ///
 /// Unlike `load_from_storage`, this doesn't create an EditorDocument and is safe
 /// to call outside of reactive context. Use with `load_and_merge_document`.
-///
-/// # Arguments
-/// * `key` - Storage key (e.g., "new:abc123" for new entries, or AT-URI for existing)
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn load_snapshot_from_storage(key: &str) -> Option<LocalSnapshotData> {
     let snapshot: EditorSnapshot = LocalStorage::get(storage_key(key)).ok()?;
@@ -195,9 +185,6 @@ pub fn load_snapshot_from_storage(_key: &str) -> Option<LocalSnapshotData> {
 }
 
 /// Delete a draft from LocalStorage (WASM only).
-///
-/// # Arguments
-/// * `key` - Storage key to delete
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn delete_draft(key: &str) {
     LocalStorage::delete(storage_key(key));

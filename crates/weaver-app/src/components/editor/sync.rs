@@ -178,13 +178,6 @@ pub async fn find_diffs_for_root(
 ///
 /// Uploads the current Loro snapshot as a blob and creates an `sh.weaver.edit.root`
 /// record referencing the entry (or draft key if unpublished).
-///
-/// # Arguments
-/// * `fetcher` - The authenticated fetcher
-/// * `doc` - The editor document
-/// * `draft_key` - The draft key (used for unpublished entries)
-/// * `entry_uri` - Optional AT-URI of the published entry
-/// * `entry_cid` - Optional CID of the published entry
 pub async fn create_edit_root(
     fetcher: &Fetcher,
     doc: &EditorDocument,
@@ -244,16 +237,6 @@ pub async fn create_edit_root(
 }
 
 /// Create a diff record with updates since the last sync.
-///
-/// # Arguments
-/// * `fetcher` - The authenticated fetcher
-/// * `doc` - The editor document
-/// * `root_uri` - URI of the edit root
-/// * `root_cid` - CID of the edit root
-/// * `prev_diff` - Optional reference to the previous diff
-/// * `draft_key` - The draft key (used for doc reference)
-/// * `entry_uri` - Optional AT-URI of the published entry
-/// * `entry_cid` - Optional CID of the published entry
 pub async fn create_diff(
     fetcher: &Fetcher,
     doc: &EditorDocument,
@@ -352,16 +335,7 @@ pub async fn create_diff(
 ///
 /// If no edit root exists, creates one with a full snapshot.
 /// If a root exists, creates a diff with updates since last sync.
-///
 /// Updates the document's sync state on success.
-///
-/// # Arguments
-/// * `fetcher` - The authenticated fetcher
-/// * `doc` - The editor document (mutable to update sync state)
-/// * `draft_key` - The draft key for this document
-///
-/// # Returns
-/// The sync result indicating what was created.
 pub async fn sync_to_pds(
     fetcher: &Fetcher,
     doc: &mut EditorDocument,
@@ -480,13 +454,6 @@ async fn fetch_blob(fetcher: &Fetcher, did: &Did<'_>, cid: &Cid<'_>) -> Result<B
 ///
 /// Finds the edit root via constellation backlinks, fetches all diffs,
 /// and returns the snapshot + updates needed to reconstruct the document.
-///
-/// # Arguments
-/// * `fetcher` - The authenticated fetcher
-/// * `entry_uri` - The AT-URI of the entry to load edit state for
-///
-/// # Returns
-/// The edit state if found, or None if no edit root exists for this entry.
 pub async fn load_edit_state_from_pds(
     fetcher: &Fetcher,
     entry_uri: &AtUri<'_>,
@@ -500,9 +467,9 @@ pub async fn load_edit_state_from_pds(
     // Build root URI
     let root_uri = AtUri::new(&format!(
         "at://{}/{}/{}",
-        root_id.did(),
+        root_id.did,
         ROOT_NSID,
-        root_id.rkey().as_ref()
+        root_id.rkey.as_ref()
     ))
     .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid root URI: {}", e)))?
     .into_static();
@@ -530,7 +497,7 @@ pub async fn load_edit_state_from_pds(
     // Fetch the root snapshot blob
     let root_snapshot = fetch_blob(
         fetcher,
-        &root_id.did(),
+        &root_id.did,
         root_output.value.snapshot.blob().cid(),
     )
     .await?;
@@ -555,11 +522,10 @@ pub async fn load_edit_state_from_pds(
     > = BTreeMap::new();
 
     for diff_id in &diff_ids {
-        let rkey = diff_id.rkey();
-        let rkey_str: &str = rkey.as_ref();
+        let rkey_str: &str = diff_id.rkey.as_ref();
         let diff_uri = AtUri::new(&format!(
             "at://{}/{}/{}",
-            diff_id.did(),
+            diff_id.did,
             DIFF_NSID,
             rkey_str
         ))
@@ -600,7 +566,7 @@ pub async fn load_edit_state_from_pds(
         let diff_bytes = if let Some(ref inline) = diff.inline_diff {
             inline.clone()
         } else if let Some(ref snapshot) = diff.snapshot {
-            fetch_blob(fetcher, &root_id.did(), snapshot.blob().cid()).await?
+            fetch_blob(fetcher, &root_id.did, snapshot.blob().cid()).await?
         } else {
             tracing::warn!("Diff has neither inline_diff nor snapshot, skipping");
             continue;
@@ -622,22 +588,9 @@ pub async fn load_edit_state_from_pds(
 
 /// Load document state by merging local storage and PDS state.
 ///
-/// This is the main entry point for loading a document with full sync support.
-/// It:
-/// 1. Loads from localStorage (if available)
-/// 2. Loads from PDS (if available)
-/// 3. Merges both using Loro's CRDT merge
-///
-/// The result is a `LoadedDocState` containing a pre-merged LoroDoc that can be
-/// converted to an EditorDocument inside a reactive context using `use_hook`.
-///
-/// # Arguments
-/// * `fetcher` - The authenticated fetcher
-/// * `draft_key` - The localStorage key for this draft
-/// * `entry_uri` - Optional AT-URI if editing an existing entry
-///
-/// # Returns
-/// A `LoadedDocState` with merged state, or None if no state exists anywhere.
+/// Loads from localStorage and PDS (if available), then merges both using Loro's
+/// CRDT merge. The result is a pre-merged LoroDoc that can be converted to an
+/// EditorDocument inside a reactive context using `use_hook`.
 pub async fn load_and_merge_document(
     fetcher: &Fetcher,
     draft_key: &str,

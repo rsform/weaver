@@ -13,18 +13,6 @@ use super::offset_map::{OffsetMapping, SnapDirection, find_mapping_for_char, fin
 use wasm_bindgen::JsCast;
 
 /// Restore cursor position in the DOM after re-render.
-///
-/// # Arguments
-/// - `char_offset`: Cursor position as char offset in document
-/// - `offset_map`: Mappings from source to DOM positions
-/// - `editor_id`: DOM ID of the contenteditable element
-/// - `snap_direction`: Optional direction hint for snapping from invisible content
-///
-/// # Algorithm
-/// 1. Find offset mapping containing char_offset
-/// 2. Get DOM node by mapping.node_id
-/// 3. Walk text nodes to find UTF-16 position
-/// 4. Set cursor with Selection API
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn restore_cursor_position(
     char_offset: usize,

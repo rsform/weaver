@@ -104,15 +104,6 @@ fn adjust_paragraph_positions(
 ///
 /// Uses cached paragraph renders when possible, only re-rendering changed paragraphs.
 /// For "safe" edits (no boundary changes), skips boundary rediscovery entirely.
-///
-/// # Arguments
-/// - `text`: The document text to render
-/// - `cache`: Previous render cache (if any)
-/// - `edit`: Information about the most recent edit (if any)
-/// - `image_resolver`: Optional resolver for mapping image URLs to data/CDN URLs
-///
-/// # Returns
-/// Tuple of (rendered paragraphs, updated cache)
 pub fn render_paragraphs_incremental(
     text: &LoroText,
     cache: Option<&RenderCache>,

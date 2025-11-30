@@ -58,9 +58,9 @@ impl BlobCache {
         pds_url: jacquard::url::Url,
         cid: &Cid<'_>,
     ) -> Result<Bytes> {
-        if let Ok(blob_stream) = self
+        match self
             .client
-            .xrpc(pds_url)
+            .xrpc(pds_url.clone())
             .send(
                 &GetBlob::new()
                     .cid(cid.clone())
@@ -69,17 +69,25 @@ impl BlobCache {
             )
             .await
         {
-            Ok(blob_stream.buffer().clone())
-        } else {
-            // Fallback to Bluesky CDN (works for blobs stored on bsky PDSes)
-            let bytes = reqwest::get(format!(
-                "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@jpeg",
-                did, cid
-            ))
-            .await?
-            .bytes()
-            .await?;
-            Ok(bytes)
+            Ok(blob_stream) => Ok(blob_stream.buffer().clone()),
+            Err(e) => {
+                tracing::warn!(
+                    did = %did,
+                    cid = %cid,
+                    pds = %pds_url,
+                    error = %e,
+                    "PDS blob fetch failed, falling back to Bluesky CDN"
+                );
+                // Fallback to Bluesky CDN (works for blobs stored on bsky PDSes)
+                let bytes = reqwest::get(format!(
+                    "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@jpeg",
+                    did, cid
+                ))
+                .await?
+                .bytes()
+                .await?;
+                Ok(bytes)
+            }
         }
     }
 

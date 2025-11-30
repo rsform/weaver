@@ -101,7 +101,7 @@ pub fn use_entry_data(
     book_title: ReadSignal<SmolStr>,
     title: ReadSignal<SmolStr>,
 ) -> (
-    Resource<Option<(serde_json::Value, serde_json::Value)>>,
+    Resource<Option<(BookEntryView<'static>, Entry<'static>)>>,
     Memo<Option<(BookEntryView<'static>, Entry<'static>)>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
@@ -134,27 +134,13 @@ pub fn use_entry_data(
                         }
                     }
                 }
-                Some((
-                    serde_json::to_value(entry.0.clone()).unwrap(),
-                    serde_json::to_value(entry.1.clone()).unwrap(),
-                ))
+                Some(entry)
             } else {
                 None
             }
         }
     });
-    let memo = use_memo(move || {
-        if let Some(Some((ev, e))) = &*res.read() {
-            use jacquard::from_json_value;
-
-            let book_entry = from_json_value::<BookEntryView>(ev.clone()).unwrap();
-            let entry = from_json_value::<Entry>(e.clone()).unwrap();
-
-            Some((book_entry, entry))
-        } else {
-            None
-        }
-    });
+    let memo = use_memo(move || res.read().clone().flatten());
     (res, memo)
 }
 
@@ -496,7 +482,7 @@ pub fn use_profile_data(
 pub fn use_profile_data(
     ident: ReadSignal<AtIdentifier<'static>>,
 ) -> (
-    Resource<Option<serde_json::Value>>,
+    Resource<Option<ProfileDataView<'static>>>,
     Memo<Option<ProfileDataView<'static>>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
@@ -507,17 +493,10 @@ pub fn use_profile_data(
                 .fetch_profile(&ident())
                 .await
                 .ok()
-                .map(|arc| serde_json::to_value(&*arc).ok())
-                .flatten()
+                .map(|arc| (*arc).clone())
         }
     });
-    let memo = use_memo(move || {
-        if let Some(Some(value)) = &*res.read() {
-            jacquard::from_json_value::<ProfileDataView>(value.clone()).ok()
-        } else {
-            None
-        }
-    });
+    let memo = use_memo(move || res.read().clone().flatten());
     (res, memo)
 }
 
@@ -567,7 +546,7 @@ pub fn use_notebooks_for_did(
 pub fn use_notebooks_for_did(
     ident: ReadSignal<AtIdentifier<'static>>,
 ) -> (
-    Resource<Option<Vec<serde_json::Value>>>,
+    Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
     Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
@@ -581,24 +560,12 @@ pub fn use_notebooks_for_did(
                 .map(|notebooks| {
                     notebooks
                         .iter()
-                        .map(|arc| serde_json::to_value(arc.as_ref()).ok())
-                        .collect::<Option<Vec<_>>>()
+                        .map(|arc| arc.as_ref().clone())
+                        .collect::<Vec<_>>()
                 })
-                .flatten()
         }
     });
-    let memo = use_memo(move || {
-        if let Some(Some(values)) = &*res.read() {
-            values
-                .iter()
-                .map(|v| {
-                    jacquard::from_json_value::<(NotebookView, Vec<StrongRef>)>(v.clone()).ok()
-                })
-                .collect::<Option<Vec<_>>>()
-        } else {
-            None
-        }
-    });
+    let memo = use_memo(move || res.read().clone().flatten());
     (res, memo)
 }
 
@@ -644,7 +611,7 @@ pub fn use_notebooks_from_ufos() -> (
 /// Fetches notebooks from UFOS client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_notebooks_from_ufos() -> (
-    Resource<Option<Vec<serde_json::Value>>>,
+    Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
     Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
@@ -658,24 +625,12 @@ pub fn use_notebooks_from_ufos() -> (
                 .map(|notebooks| {
                     notebooks
                         .iter()
-                        .map(|arc| serde_json::to_value(arc.as_ref()).ok())
-                        .collect::<Option<Vec<_>>>()
+                        .map(|arc| arc.as_ref().clone())
+                        .collect::<Vec<_>>()
                 })
-                .flatten()
         }
     });
-    let memo = use_memo(move || {
-        if let Some(Some(values)) = &*res.read() {
-            values
-                .iter()
-                .map(|v| {
-                    jacquard::from_json_value::<(NotebookView, Vec<StrongRef>)>(v.clone()).ok()
-                })
-                .collect::<Option<Vec<_>>>()
-        } else {
-            None
-        }
-    });
+    let memo = use_memo(move || res.read().clone().flatten());
     (res, memo)
 }
 
@@ -718,7 +673,7 @@ pub fn use_notebook(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
 ) -> (
-    Resource<Option<serde_json::Value>>,
+    Resource<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>,
     Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
@@ -730,17 +685,10 @@ pub fn use_notebook(
                 .await
                 .ok()
                 .flatten()
-                .map(|arc| serde_json::to_value(arc.as_ref()).ok())
-                .flatten()
+                .map(|arc| arc.as_ref().clone())
         }
     });
-    let memo = use_memo(use_reactive!(|res| {
-        if let Some(Some(value)) = &*res.read() {
-            jacquard::from_json_value::<(NotebookView, Vec<StrongRef>)>(value.clone()).ok()
-        } else {
-            None
-        }
-    }));
+    let memo = use_memo(move || res.read().clone().flatten());
     (res, memo)
 }
 

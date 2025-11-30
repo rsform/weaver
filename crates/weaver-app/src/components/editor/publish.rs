@@ -62,8 +62,6 @@ impl PublishResult {
 }
 
 /// Result of fetching an entry for editing.
-/// Contains the entry data and URI, but NOT an EditorDocument.
-/// The document must be created in a reactive context (use_hook) to properly initialize Signals.
 #[derive(Clone, PartialEq)]
 pub struct LoadedEntry {
     pub entry: Entry<'static>,
@@ -71,16 +69,6 @@ pub struct LoadedEntry {
 }
 
 /// Fetch an existing entry from the PDS for editing.
-///
-/// Returns the entry data and URI. The caller should create an `EditorDocument`
-/// from this data using `EditorDocument::from_entry()` inside a reactive context.
-///
-/// # Arguments
-/// * `fetcher` - The fetcher for making API calls
-/// * `uri` - The AT-URI of the entry to load (e.g., `at://did:plc:xxx/sh.weaver.notebook.entry/rkey`)
-///
-/// # Returns
-/// The entry and its URI, or an error.
 pub async fn load_entry_for_editing(
     fetcher: &Fetcher,
     uri: &AtUri<'_>,
@@ -154,19 +142,8 @@ pub async fn load_entry_for_editing(
 /// - Without notebook but with entry_uri in doc: uses `put_record` to update existing
 /// - Without notebook and no entry_uri: uses `create_record` for free-floating entry
 ///
-/// Draft image paths (`/image/{did}/draft/{blob_rkey}/{name}`) are rewritten to
-/// published paths (`/image/{did}/{entry_rkey}/{name}`) before publishing.
-///
+/// Draft image paths are rewritten to published paths before publishing.
 /// On successful create, sets `doc.entry_uri` so subsequent publishes update the same record.
-///
-/// # Arguments
-/// * `fetcher` - The authenticated fetcher/client
-/// * `doc` - The editor document containing entry data (mutable to update entry_uri)
-/// * `notebook_title` - Optional title of the notebook to publish to
-/// * `draft_key` - Storage key for the draft (for cleanup)
-///
-/// # Returns
-/// The AT-URI of the created/updated entry, or an error.
 pub async fn publish_entry(
     fetcher: &Fetcher,
     doc: &mut EditorDocument,
