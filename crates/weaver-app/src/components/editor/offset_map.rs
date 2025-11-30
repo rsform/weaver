@@ -181,14 +181,6 @@ impl SnappedPosition<'_> {
 /// If the position is already valid, returns it directly. Otherwise,
 /// searches in the preferred direction first, falling back to the other
 /// direction if needed.
-///
-/// # Arguments
-/// - `offset_map`: The offset mappings for the paragraph
-/// - `char_offset`: The target char offset
-/// - `preferred_direction`: Which direction to search first when snapping
-///
-/// # Returns
-/// The snapped position, or None if no valid position exists.
 pub fn find_nearest_valid_position(
     offset_map: &[OffsetMapping],
     char_offset: usize,

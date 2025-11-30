@@ -32,7 +32,6 @@ pub struct PublishResult<'a> {
     pub entries: Vec<StrongRef<'a>>,
 }
 
-/// too many cows, so we have conversions
 pub fn mcow_to_cow(cow: CowStr<'_>) -> std::borrow::Cow<'_, str> {
     match cow {
         CowStr::Borrowed(s) => std::borrow::Cow::Borrowed(s),
@@ -40,7 +39,6 @@ pub fn mcow_to_cow(cow: CowStr<'_>) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// too many cows, so we have conversions
 pub fn cow_to_mcow(cow: std::borrow::Cow<'_, str>) -> CowStr<'_> {
     match cow {
         std::borrow::Cow::Borrowed(s) => CowStr::Borrowed(s),
@@ -48,7 +46,6 @@ pub fn cow_to_mcow(cow: std::borrow::Cow<'_, str>) -> CowStr<'_> {
     }
 }
 
-/// too many cows, so we have conversions
 pub fn mdcow_to_cow(cow: markdown_weaver::CowStr<'_>) -> std::borrow::Cow<'_, str> {
     match cow {
         markdown_weaver::CowStr::Borrowed(s) => std::borrow::Cow::Borrowed(s),

@@ -9,8 +9,6 @@ use jacquard::{
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_CURSOR_LIMIT: u64 = 16;
-#[allow(unused)]
-const DEFAULT_CURSOR_LIMIT_MAX: u64 = 100;
 
 fn get_default_cursor_limit() -> u64 {
     DEFAULT_CURSOR_LIMIT
@@ -59,14 +57,3 @@ pub struct RecordId<'a> {
     pub rkey: RecordKey<Rkey<'a>>,
 }
 
-impl RecordId<'_> {
-    pub fn did(&self) -> Did<'_> {
-        self.did.clone()
-    }
-    pub fn collection(&self) -> Nsid<'_> {
-        self.collection.clone()
-    }
-    pub fn rkey(&self) -> RecordKey<Rkey<'_>> {
-        self.rkey.clone()
-    }
-}

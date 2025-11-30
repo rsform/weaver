@@ -319,10 +319,6 @@ impl EditorDocument {
     ///
     /// MUST be called from within a reactive context (e.g., `use_hook`) to
     /// properly initialize Dioxus Signals.
-    ///
-    /// # Arguments
-    /// * `entry` - The entry record fetched from PDS
-    /// * `entry_ref` - StrongRef to the entry (URI + CID)
     pub fn from_entry(entry: &Entry<'_>, entry_ref: StrongRef<'static>) -> Self {
         let mut doc = Self::new(entry.content.to_string());
 
@@ -691,9 +687,7 @@ impl EditorDocument {
         Ok(())
     }
 
-    /// Undo the last operation.
-    /// Returns true if an undo was performed.
-    /// Automatically updates cursor position from the Loro cursor.
+    /// Undo the last operation. Automatically updates cursor position.
     pub fn undo(&mut self) -> LoroResult<bool> {
         // Sync Loro cursor to current position BEFORE undo
         // so it tracks through the undo operation
@@ -709,9 +703,7 @@ impl EditorDocument {
         Ok(result)
     }
 
-    /// Redo the last undone operation.
-    /// Returns true if a redo was performed.
-    /// Automatically updates cursor position from the Loro cursor.
+    /// Redo the last undone operation. Automatically updates cursor position.
     pub fn redo(&mut self) -> LoroResult<bool> {
         // Sync Loro cursor to current position BEFORE redo
         self.sync_loro_cursor();

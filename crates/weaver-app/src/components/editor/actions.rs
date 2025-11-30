@@ -1266,15 +1266,6 @@ pub enum KeydownResult {
 /// This handles keyboard shortcuts only. Text input and deletion
 /// are handled by beforeinput. Navigation (arrows, etc.) is passed
 /// through to the browser.
-///
-/// # Arguments
-/// * `doc` - The editor document
-/// * `config` - Keybinding configuration
-/// * `combo` - The key combination from the keyboard event
-/// * `range` - Current cursor position / selection range
-///
-/// # Returns
-/// Whether the event was handled.
 pub fn handle_keydown_with_bindings(
     doc: &mut EditorDocument,
     config: &KeybindingConfig,

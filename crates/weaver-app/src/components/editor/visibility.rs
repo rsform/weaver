@@ -18,12 +18,6 @@ pub struct VisibilityState {
 
 impl VisibilityState {
     /// Calculate visibility based on cursor position and selection.
-    ///
-    /// # Arguments
-    /// - `cursor_offset`: Current cursor position (char offset)
-    /// - `selection`: Optional selection range
-    /// - `syntax_spans`: All syntax spans in the document
-    /// - `paragraphs`: All paragraphs (for block-level visibility lookup)
     pub fn calculate(
         cursor_offset: usize,
         selection: Option<&Selection>,

@@ -71,7 +71,6 @@ pub fn sync_cursor_from_dom_with_direction(
     let anchor_offset = selection.anchor_offset() as usize;
     let focus_offset = selection.focus_offset() as usize;
 
-    // Convert both DOM positions to rope offsets using cached paragraphs
     let anchor_rope = dom_position_to_text_offset(
         &dom_document,
         &editor_element,
@@ -93,13 +92,11 @@ pub fn sync_cursor_from_dom_with_direction(
         (Some(anchor), Some(focus)) => {
             doc.cursor.write().offset = focus;
             if anchor != focus {
-                // There's an actual selection
                 doc.selection.set(Some(Selection {
                     anchor,
                     head: focus,
                 }));
             } else {
-                // Collapsed selection (just cursor)
                 doc.selection.set(None);
             }
         }
@@ -158,7 +155,6 @@ pub fn dom_position_to_text_offset(
 
     let node_id = node_id?;
 
-    // Get the container element
     let container = dom_document.get_element_by_id(&node_id).or_else(|| {
         let selector = format!("[data-node-id='{}']", node_id);
         dom_document.query_selector(&selector).ok().flatten()
@@ -180,7 +176,6 @@ pub fn dom_position_to_text_offset(
         }
     }
 
-    // Look up in offset maps
     for para in paragraphs {
         for mapping in &para.offset_map {
             if mapping.node_id == node_id {
@@ -231,7 +226,6 @@ pub fn sync_cursor_from_dom(
     _editor_id: &str,
     _paragraphs: &[ParagraphRender],
 ) {
-    // No-op on non-wasm
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -241,7 +235,6 @@ pub fn sync_cursor_from_dom_with_direction(
     _paragraphs: &[ParagraphRender],
     _direction_hint: Option<SnapDirection>,
 ) {
-    // No-op on non-wasm
 }
 
 /// Update paragraph DOM elements incrementally.
@@ -284,12 +277,10 @@ pub fn update_paragraph_dom(
 
     let mut cursor_para_updated = false;
 
-    // Update or create paragraphs
     for (idx, new_para) in new_paragraphs.iter().enumerate() {
         let para_id = format!("para-{}", idx);
 
         if let Some(old_para) = old_paragraphs.get(idx) {
-            // Paragraph exists - check if changed
             if new_para.source_hash != old_para.source_hash {
                 // Changed - clear and update innerHTML
                 // We clear first to ensure any browser-added content (from IME composition,
@@ -299,21 +290,17 @@ pub fn update_paragraph_dom(
                     elem.set_inner_html(&new_para.html);
                 }
 
-                // Track if we updated the cursor's paragraph
                 if Some(idx) == cursor_para_idx {
                     cursor_para_updated = true;
                 }
             }
-            // Unchanged - do nothing, browser preserves cursor
         } else {
-            // New paragraph - create div
             if let Ok(div) = document.create_element("div") {
                 div.set_id(&para_id);
                 div.set_inner_html(&new_para.html);
                 let _ = editor.append_child(&div);
             }
 
-            // Track if we created the cursor's paragraph
             if Some(idx) == cursor_para_idx {
                 cursor_para_updated = true;
             }

@@ -176,20 +176,11 @@ impl EditorImageResolver {
     }
 
     /// Add a pending image with a data URL for immediate preview.
-    ///
-    /// # Arguments
-    /// * `name` - The image name used in markdown (e.g., "photo.jpg")
-    /// * `data_url` - The base64 data URL for preview
     pub fn add_pending(&mut self, name: String, data_url: String) {
         self.images.insert(name, ResolvedImage::Pending(data_url));
     }
 
     /// Promote a pending image to uploaded (draft) status.
-    ///
-    /// # Arguments
-    /// * `name` - The image name used in markdown
-    /// * `blob_rkey` - The rkey of the PublishedBlob record
-    /// * `ident` - The AT identifier (DID or handle) of the blob owner
     pub fn promote_to_uploaded(
         &mut self,
         name: &str,
@@ -203,11 +194,6 @@ impl EditorImageResolver {
     }
 
     /// Add an already-uploaded draft image.
-    ///
-    /// # Arguments
-    /// * `name` - The name/URL used in markdown (e.g., "photo.jpg")
-    /// * `blob_rkey` - The rkey of the PublishedBlob record
-    /// * `ident` - The AT identifier (DID or handle) of the blob owner
     pub fn add_uploaded(
         &mut self,
         name: String,
@@ -219,11 +205,6 @@ impl EditorImageResolver {
     }
 
     /// Add a published image.
-    ///
-    /// # Arguments
-    /// * `name` - The name/URL used in markdown (e.g., "photo.jpg")
-    /// * `entry_rkey` - The rkey of the entry record containing this image
-    /// * `ident` - The AT identifier (DID or handle) of the entry owner
     pub fn add_published(
         &mut self,
         name: String,
@@ -240,12 +221,6 @@ impl EditorImageResolver {
     }
 
     /// Build a resolver from editor images and user identifier.
-    ///
-    /// # Arguments
-    /// * `images` - Iterator of editor images
-    /// * `ident` - The AT identifier (DID or handle) of the user
-    /// * `entry_rkey` - If Some, images are resolved as published (`/image/{ident}/{entry_rkey}/{name}`).
-    ///                  If None, images are resolved as drafts using their `published_blob_uri`.
     ///
     /// For draft mode (entry_rkey=None), only images with a `published_blob_uri` are included.
     /// For published mode (entry_rkey=Some), all images are included.
