@@ -1,0 +1,26 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.graph.subscribeAccept",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Acceptance of a subscription request.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["subscribe", "createdAt"],
+        "properties": {
+          "subscribe": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "Reference to the subscribe record being accepted."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

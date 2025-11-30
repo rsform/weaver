@@ -13,6 +13,10 @@
           "doc"
         ],
         "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
           "doc": {
             "type": "ref",
             "ref": "sh.weaver.edit.defs#docRef"

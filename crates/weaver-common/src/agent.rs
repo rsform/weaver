@@ -5,6 +5,7 @@ pub use weaver_api::sh_weaver::notebook::{
 };
 
 // Re-export jacquard for convenience
+use crate::constellation::{GetBacklinksQuery, RecordId};
 use crate::error::WeaverError;
 pub use jacquard;
 use jacquard::bytes::Bytes;
@@ -14,8 +15,10 @@ use jacquard::prelude::*;
 use jacquard::types::blob::{BlobRef, MimeType};
 use jacquard::types::string::{AtUri, Did, RecordKey};
 use jacquard::types::tid::Tid;
+use jacquard::types::uri::Uri;
+use jacquard::url::Url;
 use jacquard::xrpc::Response;
-use jacquard::{IntoStatic, xrpc};
+use jacquard::{CowStr, IntoStatic, xrpc};
 use mime_sniffer::MimeTypeSniffer;
 use std::path::Path;
 use weaver_api::com_atproto::repo::get_record::GetRecordResponse;
@@ -24,6 +27,8 @@ use weaver_api::sh_weaver::notebook::entry;
 use weaver_api::sh_weaver::publish::blob::Blob as PublishedBlob;
 
 use crate::{PublishResult, W_TICKER, normalize_title_path};
+
+const CONSTELLATION_URL: &str = "https://constellation.microcosm.blue";
 
 /// Extension trait providing weaver-specific multi-step operations on Agent
 ///
@@ -157,20 +162,27 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 AgentError::from(ClientError::from(e).with_context("Failed to resolve PDS for DID"))
             })?;
 
-            // Search for existing notebook with this title
-            let resp = self
-                .xrpc(pds_url)
-                .send(
-                    &ListRecords::new()
-                        .repo(author_did.clone())
-                        .collection(Nsid::raw(Book::NSID))
-                        .limit(100)
-                        .build(),
-                )
-                .await
-                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+            // Search for existing notebook with this title (paginated)
+            let mut cursor: Option<CowStr<'static>> = None;
+            loop {
+                let resp = self
+                    .xrpc(pds_url.clone())
+                    .send(
+                        &ListRecords::new()
+                            .repo(author_did.clone())
+                            .collection(Nsid::raw(Book::NSID))
+                            .limit(100)
+                            .maybe_cursor(cursor.clone())
+                            .build(),
+                    )
+                    .await
+                    .map_err(|e| AgentError::from(ClientError::from(e)))?;
 
-            if let Ok(list) = resp.parse() {
+                let list = match resp.parse() {
+                    Ok(l) => l,
+                    Err(_) => break, // Parse error, stop searching
+                };
+
                 for record in list.records {
                     let notebook: Book = jacquard::from_data(&record.value).map_err(|_| {
                         AgentError::from(ClientError::invalid_request(
@@ -188,6 +200,11 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                             .collect();
                         return Ok((record.uri.into_static(), entries));
                     }
+                }
+
+                match list.cursor {
+                    Some(c) => cursor = Some(c.into_static()),
+                    None => break, // No more pages
                 }
             }
 
@@ -235,7 +252,30 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
             // Find or create notebook
             let (notebook_uri, entry_refs) = self.upsert_notebook(notebook_title, &did).await?;
 
+            // Fast path: if notebook is empty, skip search and create directly
+            if entry_refs.is_empty() {
+                let response = self.create_record(entry, None).await?;
+                let new_ref = StrongRef::new()
+                    .uri(response.uri.clone().into_static())
+                    .cid(response.cid.clone().into_static())
+                    .build();
+
+                use weaver_api::sh_weaver::notebook::book::Book;
+                let notebook_entry_ref = StrongRef::new()
+                    .uri(response.uri.into_static())
+                    .cid(response.cid.into_static())
+                    .build();
+
+                self.update_record::<Book>(&notebook_uri, |book| {
+                    book.entry_list.push(notebook_entry_ref);
+                })
+                .await?;
+
+                return Ok((new_ref, true));
+            }
+
             // Check if entry with this title exists in the notebook
+            // O(n) network calls - unavoidable without title indexing
             for entry_ref in &entry_refs {
                 let existing = self
                     .get_record::<entry::Entry>(&entry_ref.uri)
@@ -390,6 +430,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
     }
 
     /// Search for an entry by title within a notebook's entry list
+    ///
+    /// O(n) network calls - unavoidable without title indexing.
+    /// Breaks early on match to minimize unnecessary fetches.
     fn entry_by_title<'a>(
         &self,
         notebook: &NotebookView<'a>,
@@ -478,33 +521,51 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 }
             };
 
-            // TODO: use the cursor to search through all records with this NSID for the repo
-            let resp = self
-                .xrpc(pds_url)
-                .send(
-                    &ListRecords::new()
-                        .repo(repo_did)
-                        .collection(Nsid::raw(Book::NSID))
-                        .limit(100)
-                        .build(),
-                )
-                .await
-                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+            // Search with pagination
+            let mut cursor: Option<CowStr<'static>> = None;
+            loop {
+                let resp = self
+                    .xrpc(pds_url.clone())
+                    .send(
+                        &ListRecords::new()
+                            .repo(repo_did.clone())
+                            .collection(Nsid::raw(Book::NSID))
+                            .limit(100)
+                            .maybe_cursor(cursor.clone())
+                            .build(),
+                    )
+                    .await
+                    .map_err(|e| AgentError::from(ClientError::from(e)))?;
 
-            if let Ok(list) = resp.parse() {
+                let list = match resp.parse() {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
+
                 for record in list.records {
                     let notebook: Book = jacquard::from_data(&record.value).map_err(|_| {
                         AgentError::from(ClientError::invalid_request(
                             "Failed to parse notebook record",
                         ))
                     })?;
-                    if let Some(book_title) = notebook.path
-                        && book_title == title
+
+                    // Match on path first, then title
+                    let matched_title = if let Some(ref path) = notebook.path
+                        && path.as_ref() == title
                     {
+                        Some(path.clone())
+                    } else if let Some(ref book_title) = notebook.title
+                        && book_title.as_ref() == title
+                    {
+                        Some(book_title.clone())
+                    } else {
+                        None
+                    };
+
+                    if let Some(matched) = matched_title {
                         let tags = notebook.tags.clone();
 
                         let mut authors = Vec::new();
-
                         for (index, author) in notebook.authors.iter().enumerate() {
                             let (profile_uri, profile_view) =
                                 self.hydrate_profile_view(&author.did).await?;
@@ -516,6 +577,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                                     .build(),
                             );
                         }
+
                         let entries = notebook
                             .entry_list
                             .iter()
@@ -528,53 +590,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                                 .cid(record.cid)
                                 .uri(record.uri)
                                 .indexed_at(jacquard::types::string::Datetime::now())
-                                .title(book_title)
-                                .maybe_tags(tags)
-                                .authors(authors)
-                                .record(record.value.clone())
-                                .build()
-                                .into_static(),
-                            entries,
-                        )));
-                    } else if let Some(book_title) = notebook.title
-                        && book_title == title
-                    {
-                        let tags = notebook.tags.clone();
-
-                        let mut authors = Vec::new();
-                        use weaver_api::app_bsky::actor::{
-                            ProfileViewDetailed, get_profile::GetProfile,
-                            profile::Profile as BskyProfile,
-                        };
-                        use weaver_api::sh_weaver::actor::{
-                            ProfileDataView, ProfileDataViewInner, ProfileView,
-                            profile::Profile as WeaverProfile,
-                        };
-
-                        for (index, author) in notebook.authors.iter().enumerate() {
-                            let (profile_uri, profile_view) =
-                                self.hydrate_profile_view(&author.did).await?;
-                            authors.push(
-                                AuthorListView::new()
-                                    .maybe_uri(profile_uri)
-                                    .record(profile_view)
-                                    .index(index as i64)
-                                    .build(),
-                            );
-                        }
-                        let entries = notebook
-                            .entry_list
-                            .iter()
-                            .cloned()
-                            .map(IntoStatic::into_static)
-                            .collect();
-
-                        return Ok(Some((
-                            NotebookView::new()
-                                .cid(record.cid)
-                                .uri(record.uri)
-                                .indexed_at(jacquard::types::string::Datetime::now())
-                                .title(book_title)
+                                .title(matched)
                                 .maybe_tags(tags)
                                 .authors(authors)
                                 .record(record.value.clone())
@@ -583,6 +599,11 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                             entries,
                         )));
                     }
+                }
+
+                match list.cursor {
+                    Some(c) => cursor = Some(c.into_static()),
+                    None => break,
                 }
             }
 
@@ -903,6 +924,59 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 .title(title)
                 .authors(notebook.authors.clone())
                 .build())
+        }
+    }
+
+    /// Find the notebook that contains a given entry using constellation backlinks.
+    ///
+    /// Queries constellation for `sh.weaver.notebook.book` records that reference
+    /// the given entry URI via the `.entryList[].uri` path.
+    fn find_notebook_for_entry(
+        &self,
+        entry_uri: &AtUri<'_>,
+    ) -> impl Future<Output = Result<Option<RecordId<'static>>, WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            let constellation_url = Url::parse(CONSTELLATION_URL).map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Invalid constellation URL: {}",
+                    e
+                )))
+            })?;
+
+            let query = GetBacklinksQuery {
+                subject: Uri::At(entry_uri.clone().into_static()),
+                source: "sh.weaver.notebook.book:.entryList[].uri".into(),
+                cursor: None,
+                did: vec![],
+                limit: 1,
+            };
+
+            let response = self
+                .xrpc(constellation_url)
+                .send(&query)
+                .await
+                .map_err(|e| {
+                    AgentError::from(ClientError::invalid_request(format!(
+                        "Constellation query failed: {}",
+                        e
+                    )))
+                })?;
+
+            let output = response.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to parse constellation response: {}",
+                    e
+                )))
+            })?;
+
+            Ok(output
+                .records
+                .into_iter()
+                .next()
+                .map(|r| r.into_static()))
         }
     }
 }

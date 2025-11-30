@@ -518,7 +518,7 @@ pub fn use_profile_data(
             None
         }
     });
-    (res, memo);
+    (res, memo)
 }
 
 /// Fetches notebooks for a specific DID
@@ -644,7 +644,7 @@ pub fn use_notebooks_from_ufos() -> (
 /// Fetches notebooks from UFOS client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_notebooks_from_ufos() -> (
-    Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+    Resource<Option<Vec<serde_json::Value>>>,
     Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
@@ -808,6 +808,88 @@ pub fn use_notebook_entries(
     });
     let memo = use_memo(move || r.read().as_ref().and_then(|v| v.clone()));
     (r, memo)
+}
+
+// ============================================================================
+// Ownership Checking
+// ============================================================================
+
+/// Check if the current authenticated user owns a resource identified by an AtIdentifier.
+///
+/// Returns a memo that is:
+/// - `Some(true)` if the user is authenticated and their DID matches the resource owner
+/// - `Some(false)` if the user is authenticated but doesn't match, or resource is a handle
+/// - `None` if the user is not authenticated
+///
+/// For handles, this does a synchronous check that returns `false` since we can't resolve
+/// handles synchronously. Use `use_is_owner_async` for handle resolution.
+pub fn use_is_owner(resource_owner: ReadSignal<AtIdentifier<'static>>) -> Memo<Option<bool>> {
+    let auth_state = use_context::<Signal<AuthState>>();
+
+    use_memo(move || {
+        let current_did = auth_state.read().did.clone()?;
+        let owner = resource_owner();
+
+        match owner {
+            AtIdentifier::Did(did) => Some(did == current_did),
+            AtIdentifier::Handle(_) => Some(false), // Can't resolve synchronously
+        }
+    })
+}
+
+/// Check ownership with async handle resolution.
+///
+/// Returns a resource that resolves to:
+/// - `Some(true)` if the user owns the resource
+/// - `Some(false)` if the user doesn't own the resource
+/// - `None` if the user is not authenticated
+#[cfg(feature = "fullstack-server")]
+pub fn use_is_owner_async(
+    resource_owner: ReadSignal<AtIdentifier<'static>>,
+) -> Resource<Option<bool>> {
+    let auth_state = use_context::<Signal<AuthState>>();
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    use_resource(move || {
+        let fetcher = fetcher.clone();
+        let owner = resource_owner();
+        async move {
+            let current_did = auth_state.read().did.clone()?;
+
+            match owner {
+                AtIdentifier::Did(did) => Some(did == current_did),
+                AtIdentifier::Handle(handle) => match fetcher.resolve_handle(&handle).await {
+                    Ok(resolved_did) => Some(resolved_did == current_did),
+                    Err(_) => Some(false),
+                },
+            }
+        }
+    })
+}
+
+/// Check ownership with async handle resolution (client-only mode).
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_is_owner_async(
+    resource_owner: ReadSignal<AtIdentifier<'static>>,
+) -> Resource<Option<bool>> {
+    let auth_state = use_context::<Signal<AuthState>>();
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    use_resource(move || {
+        let fetcher = fetcher.clone();
+        let owner = resource_owner();
+        async move {
+            let current_did = auth_state.read().did.clone()?;
+
+            match owner {
+                AtIdentifier::Did(did) => Some(did == current_did),
+                AtIdentifier::Handle(handle) => match fetcher.resolve_handle(&handle).await {
+                    Ok(resolved_did) => Some(resolved_did == current_did),
+                    Err(_) => Some(false),
+                },
+            }
+        }
+    })
 }
 
 #[cfg(feature = "fullstack-server")]

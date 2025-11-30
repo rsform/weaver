@@ -1,0 +1,35 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.getEntry",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get an entry view by notebook URI and index, including prev/next navigation.",
+      "parameters": {
+        "type": "params",
+        "required": ["notebook"],
+        "properties": {
+          "notebook": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "AT-URI of the notebook containing the entry."
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Zero-based index of the entry in the notebook's entry list."
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "ref",
+          "ref": "sh.weaver.notebook.defs#bookEntryView"
+        }
+      },
+      "errors": [{ "name": "NotebookNotFound" }, { "name": "EntryNotFound" }]
+    }
+  }
+}

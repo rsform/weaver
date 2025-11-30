@@ -25,6 +25,11 @@
             "format": "datetime",
             "description": "Client-declared timestamp when this was originally created."
           },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Client-declared timestamp of last modification. Used for canonicality tiebreaking in multi-author scenarios."
+          },
           "embeds": {
             "type": "object",
             "description": "The set of images and records, if any, embedded in the notebook entry.",

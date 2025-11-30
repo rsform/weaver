@@ -1,13 +1,22 @@
 #![allow(non_snake_case)]
 
+use crate::Route;
 use crate::components::avatar::{Avatar, AvatarImage};
+use crate::components::button::{Button, ButtonVariant};
 use dioxus::prelude::*;
+use jacquard::smol_str::SmolStr;
+use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::notebook::NotebookView;
 
 const NOTEBOOK_COVER_CSS: Asset = asset!("/assets/styling/notebook-cover.css");
 
 #[component]
-pub fn NotebookCover(notebook: NotebookView<'static>, title: String) -> Element {
+pub fn NotebookCover(
+    notebook: NotebookView<'static>,
+    title: String,
+    #[props(default = false)] is_owner: bool,
+    #[props(default)] ident: Option<AtIdentifier<'static>>,
+) -> Element {
     use jacquard::from_data;
     use weaver_api::sh_weaver::notebook::book::Book;
 
@@ -65,6 +74,25 @@ pub fn NotebookCover(notebook: NotebookView<'static>, title: String) -> Element 
                     div { class: "notebook-cover-tags",
                         for tag in tags.iter() {
                             span { class: "notebook-cover-tag", "{tag}" }
+                        }
+                    }
+                }
+            }
+
+            // Owner actions
+            if is_owner {
+                if let Some(ref owner_ident) = ident {
+                    div { class: "notebook-cover-actions",
+                        Link {
+                            to: Route::NewDraft {
+                                ident: owner_ident.clone(),
+                                notebook: Some(SmolStr::from(title.as_str()))
+                            },
+                            class: "notebook-cover-action-link",
+                            Button {
+                                variant: ButtonVariant::Outline,
+                                "+ Add Entry"
+                            }
                         }
                     }
                 }

@@ -1,3 +1,5 @@
+use crate::auth::AuthState;
+use crate::components::{ProfileActions, ProfileActionsMenubar};
 use crate::{Route, data, fetch};
 use dioxus::prelude::*;
 use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
@@ -47,6 +49,9 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
             // Main content area
             main { class: "repository-main",
+                // Mobile menubar (hidden on desktop)
+                ProfileActionsMenubar { ident }
+
                 div { class: "notebooks-list",
                     match &*notebooks.read() {
                         Some(notebook_list) => rsx! {
@@ -72,6 +77,9 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                     }
                 }
             }
+
+            // Actions sidebar (desktop only)
+            ProfileActions { ident }
         }
     }
 }
@@ -84,12 +92,23 @@ pub fn NotebookCard(
     use jacquard::IntoStatic;
 
     let fetcher = use_context::<fetch::Fetcher>();
+    let auth_state = use_context::<Signal<AuthState>>();
 
     let title = notebook
         .title
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled Notebook");
+
+    // Check ownership for "Add Entry" link
+    let notebook_ident = notebook.uri.authority().clone().into_static();
+    let is_owner = {
+        let current_did = auth_state.read().did.clone();
+        match (&current_did, &notebook_ident) {
+            (Some(did), AtIdentifier::Did(nb_did)) => *did == *nb_did,
+            _ => false,
+        }
+    };
 
     // Format date
     let formatted_date = notebook.indexed_at.as_ref().format("%B %d, %Y").to_string();
@@ -126,7 +145,16 @@ pub fn NotebookCard(
                     class: "notebook-card-header-link",
 
                     div { class: "notebook-card-header",
-                        h2 { class: "notebook-card-title", "{title}" }
+                        div { class: "notebook-card-header-top",
+                            h2 { class: "notebook-card-title", "{title}" }
+                            if is_owner {
+                                Link {
+                                    to: Route::NewDraft { ident: notebook_ident.clone(), notebook: Some(book_title.clone()) },
+                                    class: "notebook-add-entry",
+                                    "+ Add"
+                                }
+                            }
+                        }
 
                         div { class: "notebook-card-date",
                             time { datetime: "{notebook.indexed_at.as_str()}", "{formatted_date}" }
@@ -199,23 +227,40 @@ pub fn NotebookCard(
                                             let created_at = from_data::<Entry>(&entry_view.entry.record).ok()
                                                 .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
 
-                                            rsx! {
-                                                Link {
-                                                    to: Route::EntryPage {
-                                                        ident: ident.clone(),
-                                                        book_title: book_title.clone(),
-                                                        title: entry_title.to_string().into()
-                                                    },
-                                                    class: "notebook-entry-preview-link",
+                                            let entry_uri = entry_view.entry.uri.clone().into_static();
 
-                                                    div { class: "notebook-entry-preview",
-                                                        div { class: "entry-preview-header",
+                                            rsx! {
+                                                div { class: "notebook-entry-preview",
+                                                    div { class: "entry-preview-header",
+                                                        Link {
+                                                            to: Route::EntryPage {
+                                                                ident: ident.clone(),
+                                                                book_title: book_title.clone(),
+                                                                title: entry_title.to_string().into()
+                                                            },
+                                                            class: "entry-preview-title-link",
                                                             div { class: "entry-preview-title", "{entry_title}" }
-                                                            if let Some(ref date) = created_at {
-                                                                div { class: "entry-preview-date", "{date}" }
+                                                        }
+                                                        if let Some(ref date) = created_at {
+                                                            div { class: "entry-preview-date", "{date}" }
+                                                        }
+                                                        if is_owner {
+                                                            crate::components::EntryActions {
+                                                                entry_uri,
+                                                                entry_title: entry_title.to_string(),
+                                                                in_notebook: true,
+                                                                notebook_title: Some(book_title.clone())
                                                             }
                                                         }
-                                                        if let Some(ref html) = preview_html {
+                                                    }
+                                                    if let Some(ref html) = preview_html {
+                                                        Link {
+                                                            to: Route::EntryPage {
+                                                                ident: ident.clone(),
+                                                                book_title: book_title.clone(),
+                                                                title: entry_title.to_string().into()
+                                                            },
+                                                            class: "entry-preview-content-link",
                                                             div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
                                                         }
                                                     }
@@ -243,23 +288,40 @@ pub fn NotebookCard(
                                             let created_at = from_data::<Entry>(&first_entry.entry.record).ok()
                                                 .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
 
-                                            rsx! {
-                                                Link {
-                                                    to: Route::EntryPage {
-                                                        ident: ident.clone(),
-                                                        book_title: book_title.clone(),
-                                                        title: entry_title.to_string().into()
-                                                    },
-                                                    class: "notebook-entry-preview-link",
+                                            let entry_uri = first_entry.entry.uri.clone().into_static();
 
-                                                    div { class: "notebook-entry-preview notebook-entry-preview-first",
-                                                        div { class: "entry-preview-header",
+                                            rsx! {
+                                                div { class: "notebook-entry-preview notebook-entry-preview-first",
+                                                    div { class: "entry-preview-header",
+                                                        Link {
+                                                            to: Route::EntryPage {
+                                                                ident: ident.clone(),
+                                                                book_title: book_title.clone(),
+                                                                title: entry_title.to_string().into()
+                                                            },
+                                                            class: "entry-preview-title-link",
                                                             div { class: "entry-preview-title", "{entry_title}" }
-                                                            if let Some(ref date) = created_at {
-                                                                div { class: "entry-preview-date", "{date}" }
+                                                        }
+                                                        if let Some(ref date) = created_at {
+                                                            div { class: "entry-preview-date", "{date}" }
+                                                        }
+                                                        if is_owner {
+                                                            crate::components::EntryActions {
+                                                                entry_uri,
+                                                                entry_title: entry_title.to_string(),
+                                                                in_notebook: true,
+                                                                notebook_title: Some(book_title.clone())
                                                             }
                                                         }
-                                                        if let Some(ref html) = preview_html {
+                                                    }
+                                                    if let Some(ref html) = preview_html {
+                                                        Link {
+                                                            to: Route::EntryPage {
+                                                                ident: ident.clone(),
+                                                                book_title: book_title.clone(),
+                                                                title: entry_title.to_string().into()
+                                                            },
+                                                            class: "entry-preview-content-link",
                                                             div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
                                                         }
                                                     }
@@ -296,23 +358,40 @@ pub fn NotebookCard(
                                             let created_at = from_data::<Entry>(&last_entry.entry.record).ok()
                                                 .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
 
-                                            rsx! {
-                                                Link {
-                                                    to: Route::EntryPage {
-                                                        ident: ident.clone(),
-                                                        book_title: book_title.clone(),
-                                                        title: entry_title.to_string().into()
-                                                    },
-                                                    class: "notebook-entry-preview-link",
+                                            let entry_uri = last_entry.entry.uri.clone().into_static();
 
-                                                    div { class: "notebook-entry-preview notebook-entry-preview-last",
-                                                        div { class: "entry-preview-header",
+                                            rsx! {
+                                                div { class: "notebook-entry-preview notebook-entry-preview-last",
+                                                    div { class: "entry-preview-header",
+                                                        Link {
+                                                            to: Route::EntryPage {
+                                                                ident: ident.clone(),
+                                                                book_title: book_title.clone(),
+                                                                title: entry_title.to_string().into()
+                                                            },
+                                                            class: "entry-preview-title-link",
                                                             div { class: "entry-preview-title", "{entry_title}" }
-                                                            if let Some(ref date) = created_at {
-                                                                div { class: "entry-preview-date", "{date}" }
+                                                        }
+                                                        if let Some(ref date) = created_at {
+                                                            div { class: "entry-preview-date", "{date}" }
+                                                        }
+                                                        if is_owner {
+                                                            crate::components::EntryActions {
+                                                                entry_uri,
+                                                                entry_title: entry_title.to_string(),
+                                                                in_notebook: true,
+                                                                notebook_title: Some(book_title.clone())
                                                             }
                                                         }
-                                                        if let Some(ref html) = preview_html {
+                                                    }
+                                                    if let Some(ref html) = preview_html {
+                                                        Link {
+                                                            to: Route::EntryPage {
+                                                                ident: ident.clone(),
+                                                                book_title: book_title.clone(),
+                                                                title: entry_title.to_string().into()
+                                                            },
+                                                            class: "entry-preview-content-link",
                                                             div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
                                                         }
                                                     }

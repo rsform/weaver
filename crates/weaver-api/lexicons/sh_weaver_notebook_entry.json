@@ -65,6 +65,11 @@
           "title": {
             "type": "ref",
             "ref": "sh.weaver.notebook.defs#title"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Client-declared timestamp of last modification. Used for canonicality tiebreaking in multi-author scenarios.",
+            "format": "datetime"
           }
         }
       }

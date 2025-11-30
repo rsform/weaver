@@ -105,10 +105,18 @@
     border-bottom: 2px solid var(--color-border);
 }
 
+.entry-header-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
 .entry-title {
     margin-bottom: calc(1rem * var(--spacing-scale, 1.5));
     margin-top: calc(1rem * var(--spacing-scale, 1.5));
     color: var(--color-text);
+    flex: 1;
 }
 
 .entry-meta-info {

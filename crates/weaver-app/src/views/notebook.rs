@@ -1,6 +1,8 @@
 use crate::{
     Route,
+    auth::AuthState,
     components::{EntryCard, NotebookCover, NotebookCss},
+    components::button::{Button, ButtonVariant},
     data,
 };
 use dioxus::prelude::*;
@@ -50,6 +52,16 @@ pub fn NotebookIndex(
     #[cfg(feature = "fullstack-server")]
     entries_result?;
 
+    // Check ownership for "Add Entry" button
+    let auth_state = use_context::<Signal<AuthState>>();
+    let is_owner = {
+        let current_did = auth_state.read().did.clone();
+        match (&current_did, ident()) {
+            (Some(did), AtIdentifier::Did(ref ident_did)) => *did == *ident_did,
+            _ => false,
+        }
+    };
+
     rsx! {
         document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
 
@@ -63,7 +75,9 @@ pub fn NotebookIndex(
                         aside { class: "notebook-sidebar",
                             NotebookCover {
                                 notebook: notebook_view.clone(),
-                                title: book_title().to_string()
+                                title: book_title().to_string(),
+                                is_owner,
+                                ident: Some(ident())
                             }
                         }
 
