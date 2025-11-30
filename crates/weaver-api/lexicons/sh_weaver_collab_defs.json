@@ -1,0 +1,18 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.collab.defs",
+  "defs": {
+    "chapter": {
+      "type": "token",
+      "description": "Collaboration scoped to a chapter."
+    },
+    "entry": {
+      "type": "token",
+      "description": "Collaboration scoped to a single entry."
+    },
+    "notebook": {
+      "type": "token",
+      "description": "Collaboration scoped to an entire notebook."
+    }
+  }
+}

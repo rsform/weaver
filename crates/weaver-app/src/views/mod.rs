@@ -28,3 +28,9 @@ pub use callback::Callback;
 
 mod editor;
 pub use editor::Editor;
+
+mod drafts;
+pub use drafts::{
+    DraftEdit, DraftsList, NewDraft, NotebookEntryByRkey, NotebookEntryEdit, StandaloneEntry,
+    StandaloneEntryEdit,
+};

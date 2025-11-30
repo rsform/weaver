@@ -17,7 +17,9 @@ use jacquard::{
 use std::sync::{Arc, LazyLock};
 #[allow(unused)]
 use views::{
-    Callback, Editor, Home, Navbar, Notebook, NotebookIndex, NotebookPage, RecordIndex, RecordPage,
+    Callback, DraftEdit, DraftsList, Editor, Home, Navbar, NewDraft, Notebook, NotebookEntryByRkey,
+    NotebookEntryEdit, NotebookIndex, NotebookPage, RecordIndex, RecordPage, StandaloneEntry,
+    StandaloneEntryEdit,
 };
 
 use crate::{
@@ -69,12 +71,30 @@ enum Route {
           #[layout(Repository)]
             #[route("/")]
             RepositoryIndex { ident: AtIdentifier<'static> },
+            // Drafts routes (before /:book_title to avoid capture)
+            #[route("/drafts")]
+            DraftsList { ident: AtIdentifier<'static> },
+            #[route("/drafts/:tid")]
+            DraftEdit { ident: AtIdentifier<'static>, tid: SmolStr },
+            #[route("/new?:notebook")]
+            NewDraft { ident: AtIdentifier<'static>, notebook: Option<SmolStr> },
+            // Standalone entry routes
+            #[route("/e/:rkey")]
+            StandaloneEntry { ident: AtIdentifier<'static>, rkey: SmolStr },
+            #[route("/e/:rkey/edit")]
+            StandaloneEntryEdit { ident: AtIdentifier<'static>, rkey: SmolStr },
+            // Notebook routes
             #[nest("/:book_title")]
               #[layout(Notebook)]
               #[route("/")]
               NotebookIndex { ident: AtIdentifier<'static>, book_title: SmolStr },
                 #[route("/:title")]
-                EntryPage { ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr }
+                EntryPage { ident: AtIdentifier<'static>, book_title: SmolStr, title: SmolStr },
+                // Entry by rkey (canonical path)
+                #[route("/e/:rkey")]
+                NotebookEntryByRkey { ident: AtIdentifier<'static>, book_title: SmolStr, rkey: SmolStr },
+                #[route("/e/:rkey/edit")]
+                NotebookEntryEdit { ident: AtIdentifier<'static>, book_title: SmolStr, rkey: SmolStr }
 
 }
 const FAVICON: Asset = asset!("/assets/weaver_photo_sm.jpg");

@@ -1,0 +1,56 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.collab.invite",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Invitation to collaborate on a resource (notebook, entry, chapter, etc.). Creates half of a two-way agreement.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["resource", "invitee", "createdAt"],
+        "properties": {
+          "resource": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "The resource to collaborate on (notebook, entry, chapter, etc.)."
+          },
+          "invitee": {
+            "type": "string",
+            "format": "did",
+            "description": "DID of the user being invited."
+          },
+          "scope": {
+            "type": "ref",
+            "ref": "#collabScope",
+            "description": "Optional explicit scope type. If omitted, inferred from resource lexicon."
+          },
+          "message": {
+            "type": "string",
+            "maxGraphemes": 300,
+            "maxLength": 3000,
+            "description": "Optional message to the invitee."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Optional expiration for the invite."
+          }
+        }
+      }
+    },
+    "collabScope": {
+      "type": "string",
+      "description": "The scope/type of collaboration.",
+      "knownValues": [
+        "sh.weaver.collab.defs#notebook",
+        "sh.weaver.collab.defs#entry",
+        "sh.weaver.collab.defs#chapter"
+      ]
+    }
+  }
+}

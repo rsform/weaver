@@ -32,6 +32,10 @@
           "doc": {
             "type": "ref",
             "ref": "sh.weaver.edit.defs#docRef"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
           }
         }
       }

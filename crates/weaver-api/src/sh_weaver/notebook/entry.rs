@@ -34,6 +34,9 @@ pub struct Entry<'a> {
     pub tags: std::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
     #[serde(borrow)]
     pub title: crate::sh_weaver::notebook::Title<'a>,
+    /// Client-declared timestamp of last modification. Used for canonicality tiebreaking in multi-author scenarios.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub updated_at: std::option::Option<jacquard_common::types::string::Datetime>,
 }
 
 pub mod entry_state {
@@ -120,6 +123,7 @@ pub struct EntryBuilder<'a, S: entry_state::State> {
         ::core::option::Option<crate::sh_weaver::notebook::Path<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Title<'a>>,
+        ::core::option::Option<jacquard_common::types::string::Datetime>,
     ),
     _phantom: ::core::marker::PhantomData<&'a ()>,
 }
@@ -136,7 +140,7 @@ impl<'a> EntryBuilder<'a, entry_state::Empty> {
     pub fn new() -> Self {
         EntryBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None, None),
+            __unsafe_private_named: (None, None, None, None, None, None, None),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -250,6 +254,25 @@ where
     }
 }
 
+impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
+    /// Set the `updatedAt` field (optional)
+    pub fn updated_at(
+        mut self,
+        value: impl Into<Option<jacquard_common::types::string::Datetime>>,
+    ) -> Self {
+        self.__unsafe_private_named.6 = value.into();
+        self
+    }
+    /// Set the `updatedAt` field to an Option value (optional)
+    pub fn maybe_updated_at(
+        mut self,
+        value: Option<jacquard_common::types::string::Datetime>,
+    ) -> Self {
+        self.__unsafe_private_named.6 = value;
+        self
+    }
+}
+
 impl<'a, S> EntryBuilder<'a, S>
 where
     S: entry_state::State,
@@ -267,6 +290,7 @@ where
             path: self.__unsafe_private_named.3.unwrap(),
             tags: self.__unsafe_private_named.4,
             title: self.__unsafe_private_named.5.unwrap(),
+            updated_at: self.__unsafe_private_named.6,
             extra_data: Default::default(),
         }
     }
@@ -285,6 +309,7 @@ where
             path: self.__unsafe_private_named.3.unwrap(),
             tags: self.__unsafe_private_named.4,
             title: self.__unsafe_private_named.5.unwrap(),
+            updated_at: self.__unsafe_private_named.6,
             extra_data: Some(extra_data),
         }
     }
@@ -505,6 +530,29 @@ fn lexicon_doc_sh_weaver_notebook_entry() -> ::jacquard_lexicon::lexicon::Lexico
                                     r#ref: ::jacquard_common::CowStr::new_static(
                                         "sh.weaver.notebook.defs#title",
                                     ),
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static(
+                                    "updatedAt",
+                                ),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                    description: Some(
+                                        ::jacquard_common::CowStr::new_static(
+                                            "Client-declared timestamp of last modification. Used for canonicality tiebreaking in multi-author scenarios.",
+                                        ),
+                                    ),
+                                    format: Some(
+                                        ::jacquard_lexicon::lexicon::LexStringFormat::Datetime,
+                                    ),
+                                    default: None,
+                                    min_length: None,
+                                    max_length: None,
+                                    min_graphemes: None,
+                                    max_graphemes: None,
+                                    r#enum: None,
+                                    r#const: None,
+                                    known_values: None,
                                 }),
                             );
                             map

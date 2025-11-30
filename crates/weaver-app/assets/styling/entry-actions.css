@@ -1,0 +1,91 @@
+.entry-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.entry-action-link {
+    text-decoration: none;
+}
+
+/* Match notebook-add-entry styling for buttons */
+.entry-actions .button {
+    font-size: 0.85rem;
+    color: var(--color-primary);
+    background: transparent;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0;
+    border: 1px solid var(--color-border);
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.entry-actions .button:hover {
+    background-color: var(--color-primary);
+    color: var(--color-base);
+}
+
+.entry-actions-dropdown {
+    position: relative;
+}
+
+.dropdown-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 0.25rem;
+    z-index: 100;
+    min-width: 160px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+    .dropdown-menu {
+        box-shadow: none;
+        border: 1px dashed var(--color-border);
+    }
+}
+
+.dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--color-text);
+}
+
+.dropdown-item:hover {
+    background: var(--color-highlight);
+}
+
+.dropdown-item-danger {
+    color: var(--color-error);
+}
+
+.dropdown-item-danger:hover {
+    background: var(--color-error);
+    color: var(--color-base);
+}
+
+.dialog-error {
+    color: var(--destructive);
+    font-size: 0.875rem;
+    padding: 0.5rem;
+    background: var(--destructive-muted, rgba(220, 38, 38, 0.1));
+    border-radius: 0;
+    margin-bottom: 1rem;
+}
+
+.dialog-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}

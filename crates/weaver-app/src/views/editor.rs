@@ -12,7 +12,7 @@ pub fn Editor(entry: Option<String>) -> Element {
     rsx! {
         EditorCss {}
         div { class: "editor-page",
-            MarkdownEditor { entry_uri: entry }
+            MarkdownEditor { entry_uri: entry, target_notebook: None }
         }
     }
 }

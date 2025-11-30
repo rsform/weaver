@@ -1,0 +1,82 @@
+.profile-actions {
+    grid-column: 3;
+    position: sticky;
+    top: 2rem;
+    align-self: flex-start;
+}
+
+.profile-actions-container {
+    padding-top: 2.25rem;
+    padding-right: 5rem;
+}
+
+.profile-actions-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--color-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.profile-actions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.profile-action-link {
+    display: block;
+    text-decoration: none;
+}
+
+/* Match notebook-add-entry styling */
+.profile-actions-list .button {
+    width: 100%;
+    text-align: left;
+    font-size: 0.85rem;
+    color: var(--color-primary);
+    background: transparent;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0;
+    border: 1px solid var(--color-border);
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.profile-actions-list .button:hover {
+    background-color: var(--color-primary);
+    color: var(--color-base);
+}
+
+.profile-actions-list .button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    border-radius: 0;
+}
+
+.profile-actions-list .button:disabled:hover {
+    background: transparent;
+    color: var(--color-primary);
+}
+
+/* Mobile menubar */
+.profile-actions-menubar {
+    display: none;
+    gap: 0.5rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 1rem;
+}
+
+/* Hide sidebar on mobile, show menubar */
+@media (max-width: 1400px) {
+    .profile-actions {
+        display: none;
+    }
+
+    .profile-actions-menubar {
+        display: flex;
+    }
+}

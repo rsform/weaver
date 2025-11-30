@@ -128,4 +128,9 @@ pub mod accordion;
 pub mod button;
 pub mod dialog;
 pub mod editor;
+pub mod entry_actions;
 pub mod input;
+pub mod profile_actions;
+
+pub use entry_actions::EntryActions;
+pub use profile_actions::{ProfileActions, ProfileActionsMenubar};

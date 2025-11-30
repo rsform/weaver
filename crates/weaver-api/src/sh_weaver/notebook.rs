@@ -10,6 +10,10 @@ pub mod book;
 pub mod chapter;
 pub mod colour_scheme;
 pub mod entry;
+pub mod get_entry;
+pub mod get_entry_by_title;
+pub mod get_notebook;
+pub mod get_notebook_by_title;
 pub mod page;
 pub mod theme;
 

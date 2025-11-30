@@ -18,6 +18,8 @@
 )]
 #[serde(rename_all = "camelCase")]
 pub struct Diff<'a> {
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub created_at: std::option::Option<jacquard_common::types::string::Datetime>,
     #[serde(borrow)]
     pub doc: crate::sh_weaver::edit::DocRef<'a>,
     /// An inline diff for for small edit batches. Either this or snapshot must be present to be valid
@@ -82,6 +84,7 @@ pub mod diff_state {
 pub struct DiffBuilder<'a, S: diff_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
+        ::core::option::Option<jacquard_common::types::string::Datetime>,
         ::core::option::Option<crate::sh_weaver::edit::DocRef<'a>>,
         ::core::option::Option<bytes::Bytes>,
         ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
@@ -103,9 +106,28 @@ impl<'a> DiffBuilder<'a, diff_state::Empty> {
     pub fn new() -> Self {
         DiffBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None),
+            __unsafe_private_named: (None, None, None, None, None, None),
             _phantom: ::core::marker::PhantomData,
         }
+    }
+}
+
+impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
+    /// Set the `createdAt` field (optional)
+    pub fn created_at(
+        mut self,
+        value: impl Into<Option<jacquard_common::types::string::Datetime>>,
+    ) -> Self {
+        self.__unsafe_private_named.0 = value.into();
+        self
+    }
+    /// Set the `createdAt` field to an Option value (optional)
+    pub fn maybe_created_at(
+        mut self,
+        value: Option<jacquard_common::types::string::Datetime>,
+    ) -> Self {
+        self.__unsafe_private_named.0 = value;
+        self
     }
 }
 
@@ -119,7 +141,7 @@ where
         mut self,
         value: impl Into<crate::sh_weaver::edit::DocRef<'a>>,
     ) -> DiffBuilder<'a, diff_state::SetDoc<S>> {
-        self.__unsafe_private_named.0 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.1 = ::core::option::Option::Some(value.into());
         DiffBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -131,12 +153,12 @@ where
 impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
     /// Set the `inlineDiff` field (optional)
     pub fn inline_diff(mut self, value: impl Into<Option<bytes::Bytes>>) -> Self {
-        self.__unsafe_private_named.1 = value.into();
+        self.__unsafe_private_named.2 = value.into();
         self
     }
     /// Set the `inlineDiff` field to an Option value (optional)
     pub fn maybe_inline_diff(mut self, value: Option<bytes::Bytes>) -> Self {
-        self.__unsafe_private_named.1 = value;
+        self.__unsafe_private_named.2 = value;
         self
     }
 }
@@ -147,7 +169,7 @@ impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.2 = value.into();
+        self.__unsafe_private_named.3 = value.into();
         self
     }
     /// Set the `prev` field to an Option value (optional)
@@ -155,7 +177,7 @@ impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
         mut self,
         value: Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.2 = value;
+        self.__unsafe_private_named.3 = value;
         self
     }
 }
@@ -170,7 +192,7 @@ where
         mut self,
         value: impl Into<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     ) -> DiffBuilder<'a, diff_state::SetRoot<S>> {
-        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.4 = ::core::option::Option::Some(value.into());
         DiffBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -185,7 +207,7 @@ impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::types::blob::BlobRef<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value.into();
+        self.__unsafe_private_named.5 = value.into();
         self
     }
     /// Set the `snapshot` field to an Option value (optional)
@@ -193,7 +215,7 @@ impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::types::blob::BlobRef<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value;
+        self.__unsafe_private_named.5 = value;
         self
     }
 }
@@ -207,11 +229,12 @@ where
     /// Build the final struct
     pub fn build(self) -> Diff<'a> {
         Diff {
-            doc: self.__unsafe_private_named.0.unwrap(),
-            inline_diff: self.__unsafe_private_named.1,
-            prev: self.__unsafe_private_named.2,
-            root: self.__unsafe_private_named.3.unwrap(),
-            snapshot: self.__unsafe_private_named.4,
+            created_at: self.__unsafe_private_named.0,
+            doc: self.__unsafe_private_named.1.unwrap(),
+            inline_diff: self.__unsafe_private_named.2,
+            prev: self.__unsafe_private_named.3,
+            root: self.__unsafe_private_named.4.unwrap(),
+            snapshot: self.__unsafe_private_named.5,
             extra_data: Default::default(),
         }
     }
@@ -224,11 +247,12 @@ where
         >,
     ) -> Diff<'a> {
         Diff {
-            doc: self.__unsafe_private_named.0.unwrap(),
-            inline_diff: self.__unsafe_private_named.1,
-            prev: self.__unsafe_private_named.2,
-            root: self.__unsafe_private_named.3.unwrap(),
-            snapshot: self.__unsafe_private_named.4,
+            created_at: self.__unsafe_private_named.0,
+            doc: self.__unsafe_private_named.1.unwrap(),
+            inline_diff: self.__unsafe_private_named.2,
+            prev: self.__unsafe_private_named.3,
+            root: self.__unsafe_private_named.4.unwrap(),
+            snapshot: self.__unsafe_private_named.5,
             extra_data: Some(extra_data),
         }
     }
@@ -343,6 +367,25 @@ fn lexicon_doc_sh_weaver_edit_diff() -> ::jacquard_lexicon::lexicon::LexiconDoc<
                         properties: {
                             #[allow(unused_mut)]
                             let mut map = ::std::collections::BTreeMap::new();
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static(
+                                    "createdAt",
+                                ),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
+                                    description: None,
+                                    format: Some(
+                                        ::jacquard_lexicon::lexicon::LexStringFormat::Datetime,
+                                    ),
+                                    default: None,
+                                    min_length: None,
+                                    max_length: None,
+                                    min_graphemes: None,
+                                    max_graphemes: None,
+                                    r#enum: None,
+                                    r#const: None,
+                                    known_values: None,
+                                }),
+                            );
                             map.insert(
                                 ::jacquard_common::smol_str::SmolStr::new_static("doc"),
                                 ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {

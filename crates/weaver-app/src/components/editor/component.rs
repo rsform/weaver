@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use jacquard::IntoStatic;
 use jacquard::cowstr::ToCowStr;
 use jacquard::identity::resolver::IdentityResolver;
+use jacquard::smol_str::SmolStr;
 use jacquard::types::blob::BlobRef;
 use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::embed::images::Image;
@@ -14,10 +15,10 @@ use crate::components::editor::ReportButton;
 use crate::fetch::Fetcher;
 
 use super::actions::{
-    execute_action, handle_keydown_with_bindings, EditorAction, Key, KeyCombo, KeybindingConfig,
-    KeydownResult, Range,
+    EditorAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Range, execute_action,
+    handle_keydown_with_bindings,
 };
-use super::beforeinput::{handle_beforeinput, BeforeInputContext, BeforeInputResult, InputType};
+use super::beforeinput::{BeforeInputContext, BeforeInputResult, InputType, handle_beforeinput};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::beforeinput::{get_data_from_event, get_target_range_from_event};
 use super::document::{CompositionState, EditorDocument, LoadedDocState};
@@ -57,20 +58,30 @@ enum LoadResult {
 /// # Props
 /// - `initial_content`: Optional initial markdown content (for new entries)
 /// - `entry_uri`: Optional AT-URI of an existing entry to edit
+/// - `target_notebook`: Optional notebook title to add the entry to when publishing
 #[component]
-pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>) -> Element {
+pub fn MarkdownEditor(
+    initial_content: Option<String>,
+    entry_uri: Option<String>,
+    target_notebook: Option<SmolStr>,
+) -> Element {
     let fetcher = use_context::<Fetcher>();
 
     // Determine draft key - use entry URI if editing existing, otherwise generate TID
     let draft_key = use_hook(|| {
         entry_uri.clone().unwrap_or_else(|| {
-            format!("new:{}", jacquard::types::tid::Ticker::new().next(None).as_str())
+            format!(
+                "new:{}",
+                jacquard::types::tid::Ticker::new().next(None).as_str()
+            )
         })
     });
 
     // Parse entry URI once
     let parsed_uri = entry_uri.as_ref().and_then(|s| {
-        jacquard::types::string::AtUri::new(s).ok().map(|u| u.into_static())
+        jacquard::types::string::AtUri::new(s)
+            .ok()
+            .map(|u| u.into_static())
     });
 
     // Clone draft_key for render (resource closure moves it)
@@ -112,7 +123,7 @@ pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>
                                     entry_authority
                                 );
                                 return LoadResult::Failed(
-                                    "You can only edit your own entries".to_string()
+                                    "You can only edit your own entries".to_string(),
                                 );
                             }
                         }
@@ -215,10 +226,7 @@ pub fn MarkdownEditor(initial_content: Option<String>, entry_uri: Option<String>
 /// - PDS sync with auto-save
 /// - Keyboard shortcuts (Ctrl+B for bold, Ctrl+I for italic)
 #[component]
-fn MarkdownEditorInner(
-    draft_key: String,
-    loaded_state: LoadedDocState,
-) -> Element {
+fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Element {
     // Context for authenticated API calls
     let fetcher = use_context::<Fetcher>();
     let auth_state = use_context::<Signal<AuthState>>();
@@ -353,6 +361,10 @@ fn MarkdownEditorInner(
     // Track last saved frontiers to detect changes (peek-only, no subscriptions)
     let mut last_saved_frontiers: Signal<Option<loro::Frontiers>> = use_signal(|| None);
 
+    // Store interval handle so it's dropped when component unmounts (prevents panic)
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let mut interval_holder: Signal<Option<gloo_timers::callback::Interval>> = use_signal(|| None);
+
     // Auto-save with periodic check (no reactive dependency to avoid loops)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let doc_for_autosave = document.clone();
@@ -383,7 +395,8 @@ fn MarkdownEditorInner(
                 last_saved_frontiers.set(Some(current_frontiers));
             }
         });
-        interval.forget();
+        // Store in signal instead of forget - interval drops when component unmounts
+        interval_holder.set(Some(interval));
     });
 
     // Set up beforeinput listener for all text input handling.
@@ -466,7 +479,9 @@ fn MarkdownEditorInner(
                                 if let Some(window) = web_sys::window() {
                                     if let Some(doc) = window.document() {
                                         if let Some(elem) = doc.get_element_by_id(editor_id) {
-                                            if let Some(html_elem) = elem.dyn_ref::<web_sys::HtmlElement>() {
+                                            if let Some(html_elem) =
+                                                elem.dyn_ref::<web_sys::HtmlElement>()
+                                            {
                                                 let _ = html_elem.blur();
                                                 let _ = html_elem.focus();
                                             }
@@ -817,14 +832,14 @@ fn MarkdownEditorInner(
                             if plat.android && evt.key() == Key::Enter {
                                 tracing::debug!("Android: handling Enter in keypress");
                                 evt.prevent_default();
-                                
+
                                 // Get current range
                                 let range = if let Some(sel) = *doc.selection.read() {
                                     Range::new(sel.anchor.min(sel.head), sel.anchor.max(sel.head))
                                 } else {
                                     Range::caret(doc.cursor.read().offset)
                                 };
-                                
+
                                 let action = EditorAction::InsertParagraph { range };
                                 execute_action(&mut doc, &action);
                             }

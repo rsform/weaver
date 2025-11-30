@@ -1,14 +1,16 @@
 #![allow(non_snake_case)]
 
+use crate::Route;
 #[cfg(feature = "server")]
 use crate::blobcache::BlobCache;
 use crate::{
+    components::EntryActions,
     components::avatar::{Avatar, AvatarImage},
     data::use_handle,
 };
-
-use crate::Route;
 use dioxus::prelude::*;
+use jacquard::IntoStatic;
+use jacquard::types::aturi::AtUri;
 
 const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
 
@@ -66,29 +68,31 @@ pub fn EntryPage(
     }));
 
     // Handle blob caching when entry data is available
-    match &*entry.read() {
+    match &*entry.read_unchecked() {
         Some((book_entry_view, entry_record)) => {
             if let Some(embeds) = &entry_record.embeds {
                 if let Some(_images) = &embeds.images {
                     // Register blob mappings with service worker (client-side only)
-                    #[cfg(all(
-                        target_family = "wasm",
-                        target_os = "unknown",
-                        not(feature = "fullstack-server")
-                    ))]
-                    {
-                        let fetcher = fetcher.clone();
-                        let images = images.clone();
-                        spawn(async move {
-                            let _ = crate::service_worker::register_entry_blobs(
-                                &ident(),
-                                book_title().as_str(),
-                                &_images,
-                                &fetcher,
-                            )
-                            .await;
-                        });
-                    }
+                    // #[cfg(all(
+                    //     target_family = "wasm",
+                    //     target_os = "unknown",
+                    //     not(feature = "fullstack-server")
+                    // ))]
+                    // {
+                    //     let fetcher = fetcher.clone();
+                    //     let images = _images.clone().into_static();
+                    //     spawn(async move {
+                    //         let images = images.clone();
+                    //         let fetcher = fetcher.clone();
+                    //         let _ = crate::service_worker::register_entry_blobs(
+                    //             &ident(),
+                    //             book_title().as_str(),
+                    //             &_images,
+                    //             &fetcher,
+                    //         )
+                    //         .await;
+                    //     });
+                    // }
                 }
             }
             rsx! { EntryPageView {
@@ -143,7 +147,10 @@ fn EntryPageView(
                 // Metadata header
                 EntryMetadata {
                     entry_view: entry_view.clone(),
-                    created_at: entry_record().created_at.clone()
+                    created_at: entry_record().created_at.clone(),
+                    entry_uri: entry_view.uri.clone().into_static(),
+                    book_title: Some(book_title()),
+                    ident: ident()
                 }
 
                 // Rendered markdown
@@ -176,8 +183,18 @@ pub fn EntryCard(
     ident: AtIdentifier<'static>,
 ) -> Element {
     use crate::Route;
+    use crate::auth::AuthState;
     use jacquard::from_data;
     use weaver_api::sh_weaver::notebook::entry::Entry;
+
+    let mut hidden = use_signal(|| false);
+
+    // If removed from notebook, hide this card
+    if hidden() {
+        return rsx! {};
+    }
+
+    let auth_state = use_context::<Signal<AuthState>>();
 
     let entry_view = &entry.entry;
     let title = entry_view
@@ -191,6 +208,17 @@ pub fn EntryCard(
         .as_ref()
         .format("%B %d, %Y")
         .to_string();
+
+    // Check ownership
+    let is_owner = {
+        let current_did = auth_state.read().did.clone();
+        match (&current_did, &ident) {
+            (Some(did), AtIdentifier::Did(ident_did)) => *did == *ident_did,
+            _ => false,
+        }
+    };
+
+    let entry_uri = entry_view.uri.clone().into_static();
 
     // Only show author if notebook has multiple authors
     let show_author = author_count > 1;
@@ -210,85 +238,86 @@ pub fn EntryCard(
 
     rsx! {
         div { class: "entry-card",
-            Link {
-                to: Route::EntryPage {
-                    ident: ident,
-                    book_title: book_title.clone(),
-                    title: title.to_string().into()
-                },
-                class: "entry-card-link",
-
-
-
-                div { class: "entry-card-meta",
-                    div { class: "entry-card-header",
-
+            div { class: "entry-card-meta",
+                div { class: "entry-card-header",
+                    Link {
+                        to: Route::EntryPage {
+                            ident: ident.clone(),
+                            book_title: book_title.clone(),
+                            title: title.to_string().into()
+                        },
+                        class: "entry-card-title-link",
                         h3 { class: "entry-card-title", "{title}" }
-                        div { class: "entry-card-date",
-                            time { datetime: "{entry_view.indexed_at.as_str()}", "{formatted_date}" }
+                    }
+                    div { class: "entry-card-date",
+                        time { datetime: "{entry_view.indexed_at.as_str()}", "{formatted_date}" }
+                    }
+                    if is_owner {
+                        EntryActions {
+                            entry_uri,
+                            entry_title: title.to_string(),
+                            in_notebook: true,
+                            notebook_title: Some(book_title.clone()),
+                            on_removed: Some(EventHandler::new(move |_| hidden.set(true)))
                         }
                     }
-                    if let Some(author) = first_author {
-                        div { class: "entry-card-author",
-                            {
-                                use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+                }
+                if let Some(author) = first_author {
+                    div { class: "entry-card-author",
+                        {
+                            use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 
-                                match &author.record.inner {
-                                    ProfileDataViewInner::ProfileView(profile) => {
-                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
-                                         let handle = profile.handle.clone();
-                                        rsx! {
-                                            if let Some(ref avatar_url) = profile.avatar {
-                                                Avatar {
-                                                    AvatarImage { src: avatar_url.as_ref() }
-                                                }
+                            match &author.record.inner {
+                                ProfileDataViewInner::ProfileView(profile) => {
+                                    let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
+                                    let handle = profile.handle.clone();
+                                    rsx! {
+                                        if let Some(ref avatar_url) = profile.avatar {
+                                            Avatar {
+                                                AvatarImage { src: avatar_url.as_ref() }
                                             }
-                                            span { class: "author-name", "{display_name}" }
-                                            span { class: "meta-label", "@{handle}" }
                                         }
+                                        span { class: "author-name", "{display_name}" }
+                                        span { class: "meta-label", "@{handle}" }
                                     }
-                                    ProfileDataViewInner::ProfileViewDetailed(profile) => {
-                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
-                                         let handle = profile.handle.clone();
-                                        rsx! {
-                                            if let Some(ref avatar_url) = profile.avatar {
-                                                Avatar {
-                                                    AvatarImage { src: avatar_url.as_ref() }
-                                                }
+                                }
+                                ProfileDataViewInner::ProfileViewDetailed(profile) => {
+                                    let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
+                                    let handle = profile.handle.clone();
+                                    rsx! {
+                                        if let Some(ref avatar_url) = profile.avatar {
+                                            Avatar {
+                                                AvatarImage { src: avatar_url.as_ref() }
                                             }
-                                            span { class: "author-name", "{display_name}" }
-                                            span { class: "meta-label", "@{handle}" }
                                         }
+                                        span { class: "author-name", "{display_name}" }
+                                        span { class: "meta-label", "@{handle}" }
                                     }
-                                    ProfileDataViewInner::TangledProfileView(profile) => {
-                                        rsx! {
-                                            span { class: "author-name", "@{profile.handle.as_ref()}" }
-                                        }
+                                }
+                                ProfileDataViewInner::TangledProfileView(profile) => {
+                                    rsx! {
+                                        span { class: "author-name", "@{profile.handle.as_ref()}" }
                                     }
-                                    _ => {
-                                        rsx! {
-                                            span { class: "author-name", "Unknown" }
-                                        }
+                                }
+                                _ => {
+                                    rsx! {
+                                        span { class: "author-name", "Unknown" }
                                     }
                                 }
                             }
                         }
                     }
-
-
                 }
+            }
 
-
-
-                if let Some(ref html) = preview_html {
-                    div { class: "entry-card-preview", dangerous_inner_html: "{html}" }
-                }
-                if let Some(ref tags) = entry_view.tags {
-                    if !tags.is_empty() {
-                        div { class: "entry-card-tags",
-                            for tag in tags.iter() {
-                                span { class: "entry-card-tag", "{tag}" }
-                            }
+            if let Some(ref html) = preview_html {
+                div { class: "entry-card-preview", dangerous_inner_html: "{html}" }
+            }
+            if let Some(ref tags) = entry_view.tags {
+                if !tags.is_empty() {
+                    div { class: "entry-card-tags",
+                        for tag in tags.iter() {
+                            span { class: "entry-card-tag", "{tag}" }
                         }
                     }
                 }
@@ -299,18 +328,47 @@ pub fn EntryCard(
 
 /// Metadata header showing title, authors, date, tags
 #[component]
-fn EntryMetadata(entry_view: EntryView<'static>, created_at: Datetime) -> Element {
+fn EntryMetadata(
+    entry_view: EntryView<'static>,
+    created_at: Datetime,
+    entry_uri: AtUri<'static>,
+    book_title: Option<SmolStr>,
+    ident: AtIdentifier<'static>,
+) -> Element {
+    let navigator = use_navigator();
+
     let title = entry_view
         .title
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
 
-    //let indexed_at_chrono = entry_view.indexed_at.as_ref();
+    let entry_title = title.to_string();
+
+    // Navigate back to notebook when entry is removed
+    let nav_book_title = book_title.clone();
+    let nav_ident = ident.clone();
+    let on_removed = move |_| {
+        if let Some(ref title) = nav_book_title {
+            navigator.push(Route::NotebookIndex {
+                ident: nav_ident.clone(),
+                book_title: title.clone(),
+            });
+        }
+    };
 
     rsx! {
         header { class: "entry-metadata",
-            h1 { class: "entry-title", "{title}" }
+            div { class: "entry-header-row",
+                h1 { class: "entry-title", "{title}" }
+                EntryActions {
+                    entry_uri: entry_uri.clone(),
+                    entry_title,
+                    in_notebook: book_title.is_some(),
+                    notebook_title: book_title.clone(),
+                    on_removed: Some(EventHandler::new(on_removed))
+                }
+            }
 
             div { class: "entry-meta-info",
                 // Authors

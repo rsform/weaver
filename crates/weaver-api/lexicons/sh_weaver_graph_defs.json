@@ -1,0 +1,14 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.graph.defs",
+  "defs": {
+    "curatelist": {
+      "type": "token",
+      "description": "A curated collection of notebooks/entries for sharing."
+    },
+    "readinglist": {
+      "type": "token",
+      "description": "A personal reading list."
+    }
+  }
+}
