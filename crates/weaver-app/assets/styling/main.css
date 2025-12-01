@@ -40,3 +40,46 @@ body {
     color: var(--color-subtle);
     opacity: 0.5;
 }
+
+a {{
+    color: var(--color-link);
+    text-decoration: none;
+}}
+
+
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: normal;
+    font-weight: normal;
+    src: url("/assets/IoskeleyMono-Regular.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: normal;
+    font-weight: lighter;
+    src: url("/assets/IoskeleyMono-Light.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: italic;
+    font-weight: lighter;
+    src: url("/assets/IoskeleyMono-LightItalic.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: normal;
+    font-weight: bold;
+    src: url("/assets/IoskeleyMono-Bold.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: italic;
+    font-weight: normal;
+    src: url("/assets/IoskeleyMono-Italic.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Ioskeley Mono";
+    font-style: italic;
+    font-weight: bold;
+    src: url("/assets/IoskeleyMono-BoldItalic.woff2") format("woff2");
+}

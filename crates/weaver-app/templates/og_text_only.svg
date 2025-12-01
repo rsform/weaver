@@ -1,0 +1,22 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#191724"/>
+
+  <!-- Entry title (large, wrapped) -->
+  {% for line in title_lines %}
+  <text x="60" y="{{ 140 + loop.index0 * 56 }}" fill="#c4a7e7" font-family="IBM Plex Sans, sans-serif" font-size="64" font-weight="800">{{ line }}</text>
+  {% endfor %}
+
+  <!-- Notebook title + Author -->
+  <text x="60" y="320" fill="#ebbcba" font-family="IBM Plex Sans, sans-serif" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
+
+  <!-- Content snippet -->
+  {% for line in content_lines %}
+  <text x="60" y="{{ 380 + loop.index0 * 36 }}" fill="#e0def4" font-family="IBM Plex Sans, sans-serif" font-size="28">{{ line }}</text>
+  {% endfor %}
+
+
+
+  <!-- Weaver branding -->
+  <text x="60" y="590" fill="#908caa" font-family="IBM Plex Sans, sans-serif" font-size="24">weaver.sh</text>
+</svg>

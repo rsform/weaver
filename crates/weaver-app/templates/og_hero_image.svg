@@ -1,0 +1,18 @@
+<svg width="1200" height="630" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <!-- Hero image (upper portion) -->
+  <image xlink:href="{{ hero_image_data }}" x="0" y="0" width="1200" height="420" preserveAspectRatio="xMidYMid slice"/>
+
+  <!-- Bottom panel with theme colors -->
+  <rect x="0" y="420" width="1200" height="210" fill="#191724"/>
+
+  <!-- Title -->
+  {% for line in title_lines %}
+  <text x="60" y="{{ 480 + loop.index0 * 56 }}" fill="#c4a7e7" font-family="IBM Plex Sans, sans-serif" font-size="52" font-weight="900">{{ line }}</text>
+  {% endfor %}
+
+  <!-- Notebook + Author row -->
+  <text x="60" y="600" fill="#ebbcba" font-family="IBM Plex Sans, sans-serif" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
+
+  <!-- Weaver branding -->
+  <text x="1080" y="600" fill="#908caa" font-family="IBM Plex Sans, sans-serif" font-size="20">weaver.sh</text>
+</svg>

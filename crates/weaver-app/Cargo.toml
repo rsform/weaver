@@ -14,7 +14,7 @@ no-app-index = []
 web = ["dioxus/web", "dioxus-primitives/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
-server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum"]
+server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum", "dep:resvg", "dep:usvg", "dep:tiny-skia", "dep:textwrap", "dep:askama", "dep:fontdb"]
 
 
 [dependencies]
@@ -55,6 +55,14 @@ markdown-weaver-escape = { workspace = true }
 web-time = "1.1"
 urlencoding = "2.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry"] }
+
+# OG image generation (server-only)
+resvg = { version = "0.44", optional = true }
+usvg = { version = "0.44", optional = true }
+tiny-skia = { version = "0.11", optional = true }
+textwrap = { version = "0.16", optional = true }
+askama = { version = "0.12", optional = true }
+fontdb = { version = "0.22", optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 webbrowser = "1.0.6"

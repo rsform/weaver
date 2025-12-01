@@ -117,6 +117,38 @@ pub fn EntryPage(
     }
 }
 
+/// Extract a plain-text preview from markdown content (first ~160 chars)
+fn extract_preview(content: &str, max_len: usize) -> String {
+    // Simple extraction: skip markdown syntax, get plain text
+    let plain: String = content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            // Skip headings, images, links, code blocks
+            !trimmed.starts_with('#')
+                && !trimmed.starts_with('!')
+                && !trimmed.starts_with("```")
+                && !trimmed.is_empty()
+        })
+        .take(5)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    // Clean up markdown inline syntax
+    let cleaned = plain
+        .replace("**", "")
+        .replace("__", "")
+        .replace('*', "")
+        .replace('_', "")
+        .replace('`', "");
+
+    if cleaned.len() <= max_len {
+        cleaned
+    } else {
+        format!("{}...", &cleaned[..max_len - 3])
+    }
+}
+
 /// Full entry page with metadata, content, and navigation
 #[component]
 fn EntryPageView(
@@ -133,11 +165,75 @@ fn EntryPageView(
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
 
+    // Get entry path for URLs
+    let entry_path = entry_view
+        .path
+        .as_ref()
+        .map(|p| p.as_ref().to_string())
+        .unwrap_or_else(|| title.to_string());
+
+    // Get author handle
+    let author_handle = entry_view
+        .authors
+        .first()
+        .map(|a| {
+            use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+            match &a.record.inner {
+                ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
+                ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
+                ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_string(),
+                _ => "unknown".to_string(),
+            }
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Build OG URLs
+    let base = if crate::env::WEAVER_APP_ENV == "dev" {
+        format!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
+    } else {
+        crate::env::WEAVER_APP_HOST.to_string()
+    };
+    let canonical_url = format!(
+        "{}/{}/{}/{}",
+        base,
+        ident(),
+        book_title(),
+        entry_path
+    );
+    let og_image_url = format!(
+        "{}/og/{}/{}/{}.png",
+        base,
+        ident(),
+        book_title(),
+        entry_path
+    );
+
+    // Extract description preview from content
+    let description = extract_preview(entry_record().content.as_ref(), 160);
+
+    // Full page title
+    let page_title = format!("{} | {} | Weaver", title, book_title());
+
     tracing::info!("Entry: {book_title} - {title}");
 
     rsx! {
-        // Set page title
-        document::Title { "{title}" }
+        // Page title and OG meta tags
+        document::Title { "{page_title}" }
+
+        // OpenGraph tags
+        document::Meta { property: "og:title", content: "{title}" }
+        document::Meta { property: "og:description", content: "{description}" }
+        document::Meta { property: "og:image", content: "{og_image_url}" }
+        document::Meta { property: "og:type", content: "article" }
+        document::Meta { property: "og:url", content: "{canonical_url}" }
+        document::Meta { property: "og:site_name", content: "Weaver" }
+
+        // Twitter Card tags
+        document::Meta { name: "twitter:card", content: "summary_large_image" }
+        document::Meta { name: "twitter:title", content: "{title}" }
+        document::Meta { name: "twitter:description", content: "{description}" }
+        document::Meta { name: "twitter:image", content: "{og_image_url}" }
+        document::Meta { name: "twitter:creator", content: "@{author_handle}" }
         document::Link { rel: "stylesheet", href: ENTRY_CSS }
 
         div { class: "entry-page-layout",

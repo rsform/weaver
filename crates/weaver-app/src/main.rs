@@ -31,6 +31,8 @@ mod auth;
 #[cfg(feature = "server")]
 mod blobcache;
 mod cache_impl;
+#[cfg(feature = "server")]
+mod og;
 /// Define a components module that contains all shared components for our app.
 mod components;
 mod config;
@@ -419,6 +421,170 @@ pub async fn image_entry(
         Ok(bytes) => Ok(build_image_response(bytes)),
         Err(_) => Ok(image_not_found()),
     }
+}
+
+// Route: /og/{ident}/{book_title}/{entry_title} - OpenGraph image for entry
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+#[get("/og/{ident}/{book_title}/{entry_title}", fetcher: Extension<Arc<fetch::Fetcher>>)]
+pub async fn og_image(
+    ident: SmolStr,
+    book_title: SmolStr,
+    entry_title: SmolStr,
+) -> Result<axum::response::Response> {
+    use axum::{
+        http::{header::{CACHE_CONTROL, CONTENT_TYPE}, StatusCode},
+        response::IntoResponse,
+    };
+    use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+    use weaver_api::sh_weaver::notebook::Title;
+
+    // Strip .png extension if present
+    let entry_title = entry_title.strip_suffix(".png").unwrap_or(&entry_title);
+
+    let Ok(at_ident) = AtIdentifier::new_owned(ident.clone()) else {
+        return Ok((StatusCode::BAD_REQUEST, "Invalid identifier").into_response());
+    };
+
+    // Fetch entry data
+    let entry_result = fetcher.get_entry(at_ident.clone(), book_title.clone(), entry_title.into()).await;
+
+    let arc_data = match entry_result {
+        Ok(Some(data)) => data,
+        Ok(None) => return Ok((StatusCode::NOT_FOUND, "Entry not found").into_response()),
+        Err(e) => {
+            tracing::error!("Failed to fetch entry for OG image: {:?}", e);
+            return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch entry").into_response());
+        }
+    };
+    let (book_entry, entry) = arc_data.as_ref();
+
+    // Build cache key using entry CID
+    let entry_cid = book_entry.entry.cid.as_ref();
+    let cache_key = og::cache_key(&ident, &book_title, entry_title, entry_cid);
+
+    // Check cache first
+    if let Some(cached) = og::get_cached(&cache_key) {
+        return Ok((
+            [
+                (CONTENT_TYPE, "image/png"),
+                (CACHE_CONTROL, "public, max-age=3600"),
+            ],
+            cached,
+        ).into_response());
+    }
+
+    // Extract metadata
+    let title: &str = entry.title.as_ref();
+
+    // Use book_title from URL - it's the notebook slug/title
+    // TODO: Could fetch actual notebook record to get display title
+    let notebook_title_str: String = book_title.to_string();
+
+    let author_handle = book_entry.entry.authors.first()
+        .map(|a| match &a.record.inner {
+            ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
+            ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
+            ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_string(),
+            _ => "unknown".to_string(),
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Check for hero image in embeds
+    let hero_image_data = if let Some(ref embeds) = entry.embeds {
+        if let Some(ref images) = embeds.images {
+            if let Some(first_image) = images.images.first() {
+                // Get DID from the entry URI
+                let did = book_entry.entry.uri.authority();
+
+                let blob = first_image.image.blob();
+                let cid = blob.cid();
+                let mime = blob.mime_type.as_ref();
+                let format = mime.strip_prefix("image/").unwrap_or("jpeg");
+
+                // Build CDN URL
+                let cdn_url = format!(
+                    "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@{}",
+                    did.as_str(), cid.as_ref(), format
+                );
+
+                // Fetch the image
+                match reqwest::get(&cdn_url).await {
+                    Ok(response) if response.status().is_success() => {
+                        match response.bytes().await {
+                            Ok(bytes) => {
+                                use base64::Engine;
+                                let base64_str = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                Some(format!("data:{};base64,{}", mime, base64_str))
+                            }
+                            Err(_) => None
+                        }
+                    }
+                    _ => None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Extract content snippet - render markdown to HTML then strip tags
+    let content_snippet: String = {
+        let parser = markdown_weaver::Parser::new(entry.content.as_ref());
+        let mut html = String::new();
+        markdown_weaver::html::push_html(&mut html, parser);
+        // Strip HTML tags
+        regex_lite::Regex::new(r"<[^>]+>")
+            .unwrap()
+            .replace_all(&html, "")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace('\n', " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+
+    // Generate image - hero or text-only based on available data
+    let png_bytes = if let Some(ref hero_data) = hero_image_data {
+        match og::generate_hero_image(hero_data, title, &notebook_title_str, &author_handle) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::error!("Failed to generate hero OG image: {:?}, falling back to text", e);
+                og::generate_text_only(title, &content_snippet, &notebook_title_str, &author_handle)
+                    .map_err(|e| {
+                        tracing::error!("Failed to generate text OG image: {:?}", e);
+                    })
+                    .ok()
+                    .unwrap_or_default()
+            }
+        }
+    } else {
+        match og::generate_text_only(title, &content_snippet, &notebook_title_str, &author_handle) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::error!("Failed to generate OG image: {:?}", e);
+                return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate image").into_response());
+            }
+        }
+    };
+
+    // Cache the generated image
+    og::cache_image(cache_key, png_bytes.clone());
+
+    Ok((
+        [
+            (CONTENT_TYPE, "image/png"),
+            (CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        png_bytes,
+    ).into_response())
 }
 
 // #[server(endpoint = "static_routes", output = server_fn::codec::Json)]
