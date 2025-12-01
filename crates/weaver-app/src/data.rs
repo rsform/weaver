@@ -45,37 +45,47 @@ pub fn use_entry_data(
     let res = use_server_future(use_reactive!(|(ident, book_title, title)| {
         let fetcher = fetcher.clone();
         async move {
-            if let Some(entry) = fetcher
+            let fetch_result = fetcher
                 .get_entry(ident(), book_title(), title())
-                .await
-                .ok()
-                .flatten()
-            {
-                let (_book_entry_view, entry_record) = (&entry.0, &entry.1);
-                if let Some(embeds) = &entry_record.embeds {
-                    if let Some(images) = &embeds.images {
-                        let ident_val = ident.clone();
-                        let images = images.clone();
-                        for image in &images.images {
-                            use jacquard::smol_str::ToSmolStr;
+                .await;
 
-                            let cid = image.image.blob().cid();
-                            cache_blob(
-                                ident_val.to_smolstr(),
-                                cid.to_smolstr(),
-                                image.name.as_ref().map(|n| n.to_smolstr()),
-                            )
-                            .await
-                            .ok();
+            match fetch_result {
+                Ok(Some(entry)) => {
+                    let (_book_entry_view, entry_record) = (&entry.0, &entry.1);
+                    if let Some(embeds) = &entry_record.embeds {
+                        if let Some(images) = &embeds.images {
+                            let ident_val = ident.clone();
+                            let images = images.clone();
+                            for image in &images.images {
+                                use jacquard::smol_str::ToSmolStr;
+
+                                let cid = image.image.blob().cid();
+                                cache_blob(
+                                    ident_val.to_smolstr(),
+                                    cid.to_smolstr(),
+                                    image.name.as_ref().map(|n| n.to_smolstr()),
+                                )
+                                .await
+                                .ok();
+                            }
                         }
                     }
+                    Some((
+                        serde_json::to_value(entry.0.clone()).unwrap(),
+                        serde_json::to_value(entry.1.clone()).unwrap(),
+                    ))
                 }
-                Some((
-                    serde_json::to_value(entry.0.clone()).unwrap(),
-                    serde_json::to_value(entry.1.clone()).unwrap(),
-                ))
-            } else {
-                None
+                Ok(None) => None,
+                Err(e) => {
+                    tracing::error!(
+                        "[use_entry_data] fetch error for {}/{}/{}: {:?}",
+                        ident(),
+                        book_title(),
+                        title(),
+                        e
+                    );
+                    None
+                }
             }
         }
     }));
@@ -86,7 +96,6 @@ pub fn use_entry_data(
 
             let book_entry = from_json_value::<BookEntryView>(ev.clone()).unwrap();
             let entry = from_json_value::<Entry>(e.clone()).unwrap();
-
             Some((book_entry, entry))
         } else {
             None

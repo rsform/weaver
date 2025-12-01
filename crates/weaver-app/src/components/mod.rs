@@ -134,3 +134,4 @@ pub mod profile_actions;
 
 pub use entry_actions::EntryActions;
 pub use profile_actions::{ProfileActions, ProfileActionsMenubar};
+pub mod toast;

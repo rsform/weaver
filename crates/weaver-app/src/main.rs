@@ -132,7 +132,7 @@ fn main() {
         let console_level = if cfg!(debug_assertions) {
             Level::DEBUG
         } else {
-            Level::INFO
+            Level::DEBUG
         };
 
         let wasm_layer = tracing_wasm::WASMLayer::new(
@@ -226,42 +226,16 @@ fn App() -> Element {
     let auth_state = use_signal(|| AuthState::default());
     #[allow(unused)]
     let auth_state = use_context_provider(|| auth_state);
-    #[cfg(all(
-        target_family = "wasm",
-        target_os = "unknown",
-        feature = "fullstack-server"
-    ))]
-    {
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    let restore_result = {
         let fetcher = fetcher.clone();
-        use_effect(move || {
+        use_resource(move || {
             let fetcher = fetcher.clone();
-            use_future(move || {
-                let fetcher = fetcher.clone();
-                async move {
-                    if let Err(e) = auth::restore_session(fetcher, auth_state).await {
-                        tracing::debug!("Session restoration failed: {}", e);
-                    }
-                }
-            });
-        });
-    }
-
-    #[cfg(all(
-        target_family = "wasm",
-        target_os = "unknown",
-        not(feature = "fullstack-server")
-    ))]
-    {
-        let fetcher = fetcher.clone();
-        use_future(move || {
-            let fetcher = fetcher.clone();
-            async move {
-                if let Err(e) = auth::restore_session(fetcher, auth_state).await {
-                    tracing::debug!("Session restoration failed: {}", e);
-                }
-            }
-        });
-    }
+            async move { auth::restore_session(fetcher, auth_state).await }
+        })
+    };
+    #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+    let restore_result: Option<auth::RestoreResult> = None;
 
     #[cfg(all(
         target_family = "wasm",
@@ -278,6 +252,9 @@ fn App() -> Element {
         });
     }
 
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use_context_provider(|| restore_result);
+
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
@@ -286,7 +263,9 @@ fn App() -> Element {
         document::Link { rel: "preconnect", href: "https://fonts.gstatic.com" }
 
         document::Link { rel: "stylesheet", href: THEME_DEFAULTS_CSS }
-        Router::<Route> {}
+        components::toast::ToastProvider {
+            Router::<Route> {}
+        }
     }
 }
 

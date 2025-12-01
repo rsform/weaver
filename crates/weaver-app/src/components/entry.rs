@@ -62,13 +62,24 @@ pub fn EntryPage(
     #[cfg(feature = "fullstack-server")]
     use_effect(use_reactive!(|route| {
         if route != last_route() {
+            tracing::debug!("[EntryPage] route changed, restarting resource");
             entry_res.restart();
             last_route.set(route.clone());
         }
     }));
 
+    // Debug: log route params and entry state
+    tracing::debug!(
+        "[EntryPage] route params: ident={:?}, book_title={:?}, title={:?}",
+        ident(),
+        book_title(),
+        title()
+    );
+    tracing::debug!("[EntryPage] rendering, entry.is_some={}", entry.read().is_some());
+
     // Handle blob caching when entry data is available
-    match &*entry.read_unchecked() {
+    // Use read() instead of read_unchecked() for proper reactive tracking
+    match &*entry.read() {
         Some((book_entry_view, entry_record)) => {
             if let Some(embeds) = &entry_record.embeds {
                 if let Some(_images) = &embeds.images {
@@ -202,6 +213,17 @@ pub fn EntryCard(
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
+
+    // Get path from view for URL, fallback to title
+    let entry_path = entry_view
+        .path
+        .as_ref()
+        .map(|p| p.as_ref().to_string())
+        .unwrap_or_else(|| title.to_string());
+
+    // Parse entry record for content preview
+    let parsed_entry = from_data::<Entry>(&entry_view.record).ok();
+
     // Format date
     let formatted_date = entry_view
         .indexed_at
@@ -229,7 +251,7 @@ pub fn EntryCard(
     };
 
     // Render preview from entry content
-    let preview_html = from_data::<Entry>(&entry_view.record).ok().map(|entry| {
+    let preview_html = parsed_entry.as_ref().map(|entry| {
         let parser = markdown_weaver::Parser::new(&entry.content);
         let mut html_buf = String::new();
         markdown_weaver::html::push_html(&mut html_buf, parser);
@@ -244,7 +266,7 @@ pub fn EntryCard(
                         to: Route::EntryPage {
                             ident: ident.clone(),
                             book_title: book_title.clone(),
-                            title: title.to_string().into()
+                            title: entry_path.clone().into()
                         },
                         class: "entry-card-title-link",
                         h3 { class: "entry-card-title", "{title}" }
@@ -477,6 +499,14 @@ fn NavButton(
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
+
+    // Get path from view for URL, fallback to title
+    let entry_path = entry
+        .path
+        .as_ref()
+        .map(|p| p.as_ref().to_string())
+        .unwrap_or_else(|| entry_title.to_string());
+
     let arrow = if direction == "prev" { "←" } else { "→" };
 
     rsx! {
@@ -484,7 +514,7 @@ fn NavButton(
             to: Route::EntryPage {
                 ident: ident.clone(),
                 book_title: book_title.clone(),
-                title: entry_title.to_string().into()
+                title: entry_path.into()
             },
             class: "nav-button nav-button-{direction}",
             div { class: "nav-arrow", "{arrow}" }

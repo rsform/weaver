@@ -66,7 +66,7 @@ impl Client {
 }
 
 impl HttpClient for Client {
-    type Error = reqwest::Error;
+    type Error = IdentityError;
 
     #[cfg(not(target_arch = "wasm32"))]
     fn send_http(
@@ -77,7 +77,6 @@ impl HttpClient for Client {
         self.oauth_client.client.send_http(request)
     }
 
-    #[doc = " Send an HTTP request and return the response."]
     #[cfg(target_arch = "wasm32")]
     fn send_http(
         &self,
@@ -388,7 +387,7 @@ impl Fetcher {
             let stored = Arc::new((notebook, entries));
             Ok(Some(stored))
         } else {
-            Ok(None)
+            Err(dioxus::CapturedError::from_display("Notebook not found"))
         }
     }
 
@@ -409,10 +408,10 @@ impl Fetcher {
                 let stored = Arc::new(entry);
                 Ok(Some(stored))
             } else {
-                Ok(None)
+                Err(dioxus::CapturedError::from_display("Entry not found"))
             }
         } else {
-            Ok(None)
+            Err(dioxus::CapturedError::from_display("Notebook not found"))
         }
     }
 
@@ -542,7 +541,7 @@ impl Fetcher {
 
             Ok(Some(book_entries))
         } else {
-            Ok(None)
+            Err(dioxus::CapturedError::from_display("Notebook not found"))
         }
     }
 
@@ -863,10 +862,8 @@ impl Fetcher {
 // }
 
 impl HttpClient for Fetcher {
-    #[doc = " Error type returned by the HTTP client"]
-    type Error = reqwest::Error;
+    type Error = IdentityError;
 
-    #[doc = " Send an HTTP request and return the response."]
     #[cfg(not(target_arch = "wasm32"))]
     fn send_http(
         &self,
@@ -879,7 +876,6 @@ impl HttpClient for Fetcher {
         }
     }
 
-    #[doc = " Send an HTTP request and return the response."]
     #[cfg(target_arch = "wasm32")]
     fn send_http(
         &self,

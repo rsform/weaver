@@ -8,6 +8,7 @@
 
       "properties": {
         "title": { "type": "ref", "ref": "#title" },
+        "path": { "type": "ref", "ref": "#path" },
         "tags": { "type": "ref", "ref": "#tags" },
         "uri": { "type": "string", "format": "at-uri" },
         "cid": { "type": "string", "format": "cid" },
@@ -25,6 +26,7 @@
 
       "properties": {
         "title": { "type": "ref", "ref": "#title" },
+        "path": { "type": "ref", "ref": "#path" },
         "tags": { "type": "ref", "ref": "#tags" },
         "uri": { "type": "string", "format": "at-uri" },
         "cid": { "type": "string", "format": "cid" },

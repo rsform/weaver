@@ -1,5 +1,4 @@
 mod storage;
-use dioxus::CapturedError;
 pub use storage::AuthStore;
 
 mod state;
@@ -9,6 +8,17 @@ use crate::fetch::Fetcher;
 use dioxus::prelude::*;
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 use jacquard::oauth::types::OAuthClientMetadata;
+
+/// Result of attempting to restore a session
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoreResult {
+    /// Session was successfully restored
+    Restored,
+    /// No saved session was found
+    NoSession,
+    /// Session was found but expired/invalid and has been cleared
+    SessionExpired,
+}
 
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 #[get("/oauth-client-metadata.json")]
@@ -25,28 +35,25 @@ pub async fn client_metadata() -> Result<axum::Json<serde_json::Value>> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn restore_session(
-    _fetcher: Fetcher,
-    _auth_state: Signal<AuthState>,
-) -> Result<(), String> {
-    Ok(())
+pub async fn restore_session(_fetcher: Fetcher, _auth_state: Signal<AuthState>) -> RestoreResult {
+    RestoreResult::NoSession
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn restore_session(
-    fetcher: Fetcher,
-    mut auth_state: Signal<AuthState>,
-) -> Result<(), CapturedError> {
-    use dioxus::prelude::*;
+pub async fn restore_session(fetcher: Fetcher, mut auth_state: Signal<AuthState>) -> RestoreResult {
     use gloo_storage::{LocalStorage, Storage};
+    use jacquard::oauth::authstore::ClientAuthStore;
     use jacquard::types::string::Did;
-    // Look for session keys in localStorage (format: oauth_session_{did}_{session_id})
-    let keys = LocalStorage::get_all::<serde_json::Value>()?;
-    let mut found_session: Option<(String, String)> = None;
 
-    let keys = keys
-        .as_object()
-        .ok_or(CapturedError::from_display(format!("{}", keys)))?;
+    // Look for session keys in localStorage (format: oauth_session_{did}_{session_id})
+    let Ok(keys) = LocalStorage::get_all::<serde_json::Value>() else {
+        return RestoreResult::NoSession;
+    };
+    let Some(keys) = keys.as_object() else {
+        return RestoreResult::NoSession;
+    };
+
+    let mut found_session: Option<(String, String)> = None;
     for key in keys.keys() {
         if key.starts_with("oauth_session_") {
             let parts: Vec<&str> = key
@@ -61,25 +68,27 @@ pub async fn restore_session(
         }
     }
 
-    let (did_str, session_id) =
-        found_session.ok_or(CapturedError::from_display("No saved session found"))?;
-    let did = Did::new_owned(did_str)?;
+    let Some((did_str, session_id)) = found_session else {
+        return RestoreResult::NoSession;
+    };
+    let Ok(did) = Did::new_owned(did_str) else {
+        return RestoreResult::NoSession;
+    };
 
-    let session = fetcher
-        .client
-        .oauth_client
-        .restore(&did, &session_id)
-        .await?;
-
-    // Get DID and handle from session
-    let (restored_did, session_id) = session.session_info().await;
-
-    // Update auth state
-    auth_state
-        .write()
-        .set_authenticated(restored_did, session_id);
-    fetcher.upgrade_to_authenticated(session).await;
-
-    tracing::debug!("session restored");
-    Ok(())
+    match fetcher.client.oauth_client.restore(&did, &session_id).await {
+        Ok(session) => {
+            let (restored_did, session_id) = session.session_info().await;
+            auth_state
+                .write()
+                .set_authenticated(restored_did, session_id);
+            fetcher.upgrade_to_authenticated(session).await;
+            tracing::debug!("session restored");
+            RestoreResult::Restored
+        }
+        Err(e) => {
+            tracing::warn!("Session restore failed, clearing dead session: {e}");
+            let _ = AuthStore::new().delete_session(&did, &session_id).await;
+            RestoreResult::SessionExpired
+        }
+    }
 }

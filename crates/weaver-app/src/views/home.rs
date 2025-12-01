@@ -9,18 +9,7 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 pub fn Home() -> Element {
     // Fetch notebooks from UFOS with SSR support
     let (notebooks_result, notebooks) = data::use_notebooks_from_ufos();
-    let navigator = use_navigator();
-    let mut uri_input = use_signal(|| String::new());
 
-    let handle_uri_submit = move || {
-        let input_uri = uri_input.read().clone();
-        if !input_uri.is_empty() {
-            if let Ok(parsed) = AtUri::new(&input_uri) {
-                let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, parsed);
-                navigator.push(link);
-            }
-        }
-    };
     #[cfg(feature = "fullstack-server")]
     notebooks_result
         .as_ref()
@@ -32,22 +21,7 @@ pub fn Home() -> Element {
         document::Link { rel: "stylesheet", href: NOTEBOOK_CARD_CSS }
         div {
             class: "record-view-container",
-            div { class: "record-header",
-                div { class: "uri-input-section",
-                    input {
-                        r#type: "text",
-                        class: "uri-input",
-                        placeholder: "at://did:plc:.../collection/rkey",
-                        value: "{uri_input}",
-                        oninput: move |evt| uri_input.set(evt.value()),
-                        onkeydown: move |evt| {
-                            if evt.key() == Key::Enter {
-                                handle_uri_submit();
-                            }
-                        },
-                    }
-                }
-            }
+
             div { class: "notebooks-list",
                 match &*notebooks.read() {
                     Some(notebook_list) => rsx! {

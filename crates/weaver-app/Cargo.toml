@@ -11,7 +11,7 @@ fullstack-server = ["dioxus/fullstack"]
 wasm-split = ["dioxus/wasm-split"]
 no-app-index = []
 
-web = ["dioxus/web"]
+web = ["dioxus/web", "dioxus-primitives/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
 server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum"]

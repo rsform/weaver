@@ -448,6 +448,13 @@ fn lexicon_doc_sh_weaver_notebook_defs() -> ::jacquard_lexicon::lexicon::Lexicon
                             }),
                         );
                         map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static("path"),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                description: None,
+                                r#ref: ::jacquard_common::CowStr::new_static("#path"),
+                            }),
+                        );
+                        map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("record"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Unknown(::jacquard_lexicon::lexicon::LexUnknown {
                                 description: None,
@@ -564,6 +571,13 @@ fn lexicon_doc_sh_weaver_notebook_defs() -> ::jacquard_lexicon::lexicon::Lexicon
                                 r#enum: None,
                                 r#const: None,
                                 known_values: None,
+                            }),
+                        );
+                        map.insert(
+                            ::jacquard_common::smol_str::SmolStr::new_static("path"),
+                            ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                description: None,
+                                r#ref: ::jacquard_common::CowStr::new_static("#path"),
                             }),
                         );
                         map.insert(
@@ -1139,6 +1153,9 @@ pub struct EntryView<'a> {
     #[serde(borrow)]
     pub cid: jacquard_common::types::string::Cid<'a>,
     pub indexed_at: jacquard_common::types::string::Datetime,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub path: std::option::Option<crate::sh_weaver::notebook::Path<'a>>,
     #[serde(borrow)]
     pub record: jacquard_common::types::value::Data<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
@@ -1253,6 +1270,7 @@ pub struct EntryViewBuilder<'a, S: entry_view_state::State> {
         ::core::option::Option<Vec<crate::sh_weaver::notebook::AuthorListView<'a>>>,
         ::core::option::Option<jacquard_common::types::string::Cid<'a>>,
         ::core::option::Option<jacquard_common::types::string::Datetime>,
+        ::core::option::Option<crate::sh_weaver::notebook::Path<'a>>,
         ::core::option::Option<jacquard_common::types::value::Data<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::RenderedView<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
@@ -1274,7 +1292,17 @@ impl<'a> EntryViewBuilder<'a, entry_view_state::Empty> {
     pub fn new() -> Self {
         EntryViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None, None, None, None),
+            __unsafe_private_named: (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -1337,6 +1365,25 @@ where
     }
 }
 
+impl<'a, S: entry_view_state::State> EntryViewBuilder<'a, S> {
+    /// Set the `path` field (optional)
+    pub fn path(
+        mut self,
+        value: impl Into<Option<crate::sh_weaver::notebook::Path<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.3 = value.into();
+        self
+    }
+    /// Set the `path` field to an Option value (optional)
+    pub fn maybe_path(
+        mut self,
+        value: Option<crate::sh_weaver::notebook::Path<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.3 = value;
+        self
+    }
+}
+
 impl<'a, S> EntryViewBuilder<'a, S>
 where
     S: entry_view_state::State,
@@ -1347,7 +1394,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::value::Data<'a>>,
     ) -> EntryViewBuilder<'a, entry_view_state::SetRecord<S>> {
-        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.4 = ::core::option::Option::Some(value.into());
         EntryViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -1362,7 +1409,7 @@ impl<'a, S: entry_view_state::State> EntryViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::RenderedView<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value.into();
+        self.__unsafe_private_named.5 = value.into();
         self
     }
     /// Set the `renderedView` field to an Option value (optional)
@@ -1370,7 +1417,7 @@ impl<'a, S: entry_view_state::State> EntryViewBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::RenderedView<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value;
+        self.__unsafe_private_named.5 = value;
         self
     }
 }
@@ -1381,7 +1428,7 @@ impl<'a, S: entry_view_state::State> EntryViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Tags<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value.into();
+        self.__unsafe_private_named.6 = value.into();
         self
     }
     /// Set the `tags` field to an Option value (optional)
@@ -1389,7 +1436,7 @@ impl<'a, S: entry_view_state::State> EntryViewBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Tags<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value;
+        self.__unsafe_private_named.6 = value;
         self
     }
 }
@@ -1400,7 +1447,7 @@ impl<'a, S: entry_view_state::State> EntryViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Title<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.6 = value.into();
+        self.__unsafe_private_named.7 = value.into();
         self
     }
     /// Set the `title` field to an Option value (optional)
@@ -1408,7 +1455,7 @@ impl<'a, S: entry_view_state::State> EntryViewBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Title<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.6 = value;
+        self.__unsafe_private_named.7 = value;
         self
     }
 }
@@ -1423,7 +1470,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::string::AtUri<'a>>,
     ) -> EntryViewBuilder<'a, entry_view_state::SetUri<S>> {
-        self.__unsafe_private_named.7 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.8 = ::core::option::Option::Some(value.into());
         EntryViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -1447,11 +1494,12 @@ where
             authors: self.__unsafe_private_named.0.unwrap(),
             cid: self.__unsafe_private_named.1.unwrap(),
             indexed_at: self.__unsafe_private_named.2.unwrap(),
-            record: self.__unsafe_private_named.3.unwrap(),
-            rendered_view: self.__unsafe_private_named.4,
-            tags: self.__unsafe_private_named.5,
-            title: self.__unsafe_private_named.6,
-            uri: self.__unsafe_private_named.7.unwrap(),
+            path: self.__unsafe_private_named.3,
+            record: self.__unsafe_private_named.4.unwrap(),
+            rendered_view: self.__unsafe_private_named.5,
+            tags: self.__unsafe_private_named.6,
+            title: self.__unsafe_private_named.7,
+            uri: self.__unsafe_private_named.8.unwrap(),
             extra_data: Default::default(),
         }
     }
@@ -1467,11 +1515,12 @@ where
             authors: self.__unsafe_private_named.0.unwrap(),
             cid: self.__unsafe_private_named.1.unwrap(),
             indexed_at: self.__unsafe_private_named.2.unwrap(),
-            record: self.__unsafe_private_named.3.unwrap(),
-            rendered_view: self.__unsafe_private_named.4,
-            tags: self.__unsafe_private_named.5,
-            title: self.__unsafe_private_named.6,
-            uri: self.__unsafe_private_named.7.unwrap(),
+            path: self.__unsafe_private_named.3,
+            record: self.__unsafe_private_named.4.unwrap(),
+            rendered_view: self.__unsafe_private_named.5,
+            tags: self.__unsafe_private_named.6,
+            title: self.__unsafe_private_named.7,
+            uri: self.__unsafe_private_named.8.unwrap(),
             extra_data: Some(extra_data),
         }
     }
@@ -1511,6 +1560,9 @@ pub struct NotebookView<'a> {
     #[serde(borrow)]
     pub cid: jacquard_common::types::string::Cid<'a>,
     pub indexed_at: jacquard_common::types::string::Datetime,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub path: std::option::Option<crate::sh_weaver::notebook::Path<'a>>,
     #[serde(borrow)]
     pub record: jacquard_common::types::value::Data<'a>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
@@ -1622,6 +1674,7 @@ pub struct NotebookViewBuilder<'a, S: notebook_view_state::State> {
         ::core::option::Option<Vec<crate::sh_weaver::notebook::AuthorListView<'a>>>,
         ::core::option::Option<jacquard_common::types::string::Cid<'a>>,
         ::core::option::Option<jacquard_common::types::string::Datetime>,
+        ::core::option::Option<crate::sh_weaver::notebook::Path<'a>>,
         ::core::option::Option<jacquard_common::types::value::Data<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Title<'a>>,
@@ -1642,7 +1695,7 @@ impl<'a> NotebookViewBuilder<'a, notebook_view_state::Empty> {
     pub fn new() -> Self {
         NotebookViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None, None, None),
+            __unsafe_private_named: (None, None, None, None, None, None, None, None),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -1705,6 +1758,25 @@ where
     }
 }
 
+impl<'a, S: notebook_view_state::State> NotebookViewBuilder<'a, S> {
+    /// Set the `path` field (optional)
+    pub fn path(
+        mut self,
+        value: impl Into<Option<crate::sh_weaver::notebook::Path<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.3 = value.into();
+        self
+    }
+    /// Set the `path` field to an Option value (optional)
+    pub fn maybe_path(
+        mut self,
+        value: Option<crate::sh_weaver::notebook::Path<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.3 = value;
+        self
+    }
+}
+
 impl<'a, S> NotebookViewBuilder<'a, S>
 where
     S: notebook_view_state::State,
@@ -1715,7 +1787,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::value::Data<'a>>,
     ) -> NotebookViewBuilder<'a, notebook_view_state::SetRecord<S>> {
-        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.4 = ::core::option::Option::Some(value.into());
         NotebookViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -1730,7 +1802,7 @@ impl<'a, S: notebook_view_state::State> NotebookViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Tags<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value.into();
+        self.__unsafe_private_named.5 = value.into();
         self
     }
     /// Set the `tags` field to an Option value (optional)
@@ -1738,7 +1810,7 @@ impl<'a, S: notebook_view_state::State> NotebookViewBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Tags<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value;
+        self.__unsafe_private_named.5 = value;
         self
     }
 }
@@ -1749,7 +1821,7 @@ impl<'a, S: notebook_view_state::State> NotebookViewBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Title<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value.into();
+        self.__unsafe_private_named.6 = value.into();
         self
     }
     /// Set the `title` field to an Option value (optional)
@@ -1757,7 +1829,7 @@ impl<'a, S: notebook_view_state::State> NotebookViewBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Title<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value;
+        self.__unsafe_private_named.6 = value;
         self
     }
 }
@@ -1772,7 +1844,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::string::AtUri<'a>>,
     ) -> NotebookViewBuilder<'a, notebook_view_state::SetUri<S>> {
-        self.__unsafe_private_named.6 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.7 = ::core::option::Option::Some(value.into());
         NotebookViewBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -1796,10 +1868,11 @@ where
             authors: self.__unsafe_private_named.0.unwrap(),
             cid: self.__unsafe_private_named.1.unwrap(),
             indexed_at: self.__unsafe_private_named.2.unwrap(),
-            record: self.__unsafe_private_named.3.unwrap(),
-            tags: self.__unsafe_private_named.4,
-            title: self.__unsafe_private_named.5,
-            uri: self.__unsafe_private_named.6.unwrap(),
+            path: self.__unsafe_private_named.3,
+            record: self.__unsafe_private_named.4.unwrap(),
+            tags: self.__unsafe_private_named.5,
+            title: self.__unsafe_private_named.6,
+            uri: self.__unsafe_private_named.7.unwrap(),
             extra_data: Default::default(),
         }
     }
@@ -1815,10 +1888,11 @@ where
             authors: self.__unsafe_private_named.0.unwrap(),
             cid: self.__unsafe_private_named.1.unwrap(),
             indexed_at: self.__unsafe_private_named.2.unwrap(),
-            record: self.__unsafe_private_named.3.unwrap(),
-            tags: self.__unsafe_private_named.4,
-            title: self.__unsafe_private_named.5,
-            uri: self.__unsafe_private_named.6.unwrap(),
+            path: self.__unsafe_private_named.3,
+            record: self.__unsafe_private_named.4.unwrap(),
+            tags: self.__unsafe_private_named.5,
+            title: self.__unsafe_private_named.6,
+            uri: self.__unsafe_private_named.7.unwrap(),
             extra_data: Some(extra_data),
         }
     }

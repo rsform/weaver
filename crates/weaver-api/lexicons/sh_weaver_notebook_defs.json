@@ -101,6 +101,10 @@
           "type": "string",
           "format": "datetime"
         },
+        "path": {
+          "type": "ref",
+          "ref": "#path"
+        },
         "record": {
           "type": "unknown"
         },
@@ -146,6 +150,10 @@
         "indexedAt": {
           "type": "string",
           "format": "datetime"
+        },
+        "path": {
+          "type": "ref",
+          "ref": "#path"
         },
         "record": {
           "type": "unknown"

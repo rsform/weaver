@@ -30,6 +30,31 @@ use crate::{PublishResult, W_TICKER, normalize_title_path};
 
 const CONSTELLATION_URL: &str = "https://constellation.microcosm.blue";
 
+/// Strip trailing punctuation that URL parsers commonly eat
+/// (period, comma, semicolon, colon, exclamation, question mark)
+fn strip_trailing_punctuation(s: &str) -> &str {
+    s.trim_end_matches(['.', ',', ';', ':', '!', '?'])
+}
+
+/// Check if a search term matches a value, with fallback to stripped punctuation
+fn title_matches(value: &str, search: &str) -> bool {
+    // Exact match first
+    if value == search {
+        return true;
+    }
+    // Try with trailing punctuation stripped from search term
+    let stripped_search = strip_trailing_punctuation(search);
+    if stripped_search != search && value == stripped_search {
+        return true;
+    }
+    // Try with trailing punctuation stripped from value (for titles ending in punctuation)
+    let stripped_value = strip_trailing_punctuation(value);
+    if stripped_value != value && stripped_value == search {
+        return true;
+    }
+    false
+}
+
 /// Extension trait providing weaver-specific multi-step operations on Agent
 ///
 /// This trait extends jacquard's Agent with notebook-specific workflows that
@@ -347,6 +372,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
 
             let title = notebook.value.title.clone();
             let tags = notebook.value.tags.clone();
+            let path = notebook.value.path.clone();
 
             let mut authors = Vec::new();
             use weaver_api::app_bsky::actor::{
@@ -383,6 +409,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                     .uri(notebook.uri)
                     .indexed_at(jacquard::types::string::Datetime::now())
                     .maybe_title(title)
+                    .maybe_path(path)
                     .maybe_tags(tags)
                     .authors(authors)
                     .record(to_data(&notebook.value).map_err(|_| {
@@ -411,6 +438,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
             let entry = self.fetch_record(&entry_uri).await?;
 
             let title = entry.value.title.clone();
+            let path = entry.value.path.clone();
             let tags = entry.value.tags.clone();
 
             Ok(EntryView::new()
@@ -424,6 +452,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 })?)
                 .maybe_tags(tags)
                 .title(title)
+                .path(path)
                 .authors(notebook.authors.clone())
                 .build())
         }
@@ -450,7 +479,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                     .await
                     .map_err(|e| AgentError::from(e))?;
                 if let Ok(entry) = resp.parse() {
-                    if entry.value.path == title || entry.value.title == title {
+                    let path_matches = title_matches(entry.value.path.as_ref(), title);
+                    let title_field_matches = title_matches(entry.value.title.as_ref(), title);
+                    if path_matches || title_field_matches {
                         // Build BookEntryView with prev/next
                         let entry_view = self.fetch_entry_view(notebook, entry_ref).await?;
 
@@ -549,13 +580,13 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                         ))
                     })?;
 
-                    // Match on path first, then title
+                    // Match on path first, then title (with trailing punctuation tolerance)
                     let matched_title = if let Some(ref path) = notebook.path
-                        && path.as_ref() == title
+                        && title_matches(path.as_ref(), title)
                     {
                         Some(path.clone())
                     } else if let Some(ref book_title) = notebook.title
-                        && book_title.as_ref() == title
+                        && title_matches(book_title.as_ref(), title)
                     {
                         Some(book_title.clone())
                     } else {
@@ -564,6 +595,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
 
                     if let Some(matched) = matched_title {
                         let tags = notebook.tags.clone();
+                        let path = notebook.path.clone();
 
                         let mut authors = Vec::new();
                         for (index, author) in notebook.authors.iter().enumerate() {
@@ -591,6 +623,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                                 .uri(record.uri)
                                 .indexed_at(jacquard::types::string::Datetime::now())
                                 .title(matched)
+                                .maybe_path(path)
                                 .maybe_tags(tags)
                                 .authors(authors)
                                 .record(record.value.clone())

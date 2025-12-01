@@ -1,10 +1,11 @@
 use crate::Route;
-use crate::auth::AuthState;
+use crate::auth::{AuthState, RestoreResult};
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::login::LoginModal;
 use crate::data::{use_get_handle, use_load_handle};
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
+use dioxus_primitives::toast::{use_toast, ToastOptions};
 use jacquard::types::string::Did;
 
 const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
@@ -19,11 +20,34 @@ pub fn Navbar() -> Element {
     let route = use_route::<Route>();
     tracing::trace!("Route: {:?}", route);
 
-    let mut auth_state = use_context::<Signal<crate::auth::AuthState>>();
+    let auth_state = use_context::<Signal<crate::auth::AuthState>>();
+
+    // Show toast if session expired
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    {
+        let restore_result = use_context::<Resource<RestoreResult>>();
+        let toast = use_toast();
+        let mut shown = use_signal(|| false);
+
+        if !shown() && restore_result() == Some(RestoreResult::SessionExpired) {
+            shown.set(true);
+            toast.warning(
+                "Session Expired".to_string(),
+                ToastOptions::new().description("Please sign in again"),
+            );
+        }
+    }
     let (route_handle_res, route_handle) = use_load_handle(match &route {
         Route::EntryPage { ident, .. } => Some(ident.clone()),
         Route::RepositoryIndex { ident } => Some(ident.clone()),
         Route::NotebookIndex { ident, .. } => Some(ident.clone()),
+        Route::DraftsList { ident } => Some(ident.clone()),
+        Route::DraftEdit { ident, .. } => Some(ident.clone()),
+        Route::NewDraft { ident, .. } => Some(ident.clone()),
+        Route::StandaloneEntry { ident, .. } => Some(ident.clone()),
+        Route::StandaloneEntryEdit { ident, .. } => Some(ident.clone()),
+        Route::NotebookEntryByRkey { ident, .. } => Some(ident.clone()),
+        Route::NotebookEntryEdit { ident, .. } => Some(ident.clone()),
         _ => None,
     });
 
@@ -51,43 +75,152 @@ pub fn Navbar() -> Element {
                         let route_handle = route_handle.read().clone();
                         let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
-                            span { class: "breadcrumb-separator", " > " }
-                            span { class: "breadcrumb breadcrumb-current", "@{handle}" }
+                            span { class:"breadcrumb-separator"," > "}
+                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
                         }
                     },
-                    Route::NotebookIndex { ident, book_title } => {
+                    Route::NotebookIndex{ ident, book_title } => {
                         let route_handle = route_handle.read().clone();
                         let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
-                            span { class: "breadcrumb-separator", " > " }
+                            span { class:"breadcrumb-separator"," > " }
                             Link {
-                                to: Route::RepositoryIndex { ident: ident.clone() },
-                                class: "breadcrumb",
-                                "@{handle}"
+                                to: Route::RepositoryIndex { ident: ident.clone()
+                                },
+                                class: "breadcrumb","@{handle}"
                             }
-                            span { class: "breadcrumb-separator", " > " }
-                            span { class: "breadcrumb breadcrumb-current", "{book_title}" }
+                            span{ class: "breadcrumb-separator"," > "}
+                            span{ class: "breadcrumb breadcrumb-current","{book_title}"}
                         }
                     },
                     Route::EntryPage { ident, book_title, .. } => {
-                        let route_handle = route_handle.read().clone();
-                        let handle = route_handle.unwrap_or(ident.clone());
+                        let route_handle=route_handle.read().clone();
+                        let handle=route_handle.unwrap_or(ident.clone());
                         rsx! {
-                            span { class: "breadcrumb-separator", " > " }
+                            span { class:"breadcrumb-separator"," > "}
                             Link {
-                                to: Route::RepositoryIndex { ident: ident.clone() },
-                                class: "breadcrumb",
-                                "@{handle}"
+                                to: Route::RepositoryIndex {
+                                    ident:ident.clone()
+                                },
+                                class:"breadcrumb","@{handle}"
                             }
-                            span { class: "breadcrumb-separator", " > " }
+                            span { class:"breadcrumb-separator"," > "}
                             Link {
-                                to: Route::NotebookIndex { ident: ident.clone(), book_title: book_title.clone() },
+                                to: Route::NotebookIndex {
+                                    ident: ident.clone(),
+                                    book_title: book_title.clone()
+                                },
                                 class: "breadcrumb",
                                 "{book_title}"
                             }
                         }
                     },
-                    _ => rsx! {}
+                    Route::DraftsList { ident } => {
+                        let route_handle = route_handle.read().clone();
+                        let handle = route_handle.unwrap_or(ident.clone());
+                        rsx! {
+                            span { class:"breadcrumb-separator"," > "}
+                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                        }
+                    },
+                    Route::DraftEdit { ident, tid } => {
+                        let route_handle = route_handle.read().clone();
+                        let handle = route_handle.unwrap_or(ident.clone());
+                        rsx! {
+                            span { class:"breadcrumb-separator"," > "}
+                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                        }
+                    },
+                    Route::NewDraft { ident, notebook } => {
+                        let route_handle = route_handle.read().clone();
+                        let handle = route_handle.unwrap_or(ident.clone());
+                        if let Some(notebook) = notebook {
+                            rsx! {
+                                span { class:"breadcrumb-separator"," > "}
+                                Link {
+                                    to: Route::RepositoryIndex {
+                                        ident:ident.clone()
+                                    },
+                                    class:"breadcrumb","@{handle}"
+                                }
+                                span { class:"breadcrumb-separator"," > "}
+                                Link {
+                                    to: Route::NotebookIndex {
+                                        ident: ident.clone(),
+                                        book_title: notebook.clone()
+                                    },
+                                    class: "breadcrumb",
+                                    "{notebook}"
+                                }
+                            }
+                        } else {
+                            rsx! {
+                                span { class:"breadcrumb-separator"," > "}
+                                span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                            }
+                        }
+                    },
+                    Route::StandaloneEntry { ident, .. } => {
+                        let route_handle = route_handle.read().clone();
+                        let handle = route_handle.unwrap_or(ident.clone());
+                        rsx! {
+                            span { class:"breadcrumb-separator"," > "}
+                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                        }
+                    },
+                    Route::StandaloneEntryEdit { ident, .. } => {
+                        let route_handle = route_handle.read().clone();
+                        let handle = route_handle.unwrap_or(ident.clone());
+                        rsx! {
+                            span { class:"breadcrumb-separator"," > "}
+                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                        }
+                    },
+                    Route::NotebookEntryByRkey { ident, book_title, .. } => {
+                        let route_handle=route_handle.read().clone();
+                        let handle=route_handle.unwrap_or(ident.clone());
+                        rsx! {
+                            span { class:"breadcrumb-separator"," > "}
+                            Link {
+                                to: Route::RepositoryIndex {
+                                    ident:ident.clone()
+                                },
+                                class:"breadcrumb","@{handle}"
+                            }
+                            span { class:"breadcrumb-separator"," > "}
+                            Link {
+                                to: Route::NotebookIndex {
+                                    ident: ident.clone(),
+                                    book_title: book_title.clone()
+                                },
+                                class: "breadcrumb",
+                                "{book_title}"
+                            }
+                        }
+                    },
+                    Route::NotebookEntryEdit { ident, book_title, .. } => {
+                        let route_handle=route_handle.read().clone();
+                        let handle=route_handle.unwrap_or(ident.clone());
+                        rsx! {
+                            span { class:"breadcrumb-separator"," > "}
+                            Link {
+                                to: Route::RepositoryIndex {
+                                    ident:ident.clone()
+                                },
+                                class:"breadcrumb","@{handle}"
+                            }
+                            span { class:"breadcrumb-separator"," > "}
+                            Link {
+                                to: Route::NotebookIndex {
+                                    ident: ident.clone(),
+                                    book_title: book_title.clone()
+                                },
+                                class: "breadcrumb",
+                                "{book_title}"
+                            }
+                        }
+                    },
+                    _ => rsx! {},
                 }
             }
             if auth_state.read().is_authenticated() {

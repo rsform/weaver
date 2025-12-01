@@ -4786,6 +4786,7 @@ dependencies = [
  "jacquard-lexicon",
  "miette 7.6.0",
  "mini-moka 0.10.99",
+ "n0-future",
  "percent-encoding",
  "reqwest",
  "serde",

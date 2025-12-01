@@ -89,7 +89,8 @@ pub fn NotebookCard(
     notebook: NotebookView<'static>,
     entry_refs: Vec<StrongRef<'static>>,
 ) -> Element {
-    use jacquard::IntoStatic;
+    use jacquard::{from_data, IntoStatic};
+    use weaver_api::sh_weaver::notebook::book::Book;
 
     let fetcher = use_context::<fetch::Fetcher>();
     let auth_state = use_context::<Signal<AuthState>>();
@@ -99,6 +100,13 @@ pub fn NotebookCard(
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled Notebook");
+
+    // Get notebook path for URLs, fallback to title
+    let notebook_path = notebook
+        .path
+        .as_ref()
+        .map(|p| p.as_ref().to_string())
+        .unwrap_or_else(|| title.to_string());
 
     // Check ownership for "Add Entry" link
     let notebook_ident = notebook.uri.authority().clone().into_static();
@@ -117,7 +125,7 @@ pub fn NotebookCard(
     let show_authors = notebook.authors.len() > 1;
 
     let ident = notebook.uri.authority().clone().into_static();
-    let book_title: SmolStr = title.to_string().into();
+    let book_title: SmolStr = notebook_path.clone().into();
 
     // Fetch all entries to get first/last
     let ident_for_fetch = ident.clone();
@@ -139,7 +147,7 @@ pub fn NotebookCard(
                 Link {
                     to: Route::EntryPage {
                         ident: ident.clone(),
-                        book_title: title.to_string().into(),
+                        book_title: notebook_path.clone().into(),
                         title: "".into() // Will redirect to first entry
                     },
                     class: "notebook-card-header-link",
@@ -217,14 +225,23 @@ pub fn NotebookCard(
                                                 .map(|t| t.as_ref())
                                                 .unwrap_or("Untitled");
 
-                                            let preview_html = from_data::<Entry>(&entry_view.entry.record).ok().map(|entry| {
+                                            // Get path from view, fallback to title
+                                            let entry_path = entry_view.entry.path
+                                                .as_ref()
+                                                .map(|p| p.as_ref().to_string())
+                                                .unwrap_or_else(|| entry_title.to_string());
+
+                                            // Parse entry for created_at and preview
+                                            let parsed_entry = from_data::<Entry>(&entry_view.entry.record).ok();
+
+                                            let preview_html = parsed_entry.as_ref().map(|entry| {
                                                 let parser = markdown_weaver::Parser::new(&entry.content);
                                                 let mut html_buf = String::new();
                                                 markdown_weaver::html::push_html(&mut html_buf, parser);
                                                 html_buf
                                             });
 
-                                            let created_at = from_data::<Entry>(&entry_view.entry.record).ok()
+                                            let created_at = parsed_entry.as_ref()
                                                 .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
 
                                             let entry_uri = entry_view.entry.uri.clone().into_static();
@@ -236,7 +253,7 @@ pub fn NotebookCard(
                                                             to: Route::EntryPage {
                                                                 ident: ident.clone(),
                                                                 book_title: book_title.clone(),
-                                                                title: entry_title.to_string().into()
+                                                                title: entry_path.clone().into()
                                                             },
                                                             class: "entry-preview-title-link",
                                                             div { class: "entry-preview-title", "{entry_title}" }
@@ -258,7 +275,7 @@ pub fn NotebookCard(
                                                             to: Route::EntryPage {
                                                                 ident: ident.clone(),
                                                                 book_title: book_title.clone(),
-                                                                title: entry_title.to_string().into()
+                                                                title: entry_path.clone().into()
                                                             },
                                                             class: "entry-preview-content-link",
                                                             div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
@@ -278,14 +295,23 @@ pub fn NotebookCard(
                                                 .map(|t| t.as_ref())
                                                 .unwrap_or("Untitled");
 
-                                            let preview_html = from_data::<Entry>(&first_entry.entry.record).ok().map(|entry| {
+                                            // Get path from view, fallback to title
+                                            let entry_path = first_entry.entry.path
+                                                .as_ref()
+                                                .map(|p| p.as_ref().to_string())
+                                                .unwrap_or_else(|| entry_title.to_string());
+
+                                            // Parse entry for created_at and preview
+                                            let parsed_entry = from_data::<Entry>(&first_entry.entry.record).ok();
+
+                                            let preview_html = parsed_entry.as_ref().map(|entry| {
                                                 let parser = markdown_weaver::Parser::new(&entry.content);
                                                 let mut html_buf = String::new();
                                                 markdown_weaver::html::push_html(&mut html_buf, parser);
                                                 html_buf
                                             });
 
-                                            let created_at = from_data::<Entry>(&first_entry.entry.record).ok()
+                                            let created_at = parsed_entry.as_ref()
                                                 .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
 
                                             let entry_uri = first_entry.entry.uri.clone().into_static();
@@ -297,7 +323,7 @@ pub fn NotebookCard(
                                                             to: Route::EntryPage {
                                                                 ident: ident.clone(),
                                                                 book_title: book_title.clone(),
-                                                                title: entry_title.to_string().into()
+                                                                title: entry_path.clone().into()
                                                             },
                                                             class: "entry-preview-title-link",
                                                             div { class: "entry-preview-title", "{entry_title}" }
@@ -319,7 +345,7 @@ pub fn NotebookCard(
                                                             to: Route::EntryPage {
                                                                 ident: ident.clone(),
                                                                 book_title: book_title.clone(),
-                                                                title: entry_title.to_string().into()
+                                                                title: entry_path.clone().into()
                                                             },
                                                             class: "entry-preview-content-link",
                                                             div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
@@ -348,14 +374,23 @@ pub fn NotebookCard(
                                                 .map(|t| t.as_ref())
                                                 .unwrap_or("Untitled");
 
-                                            let preview_html = from_data::<Entry>(&last_entry.entry.record).ok().map(|entry| {
+                                            // Get path from view, fallback to title
+                                            let entry_path = last_entry.entry.path
+                                                .as_ref()
+                                                .map(|p| p.as_ref().to_string())
+                                                .unwrap_or_else(|| entry_title.to_string());
+
+                                            // Parse entry for created_at and preview
+                                            let parsed_entry = from_data::<Entry>(&last_entry.entry.record).ok();
+
+                                            let preview_html = parsed_entry.as_ref().map(|entry| {
                                                 let parser = markdown_weaver::Parser::new(&entry.content);
                                                 let mut html_buf = String::new();
                                                 markdown_weaver::html::push_html(&mut html_buf, parser);
                                                 html_buf
                                             });
 
-                                            let created_at = from_data::<Entry>(&last_entry.entry.record).ok()
+                                            let created_at = parsed_entry.as_ref()
                                                 .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
 
                                             let entry_uri = last_entry.entry.uri.clone().into_static();
@@ -367,7 +402,7 @@ pub fn NotebookCard(
                                                             to: Route::EntryPage {
                                                                 ident: ident.clone(),
                                                                 book_title: book_title.clone(),
-                                                                title: entry_title.to_string().into()
+                                                                title: entry_path.clone().into()
                                                             },
                                                             class: "entry-preview-title-link",
                                                             div { class: "entry-preview-title", "{entry_title}" }
@@ -389,7 +424,7 @@ pub fn NotebookCard(
                                                             to: Route::EntryPage {
                                                                 ident: ident.clone(),
                                                                 book_title: book_title.clone(),
-                                                                title: entry_title.to_string().into()
+                                                                title: entry_path.clone().into()
                                                             },
                                                             class: "entry-preview-content-link",
                                                             div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
