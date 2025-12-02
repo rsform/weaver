@@ -86,6 +86,30 @@ pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
     }
 }
 
+#[component]
+pub fn DefaultNotebookCss() -> Element {
+    use weaver_renderer::css::{generate_base_css, generate_syntax_css};
+    use weaver_renderer::theme::default_resolved_theme;
+
+    let css_content = use_resource(move || async move {
+        let resolved_theme = default_resolved_theme();
+
+        let mut css = generate_base_css(&resolved_theme);
+        css.push_str(
+            &generate_syntax_css(&resolved_theme)
+                .await
+                .unwrap_or_default(),
+        );
+
+        Some(css)
+    });
+
+    match css_content() {
+        Some(Some(css)) => rsx! { document::Style { {css} } },
+        _ => rsx! {},
+    }
+}
+
 #[cfg(feature = "fullstack-server")]
 #[get("/css/{ident}/{notebook}", fetcher: Extension<Arc<fetch::Fetcher>>)]
 pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<Response> {

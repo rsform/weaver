@@ -32,6 +32,7 @@ use tokio::sync::RwLock;
 use weaver_api::app_bsky::actor::get_profile::GetProfile;
 use weaver_api::app_bsky::actor::profile::Profile as BskyProfile;
 use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+use weaver_api::sh_weaver::notebook::EntryView;
 use weaver_api::{
     com_atproto::repo::strong_ref::StrongRef,
     sh_weaver::{
@@ -49,6 +50,23 @@ struct UfosRecord {
     record: serde_json::Value,
     rkey: String,
     time_us: u64,
+}
+
+/// Data for a standalone entry (may or may not have notebook context)
+#[derive(Clone, PartialEq)]
+pub struct StandaloneEntryData {
+    pub entry: Entry<'static>,
+    pub entry_view: EntryView<'static>,
+    /// Present if entry is in exactly one notebook
+    pub notebook_context: Option<NotebookContext>,
+}
+
+/// Notebook context for an entry
+#[derive(Clone, PartialEq)]
+pub struct NotebookContext {
+    pub notebook: NotebookView<'static>,
+    /// BookEntryView with prev/next navigation
+    pub book_entry_view: BookEntryView<'static>,
 }
 
 pub struct Client {
@@ -565,6 +583,145 @@ impl Fetcher {
             .map_err(|e| dioxus::CapturedError::from_display(e))?;
 
         Ok(Arc::new(profile_view))
+    }
+
+    /// Fetch an entry by rkey with optional notebook context lookup.
+    pub async fn get_entry_by_rkey(
+        &self,
+        ident: AtIdentifier<'static>,
+        rkey: SmolStr,
+    ) -> Result<Option<Arc<StandaloneEntryData>>> {
+        use jacquard::types::aturi::AtUri;
+
+        let client = self.get_client();
+
+        // Fetch entry directly by rkey
+        let (entry_view, entry) = client
+            .fetch_entry_by_rkey(&ident, &rkey)
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        // Try to find notebook context via constellation
+        let entry_uri = entry_view.uri.clone();
+        let at_uri = AtUri::new(entry_uri.as_ref()).map_err(|e| {
+            dioxus::CapturedError::from_display(format!("Invalid entry URI: {}", e))
+        })?;
+
+        let (total, first_notebook) = client
+            .find_notebooks_for_entry(&at_uri)
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        // Only provide notebook context if entry is in exactly one notebook
+        let notebook_context = if total == 1 {
+            if let Some(notebook_id) = first_notebook {
+                // Construct notebook URI from RecordId
+                let notebook_uri_str = format!(
+                    "at://{}/{}/{}",
+                    notebook_id.did.as_str(),
+                    notebook_id.collection.as_str(),
+                    notebook_id.rkey.0.as_str()
+                );
+                let notebook_uri = AtUri::new_owned(notebook_uri_str).map_err(|e| {
+                    dioxus::CapturedError::from_display(format!("Invalid notebook URI: {}", e))
+                })?;
+
+                // Fetch notebook and find entry position
+                if let Ok((notebook, entries)) = client.view_notebook(&notebook_uri).await {
+                    if let Ok(Some(book_entry_view)) = client
+                        .entry_in_notebook_by_rkey(&notebook, &entries, &rkey)
+                        .await
+                    {
+                        Some(NotebookContext {
+                            notebook: notebook.into_static(),
+                            book_entry_view: book_entry_view.into_static(),
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok(Some(Arc::new(StandaloneEntryData {
+            entry,
+            entry_view,
+            notebook_context,
+        })))
+    }
+
+    /// Fetch an entry by rkey within a specific notebook context.
+    ///
+    /// The book_title parameter provides the notebook context.
+    /// Returns BookEntryView without prev/next if entry is in multiple notebooks.
+    pub async fn get_notebook_entry_by_rkey(
+        &self,
+        ident: AtIdentifier<'static>,
+        book_title: SmolStr,
+        rkey: SmolStr,
+    ) -> Result<Option<Arc<(BookEntryView<'static>, Entry<'static>)>>> {
+        use jacquard::types::aturi::AtUri;
+
+        let client = self.get_client();
+
+        // Fetch entry directly by rkey
+        let (entry_view, entry) = client
+            .fetch_entry_by_rkey(&ident, &rkey)
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        // Fetch notebook by title
+        let notebook_result = client
+            .notebook_by_title(&ident, &book_title)
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let (notebook, entries) = match notebook_result {
+            Some((n, e)) => (n, e),
+            None => return Err(dioxus::CapturedError::from_display("Notebook not found")),
+        };
+
+        // Find entry position in notebook
+        let book_entry_view = client
+            .entry_in_notebook_by_rkey(&notebook, &entries, &rkey)
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let mut book_entry_view = match book_entry_view {
+            Some(bev) => bev,
+            None => {
+                // Entry not in this notebook's entry list - return basic view without nav
+                use weaver_api::sh_weaver::notebook::BookEntryView;
+                BookEntryView::new().entry(entry_view).index(0).build()
+            }
+        };
+
+        // Check if entry is in multiple notebooks - if so, clear prev/next
+        let entry_uri = book_entry_view.entry.uri.clone();
+        let at_uri = AtUri::new(entry_uri.as_ref()).map_err(|e| {
+            dioxus::CapturedError::from_display(format!("Invalid entry URI: {}", e))
+        })?;
+
+        let (total, _) = client
+            .find_notebooks_for_entry(&at_uri)
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        if total >= 2 {
+            // Entry is in multiple notebooks - clear prev/next to avoid ambiguity
+            book_entry_view = BookEntryView::new()
+                .entry(book_entry_view.entry)
+                .index(book_entry_view.index)
+                .build();
+        }
+
+        Ok(Some(Arc::new((book_entry_view.into_static(), entry))))
     }
 }
 

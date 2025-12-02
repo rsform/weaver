@@ -89,6 +89,44 @@ pub struct HeroImageTemplate {
     pub author_handle: String,
 }
 
+/// Notebook index template
+#[derive(Template)]
+#[template(path = "og_notebook.svg", escape = "none")]
+pub struct NotebookTemplate {
+    pub title_lines: Vec<String>,
+    pub author_handle: String,
+    pub entry_count: usize,
+    pub entry_titles: Vec<String>,
+}
+
+/// Profile template (text-only, no banner)
+#[derive(Template)]
+#[template(path = "og_profile.svg", escape = "none")]
+pub struct ProfileTemplate {
+    pub avatar_data: Option<String>,
+    pub display_name_lines: Vec<String>,
+    pub handle: String,
+    pub bio_lines: Vec<String>,
+    pub notebook_count: usize,
+}
+
+/// Profile template with banner image
+#[derive(Template)]
+#[template(path = "og_profile_banner.svg", escape = "none")]
+pub struct ProfileBannerTemplate {
+    pub banner_image_data: String,
+    pub avatar_data: Option<String>,
+    pub display_name_lines: Vec<String>,
+    pub handle: String,
+    pub bio_lines: Vec<String>,
+    pub notebook_count: usize,
+}
+
+/// Site homepage template
+#[derive(Template)]
+#[template(path = "og_site.svg", escape = "none")]
+pub struct SiteTemplate {}
+
 /// Global font database, initialized once
 static FONTDB: OnceLock<fontdb::Database> = OnceLock::new();
 
@@ -98,8 +136,11 @@ fn get_fontdb() -> &'static fontdb::Database {
         // Load IBM Plex Sans from embedded bytes
         let font_data = include_bytes!("../../assets/fonts/IBMPlexSans-VariableFont_wdth,wght.ttf");
         db.load_font_data(font_data.to_vec());
+        // Load IBM Plex Sans Bold (static weight for proper bold rendering)
+        let font_data = include_bytes!("../../assets/fonts/IBMPlexSans-Bold.ttf");
+        db.load_font_data(font_data.to_vec());
         let font_data =
-            include_bytes!("../../assets/fonts/ioskeley-mono/IoskeleyMono-Regular.woff2");
+            include_bytes!("../../assets/fonts/ioskeley-mono/IoskeleyMono-Regular.ttf");
         db.load_font_data(font_data.to_vec());
         db
     })
@@ -175,6 +216,116 @@ pub fn generate_hero_image(
         notebook_title: notebook_title.to_string(),
         author_handle: author_handle.to_string(),
     };
+
+    let svg = template
+        .render()
+        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+
+    render_svg_to_png(&svg)
+}
+
+/// Generate cache key for notebook OG images
+pub fn notebook_cache_key(ident: &str, book: &str, cid: &str) -> String {
+    format!("notebook/{}/{}/{}", ident, book, cid)
+}
+
+/// Generate cache key for profile OG images
+pub fn profile_cache_key(ident: &str, cid: &str) -> String {
+    format!("profile/{}/{}", ident, cid)
+}
+
+/// Generate a notebook index OG image
+pub fn generate_notebook_og(
+    title: &str,
+    author_handle: &str,
+    entry_count: usize,
+    entry_titles: Vec<String>,
+) -> Result<Vec<u8>, OgError> {
+    let title_lines = wrap_title(title, 40, 2);
+    // Limit to first 4 entries, truncate long titles
+    let entry_titles: Vec<String> = entry_titles
+        .into_iter()
+        .take(4)
+        .map(|t| {
+            if t.len() > 60 {
+                format!("{}...", &t[..57])
+            } else {
+                t
+            }
+        })
+        .collect();
+
+    let template = NotebookTemplate {
+        title_lines,
+        author_handle: author_handle.to_string(),
+        entry_count,
+        entry_titles,
+    };
+
+    let svg = template
+        .render()
+        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+
+    render_svg_to_png(&svg)
+}
+
+/// Generate a profile OG image (text-only version)
+pub fn generate_profile_og(
+    display_name: &str,
+    handle: &str,
+    bio: &str,
+    avatar_data: Option<String>,
+    notebook_count: usize,
+) -> Result<Vec<u8>, OgError> {
+    let display_name_lines = wrap_title(display_name, 30, 2);
+    let bio_lines = wrap_title(bio, 60, 4);
+
+    let template = ProfileTemplate {
+        avatar_data,
+        display_name_lines,
+        handle: handle.to_string(),
+        bio_lines,
+        notebook_count,
+    };
+
+    let svg = template
+        .render()
+        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+
+    render_svg_to_png(&svg)
+}
+
+/// Generate a profile OG image with banner
+pub fn generate_profile_banner_og(
+    display_name: &str,
+    handle: &str,
+    bio: &str,
+    banner_image_data: String,
+    avatar_data: Option<String>,
+    notebook_count: usize,
+) -> Result<Vec<u8>, OgError> {
+    let display_name_lines = wrap_title(display_name, 25, 1);
+    let bio_lines = wrap_title(bio, 70, 1);
+
+    let template = ProfileBannerTemplate {
+        banner_image_data,
+        avatar_data,
+        display_name_lines,
+        handle: handle.to_string(),
+        bio_lines,
+        notebook_count,
+    };
+
+    let svg = template
+        .render()
+        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+
+    render_svg_to_png(&svg)
+}
+
+/// Generate site homepage OG image
+pub fn generate_site_og() -> Result<Vec<u8>, OgError> {
+    let template = SiteTemplate {};
 
     let svg = template
         .render()

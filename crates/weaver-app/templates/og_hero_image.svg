@@ -11,8 +11,8 @@
   {% endfor %}
 
   <!-- Notebook + Author row -->
-  <text x="60" y="600" fill="#ebbcba" font-family="IBM Plex Sans, sans-serif" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
+  <text x="60" y="600" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
 
   <!-- Weaver branding -->
-  <text x="1080" y="600" fill="#908caa" font-family="IBM Plex Sans, sans-serif" font-size="20">weaver.sh</text>
+  <text x="1080" y="600" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="20">weaver.sh</text>
 </svg>

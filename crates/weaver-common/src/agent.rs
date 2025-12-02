@@ -972,6 +972,24 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
         Self: Sized,
     {
         async move {
+            let (_, first) = self.find_notebooks_for_entry(entry_uri).await?;
+            Ok(first)
+        }
+    }
+
+    /// Find notebooks containing an entry, returning count and optionally the first one.
+    ///
+    /// Uses constellation backlinks to reverse lookup. Returns:
+    /// - total count of notebooks containing this entry
+    /// - The first notebook RecordId (if any exist)
+    fn find_notebooks_for_entry(
+        &self,
+        entry_uri: &AtUri<'_>,
+    ) -> impl Future<Output = Result<(u64, Option<RecordId<'static>>), WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
             let constellation_url = Url::parse(CONSTELLATION_URL).map_err(|e| {
                 AgentError::from(ClientError::invalid_request(format!(
                     "Invalid constellation URL: {}",
@@ -979,12 +997,13 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 )))
             })?;
 
+            // Query with limit 2 - we only need to know if there's more than 1
             let query = GetBacklinksQuery {
                 subject: Uri::At(entry_uri.clone().into_static()),
                 source: "sh.weaver.notebook.book:.entryList[].uri".into(),
                 cursor: None,
                 did: vec![],
-                limit: 1,
+                limit: 2,
             };
 
             let response = self
@@ -1005,11 +1024,175 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 )))
             })?;
 
-            Ok(output
-                .records
-                .into_iter()
-                .next()
-                .map(|r| r.into_static()))
+            Ok((
+                output.total,
+                output.records.into_iter().next().map(|r| r.into_static()),
+            ))
+        }
+    }
+
+    /// Fetch an entry directly by its rkey, returning the EntryView and raw Entry.
+    ///
+    /// This bypasses notebook context entirely - useful for standalone entries
+    /// or when you have the rkey but not the notebook.
+    fn fetch_entry_by_rkey(
+        &self,
+        ident: &jacquard::types::ident::AtIdentifier<'_>,
+        rkey: &str,
+    ) -> impl Future<Output = Result<(EntryView<'static>, entry::Entry<'static>), WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            use jacquard::to_data;
+            use jacquard::types::collection::Collection;
+            use weaver_api::com_atproto::repo::get_record::GetRecord;
+
+            // Resolve DID and PDS from ident
+            let (repo_did, pds_url) = match ident {
+                jacquard::types::ident::AtIdentifier::Did(did) => {
+                    let pds = self.pds_for_did(did).await.map_err(|e| {
+                        AgentError::from(
+                            ClientError::from(e).with_context("Failed to resolve PDS for DID"),
+                        )
+                    })?;
+                    (did.clone(), pds)
+                }
+                jacquard::types::ident::AtIdentifier::Handle(handle) => {
+                    self.pds_for_handle(handle).await.map_err(|e| {
+                        AgentError::from(
+                            ClientError::from(e).with_context("Failed to resolve handle"),
+                        )
+                    })?
+                }
+            };
+
+            // Fetch the entry record
+            let request = GetRecord::new()
+                .repo(jacquard::types::ident::AtIdentifier::Did(repo_did.clone()))
+                .collection(jacquard::types::nsid::Nsid::raw(entry::Entry::NSID))
+                .rkey(RecordKey::any(rkey)?)
+                .build();
+
+            let response: Response<GetRecordResponse> = {
+                let http_request = xrpc::build_http_request(&pds_url, &request, &self.opts().await)
+                    .map_err(|e| AgentError::from(ClientError::transport(e)))?;
+
+                let http_response = self
+                    .send_http(http_request)
+                    .await
+                    .map_err(|e| AgentError::from(ClientError::transport(e)))?;
+
+                xrpc::process_response(http_response)
+            }
+            .map_err(|e| AgentError::new(AgentErrorKind::Client, Some(e.into())))?;
+
+            let record = response.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to parse entry record: {}",
+                    e
+                )))
+            })?;
+
+            // Parse the entry value
+            let entry_value: entry::Entry = jacquard::from_data(&record.value).map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to deserialize entry: {}",
+                    e
+                )))
+            })?;
+
+            // Build EntryView - without notebook authors, just the entry author
+            let mut authors = Vec::new();
+            let (profile_uri, profile_view) = self.hydrate_profile_view(&repo_did).await?;
+            authors.push(
+                AuthorListView::new()
+                    .maybe_uri(profile_uri)
+                    .record(profile_view)
+                    .index(0)
+                    .build(),
+            );
+
+            let entry_view = EntryView::new()
+                .cid(record.cid.ok_or_else(|| {
+                    AgentError::from(ClientError::invalid_request("Entry missing CID"))
+                })?)
+                .uri(record.uri)
+                .indexed_at(jacquard::types::string::Datetime::now())
+                .record(to_data(&entry_value).map_err(|_| {
+                    AgentError::from(ClientError::invalid_request("Failed to serialize entry"))
+                })?)
+                .maybe_tags(entry_value.tags.clone())
+                .title(entry_value.title.clone())
+                .path(entry_value.path.clone())
+                .authors(authors)
+                .build()
+                .into_static();
+
+            Ok((entry_view, entry_value.into_static()))
+        }
+    }
+
+    /// Find an entry's index within a notebook by rkey.
+    ///
+    /// Scans the notebook's entry_list comparing rkeys extracted from URIs.
+    /// When found, builds BookEntryView with prev/next navigation.
+    fn entry_in_notebook_by_rkey<'a>(
+        &self,
+        notebook: &NotebookView<'a>,
+        entries: &[StrongRef<'_>],
+        rkey: &str,
+    ) -> impl Future<Output = Result<Option<BookEntryView<'a>>, WeaverError>> {
+        async move {
+            use weaver_api::sh_weaver::notebook::BookEntryRef;
+
+            // Find the entry index by comparing rkeys
+            let mut found_index = None;
+            for (index, entry_ref) in entries.iter().enumerate() {
+                // Extract rkey from the entry URI
+                if let Ok(uri) = AtUri::new(entry_ref.uri.as_ref()) {
+                    if let Some(entry_rkey) = uri.rkey() {
+                        if entry_rkey.0.as_str() == rkey {
+                            found_index = Some(index);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let index = match found_index {
+                Some(i) => i,
+                None => return Ok(None),
+            };
+
+            // Build BookEntryView with prev/next navigation
+            let entry_ref = &entries[index];
+            let entry = self.fetch_entry_view(notebook, entry_ref).await?;
+
+            let prev_entry = if index > 0 {
+                let prev_entry_ref = &entries[index - 1];
+                self.fetch_entry_view(notebook, prev_entry_ref).await.ok()
+            } else {
+                None
+            }
+            .map(|e| BookEntryRef::new().entry(e).build());
+
+            let next_entry = if index < entries.len() - 1 {
+                let next_entry_ref = &entries[index + 1];
+                self.fetch_entry_view(notebook, next_entry_ref).await.ok()
+            } else {
+                None
+            }
+            .map(|e| BookEntryRef::new().entry(e).build());
+
+            Ok(Some(
+                BookEntryView::new()
+                    .entry(entry)
+                    .maybe_next(next_entry)
+                    .maybe_prev(prev_entry)
+                    .index(index as i64)
+                    .build(),
+            ))
         }
     }
 }

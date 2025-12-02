@@ -849,6 +849,161 @@ pub fn use_is_owner_async(
     })
 }
 
+// ============================================================================
+// Standalone Entry by Rkey Hooks
+// ============================================================================
+
+/// Fetches standalone entry data by rkey with SSR support.
+/// Returns entry + optional notebook context if entry is in exactly one notebook.
+#[cfg(feature = "fullstack-server")]
+pub fn use_standalone_entry_data(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<(serde_json::Value, serde_json::Value)>)>>, RenderError>,
+    Memo<Option<crate::fetch::StandaloneEntryData>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_server_future(use_reactive!(|(ident, rkey)| {
+        let fetcher = fetcher.clone();
+        async move {
+            match fetcher.get_entry_by_rkey(ident(), rkey()).await {
+                Ok(Some(data)) => {
+                    let entry_json = serde_json::to_value(&data.entry).ok()?;
+                    let entry_view_json = serde_json::to_value(&data.entry_view).ok()?;
+                    let notebook_ctx_json = data.notebook_context.as_ref().map(|ctx| {
+                        let notebook_json = serde_json::to_value(&ctx.notebook).ok()?;
+                        let book_entry_json = serde_json::to_value(&ctx.book_entry_view).ok()?;
+                        Some((notebook_json, book_entry_json))
+                    }).flatten();
+                    Some((entry_json, entry_view_json, notebook_ctx_json))
+                }
+                Ok(None) => None,
+                Err(e) => {
+                    tracing::error!("[use_standalone_entry_data] fetch error: {:?}", e);
+                    None
+                }
+            }
+        }
+    }));
+
+    let memo = use_memo(use_reactive!(|res| {
+        use crate::fetch::{StandaloneEntryData, NotebookContext};
+        use weaver_api::sh_weaver::notebook::{EntryView, entry::Entry, BookEntryView, NotebookView};
+
+        let res = res.as_ref().ok()?;
+        let Some(Some((entry_json, entry_view_json, notebook_ctx_json))) = res.read().clone() else {
+            return None;
+        };
+
+        let entry: Entry<'static> = jacquard::from_json_value::<Entry>(entry_json).ok()?;
+        let entry_view: EntryView<'static> = jacquard::from_json_value::<EntryView>(entry_view_json).ok()?;
+        let notebook_context = notebook_ctx_json.map(|(notebook_json, book_entry_json)| {
+            let notebook: NotebookView<'static> = jacquard::from_json_value::<NotebookView>(notebook_json).ok()?;
+            let book_entry_view: BookEntryView<'static> = jacquard::from_json_value::<BookEntryView>(book_entry_json).ok()?;
+            Some(NotebookContext { notebook, book_entry_view })
+        }).flatten();
+
+        Some(StandaloneEntryData { entry, entry_view, notebook_context })
+    }));
+
+    (res, memo)
+}
+
+/// Fetches standalone entry data client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_standalone_entry_data(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Resource<Option<crate::fetch::StandaloneEntryData>>,
+    Memo<Option<crate::fetch::StandaloneEntryData>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .get_entry_by_rkey(ident(), rkey())
+                .await
+                .ok()
+                .flatten()
+                .map(|arc| (*arc).clone())
+        }
+    });
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
+/// Fetches notebook entry by rkey with SSR support.
+#[cfg(feature = "fullstack-server")]
+pub fn use_notebook_entry_by_rkey(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Result<Resource<Option<(serde_json::Value, serde_json::Value)>>, RenderError>,
+    Memo<Option<(BookEntryView<'static>, Entry<'static>)>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_server_future(use_reactive!(|(ident, book_title, rkey)| {
+        let fetcher = fetcher.clone();
+        async move {
+            match fetcher.get_notebook_entry_by_rkey(ident(), book_title(), rkey()).await {
+                Ok(Some(data)) => {
+                    let book_entry_json = serde_json::to_value(&data.0).ok()?;
+                    let entry_json = serde_json::to_value(&data.1).ok()?;
+                    Some((book_entry_json, entry_json))
+                }
+                Ok(None) => None,
+                Err(e) => {
+                    tracing::error!("[use_notebook_entry_by_rkey] fetch error: {:?}", e);
+                    None
+                }
+            }
+        }
+    }));
+
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
+        if let Some(Some((book_entry_json, entry_json))) = &*res.read() {
+            let book_entry: BookEntryView<'static> = jacquard::from_json_value::<BookEntryView>(book_entry_json.clone()).ok()?;
+            let entry: Entry<'static> = jacquard::from_json_value::<Entry>(entry_json.clone()).ok()?;
+            Some((book_entry, entry))
+        } else {
+            None
+        }
+    }));
+
+    (res, memo)
+}
+
+/// Fetches notebook entry by rkey client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_notebook_entry_by_rkey(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    book_title: ReadSignal<SmolStr>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Resource<Option<(BookEntryView<'static>, Entry<'static>)>>,
+    Memo<Option<(BookEntryView<'static>, Entry<'static>)>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .get_notebook_entry_by_rkey(ident(), book_title(), rkey())
+                .await
+                .ok()
+                .flatten()
+                .map(|arc| (*arc).clone())
+        }
+    });
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
 #[cfg(feature = "fullstack-server")]
 #[put("/cache/{ident}/{cid}?name", cache: Extension<Arc<BlobCache>>)]
 pub async fn cache_blob(ident: SmolStr, cid: SmolStr, name: Option<SmolStr>) -> Result<()> {

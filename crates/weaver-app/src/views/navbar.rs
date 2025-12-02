@@ -5,7 +5,7 @@ use crate::components::login::LoginModal;
 use crate::data::{use_get_handle, use_load_handle};
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
-use dioxus_primitives::toast::{use_toast, ToastOptions};
+use dioxus_primitives::toast::{ToastOptions, use_toast};
 use jacquard::types::string::Did;
 
 const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
@@ -120,15 +120,23 @@ pub fn Navbar() -> Element {
                         let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
                             span { class:"breadcrumb-separator"," > "}
-                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                            Link {
+                                to: Route::RepositoryIndex { ident: ident.clone()
+                                },
+                                class: "breadcrumb","@{handle}"
+                            }
                         }
                     },
-                    Route::DraftEdit { ident, tid } => {
+                    Route::DraftEdit { ident, .. } => {
                         let route_handle = route_handle.read().clone();
                         let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
                             span { class:"breadcrumb-separator"," > "}
-                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                            Link {
+                                to: Route::RepositoryIndex { ident: ident.clone()
+                                },
+                                class: "breadcrumb","@{handle}"
+                            }
                         }
                     },
                     Route::NewDraft { ident, notebook } => {
@@ -165,7 +173,11 @@ pub fn Navbar() -> Element {
                         let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
                             span { class:"breadcrumb-separator"," > "}
-                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                            Link {
+                                to: Route::RepositoryIndex { ident: ident.clone()
+                                },
+                                class: "breadcrumb","@{handle}"
+                            }
                         }
                     },
                     Route::StandaloneEntryEdit { ident, .. } => {
@@ -173,7 +185,11 @@ pub fn Navbar() -> Element {
                         let handle = route_handle.unwrap_or(ident.clone());
                         rsx! {
                             span { class:"breadcrumb-separator"," > "}
-                            span { class:"breadcrumb breadcrumb-current","@{handle}"}
+                            Link {
+                                to: Route::RepositoryIndex { ident: ident.clone()
+                                },
+                                class: "breadcrumb","@{handle}"
+                            }
                         }
                     },
                     Route::NotebookEntryByRkey { ident, book_title, .. } => {

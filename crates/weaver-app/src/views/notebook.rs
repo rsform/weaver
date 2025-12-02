@@ -11,6 +11,39 @@ use jacquard::{
     types::ident::AtIdentifier,
 };
 
+/// OpenGraph and Twitter Card meta tags for notebook index pages
+#[component]
+pub fn NotebookOgMeta(
+    title: String,
+    description: String,
+    image_url: String,
+    canonical_url: String,
+    author_handle: String,
+    entry_count: usize,
+) -> Element {
+    let page_title = format!("{} | @{} | Weaver", title, author_handle);
+    let full_description = if entry_count > 0 {
+        format!("{} entries · {}", entry_count, description)
+    } else {
+        description.clone()
+    };
+
+    rsx! {
+        document::Title { "{page_title}" }
+        document::Meta { property: "og:title", content: "{title}" }
+        document::Meta { property: "og:description", content: "{full_description}" }
+        document::Meta { property: "og:image", content: "{image_url}" }
+        document::Meta { property: "og:type", content: "website" }
+        document::Meta { property: "og:url", content: "{canonical_url}" }
+        document::Meta { property: "og:site_name", content: "Weaver" }
+        document::Meta { name: "twitter:card", content: "summary_large_image" }
+        document::Meta { name: "twitter:title", content: "{title}" }
+        document::Meta { name: "twitter:description", content: "{full_description}" }
+        document::Meta { name: "twitter:image", content: "{image_url}" }
+        document::Meta { name: "twitter:creator", content: "@{author_handle}" }
+    }
+}
+
 const ENTRY_CARD_CSS: Asset = asset!("/assets/styling/entry-card.css");
 
 /// The Blog page component that will be rendered when the current route is `[Route::Blog]`
@@ -70,7 +103,44 @@ pub fn NotebookIndex(
                 let (notebook_view, _) = data;
                 let author_count = notebook_view.authors.len();
 
+                // Build OG metadata
+                let og_title = notebook_view.title
+                    .as_ref()
+                    .map(|t| t.as_ref().to_string())
+                    .unwrap_or_else(|| "Untitled Notebook".to_string());
+
+                let og_author = {
+                    use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+                    notebook_view.authors.first()
+                        .map(|a| match &a.record.inner {
+                            ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
+                            ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
+                            ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_string(),
+                            _ => "unknown".to_string(),
+                        })
+                        .unwrap_or_else(|| "unknown".to_string())
+                };
+
+                // NotebookView doesn't expose description directly, use empty for now
+                let og_description = String::new();
+
+                let base = if crate::env::WEAVER_APP_ENV == "dev" {
+                    format!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
+                } else {
+                    crate::env::WEAVER_APP_HOST.to_string()
+                };
+                let og_image_url = format!("{}/og/notebook/{}/{}.png", base, ident(), book_title());
+                let canonical_url = format!("{}/{}/{}", base, ident(), book_title());
+
                 rsx! {
+                    NotebookOgMeta {
+                        title: og_title,
+                        description: og_description,
+                        image_url: og_image_url,
+                        canonical_url,
+                        author_handle: og_author,
+                        entry_count: entries.len(),
+                    }
                     div { class: "notebook-layout",
                         aside { class: "notebook-sidebar",
                             NotebookCover {

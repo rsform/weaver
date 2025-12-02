@@ -8,7 +8,7 @@
   {% endfor %}
 
   <!-- Notebook title + Author -->
-  <text x="60" y="320" fill="#ebbcba" font-family="IBM Plex Sans, sans-serif" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
+  <text x="60" y="320" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
 
   <!-- Content snippet -->
   {% for line in content_lines %}
@@ -18,5 +18,5 @@
 
 
   <!-- Weaver branding -->
-  <text x="60" y="590" fill="#908caa" font-family="IBM Plex Sans, sans-serif" font-size="24">weaver.sh</text>
+  <text x="60" y="590" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="24">weaver.sh</text>
 </svg>

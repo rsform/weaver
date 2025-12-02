@@ -144,10 +144,7 @@ pub fn DraftsList(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
 /// Edit an existing draft by TID.
 #[component]
-pub fn DraftEdit(
-    ident: ReadSignal<AtIdentifier<'static>>,
-    tid: ReadSignal<SmolStr>,
-) -> Element {
+pub fn DraftEdit(ident: ReadSignal<AtIdentifier<'static>>, tid: ReadSignal<SmolStr>) -> Element {
     use crate::components::editor::MarkdownEditor;
     use crate::views::editor::EditorCss;
 
@@ -182,25 +179,6 @@ pub fn NewDraft(
     }
 }
 
-/// View a standalone entry by rkey.
-#[component]
-pub fn StandaloneEntry(
-    ident: ReadSignal<AtIdentifier<'static>>,
-    rkey: ReadSignal<SmolStr>,
-) -> Element {
-    // Construct AT-URI for the entry
-    let entry_uri = use_memo(move || {
-        format!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey())
-    });
-
-    rsx! {
-        div { class: "standalone-entry-page",
-            p { "Standalone entry view - implementation pending" }
-            p { "URI: {entry_uri}" }
-        }
-    }
-}
-
 /// Edit a standalone entry.
 #[component]
 pub fn StandaloneEntryEdit(
@@ -211,30 +189,13 @@ pub fn StandaloneEntryEdit(
     use crate::views::editor::EditorCss;
 
     // Construct AT-URI for the entry
-    let entry_uri = use_memo(move || {
-        format!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey())
-    });
+    let entry_uri =
+        use_memo(move || format!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey()));
 
     rsx! {
         EditorCss {}
         div { class: "editor-page",
             MarkdownEditor { entry_uri: Some(entry_uri()), target_notebook: None }
-        }
-    }
-}
-
-/// View a notebook entry by rkey.
-#[component]
-pub fn NotebookEntryByRkey(
-    ident: ReadSignal<AtIdentifier<'static>>,
-    book_title: ReadSignal<SmolStr>,
-    rkey: ReadSignal<SmolStr>,
-) -> Element {
-    rsx! {
-        div { class: "notebook-entry-rkey-page",
-            p { "Notebook entry by rkey - implementation pending" }
-            p { "Notebook: {book_title}" }
-            p { "Entry rkey: {rkey}" }
         }
     }
 }
@@ -250,9 +211,8 @@ pub fn NotebookEntryEdit(
     use crate::views::editor::EditorCss;
 
     // Construct AT-URI for the entry
-    let entry_uri = use_memo(move || {
-        format!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey())
-    });
+    let entry_uri =
+        use_memo(move || format!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey()));
 
     rsx! {
         EditorCss {}

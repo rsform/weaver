@@ -6,6 +6,42 @@ use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::notebook::NotebookView;
 
+/// OpenGraph and Twitter Card meta tags for profile/repository pages
+#[component]
+pub fn ProfileOgMeta(
+    display_name: String,
+    handle: String,
+    bio: String,
+    image_url: String,
+    canonical_url: String,
+    notebook_count: usize,
+) -> Element {
+    let page_title = format!("{} (@{}) | Weaver", display_name, handle);
+    let full_description = if notebook_count > 0 {
+        format!("{} notebooks · {}", notebook_count, bio)
+    } else if bio.is_empty() {
+        format!("@{} on Weaver", handle)
+    } else {
+        bio.clone()
+    };
+
+    rsx! {
+        document::Title { "{page_title}" }
+        document::Meta { property: "og:title", content: "{display_name}" }
+        document::Meta { property: "og:description", content: "{full_description}" }
+        document::Meta { property: "og:image", content: "{image_url}" }
+        document::Meta { property: "og:type", content: "profile" }
+        document::Meta { property: "og:url", content: "{canonical_url}" }
+        document::Meta { property: "og:site_name", content: "Weaver" }
+        document::Meta { property: "profile:username", content: "{handle}" }
+        document::Meta { name: "twitter:card", content: "summary_large_image" }
+        document::Meta { name: "twitter:title", content: "{display_name}" }
+        document::Meta { name: "twitter:description", content: "{full_description}" }
+        document::Meta { name: "twitter:image", content: "{image_url}" }
+        document::Meta { name: "twitter:creator", content: "@{handle}" }
+    }
+}
+
 const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 
 #[component]
@@ -38,8 +74,57 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     #[cfg(feature = "fullstack-server")]
     profile_result?;
 
+    // Build OG metadata when profile is available
+    let og_meta = match &*profile.read() {
+        Some(profile_view) => {
+            use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+
+            let (display_name, handle, bio) = match &profile_view.inner {
+                ProfileDataViewInner::ProfileView(p) => (
+                    p.display_name.as_ref().map(|n| n.as_ref().to_string()).unwrap_or_default(),
+                    p.handle.as_ref().to_string(),
+                    p.description.as_ref().map(|d| d.as_ref().to_string()).unwrap_or_default(),
+                ),
+                ProfileDataViewInner::ProfileViewDetailed(p) => (
+                    p.display_name.as_ref().map(|n| n.as_ref().to_string()).unwrap_or_default(),
+                    p.handle.as_ref().to_string(),
+                    p.description.as_ref().map(|d| d.as_ref().to_string()).unwrap_or_default(),
+                ),
+                ProfileDataViewInner::TangledProfileView(p) => (
+                    String::new(),
+                    p.handle.as_ref().to_string(),
+                    String::new(),
+                ),
+                _ => (String::new(), "unknown".to_string(), String::new()),
+            };
+
+            let notebook_count = notebooks.read().as_ref().map(|n| n.len()).unwrap_or(0);
+
+            let base = if crate::env::WEAVER_APP_ENV == "dev" {
+                format!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
+            } else {
+                crate::env::WEAVER_APP_HOST.to_string()
+            };
+            let og_image_url = format!("{}/og/profile/{}.png", base, ident());
+            let canonical_url = format!("{}/{}", base, ident());
+
+            Some(rsx! {
+                ProfileOgMeta {
+                    display_name: if display_name.is_empty() { handle.clone() } else { display_name },
+                    handle,
+                    bio,
+                    image_url: og_image_url,
+                    canonical_url,
+                    notebook_count,
+                }
+            })
+        }
+        None => None,
+    };
+
     rsx! {
         document::Stylesheet { href: NOTEBOOK_CARD_CSS }
+        {og_meta}
 
         div { class: "repository-layout",
             // Profile sidebar (desktop) / header (mobile)

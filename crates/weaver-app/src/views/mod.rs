@@ -30,7 +30,7 @@ mod editor;
 pub use editor::Editor;
 
 mod drafts;
-pub use drafts::{
-    DraftEdit, DraftsList, NewDraft, NotebookEntryByRkey, NotebookEntryEdit, StandaloneEntry,
-    StandaloneEntryEdit,
-};
+pub use drafts::{DraftEdit, DraftsList, NewDraft, NotebookEntryEdit, StandaloneEntryEdit};
+
+mod entry;
+pub use entry::{NotebookEntryByRkey, StandaloneEntry};

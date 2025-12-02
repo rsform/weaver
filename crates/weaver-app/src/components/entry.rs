@@ -12,7 +12,7 @@ use dioxus::prelude::*;
 use jacquard::IntoStatic;
 use jacquard::types::aturi::AtUri;
 
-const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
+pub const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
 
 #[allow(unused_imports)]
 use jacquard::smol_str::ToSmolStr;
@@ -118,7 +118,7 @@ pub fn EntryPage(
 }
 
 /// Extract a plain-text preview from markdown content (first ~160 chars)
-fn extract_preview(content: &str, max_len: usize) -> String {
+pub fn extract_preview(content: &str, max_len: usize) -> String {
     // Simple extraction: skip markdown syntax, get plain text
     let plain: String = content
         .lines()
@@ -146,6 +146,38 @@ fn extract_preview(content: &str, max_len: usize) -> String {
         cleaned
     } else {
         format!("{}...", &cleaned[..max_len - 3])
+    }
+}
+
+/// OpenGraph and Twitter Card meta tags for entries
+#[component]
+pub fn EntryOgMeta(
+    title: String,
+    description: String,
+    image_url: String,
+    canonical_url: String,
+    author_handle: String,
+    #[props(default)] book_title: Option<String>,
+) -> Element {
+    let page_title = if let Some(ref book) = book_title {
+        format!("{} | {} | Weaver", title, book)
+    } else {
+        format!("{} | Weaver", title)
+    };
+
+    rsx! {
+        document::Title { "{page_title}" }
+        document::Meta { property: "og:title", content: "{title}" }
+        document::Meta { property: "og:description", content: "{description}" }
+        document::Meta { property: "og:image", content: "{image_url}" }
+        document::Meta { property: "og:type", content: "article" }
+        document::Meta { property: "og:url", content: "{canonical_url}" }
+        document::Meta { property: "og:site_name", content: "Weaver" }
+        document::Meta { name: "twitter:card", content: "summary_large_image" }
+        document::Meta { name: "twitter:title", content: "{title}" }
+        document::Meta { name: "twitter:description", content: "{description}" }
+        document::Meta { name: "twitter:image", content: "{image_url}" }
+        document::Meta { name: "twitter:creator", content: "@{author_handle}" }
     }
 }
 
@@ -211,29 +243,17 @@ fn EntryPageView(
     // Extract description preview from content
     let description = extract_preview(entry_record().content.as_ref(), 160);
 
-    // Full page title
-    let page_title = format!("{} | {} | Weaver", title, book_title());
-
     tracing::info!("Entry: {book_title} - {title}");
 
     rsx! {
-        // Page title and OG meta tags
-        document::Title { "{page_title}" }
-
-        // OpenGraph tags
-        document::Meta { property: "og:title", content: "{title}" }
-        document::Meta { property: "og:description", content: "{description}" }
-        document::Meta { property: "og:image", content: "{og_image_url}" }
-        document::Meta { property: "og:type", content: "article" }
-        document::Meta { property: "og:url", content: "{canonical_url}" }
-        document::Meta { property: "og:site_name", content: "Weaver" }
-
-        // Twitter Card tags
-        document::Meta { name: "twitter:card", content: "summary_large_image" }
-        document::Meta { name: "twitter:title", content: "{title}" }
-        document::Meta { name: "twitter:description", content: "{description}" }
-        document::Meta { name: "twitter:image", content: "{og_image_url}" }
-        document::Meta { name: "twitter:creator", content: "@{author_handle}" }
+        EntryOgMeta {
+            title: title.to_string(),
+            description: description,
+            image_url: og_image_url,
+            canonical_url: canonical_url,
+            author_handle: author_handle,
+            book_title: Some(book_title().to_string()),
+        }
         document::Link { rel: "stylesheet", href: ENTRY_CSS }
 
         div { class: "entry-page-layout",
@@ -446,7 +466,7 @@ pub fn EntryCard(
 
 /// Metadata header showing title, authors, date, tags
 #[component]
-fn EntryMetadata(
+pub fn EntryMetadata(
     entry_view: EntryView<'static>,
     created_at: Datetime,
     entry_uri: AtUri<'static>,
@@ -584,7 +604,7 @@ fn EntryMetadata(
 
 /// Navigation button for prev/next entries
 #[component]
-fn NavButton(
+pub fn NavButton(
     direction: &'static str,
     entry: EntryView<'static>,
     ident: AtIdentifier<'static>,
