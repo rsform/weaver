@@ -31,14 +31,14 @@ mod auth;
 #[cfg(feature = "server")]
 mod blobcache;
 mod cache_impl;
-#[cfg(feature = "server")]
-mod og;
 /// Define a components module that contains all shared components for our app.
 mod components;
 mod config;
 mod data;
 mod env;
 mod fetch;
+#[cfg(feature = "server")]
+mod og;
 mod record_utils;
 mod service_worker;
 /// Define a views module that contains the UI for all Layouts and Routes for our app.
@@ -207,6 +207,26 @@ fn main() {
                         }
                     }
                 }))
+            // .layer(axum::middleware::from_fn(
+            //     |request: Request, next: Next| async move {
+            //         let mut res = next.run(request).await;
+
+            //         // Cache all HTML responses
+            //         if res
+            //             .headers()
+            //             .get("content-type")
+            //             .and_then(|v| v.to_str().ok())
+            //             .map(|t| t.contains("text/html"))
+            //             .unwrap_or(false)
+            //         {
+            //             res.headers_mut().insert(
+            //                 http::header::CACHE_CONTROL,
+            //                 "public, max-age=300".parse().unwrap(),
+            //             );
+            //         }
+            //         res
+            //     },
+            // ))
         };
         Ok(router)
     });
@@ -432,7 +452,10 @@ pub async fn og_image(
     entry_title: SmolStr,
 ) -> Result<axum::response::Response> {
     use axum::{
-        http::{header::{CACHE_CONTROL, CONTENT_TYPE}, StatusCode},
+        http::{
+            StatusCode,
+            header::{CACHE_CONTROL, CONTENT_TYPE},
+        },
         response::IntoResponse,
     };
     use weaver_api::sh_weaver::actor::ProfileDataViewInner;
@@ -446,7 +469,9 @@ pub async fn og_image(
     };
 
     // Fetch entry data
-    let entry_result = fetcher.get_entry(at_ident.clone(), book_title.clone(), entry_title.into()).await;
+    let entry_result = fetcher
+        .get_entry(at_ident.clone(), book_title.clone(), entry_title.into())
+        .await;
 
     let arc_data = match entry_result {
         Ok(Some(data)) => data,
@@ -470,7 +495,8 @@ pub async fn og_image(
                 (CACHE_CONTROL, "public, max-age=3600"),
             ],
             cached,
-        ).into_response());
+        )
+            .into_response());
     }
 
     // Extract metadata
@@ -480,7 +506,10 @@ pub async fn og_image(
     // TODO: Could fetch actual notebook record to get display title
     let notebook_title_str: String = book_title.to_string();
 
-    let author_handle = book_entry.entry.authors.first()
+    let author_handle = book_entry
+        .entry
+        .authors
+        .first()
         .map(|a| match &a.record.inner {
             ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
             ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
@@ -504,7 +533,9 @@ pub async fn og_image(
                 // Build CDN URL
                 let cdn_url = format!(
                     "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@{}",
-                    did.as_str(), cid.as_ref(), format
+                    did.as_str(),
+                    cid.as_ref(),
+                    format
                 );
 
                 // Fetch the image
@@ -513,13 +544,14 @@ pub async fn og_image(
                         match response.bytes().await {
                             Ok(bytes) => {
                                 use base64::Engine;
-                                let base64_str = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                                let base64_str =
+                                    base64::engine::general_purpose::STANDARD.encode(&bytes);
                                 Some(format!("data:{};base64,{}", mime, base64_str))
                             }
-                            Err(_) => None
+                            Err(_) => None,
                         }
                     }
-                    _ => None
+                    _ => None,
                 }
             } else {
                 None
@@ -556,7 +588,10 @@ pub async fn og_image(
         match og::generate_hero_image(hero_data, title, &notebook_title_str, &author_handle) {
             Ok(bytes) => bytes,
             Err(e) => {
-                tracing::error!("Failed to generate hero OG image: {:?}, falling back to text", e);
+                tracing::error!(
+                    "Failed to generate hero OG image: {:?}, falling back to text",
+                    e
+                );
                 og::generate_text_only(title, &content_snippet, &notebook_title_str, &author_handle)
                     .map_err(|e| {
                         tracing::error!("Failed to generate text OG image: {:?}", e);
@@ -570,7 +605,11 @@ pub async fn og_image(
             Ok(bytes) => bytes,
             Err(e) => {
                 tracing::error!("Failed to generate OG image: {:?}", e);
-                return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate image").into_response());
+                return Ok((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to generate image",
+                )
+                    .into_response());
             }
         }
     };
@@ -584,7 +623,8 @@ pub async fn og_image(
             (CACHE_CONTROL, "public, max-age=3600"),
         ],
         png_bytes,
-    ).into_response())
+    )
+        .into_response())
 }
 
 // Route: /og/notebook/{ident}/{book_title}.png - OpenGraph image for notebook index
@@ -595,7 +635,10 @@ pub async fn og_notebook_image(
     book_title: SmolStr,
 ) -> Result<axum::response::Response> {
     use axum::{
-        http::{header::{CACHE_CONTROL, CONTENT_TYPE}, StatusCode},
+        http::{
+            StatusCode,
+            header::{CACHE_CONTROL, CONTENT_TYPE},
+        },
         response::IntoResponse,
     };
     use weaver_api::sh_weaver::actor::ProfileDataViewInner;
@@ -608,14 +651,20 @@ pub async fn og_notebook_image(
     };
 
     // Fetch notebook data
-    let notebook_result = fetcher.get_notebook(at_ident.clone(), book_title.into()).await;
+    let notebook_result = fetcher
+        .get_notebook(at_ident.clone(), book_title.into())
+        .await;
 
     let arc_data = match notebook_result {
         Ok(Some(data)) => data,
         Ok(None) => return Ok((StatusCode::NOT_FOUND, "Notebook not found").into_response()),
         Err(e) => {
             tracing::error!("Failed to fetch notebook for OG image: {:?}", e);
-            return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch notebook").into_response());
+            return Ok((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to fetch notebook",
+            )
+                .into_response());
         }
     };
     let (notebook_view, _entries) = arc_data.as_ref();
@@ -632,16 +681,20 @@ pub async fn og_notebook_image(
                 (CACHE_CONTROL, "public, max-age=3600"),
             ],
             cached,
-        ).into_response());
+        )
+            .into_response());
     }
 
     // Extract metadata
-    let title = notebook_view.title
+    let title = notebook_view
+        .title
         .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled Notebook");
 
-    let author_handle = notebook_view.authors.first()
+    let author_handle = notebook_view
+        .authors
+        .first()
         .map(|a| match &a.record.inner {
             ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
             ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
@@ -651,7 +704,9 @@ pub async fn og_notebook_image(
         .unwrap_or_else(|| "unknown".to_string());
 
     // Fetch entries to get entry titles and count
-    let entries_result = fetcher.list_notebook_entries(at_ident.clone(), book_title.into()).await;
+    let entries_result = fetcher
+        .list_notebook_entries(at_ident.clone(), book_title.into())
+        .await;
     let (entry_count, entry_titles) = match entries_result {
         Ok(Some(entries)) => {
             let count = entries.len();
@@ -659,7 +714,8 @@ pub async fn og_notebook_image(
                 .iter()
                 .take(4)
                 .map(|e| {
-                    e.entry.title
+                    e.entry
+                        .title
                         .as_ref()
                         .map(|t| t.as_ref().to_string())
                         .unwrap_or_else(|| "Untitled".to_string())
@@ -671,11 +727,16 @@ pub async fn og_notebook_image(
     };
 
     // Generate image
-    let png_bytes = match og::generate_notebook_og(title, &author_handle, entry_count, entry_titles) {
+    let png_bytes = match og::generate_notebook_og(title, &author_handle, entry_count, entry_titles)
+    {
         Ok(bytes) => bytes,
         Err(e) => {
             tracing::error!("Failed to generate notebook OG image: {:?}", e);
-            return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate image").into_response());
+            return Ok((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to generate image",
+            )
+                .into_response());
         }
     };
 
@@ -688,17 +749,19 @@ pub async fn og_notebook_image(
             (CACHE_CONTROL, "public, max-age=3600"),
         ],
         png_bytes,
-    ).into_response())
+    )
+        .into_response())
 }
 
 // Route: /og/profile/{ident}.png - OpenGraph image for profile/repository
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 #[get("/og/profile/{ident}", fetcher: Extension<Arc<fetch::Fetcher>>)]
-pub async fn og_profile_image(
-    ident: SmolStr,
-) -> Result<axum::response::Response> {
+pub async fn og_profile_image(ident: SmolStr) -> Result<axum::response::Response> {
     use axum::{
-        http::{header::{CACHE_CONTROL, CONTENT_TYPE}, StatusCode},
+        http::{
+            StatusCode,
+            header::{CACHE_CONTROL, CONTENT_TYPE},
+        },
         response::IntoResponse,
     };
     use weaver_api::sh_weaver::actor::ProfileDataViewInner;
@@ -717,7 +780,9 @@ pub async fn og_profile_image(
         Ok(data) => data,
         Err(e) => {
             tracing::error!("Failed to fetch profile for OG image: {:?}", e);
-            return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch profile").into_response());
+            return Ok(
+                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch profile").into_response(),
+            );
         }
     };
 
@@ -725,17 +790,29 @@ pub async fn og_profile_image(
     // Use DID as cache key since profiles don't have a CID field
     let (display_name, handle, bio, avatar_url, banner_url, cache_id) = match &profile_view.inner {
         ProfileDataViewInner::ProfileView(p) => (
-            p.display_name.as_ref().map(|n| n.as_ref().to_string()).unwrap_or_default(),
+            p.display_name
+                .as_ref()
+                .map(|n| n.as_ref().to_string())
+                .unwrap_or_default(),
             p.handle.as_ref().to_string(),
-            p.description.as_ref().map(|d| d.as_ref().to_string()).unwrap_or_default(),
+            p.description
+                .as_ref()
+                .map(|d| d.as_ref().to_string())
+                .unwrap_or_default(),
             p.avatar.as_ref().map(|u| u.as_ref().to_string()),
             None::<String>,
             p.did.as_ref().to_string(),
         ),
         ProfileDataViewInner::ProfileViewDetailed(p) => (
-            p.display_name.as_ref().map(|n| n.as_ref().to_string()).unwrap_or_default(),
+            p.display_name
+                .as_ref()
+                .map(|n| n.as_ref().to_string())
+                .unwrap_or_default(),
             p.handle.as_ref().to_string(),
-            p.description.as_ref().map(|d| d.as_ref().to_string()).unwrap_or_default(),
+            p.description
+                .as_ref()
+                .map(|d| d.as_ref().to_string())
+                .unwrap_or_default(),
             p.avatar.as_ref().map(|u| u.as_ref().to_string()),
             p.banner.as_ref().map(|u| u.as_ref().to_string()),
             p.did.as_ref().to_string(),
@@ -762,7 +839,8 @@ pub async fn og_profile_image(
                 (CACHE_CONTROL, "public, max-age=3600"),
             ],
             cached,
-        ).into_response());
+        )
+            .into_response());
     }
 
     // Fetch notebook count
@@ -828,9 +906,18 @@ pub async fn og_profile_image(
             ) {
                 Ok(bytes) => bytes,
                 Err(e) => {
-                    tracing::error!("Failed to generate profile banner OG image: {:?}, falling back", e);
-                    og::generate_profile_og(&display_name, &handle, &bio, avatar_data, notebook_count)
-                        .unwrap_or_default()
+                    tracing::error!(
+                        "Failed to generate profile banner OG image: {:?}, falling back",
+                        e
+                    );
+                    og::generate_profile_og(
+                        &display_name,
+                        &handle,
+                        &bio,
+                        avatar_data,
+                        notebook_count,
+                    )
+                    .unwrap_or_default()
                 }
             }
         } else {
@@ -842,7 +929,11 @@ pub async fn og_profile_image(
             Ok(bytes) => bytes,
             Err(e) => {
                 tracing::error!("Failed to generate profile OG image: {:?}", e);
-                return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate image").into_response());
+                return Ok((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to generate image",
+                )
+                    .into_response());
             }
         }
     };
@@ -856,7 +947,8 @@ pub async fn og_profile_image(
             (CACHE_CONTROL, "public, max-age=3600"),
         ],
         png_bytes,
-    ).into_response())
+    )
+        .into_response())
 }
 
 // Route: /og/site.png - OpenGraph image for homepage
@@ -864,19 +956,24 @@ pub async fn og_profile_image(
 #[get("/og/site.png")]
 pub async fn og_site_image() -> Result<axum::response::Response> {
     use axum::{
-        http::{header::{CACHE_CONTROL, CONTENT_TYPE}, StatusCode},
+        http::{
+            StatusCode,
+            header::{CACHE_CONTROL, CONTENT_TYPE},
+        },
         response::IntoResponse,
     };
 
     // Site OG is static, cache aggressively
     static SITE_OG_CACHE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
 
-    let png_bytes = SITE_OG_CACHE.get_or_init(|| {
-        og::generate_site_og().unwrap_or_default()
-    });
+    let png_bytes = SITE_OG_CACHE.get_or_init(|| og::generate_site_og().unwrap_or_default());
 
     if png_bytes.is_empty() {
-        return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate image").into_response());
+        return Ok((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to generate image",
+        )
+            .into_response());
     }
 
     Ok((
@@ -885,7 +982,8 @@ pub async fn og_site_image() -> Result<axum::response::Response> {
             (CACHE_CONTROL, "public, max-age=86400"),
         ],
         png_bytes.clone(),
-    ).into_response())
+    )
+        .into_response())
 }
 
 // #[server(endpoint = "static_routes", output = server_fn::codec::Json)]

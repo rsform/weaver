@@ -655,6 +655,30 @@ pub fn use_entries_from_ufos() -> (
         async move {
             match fetcher.fetch_entries_from_ufos().await {
                 Ok(entries) => {
+                    // Cache blobs for each entry's embedded images
+                    for arc in &entries {
+                        let (view, entry, _) = arc.as_ref();
+                        if let Some(embeds) = &entry.embeds {
+                            if let Some(images) = &embeds.images {
+                                use jacquard::smol_str::ToSmolStr;
+                                use jacquard::types::aturi::AtUri;
+                                // Extract ident from the entry's at-uri
+                                if let Ok(at_uri) = AtUri::new(view.uri.as_ref()) {
+                                    let ident = at_uri.authority().to_smolstr();
+                                    for image in &images.images {
+                                        let cid = image.image.blob().cid();
+                                        cache_blob(
+                                            ident.clone(),
+                                            cid.to_smolstr(),
+                                            image.name.as_ref().map(|n| n.to_smolstr()),
+                                        )
+                                        .await
+                                        .ok();
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Some(
                         entries
                             .iter()
@@ -945,6 +969,26 @@ pub fn use_standalone_entry_data(
         async move {
             match fetcher.get_entry_by_rkey(ident(), rkey()).await {
                 Ok(Some(data)) => {
+                    // Cache blobs for embedded images
+                    if let Some(embeds) = &data.entry.embeds {
+                        if let Some(images) = &embeds.images {
+                            use jacquard::smol_str::ToSmolStr;
+                            use jacquard::types::aturi::AtUri;
+                            if let Ok(at_uri) = AtUri::new(data.entry_view.uri.as_ref()) {
+                                let ident_str = at_uri.authority().to_smolstr();
+                                for image in &images.images {
+                                    let cid = image.image.blob().cid();
+                                    cache_blob(
+                                        ident_str.clone(),
+                                        cid.to_smolstr(),
+                                        image.name.as_ref().map(|n| n.to_smolstr()),
+                                    )
+                                    .await
+                                    .ok();
+                                }
+                            }
+                        }
+                    }
                     let entry_json = serde_json::to_value(&data.entry).ok()?;
                     let entry_view_json = serde_json::to_value(&data.entry_view).ok()?;
                     let notebook_ctx_json = data.notebook_context.as_ref().map(|ctx| {
