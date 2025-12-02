@@ -25,7 +25,7 @@ use jacquard::{
 use std::sync::Arc;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::actor::ProfileDataView;
-use weaver_api::sh_weaver::notebook::{BookEntryView, NotebookView, entry::Entry};
+use weaver_api::sh_weaver::notebook::{BookEntryView, EntryView, NotebookView, entry::Entry};
 // ============================================================================
 // Wrapper Hooks (feature-gated)
 // ============================================================================
@@ -633,6 +633,82 @@ pub fn use_notebooks_from_ufos() -> (
                 .ok()
                 .map(|notebooks| {
                     notebooks
+                        .iter()
+                        .map(|arc| arc.as_ref().clone())
+                        .collect::<Vec<_>>()
+                })
+        }
+    });
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
+/// Fetches entries from UFOS with SSR support in fullstack mode
+#[cfg(feature = "fullstack-server")]
+pub fn use_entries_from_ufos() -> (
+    Result<Resource<Option<Vec<(serde_json::Value, serde_json::Value, u64)>>>, RenderError>,
+    Memo<Option<Vec<(EntryView<'static>, Entry<'static>, u64)>>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            match fetcher.fetch_entries_from_ufos().await {
+                Ok(entries) => {
+                    Some(
+                        entries
+                            .iter()
+                            .filter_map(|arc| {
+                                let (view, entry, time) = arc.as_ref();
+                                let view_json = serde_json::to_value(view).ok()?;
+                                let entry_json = serde_json::to_value(entry).ok()?;
+                                Some((view_json, entry_json, *time))
+                            })
+                            .collect::<Vec<_>>()
+                    )
+                }
+                Err(e) => {
+                    tracing::error!("[use_entries_from_ufos] fetch failed: {:?}", e);
+                    None
+                }
+            }
+        }
+    });
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
+        if let Some(Some(values)) = &*res.read() {
+            let result: Vec<_> = values
+                .iter()
+                .filter_map(|(view_json, entry_json, time)| {
+                    let view = jacquard::from_json_value::<EntryView>(view_json.clone()).ok()?;
+                    let entry = jacquard::from_json_value::<Entry>(entry_json.clone()).ok()?;
+                    Some((view, entry, *time))
+                })
+                .collect();
+            Some(result)
+        } else {
+            None
+        }
+    }));
+    (res, memo)
+}
+
+/// Fetches entries from UFOS client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_entries_from_ufos() -> (
+    Resource<Option<Vec<(EntryView<'static>, Entry<'static>, u64)>>>,
+    Memo<Option<Vec<(EntryView<'static>, Entry<'static>, u64)>>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_entries_from_ufos()
+                .await
+                .ok()
+                .map(|entries| {
+                    entries
                         .iter()
                         .map(|arc| arc.as_ref().clone())
                         .collect::<Vec<_>>()

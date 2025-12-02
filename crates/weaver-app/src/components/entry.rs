@@ -9,8 +9,8 @@ use crate::{
     data::use_handle,
 };
 use dioxus::prelude::*;
-use jacquard::IntoStatic;
 use jacquard::types::aturi::AtUri;
+use jacquard::{IntoStatic, types::string::Handle};
 
 pub const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
 
@@ -75,7 +75,10 @@ pub fn EntryPage(
         book_title(),
         title()
     );
-    tracing::debug!("[EntryPage] rendering, entry.is_some={}", entry.read().is_some());
+    tracing::debug!(
+        "[EntryPage] rendering, entry.is_some={}",
+        entry.read().is_some()
+    );
 
     // Handle blob caching when entry data is available
     // Use read() instead of read_unchecked() for proper reactive tracking
@@ -147,6 +150,61 @@ pub fn extract_preview(content: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &cleaned[..max_len - 3])
     }
+}
+
+/// Truncate markdown content for preview (preserves markdown syntax)
+/// Takes first few paragraphs up to max_chars, truncating at paragraph boundary
+fn truncate_markdown_preview(content: &str, max_chars: usize, max_paragraphs: usize) -> String {
+    let mut result = String::new();
+    let mut char_count = 0;
+    let mut para_count = 0;
+    let mut in_code_block = false;
+
+    for line in content.lines() {
+        // Track code blocks to avoid breaking them
+        if line.trim().starts_with("```") {
+            in_code_block = !in_code_block;
+            // Skip code blocks in preview entirely
+            if in_code_block {
+                continue;
+            }
+        }
+
+        if in_code_block {
+            continue;
+        }
+
+        // Skip headings, images in preview
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.starts_with('!') {
+            continue;
+        }
+
+        // Empty line = paragraph boundary
+        if trimmed.is_empty() {
+            if !result.is_empty() && !result.ends_with("\n\n") {
+                para_count += 1;
+                if para_count >= max_paragraphs || char_count >= max_chars {
+                    break;
+                }
+                result.push_str("\n\n");
+            }
+            continue;
+        }
+
+        // Check if adding this line would exceed limit
+        if char_count + line.len() > max_chars && !result.is_empty() {
+            break;
+        }
+
+        if !result.is_empty() && !result.ends_with('\n') {
+            result.push('\n');
+        }
+        result.push_str(line);
+        char_count += line.len();
+    }
+
+    result.trim().to_string()
 }
 
 /// OpenGraph and Twitter Card meta tags for entries
@@ -225,13 +283,7 @@ fn EntryPageView(
     } else {
         crate::env::WEAVER_APP_HOST.to_string()
     };
-    let canonical_url = format!(
-        "{}/{}/{}/{}",
-        base,
-        ident(),
-        book_title(),
-        entry_path
-    );
+    let canonical_url = format!("{}/{}/{}/{}", base, ident(), book_title(), entry_path);
     let og_image_url = format!(
         "{}/og/{}/{}/{}.png",
         base,
@@ -366,7 +418,7 @@ pub fn EntryCard(
         None
     };
 
-    // Render preview from entry content
+    // Render preview from truncated entry content
     let preview_html = parsed_entry.as_ref().map(|entry| {
         let parser = markdown_weaver::Parser::new(&entry.content);
         let mut html_buf = String::new();
@@ -451,6 +503,138 @@ pub fn EntryCard(
             if let Some(ref html) = preview_html {
                 div { class: "entry-card-preview", dangerous_inner_html: "{html}" }
             }
+            if let Some(ref tags) = entry_view.tags {
+                if !tags.is_empty() {
+                    div { class: "entry-card-tags",
+                        for tag in tags.iter() {
+                            span { class: "entry-card-tag", "{tag}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Card for entries in a feed (e.g., home page)
+/// Takes EntryView directly (not BookEntryView) and always shows author info
+#[component]
+pub fn FeedEntryCard(entry_view: EntryView<'static>, entry: entry::Entry<'static>) -> Element {
+    use crate::Route;
+    use jacquard::from_data;
+    use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+
+    let title = entry_view
+        .title
+        .as_ref()
+        .map(|t| t.as_ref())
+        .unwrap_or("Untitled");
+
+    // Extract DID and rkey from the entry URI
+    let uri = &entry_view.uri;
+    let parsed_uri = jacquard::types::aturi::AtUri::new(uri.as_ref()).ok();
+
+    let ident = parsed_uri
+        .as_ref()
+        .map(|u| u.authority().clone().into_static())
+        .unwrap_or_else(|| AtIdentifier::Handle(Handle::new_static("invalid.handle").unwrap()));
+
+    let rkey: SmolStr = parsed_uri
+        .as_ref()
+        .and_then(|u| u.rkey().map(|r| SmolStr::new(r.0.as_str())))
+        .unwrap_or_default();
+
+    // Format date from record's created_at
+    let formatted_date = entry.created_at.as_ref().format("%B %d, %Y").to_string();
+
+    // Get first author
+    let first_author = entry_view.authors.first();
+
+    // Render preview from truncated entry content
+    let preview_html = {
+        let parser = markdown_weaver::Parser::new(&entry.content);
+        let mut html_buf = String::new();
+        markdown_weaver::html::push_html(&mut html_buf, parser);
+        html_buf
+    };
+
+    rsx! {
+        div { class: "entry-card feed-entry-card",
+            // Title
+            Link {
+                to: Route::StandaloneEntry {
+                    ident: ident.clone(),
+                    rkey: rkey.clone().into()
+                },
+                class: "entry-card-title-link",
+                h3 { class: "entry-card-title", "{title}" }
+            }
+
+            // Byline: author + date
+            div { class: "entry-card-byline",
+                if let Some(author) = first_author {
+                    {
+                        match &author.record.inner {
+                            ProfileDataViewInner::ProfileView(profile) => {
+                                let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
+                                let handle = profile.handle.clone();
+                                rsx! {
+                                    Link {
+                                        to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
+                                        class: "entry-card-author",
+                                        if let Some(ref avatar_url) = profile.avatar {
+                                            Avatar {
+                                                AvatarImage { src: avatar_url.as_ref() }
+                                            }
+                                        }
+                                        span { class: "author-name", "{display_name}" }
+                                        span { class: "meta-label", "@{handle}" }
+                                    }
+                                }
+                            }
+                            ProfileDataViewInner::ProfileViewDetailed(profile) => {
+                                let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
+                                let handle = profile.handle.clone();
+                                rsx! {
+                                    Link {
+                                        to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
+                                        class: "entry-card-author",
+                                        if let Some(ref avatar_url) = profile.avatar {
+                                            Avatar {
+                                                AvatarImage { src: avatar_url.as_ref() }
+                                            }
+                                        }
+                                        span { class: "author-name", "{display_name}" }
+                                        span { class: "meta-label", "@{handle}" }
+                                    }
+                                }
+                            }
+                            ProfileDataViewInner::TangledProfileView(profile) => {
+                                let handle = profile.handle.clone();
+                                rsx! {
+                                    Link {
+                                        to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
+                                        class: "entry-card-author",
+                                        span { class: "author-name", "@{handle}" }
+                                    }
+                                }
+                            }
+                            _ => {
+                                rsx! {
+                                    div { class: "entry-card-author",
+                                        span { class: "author-name", "Unknown" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                div { class: "entry-card-date",
+                    time { datetime: "{entry.created_at.as_str()}", "{formatted_date}" }
+                }
+            }
+
+            div { class: "entry-card-preview", dangerous_inner_html: "{preview_html}" }
             if let Some(ref tags) = entry_view.tags {
                 if !tags.is_empty() {
                     div { class: "entry-card-tags",

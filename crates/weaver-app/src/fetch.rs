@@ -480,6 +480,68 @@ impl Fetcher {
         Ok(notebooks)
     }
 
+    /// Fetch entries from UFOS discovery service (reverse chronological)
+    pub async fn fetch_entries_from_ufos(
+        &self,
+    ) -> Result<Vec<Arc<(EntryView<'static>, Entry<'static>, u64)>>> {
+        use jacquard::{IntoStatic, types::aturi::AtUri, types::ident::AtIdentifier};
+
+        let url = "https://ufos-api.microcosm.blue/records?collection=sh.weaver.notebook.entry";
+
+        let response = reqwest::get(url)
+            .await
+            .map_err(|e| {
+                tracing::error!("[fetch_entries_from_ufos] request failed: {:?}", e);
+                dioxus::CapturedError::from_display(e)
+            })?;
+
+        let mut records: Vec<UfosRecord> = response
+            .json()
+            .await
+            .map_err(|e| {
+                tracing::error!("[fetch_entries_from_ufos] json parse failed: {:?}", e);
+                dioxus::CapturedError::from_display(e)
+            })?;
+
+        // Sort by time_us descending (reverse chronological)
+        records.sort_by(|a, b| b.time_us.cmp(&a.time_us));
+
+        let mut entries = Vec::new();
+        let client = self.get_client();
+
+        for ufos_record in records {
+            // Parse DID
+            let did = match Did::new(&ufos_record.did) {
+                Ok(d) => d.into_static(),
+                Err(e) => {
+                    tracing::warn!("[fetch_entries_from_ufos] invalid DID {}: {:?}", ufos_record.did, e);
+                    continue;
+                }
+            };
+            let ident = AtIdentifier::Did(did);
+
+            // Fetch the entry view
+            match client
+                .fetch_entry_by_rkey(&ident, &ufos_record.rkey)
+                .await
+            {
+                Ok((entry_view, entry)) => {
+                    entries.push(Arc::new((
+                        entry_view.into_static(),
+                        entry.into_static(),
+                        ufos_record.time_us,
+                    )));
+                }
+                Err(e) => {
+                    tracing::warn!("[fetch_entries_from_ufos] failed to load entry {}: {:?}", ufos_record.rkey, e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(entries)
+    }
+
     pub async fn fetch_notebooks_for_did(
         &self,
         ident: &AtIdentifier<'_>,

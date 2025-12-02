@@ -43,3 +43,22 @@
     color: var(--color-text, #666);
     font-weight: 500;
 }
+
+.nav-tools {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-left: auto;
+    margin-right: 1rem;
+}
+
+.nav-tool-link {
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.2s ease;
+}
+
+.nav-tool-link:hover {
+    color: var(--color-primary);
+}

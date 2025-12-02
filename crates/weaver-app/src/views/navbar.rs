@@ -6,6 +6,7 @@ use crate::data::{use_get_handle, use_load_handle};
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
 use dioxus_primitives::toast::{ToastOptions, use_toast};
+use jacquard::types::ident::AtIdentifier;
 use jacquard::types::string::Did;
 
 const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
@@ -63,14 +64,22 @@ pub fn Navbar() -> Element {
         div {
             id: "navbar",
             nav { class: "breadcrumbs",
-                Link {
-                    to: Route::Home {},
-                    class: "breadcrumb",
-                    "Home"
+                // On home page: show profile link if authenticated, otherwise "Home"
+                match (&route, &auth_state.read().did) {
+                    (Route::Home {}, Some(did)) => rsx! {
+                        ProfileBreadcrumb { did: did.clone() }
+                    },
+                    _ => rsx! {
+                        a {
+                            href: "/",
+                            class: "breadcrumb",
+                            "Home"
+                        }
+                    }
                 }
 
                 // Show repository breadcrumb if we're on a repository page
-                match route {
+                match &route {
                     Route::RepositoryIndex { ident } => {
                         let route_handle = route_handle.read().clone();
                         let handle = route_handle.unwrap_or(ident.clone());
@@ -239,6 +248,23 @@ pub fn Navbar() -> Element {
                     _ => rsx! {},
                 }
             }
+
+            // Tool links (show on home page)
+            if matches!(route, Route::Home {}) {
+                nav { class: "nav-tools",
+                    Link {
+                        to: Route::RecordPage { uri: vec![] },
+                        class: "nav-tool-link",
+                        "Record Viewer"
+                    }
+                    Link {
+                        to: Route::Editor { entry: None },
+                        class: "nav-tool-link",
+                        "Editor"
+                    }
+                }
+            }
+
             if auth_state.read().is_authenticated() {
                 if let Some(did) = &auth_state.read().did {
                     AuthButton { did: did.clone() }
@@ -260,6 +286,17 @@ pub fn Navbar() -> Element {
         }
 
         Outlet::<Route> {}
+    }
+}
+
+#[component]
+fn ProfileBreadcrumb(did: Did<'static>) -> Element {
+    rsx! {
+        Link {
+            to: Route::RepositoryIndex { ident: AtIdentifier::Did(did) },
+            class: "breadcrumb",
+            "Profile"
+        }
     }
 }
 

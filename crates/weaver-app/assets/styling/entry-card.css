@@ -105,27 +105,75 @@
 }
 
 .entry-card-meta {
-    gap: 1rem;
     margin-bottom: 0.5rem;
     font-size: 0.875rem;
     color: var(--color-subtle);
 }
 
+a.entry-card-author,
 .entry-card-author {
-    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    margin-top: 0.25rem;
+    text-decoration: none;
 }
 
 .entry-card-author .author-name {
     font-weight: 500;
     color: var(--color-text);
+    transition: color 0.2s ease;
+}
+
+.entry-card-author .meta-label {
+    color: var(--color-muted);
+    font-size: 0.8rem;
+    transition: color 0.2s ease;
+}
+
+.entry-card-author:hover .author-name,
+.entry-card-author:hover .meta-label,
+.feed-entry-card .entry-card-author:hover .meta-label {
+    color: var(--color-link);
 }
 
 .entry-card-date {
     color: var(--color-muted);
     font-size: 0.8rem;
+}
+
+/* Feed entry card - matches existing entry-card patterns */
+.feed-entry-card {
+    background: var(--color-surface);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text) 6%, transparent);
+    padding: 1.25rem;
+    transition:
+        box-shadow 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.feed-entry-card:hover {
+    border-left: 2px solid var(--color-secondary);
+    margin-left: -1px;
+}
+
+.feed-entry-card:hover .entry-card-title {
+    color: var(--color-secondary);
+}
+
+.feed-entry-card .entry-card-title {
+    margin-bottom: 0.5rem;
+}
+
+.feed-entry-card .entry-card-byline {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.feed-entry-card .entry-card-byline .entry-card-date {
+    margin-left: auto;
 }
 
 .entry-card-tags {
@@ -196,5 +244,15 @@
     .entry-card-link {
         box-shadow: none;
         border: 1px solid var(--color-border);
+    }
+
+    .feed-entry-card {
+        box-shadow: none;
+        border-top: 1px solid var(--color-border);
+        border-right: 1px solid var(--color-border);
+        border-bottom: 1px solid var(--color-border);
+
+        border-left: 1px solid var(--color-border);
+        /* Keep border-left as accent */
     }
 }
