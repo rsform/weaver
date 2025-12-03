@@ -161,17 +161,47 @@ pub fn dom_position_to_text_offset(
     })?;
 
     // Calculate UTF-16 offset from start of container to the position
+    // Skip text nodes inside contenteditable="false" elements (like embeds)
     let mut utf16_offset_in_container = 0;
 
-    if let Ok(walker) = dom_document.create_tree_walker_with_what_to_show(&container, 4) {
-        while let Ok(Some(text_node)) = walker.next_node() {
-            if &text_node == node {
-                utf16_offset_in_container += offset_in_text_node;
-                break;
+    // Use SHOW_ALL (0xFFFFFFFF) to see element boundaries for tracking non-editable regions
+    if let Ok(walker) = dom_document.create_tree_walker_with_what_to_show(&container, 0xFFFFFFFF) {
+        // Track the non-editable element we're inside (if any)
+        let mut skip_until_exit: Option<web_sys::Element> = None;
+
+        while let Ok(Some(dom_node)) = walker.next_node() {
+            // Check if we've exited the non-editable subtree
+            if let Some(ref skip_elem) = skip_until_exit {
+                if !skip_elem.contains(Some(&dom_node)) {
+                    skip_until_exit = None;
+                }
             }
 
-            if let Some(text) = text_node.text_content() {
-                utf16_offset_in_container += text.encode_utf16().count();
+            // Check if entering a non-editable element
+            if skip_until_exit.is_none() {
+                if let Some(element) = dom_node.dyn_ref::<web_sys::Element>() {
+                    if element.get_attribute("contenteditable").as_deref() == Some("false") {
+                        skip_until_exit = Some(element.clone());
+                        continue;
+                    }
+                }
+            }
+
+            // Skip everything inside non-editable regions
+            if skip_until_exit.is_some() {
+                continue;
+            }
+
+            // Only process text nodes
+            if dom_node.node_type() == web_sys::Node::TEXT_NODE {
+                if &dom_node == node {
+                    utf16_offset_in_container += offset_in_text_node;
+                    break;
+                }
+
+                if let Some(text) = dom_node.text_content() {
+                    utf16_offset_in_container += text.encode_utf16().count();
+                }
             }
         }
     }
@@ -331,3 +361,4 @@ pub fn update_paragraph_dom(
 ) -> bool {
     false
 }
+

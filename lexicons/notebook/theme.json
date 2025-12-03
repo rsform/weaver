@@ -28,15 +28,28 @@
           "fonts": {
             "type": "object",
             "required": ["body", "heading", "monospace"],
+            "description": "Fonts to be used in the notebook. Can specify a name or list of names (will load if available) or a file or list of files for each. Empty lists will use site defaults."
             "properties": {
               "body": {
-                "type": "string"
+                "type": "array",
+                "items": {
+                  "type": "ref",
+                  "ref": "#font"
+                }
               },
               "heading": {
-                "type": "string"
+                "type": "array",
+                "items": {
+                  "type": "ref",
+                  "ref": "#font"
+                }
               },
               "monospace": {
-                "type": "string"
+                "type": "array",
+                "items": {
+                  "type": "ref",
+                  "ref": "#font"
+                }
               }
             }
           },
@@ -73,14 +86,40 @@
     },
     "codeThemeFile": {
       "type": "object",
-      "required": ["name", "did", "content"],
+      "required": ["name", "content"],
+      "description": "Custom syntax highlighting theme file (sublime text/textmate theme format)",
       "properties": {
         "name": {
           "type": "string"
         },
-        "did": {
-          "type": "string",
-          "format": "did"
+        "content": {
+          "type": "blob",
+          "accept": ["*/*"],
+          "maxSize": 20000
+        }
+      }
+    },
+    "font": {
+      "type": "object",
+      "required": ["value"],
+      "properties": {
+        "value": {
+          "type": "union",
+          "refs": ["#fontName", "#fontFile"],
+          "description": "Font for a notebook"
+        }
+      }
+    },
+    "fontName": {
+      "type": "string"
+    },
+    "fontFile": {
+      "type": "object",
+      "required": ["name", "content"],
+      "description": "Custom woff(2) or ttf font file"
+      "properties": {
+        "name": {
+          "type": "string"
         },
         "content": {
           "type": "blob",

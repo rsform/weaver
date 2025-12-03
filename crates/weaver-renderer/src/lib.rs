@@ -27,6 +27,7 @@ pub mod atproto;
 pub mod base_html;
 pub mod code_pretty;
 pub mod css;
+pub mod math;
 #[cfg(not(target_family = "wasm"))]
 pub mod static_site;
 pub mod theme;

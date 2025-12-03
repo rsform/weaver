@@ -173,14 +173,11 @@ fn main() {
 
         #[cfg(feature = "fullstack-server")]
         let router = {
-            use jacquard::client::UnauthenticatedSession;
             let fetcher = Arc::new(fetch::Fetcher::new(OAuthClient::new(
                 AuthStore::new(),
                 ClientData::new_public(CONFIG.oauth.clone()),
             )));
-            let blob_cache = Arc::new(BlobCache::new(Arc::new(
-                UnauthenticatedSession::new_public(),
-            )));
+            let blob_cache = Arc::new(BlobCache::new(fetcher.clone()));
             axum::Router::new()
                 .route("/favicon.ico", get(favicon))
                 // Server side render the application, serve static assets, and register server functions
@@ -353,12 +350,16 @@ fn image_not_found() -> axum::response::Response {
 }
 
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
-#[get("/{_notebook}/image/{name}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
-pub async fn image_named(_notebook: SmolStr, name: SmolStr) -> Result<axum::response::Response> {
+#[get("/{notebook}/image/{name}", blob_cache: Extension<Arc<crate::blobcache::BlobCache>>)]
+pub async fn image_named(notebook: SmolStr, name: SmolStr) -> Result<axum::response::Response> {
     if let Some(bytes) = blob_cache.get_named(&name) {
-        Ok(build_image_response(bytes))
-    } else {
-        Ok(image_not_found())
+        return Ok(build_image_response(bytes));
+    }
+
+    // Try to resolve from notebook
+    match blob_cache.resolve_from_notebook(&notebook, &name).await {
+        Ok(bytes) => Ok(build_image_response(bytes)),
+        Err(_) => Ok(image_not_found()),
     }
 }
 

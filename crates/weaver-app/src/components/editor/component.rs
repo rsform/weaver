@@ -59,15 +59,16 @@ enum LoadResult {
 /// - `initial_content`: Optional initial markdown content (for new entries)
 /// - `entry_uri`: Optional AT-URI of an existing entry to edit
 /// - `target_notebook`: Optional notebook title to add the entry to when publishing
+/// - `entry_index`: Optional index of entries for wikilink validation
 #[component]
 pub fn MarkdownEditor(
     initial_content: Option<String>,
     entry_uri: Option<String>,
     target_notebook: Option<SmolStr>,
+    entry_index: Option<weaver_common::EntryIndex>,
 ) -> Element {
     let fetcher = use_context::<Fetcher>();
 
-    // Determine draft key - use entry URI if editing existing, otherwise generate TID
     let draft_key = use_hook(|| {
         entry_uri.clone().unwrap_or_else(|| {
             format!(
@@ -77,17 +78,14 @@ pub fn MarkdownEditor(
         })
     });
 
-    // Parse entry URI once
     let parsed_uri = entry_uri.as_ref().and_then(|s| {
         jacquard::types::string::AtUri::new(s)
             .ok()
             .map(|u| u.into_static())
     });
-
-    // Clone draft_key for render (resource closure moves it)
     let draft_key_for_render = draft_key.clone();
+    let target_notebook_for_render = target_notebook.clone();
 
-    // Resource loads and merges document state
     let load_resource = use_resource(move || {
         let fetcher = fetcher.clone();
         let draft_key = draft_key.clone();
@@ -95,7 +93,6 @@ pub fn MarkdownEditor(
         let initial_content = initial_content.clone();
 
         async move {
-            // Try to load merged state from PDS + localStorage
             match load_and_merge_document(&fetcher, &draft_key, entry_uri.as_ref()).await {
                 Ok(Some(state)) => {
                     tracing::debug!("Loaded merged document state");
@@ -110,7 +107,6 @@ pub fn MarkdownEditor(
                             let is_own_entry = match entry_authority {
                                 AtIdentifier::Did(did) => did == &current_did,
                                 AtIdentifier::Handle(handle) => {
-                                    // Resolve handle to DID and compare
                                     match fetcher.client.resolve_handle(handle).await {
                                         Ok(resolved_did) => resolved_did == current_did,
                                         Err(_) => false,
@@ -127,8 +123,6 @@ pub fn MarkdownEditor(
                                 );
                             }
                         }
-
-                        // Try to load the entry content from PDS
                         match load_entry_for_editing(&fetcher, uri).await {
                             Ok(loaded) => {
                                 // Create LoadedDocState from entry
@@ -188,7 +182,6 @@ pub fn MarkdownEditor(
         }
     });
 
-    // Render based on load state
     match &*load_resource.read() {
         Some(LoadResult::Loaded(state)) => {
             rsx! {
@@ -196,6 +189,8 @@ pub fn MarkdownEditor(
                     key: "{draft_key_for_render}",
                     draft_key: draft_key_for_render.clone(),
                     loaded_state: state.clone(),
+                    target_notebook: target_notebook_for_render.clone(),
+                    entry_index: entry_index.clone(),
                 }
             }
         }
@@ -226,69 +221,121 @@ pub fn MarkdownEditor(
 /// - PDS sync with auto-save
 /// - Keyboard shortcuts (Ctrl+B for bold, Ctrl+I for italic)
 #[component]
-fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Element {
+fn MarkdownEditorInner(
+    draft_key: String,
+    loaded_state: LoadedDocState,
+    target_notebook: Option<SmolStr>,
+    /// Optional entry index for wikilink validation in the editor
+    entry_index: Option<weaver_common::EntryIndex>,
+) -> Element {
     // Context for authenticated API calls
     let fetcher = use_context::<Fetcher>();
     let auth_state = use_context::<Signal<AuthState>>();
 
-    // Create EditorDocument from loaded state (must be in use_hook for Signals)
     let mut document = use_hook(|| {
         let doc = EditorDocument::from_loaded_state(loaded_state.clone());
-        // Save to localStorage so we have a local backup
         storage::save_to_storage(&doc, &draft_key).ok();
         doc
     });
     let editor_id = "markdown-editor";
-
-    // Cache for incremental paragraph rendering
     let mut render_cache = use_signal(|| render::RenderCache::default());
-
-    // Image resolver for mapping /image/{name} to data URLs or CDN URLs
     let mut image_resolver = use_signal(EditorImageResolver::default);
+    let resolved_content = use_signal(weaver_common::ResolvedContent::default);
 
-    // Render paragraphs with incremental caching
-    // Reads document.last_edit signal - creates dependency on content changes only
     let doc_for_memo = document.clone();
+    let doc_for_refs = document.clone();
     let paragraphs = use_memo(move || {
-        let edit = doc_for_memo.last_edit(); // Signal read - reactive dependency
+        let edit = doc_for_memo.last_edit();
         let cache = render_cache.peek();
         let resolver = image_resolver();
+        let resolved = resolved_content();
 
-        let (paras, new_cache) = render::render_paragraphs_incremental(
+        let (paras, new_cache, refs) = render::render_paragraphs_incremental(
             doc_for_memo.loro_text(),
             Some(&cache),
             edit.as_ref(),
             Some(&resolver),
+            entry_index.as_ref(),
+            &resolved,
         );
-
-        // Update cache for next render (write-only via spawn to avoid reactive loop)
+        let mut doc_for_spawn = doc_for_refs.clone();
         dioxus::prelude::spawn(async move {
             render_cache.set(new_cache);
+            doc_for_spawn.set_collected_refs(refs);
         });
 
         paras
     });
 
-    // Flatten offset maps from all paragraphs
+    // Background fetch for AT embeds
+    let mut resolved_content_for_fetch = resolved_content.clone();
+    let doc_for_embeds = document.clone();
+    let fetcher_for_embeds = fetcher.clone();
+    use_effect(move || {
+        let refs = doc_for_embeds.collected_refs.read();
+        let current_resolved = resolved_content_for_fetch.peek();
+        let fetcher = fetcher_for_embeds.clone();
+
+        // Find AT embeds that need fetching
+        let to_fetch: Vec<String> = refs
+            .iter()
+            .filter_map(|r| match r {
+                weaver_common::ExtractedRef::AtEmbed { uri, .. } => {
+                    // Skip if already resolved
+                    if let Ok(at_uri) = jacquard::types::string::AtUri::new(uri) {
+                        if current_resolved.get_embed_content(&at_uri).is_none() {
+                            return Some(uri.clone());
+                        }
+                    }
+                    None
+                }
+                _ => None,
+            })
+            .collect();
+
+        if to_fetch.is_empty() {
+            return;
+        }
+
+        // Spawn background fetches
+        dioxus::prelude::spawn(async move {
+            for uri_str in to_fetch {
+                let Ok(at_uri) = jacquard::types::string::AtUri::new(&uri_str) else {
+                    continue;
+                };
+
+                match weaver_renderer::atproto::fetch_and_render(&at_uri, &fetcher)
+                    .await
+                {
+                    Ok(html) => {
+                        resolved_content_for_fetch.with_mut(|rc| {
+                            rc.add_embed(at_uri.into_static(), html, None);
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("failed to fetch embed {}: {}", uri_str, e);
+                    }
+                }
+            }
+        });
+    });
+
+    let mut new_tag = use_signal(String::new);
+
     let offset_map = use_memo(move || {
         paragraphs()
             .iter()
             .flat_map(|p| p.offset_map.iter().cloned())
             .collect::<Vec<_>>()
     });
-
-    // Flatten syntax spans from all paragraphs
     let syntax_spans = use_memo(move || {
         paragraphs()
             .iter()
             .flat_map(|p| p.syntax_spans.iter().cloned())
             .collect::<Vec<_>>()
     });
-
-    // Cache paragraphs for change detection AND for event handlers to access
     let mut cached_paragraphs = use_signal(|| Vec::<ParagraphRender>::new());
 
-    // Update DOM when paragraphs change (incremental rendering)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let mut doc_for_dom = document.clone();
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -365,7 +412,6 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let mut interval_holder: Signal<Option<gloo_timers::callback::Interval>> = use_signal(|| None);
 
-    // Auto-save with periodic check (no reactive dependency to avoid loops)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let doc_for_autosave = document.clone();
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -385,7 +431,7 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
                     None => true,
                     Some(last) => &current_frontiers != last,
                 }
-            }; // drop last_frontiers borrow here
+            };
 
             if needs_save {
                 doc.sync_loro_cursor();
@@ -436,11 +482,7 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
             // Get target range from the event if available
             let paras = cached_paras.peek().clone();
             let target_range = get_target_range_from_event(&evt, editor_id, &paras);
-
-            // Get data from the event
             let data = get_data_from_event(&evt);
-
-            // Build context and handle
             let ctx = BeforeInputContext {
                 input_type: input_type.clone(),
                 data,
@@ -530,9 +572,6 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
         closure.forget();
     });
 
-    // Local state for adding new tags
-    let mut new_tag = use_signal(String::new);
-
     rsx! {
         Stylesheet { href: asset!("/assets/styling/editor.css") }
         div { class: "markdown-editor-container",
@@ -621,6 +660,7 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
                         PublishButton {
                             document: document.clone(),
                             draft_key: draft_key.to_string(),
+                            target_notebook: target_notebook.as_ref().map(|s| s.to_string()),
                         }
                     }
                 }
@@ -804,9 +844,45 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
 
                     onclick: {
                         let mut doc = document.clone();
-                        move |_evt| {
+                        move |evt| {
                             tracing::debug!("onclick fired");
                             let paras = cached_paragraphs();
+
+                            // Check if click target is a math-clickable element
+                            #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                            {
+                                use dioxus::web::WebEventExt;
+                                use wasm_bindgen::JsCast;
+
+                                let web_evt = evt.as_web_event();
+                                if let Some(target) = web_evt.target() {
+                                    if let Some(element) = target.dyn_ref::<web_sys::Element>() {
+                                        // Check element or ancestors for math-clickable
+                                        if let Ok(Some(math_el)) = element.closest(".math-clickable") {
+                                            if let Some(char_target) = math_el.get_attribute("data-char-target") {
+                                                if let Ok(offset) = char_target.parse::<usize>() {
+                                                    tracing::debug!("math-clickable clicked, moving cursor to {}", offset);
+                                                    doc.cursor.write().offset = offset;
+                                                    *doc.selection.write() = None;
+                                                    // Update visibility FIRST so math-source is visible
+                                                    let spans = syntax_spans();
+                                                    update_syntax_visibility(offset, None, &spans, &paras);
+                                                    // Then set DOM selection
+                                                    let map = offset_map();
+                                                    let _ = crate::components::editor::cursor::restore_cursor_position(
+                                                        offset,
+                                                        &map,
+                                                        editor_id,
+                                                        None,
+                                                    );
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             sync_cursor_from_dom(&mut doc, editor_id, &paras);
                             let spans = syntax_spans();
                             let cursor_offset = doc.cursor.read().offset;
@@ -980,8 +1056,6 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
                         }
                     },
                     }
-
-                    // Debug panel snug below editor
                     div { class: "editor-debug",
                         div { "Cursor: {document.cursor.read().offset}, Chars: {document.len_chars()}" },
                         ReportButton {
@@ -991,7 +1065,6 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
                     }
                 }
 
-            // Toolbar in grid column 2, row 3
             EditorToolbar {
                 on_format: {
                     let mut doc = document.clone();
@@ -1040,6 +1113,9 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
                             spawn(async move {
                                 let client = fetcher.get_client();
 
+                                // Clone data for cache pre-warming
+                                let data_for_cache = data.clone();
+
                                 // Upload blob and create temporary PublishedBlob record
                                 match client.publish_blob(data, &name_for_upload, None).await {
                                     Ok((strong_ref, published_blob)) => {
@@ -1061,15 +1137,14 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
                                             }
                                         };
 
-                                        // Build Image using the builder API
+                                        let cid = published_blob.upload.blob().cid().clone().into_static();
+
                                         let name_for_resolver = name_for_upload.clone();
                                         let image = Image::new()
                                             .alt(alt_for_upload.to_cowstr())
                                             .image(published_blob.upload)
                                             .name(name_for_upload.to_cowstr())
                                             .build();
-
-                                        // Add to document
                                         doc_for_spawn.add_image(&image, Some(&strong_ref.uri));
 
                                         // Promote from pending to uploaded in resolver
@@ -1083,6 +1158,20 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
                                         });
 
                                         tracing::info!(name = %name_for_resolver, "Image uploaded to PDS");
+
+                                        // Pre-warm server cache with blob bytes
+                                        #[cfg(feature = "fullstack-server")]
+                                        {
+                                            use jacquard::smol_str::ToSmolStr;
+                                            if let Err(e) = crate::data::cache_blob_bytes(
+                                                cid.to_smolstr(),
+                                                Some(name_for_resolver.into()),
+                                                None,
+                                                data_for_cache.into(),
+                                            ).await {
+                                                tracing::warn!(error = %e, "Failed to pre-warm blob cache");
+                                            }
+                                        }
                                     }
                                     Err(e) => {
                                         tracing::error!(error = %e, "Failed to upload image");
@@ -1091,7 +1180,7 @@ fn MarkdownEditorInner(draft_key: String, loaded_state: LoadedDocState) -> Eleme
                                 }
                             });
                         } else {
-                            tracing::info!(name = %name, "Image added with data URL (not authenticated)");
+                            tracing::debug!(name = %name, "Image added with data URL (not authenticated)");
                         }
                     }
                 },

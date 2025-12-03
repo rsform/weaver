@@ -174,14 +174,28 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 self.write("</code>")?;
             }
             InlineMath(text) => {
-                self.write(r#"<span class="math math-inline">"#)?;
-                escape_html(&mut self.writer, &text)?;
-                self.write("</span>")?;
+                match crate::math::render_math(&text, false) {
+                    crate::math::MathResult::Success(mathml) => {
+                        self.write(r#"<span class="math math-inline">"#)?;
+                        self.write(&mathml)?;
+                        self.write("</span>")?;
+                    }
+                    crate::math::MathResult::Error { html, .. } => {
+                        self.write(&html)?;
+                    }
+                }
             }
             DisplayMath(text) => {
-                self.write(r#"<span class="math math-display">"#)?;
-                escape_html(&mut self.writer, &text)?;
-                self.write("</span>")?;
+                match crate::math::render_math(&text, true) {
+                    crate::math::MathResult::Success(mathml) => {
+                        self.write(r#"<span class="math math-display">"#)?;
+                        self.write(&mathml)?;
+                        self.write("</span>")?;
+                    }
+                    crate::math::MathResult::Error { html, .. } => {
+                        self.write(&html)?;
+                    }
+                }
             }
             Html(html) | InlineHtml(html) => {
                 self.write(&html)?;

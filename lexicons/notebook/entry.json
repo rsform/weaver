@@ -13,13 +13,17 @@
           "title": { "type": "ref", "ref": "sh.weaver.notebook.defs#title" },
           "path": { "type": "ref", "ref": "sh.weaver.notebook.defs#path" },
           "tags": { "type": "ref", "ref": "sh.weaver.notebook.defs#tags" },
-
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "sh.weaver.actor.defs#author"
+            }
+          },
           "content": {
             "type": "string",
-            "maxLength": 200000,
             "description": "The content of the notebook entry. This should be some flavor of Markdown."
           },
-
           "createdAt": {
             "type": "string",
             "format": "datetime",

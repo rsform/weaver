@@ -5,10 +5,11 @@ use jacquard::{
     prelude::IdentityResolver,
     types::string::{AtUri, Cid, Did},
 };
-use markdown_weaver::{CowStr as MdCowStr, Tag, WeaverAttributes};
+use markdown_weaver::{CowStr as MdCowStr, LinkType, Tag, WeaverAttributes};
 use std::collections::HashMap;
 use std::sync::Arc;
 use weaver_api::sh_weaver::notebook::entry::Entry;
+use weaver_common::{EntryIndex, ResolvedContent};
 
 /// Trait for resolving embed content on the client side
 ///
@@ -52,20 +53,7 @@ impl<A: AgentSession + IdentityResolver> DefaultEmbedResolver<A> {
 impl<A: AgentSession + IdentityResolver> EmbedResolver for DefaultEmbedResolver<A> {
     async fn resolve_profile(&self, uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
         use crate::atproto::fetch_and_render_profile;
-        use jacquard::types::ident::AtIdentifier;
-
-        // Extract DID from authority
-        let did = match uri.authority() {
-            AtIdentifier::Did(did) => did,
-            AtIdentifier::Handle(_) => {
-                return Err(ClientRenderError::EntryFetch {
-                    uri: uri.as_ref().to_string(),
-                    source: "Profile URI should use DID not handle".into(),
-                });
-            }
-        };
-
-        fetch_and_render_profile(&did, &*self.agent)
+        fetch_and_render_profile(uri.authority(), &*self.agent)
             .await
             .map_err(|e| ClientRenderError::EntryFetch {
                 uri: uri.as_ref().to_string(),
@@ -144,6 +132,10 @@ pub struct ClientContext<'a, R = ()> {
     embed_resolver: Option<Arc<R>>,
     embed_depth: usize,
 
+    // Pre-resolved content for sync rendering
+    entry_index: Option<EntryIndex>,
+    resolved_content: Option<ResolvedContent>,
+
     // Shared state
     frontmatter: Frontmatter,
     title: MdCowStr<'a>,
@@ -160,6 +152,8 @@ impl<'a, R: EmbedResolver> ClientContext<'a, R> {
             blob_map,
             embed_resolver: None,
             embed_depth: 0,
+            entry_index: None,
+            resolved_content: None,
             frontmatter: Frontmatter::default(),
             title,
         }
@@ -173,9 +167,23 @@ impl<'a, R: EmbedResolver> ClientContext<'a, R> {
             blob_map: self.blob_map,
             embed_resolver: Some(resolver),
             embed_depth: self.embed_depth,
+            entry_index: self.entry_index,
+            resolved_content: self.resolved_content,
             frontmatter: self.frontmatter,
             title: self.title,
         }
+    }
+
+    /// Add an entry index for wikilink resolution
+    pub fn with_entry_index(mut self, index: EntryIndex) -> Self {
+        self.entry_index = Some(index);
+        self
+    }
+
+    /// Add pre-resolved content for sync rendering
+    pub fn with_resolved_content(mut self, content: ResolvedContent) -> Self {
+        self.resolved_content = Some(content);
+        self
     }
 }
 
@@ -191,8 +199,53 @@ impl<'a, R: EmbedResolver> ClientContext<'a, R> {
             blob_map: self.blob_map.clone(),
             embed_resolver: self.embed_resolver.clone(),
             embed_depth: depth,
+            entry_index: self.entry_index.clone(),
+            resolved_content: self.resolved_content.clone(),
             frontmatter: self.frontmatter.clone(),
             title: self.title.clone(),
+        }
+    }
+
+    /// Build an embed tag with resolved content attached
+    fn build_embed_with_content<'s>(
+        &self,
+        embed_type: markdown_weaver::EmbedType,
+        url: String,
+        title: MdCowStr<'s>,
+        id: MdCowStr<'s>,
+        content: String,
+        is_at_uri: bool,
+    ) -> Tag<'s> {
+        let mut attrs = WeaverAttributes {
+            classes: vec![],
+            attrs: vec![],
+        };
+
+        attrs.attrs.push(("content".into(), content.into()));
+
+        // Add metadata for client-side enhancement
+        if is_at_uri {
+            attrs
+                .attrs
+                .push(("data-embed-uri".into(), url.clone().into()));
+
+            if let Ok(at_uri) = AtUri::new(&url) {
+                if at_uri.collection().is_none() {
+                    attrs
+                        .attrs
+                        .push(("data-embed-type".into(), "profile".into()));
+                } else {
+                    attrs.attrs.push(("data-embed-type".into(), "post".into()));
+                }
+            }
+        }
+
+        Tag::Embed {
+            embed_type,
+            dest_url: MdCowStr::Boxed(url.into_boxed_str()),
+            title,
+            id,
+            attrs: Some(attrs),
         }
     }
 
@@ -295,6 +348,34 @@ where
                 title,
                 id,
             } => {
+                // Handle WikiLinks via EntryIndex
+                if matches!(link_type, LinkType::WikiLink { .. }) {
+                    if let Some(index) = &self.entry_index {
+                        let url = dest_url.as_ref();
+                        if let Some((path, _title, fragment)) = index.resolve(url) {
+                            // Build resolved URL with optional fragment
+                            let resolved_url = match fragment {
+                                Some(frag) => format!("{}#{}", path, frag),
+                                None => path.to_string(),
+                            };
+
+                            return Tag::Link {
+                                link_type: *link_type,
+                                dest_url: MdCowStr::Boxed(resolved_url.into_boxed_str()),
+                                title: title.clone(),
+                                id: id.clone(),
+                            };
+                        }
+                    }
+                    // Unresolved wikilink - render as broken link
+                    return Tag::Link {
+                        link_type: *link_type,
+                        dest_url: MdCowStr::Boxed(format!("#{}", dest_url).into_boxed_str()),
+                        title: title.clone(),
+                        id: id.clone(),
+                    };
+                }
+
                 let url = dest_url.as_ref();
 
                 // Try to parse as AT URI
@@ -324,100 +405,112 @@ where
     }
 
     async fn handle_embed<'s>(&self, embed: Tag<'s>) -> Tag<'s> {
-        match &embed {
-            Tag::Embed {
-                embed_type,
-                dest_url,
-                title,
-                id,
-                attrs,
-            } => {
-                // If content already in attrs (from preprocessor), pass through
-                if let Some(attrs) = attrs {
-                    if attrs.attrs.iter().any(|(k, _)| k.as_ref() == "content") {
-                        return embed;
+        let Tag::Embed {
+            embed_type,
+            dest_url,
+            title,
+            id,
+            attrs,
+        } = &embed
+        else {
+            return embed;
+        };
+
+        // If content already in attrs (from preprocessor), pass through
+        if let Some(attrs) = attrs {
+            if attrs.attrs.iter().any(|(k, _)| k.as_ref() == "content") {
+                return embed;
+            }
+        }
+
+        // Own the URL to avoid borrow issues
+        let url: String = dest_url.to_string();
+
+        // Check recursion depth
+        if self.embed_depth >= MAX_EMBED_DEPTH {
+            return embed;
+        }
+
+        // First check for pre-resolved AT URI content
+        if url.starts_with("at://") {
+            if let Ok(at_uri) = AtUri::new(&url) {
+                if let Some(resolved) = &self.resolved_content {
+                    if let Some(content) = resolved.get_embed_content(&at_uri) {
+                        return self.build_embed_with_content(
+                            *embed_type,
+                            url.clone(),
+                            title.clone(),
+                            id.clone(),
+                            content.to_string(),
+                            true,
+                        );
                     }
-                }
-
-                // Check if we have a resolver
-                let Some(resolver) = &self.embed_resolver else {
-                    return embed;
-                };
-
-                // Check recursion depth
-                if self.embed_depth >= MAX_EMBED_DEPTH {
-                    return embed;
-                }
-
-                // Try to fetch content based on URL type
-                let content_result = if dest_url.starts_with("at://") {
-                    // AT Protocol embed
-                    if let Ok(at_uri) = AtUri::new(dest_url.as_ref()) {
-                        if at_uri.collection().is_none() && at_uri.rkey().is_none() {
-                            // Profile embed
-                            resolver.resolve_profile(&at_uri).await
-                        } else {
-                            // Post/record embed
-                            resolver.resolve_post(&at_uri).await
-                        }
-                    } else {
-                        return embed;
-                    }
-                } else if dest_url.starts_with("http://") || dest_url.starts_with("https://") {
-                    // Markdown embed (could be other types, but assume markdown for now)
-                    resolver
-                        .resolve_markdown(dest_url.as_ref(), self.embed_depth + 1)
-                        .await
-                } else {
-                    // Local path or other - skip for now
-                    return embed;
-                };
-
-                // If we got content, attach it to attrs
-                if let Ok(content) = content_result {
-                    let mut new_attrs = attrs.clone().unwrap_or_else(|| WeaverAttributes {
-                        classes: vec![],
-                        attrs: vec![],
-                    });
-
-                    new_attrs.attrs.push(("content".into(), content.into()));
-
-                    // Add metadata for client-side enhancement
-                    if dest_url.starts_with("at://") {
-                        new_attrs
-                            .attrs
-                            .push(("data-embed-uri".into(), dest_url.clone()));
-
-                        if let Ok(at_uri) = AtUri::new(dest_url.as_ref()) {
-                            if at_uri.collection().is_none() {
-                                new_attrs
-                                    .attrs
-                                    .push(("data-embed-type".into(), "profile".into()));
-                            } else {
-                                new_attrs
-                                    .attrs
-                                    .push(("data-embed-type".into(), "post".into()));
-                            }
-                        }
-                    } else {
-                        new_attrs
-                            .attrs
-                            .push(("data-embed-type".into(), "markdown".into()));
-                    }
-
-                    Tag::Embed {
-                        embed_type: *embed_type,
-                        dest_url: dest_url.clone(),
-                        title: title.clone(),
-                        id: id.clone(),
-                        attrs: Some(new_attrs),
-                    }
-                } else {
-                    // Fetch failed, return original
-                    embed
                 }
             }
-            _ => embed,
+        }
+
+        // Check for wikilink-style embed (![[Entry Name]]) via entry index
+        if !url.starts_with("at://") && !url.starts_with("http://") && !url.starts_with("https://")
+        {
+            if let Some(index) = &self.entry_index {
+                if let Some((path, _title, fragment)) = index.resolve(&url) {
+                    // Entry embed - link to the entry
+                    let resolved_url = match fragment {
+                        Some(frag) => format!("{}#{}", path, frag),
+                        None => path.to_string(),
+                    };
+                    return Tag::Embed {
+                        embed_type: *embed_type,
+                        dest_url: MdCowStr::Boxed(resolved_url.into_boxed_str()),
+                        title: title.clone(),
+                        id: id.clone(),
+                        attrs: attrs.clone(),
+                    };
+                }
+            }
+            // Unresolved entry embed - pass through
+            return embed;
+        }
+
+        // Fallback to async resolver if available
+        let Some(resolver) = &self.embed_resolver else {
+            return embed;
+        };
+
+        // Try to fetch content based on URL type
+        let content_result = if url.starts_with("at://") {
+            // AT Protocol embed
+            if let Ok(at_uri) = AtUri::new(&url) {
+                if at_uri.collection().is_none() && at_uri.rkey().is_none() {
+                    // Profile embed
+                    resolver.resolve_profile(&at_uri).await
+                } else {
+                    // Post/record embed
+                    resolver.resolve_post(&at_uri).await
+                }
+            } else {
+                return embed;
+            }
+        } else if url.starts_with("http://") || url.starts_with("https://") {
+            // Markdown embed
+            resolver.resolve_markdown(&url, self.embed_depth + 1).await
+        } else {
+            return embed;
+        };
+
+        // If we got content, attach it
+        if let Ok(content) = content_result {
+            let is_at = url.starts_with("at://");
+            self.build_embed_with_content(
+                *embed_type,
+                url,
+                title.clone(),
+                id.clone(),
+                content,
+                is_at,
+            )
+        } else {
+            embed
         }
     }
 
@@ -452,7 +545,10 @@ mod tests {
     #[test]
     fn test_at_uri_to_web_url_profile() {
         let uri = AtUri::new("at://did:plc:xyz123").unwrap();
-        assert_eq!(at_uri_to_web_url(&uri), "https://weaver.sh/did:plc:xyz123");
+        assert_eq!(
+            at_uri_to_web_url(&uri),
+            "https://alpha.weaver.sh/did:plc:xyz123"
+        );
     }
 
     #[test]
@@ -496,7 +592,7 @@ mod tests {
         let uri = AtUri::new("at://did:plc:xyz123/sh.weaver.notebook.entry/entry123").unwrap();
         assert_eq!(
             at_uri_to_web_url(&uri),
-            "https://weaver.sh/did:plc:xyz123/sh.weaver.notebook.entry/entry123"
+            "https://alpha.weaver.sh/record/at://did:plc:xyz123/sh.weaver.notebook.entry/entry123"
         );
     }
 
@@ -505,7 +601,7 @@ mod tests {
         let uri = AtUri::new("at://did:plc:xyz123/com.example.unknown/rkey").unwrap();
         assert_eq!(
             at_uri_to_web_url(&uri),
-            "https://weaver.sh/did:plc:xyz123/com.example.unknown/rkey"
+            "https://alpha.weaver.sh/record/at://did:plc:xyz123/com.example.unknown/rkey"
         );
     }
 }

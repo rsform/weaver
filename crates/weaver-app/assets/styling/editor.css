@@ -156,13 +156,13 @@
     min-height: 700px;
     line-height: var(--spacing-line-height);
     font-size: 16px;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
+    background: var(--color-base);
+    border: 1px solid var(--color-overlay);
     color: var(--color-text);
 }
 
 .editor-content:focus {
-    background: var(--color-surface);
+    border: 1px solid var(--color-border);
 }
 
 .editor-toolbar {
@@ -228,8 +228,54 @@
 /* Hidden syntax spans - collapsed when cursor is not near */
 .md-syntax-inline.hidden,
 .md-syntax-block.hidden,
-.image-alt.hidden {
+.image-alt.hidden,
+.math-source.hidden {
     display: none;
+}
+
+/* Math source is hidden by default, shown when syntax is visible */
+.math-source {
+    display: none;
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    white-space: pre-wrap;
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+/* When syntax is visible (cursor nearby), show source too */
+.math-source:not(.hidden) {
+    display: inline;
+}
+
+/* Rendered math is always visible */
+.math-rendered {
+    display: inline;
+}
+
+.math-display.math-rendered {
+    display: block;
+    text-align: center;
+    margin: 0.5rem 0;
+}
+
+/* Clickable math - click to edit */
+.math-clickable {
+    cursor: pointer;
+}
+
+/* Math error styling */
+.math-error {
+    border: 1px dashed var(--color-error, #eb6f92);
+    border-radius: 4px;
+    padding: 2px 6px;
+    background: color-mix(in srgb, var(--color-error, #eb6f92) 10%, transparent);
+}
+
+.math-error code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
 }
 
 /* Hide HTML list markers when markdown syntax is visible (not hidden) */
@@ -630,7 +676,9 @@ li:has(.md-syntax-block:not(.hidden)) {
     border-radius: 12px;
     font-size: 12px;
     cursor: pointer;
-    transition: background 0.2s ease, opacity 0.2s ease;
+    transition:
+        background 0.2s ease,
+        opacity 0.2s ease;
     user-select: none;
 }
 
@@ -665,8 +713,12 @@ li:has(.md-syntax-block:not(.hidden)) {
 }
 
 @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* Unsynced state - has pending changes */

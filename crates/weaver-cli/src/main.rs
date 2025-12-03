@@ -389,7 +389,7 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
         use jacquard::http_client::HttpClient;
         use weaver_common::WeaverExt;
         let (entry_ref, was_created) = agent
-            .upsert_entry(&title, entry_title.as_ref(), entry)
+            .upsert_entry(&title, entry_title.as_ref(), entry, None)
             .await?;
 
         if was_created {

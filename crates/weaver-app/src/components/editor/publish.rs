@@ -15,6 +15,7 @@ use weaver_api::com_atproto::repo::get_record::GetRecord;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::com_atproto::repo::{create_record::CreateRecord, put_record::PutRecord};
 use weaver_api::sh_weaver::embed::images::Images;
+use weaver_api::sh_weaver::embed::records::{RecordEmbed, Records};
 use weaver_api::sh_weaver::notebook::entry::{Entry, EntryEmbeds};
 use weaver_common::{WeaverError, WeaverExt};
 
@@ -34,6 +35,18 @@ fn rewrite_draft_paths(content: &str, entry_rkey: &str) -> String {
             let did = &caps[1];
             let name = &caps[3];
             format!("/image/{}/{}/{}", did, entry_rkey, name)
+        })
+        .into_owned()
+}
+
+/// Rewrite draft paths for notebook entries.
+///
+/// Converts `/image/{did}/draft/{blob_rkey}/{name}` to `/image/{notebook}/{name}`
+fn rewrite_draft_paths_for_notebook(content: &str, notebook_key: &str) -> String {
+    DRAFT_IMAGE_PATH_REGEX
+        .replace_all(content, |caps: &regex_lite::Captures| {
+            let name = &caps[3];
+            format!("/image/{}/{}", notebook_key, name)
         })
         .into_owned()
 }
@@ -82,19 +95,15 @@ pub async fn load_entry_for_editing(
     // Resolve DID and PDS
     let (did, pds_url) = match ident {
         AtIdentifier::Did(d) => {
-            let pds = fetcher
-                .client
-                .pds_for_did(d)
-                .await
-                .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve DID: {}", e)))?;
+            let pds = fetcher.client.pds_for_did(d).await.map_err(|e| {
+                WeaverError::InvalidNotebook(format!("Failed to resolve DID: {}", e))
+            })?;
             (d.clone(), pds)
         }
         AtIdentifier::Handle(h) => {
-            let (did, pds) = fetcher
-                .client
-                .pds_for_handle(h)
-                .await
-                .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve handle: {}", e)))?;
+            let (did, pds) = fetcher.client.pds_for_handle(h).await.map_err(|e| {
+                WeaverError::InvalidNotebook(format!("Failed to resolve handle: {}", e))
+            })?;
             (did, pds)
         }
     };
@@ -124,9 +133,12 @@ pub async fn load_entry_for_editing(
     // Build StrongRef from URI and CID
     let entry_ref = StrongRef::new()
         .uri(uri.clone().into_static())
-        .cid(record.cid.ok_or_else(|| {
-            WeaverError::InvalidNotebook("Entry response missing CID".into())
-        })?.into_static())
+        .cid(
+            record
+                .cid
+                .ok_or_else(|| WeaverError::InvalidNotebook("Entry response missing CID".into()))?
+                .into_static(),
+        )
         .build();
 
     Ok(LoadedEntry {
@@ -153,18 +165,42 @@ pub async fn publish_entry(
     // Get images from the document
     let editor_images = doc.images();
 
-    // Build embeds if we have images
-    let entry_embeds = if editor_images.is_empty() {
+    // Resolve AT embed URIs to StrongRefs
+    let at_embed_uris = doc.at_embed_uris();
+    let mut record_embeds: Vec<RecordEmbed<'static>> = Vec::new();
+    for uri in at_embed_uris {
+        match fetcher.confirm_record_ref(&uri).await {
+            Ok(strong_ref) => {
+                record_embeds.push(RecordEmbed::new().record(strong_ref).build());
+            }
+            Err(e) => {
+                tracing::warn!("Failed to resolve embed {}: {}", uri, e);
+            }
+        }
+    }
+
+    // Build embeds if we have images or records
+    let entry_embeds = if editor_images.is_empty() && record_embeds.is_empty() {
         None
     } else {
-        // Extract Image types from EditorImage wrappers
-        let images: Vec<_> = editor_images.iter().map(|ei| ei.image.clone()).collect();
+        let images = if editor_images.is_empty() {
+            None
+        } else {
+            Some(Images {
+                images: editor_images.iter().map(|ei| ei.image.clone()).collect(),
+                extra_data: None,
+            })
+        };
+
+        let records = if record_embeds.is_empty() {
+            None
+        } else {
+            Some(Records::new().records(record_embeds).build())
+        };
 
         Some(EntryEmbeds {
-            images: Some(Images {
-                images,
-                extra_data: None,
-            }),
+            images,
+            records,
             ..Default::default()
         })
     };
@@ -192,10 +228,11 @@ pub async fn publish_entry(
     let client = fetcher.get_client();
     let result = if let Some(notebook) = notebook_title {
         // Publish to a notebook via upsert_entry
-        // TODO: Need to handle path rewriting for notebook case
-        // For now, use content as-is (notebook entries use different path scheme anyway)
+        // Rewrite draft image paths to notebook paths: /image/{notebook}/{name}
+        let content = rewrite_draft_paths_for_notebook(&doc.content(), notebook);
+
         let entry = Entry::new()
-            .content(doc.content())
+            .content(content)
             .title(doc.title())
             .path(path)
             .created_at(Datetime::now())
@@ -203,7 +240,17 @@ pub async fn publish_entry(
             .maybe_embeds(entry_embeds)
             .build();
 
-        let (entry_ref, was_created) = client.upsert_entry(notebook, &doc.title(), entry).await?;
+        // Pass existing rkey if re-publishing (to allow title changes without creating new entry)
+        let doc_entry_ref = doc.entry_ref();
+        let existing_rkey = doc_entry_ref.as_ref().and_then(|r| r.uri.rkey());
+        let (entry_ref, was_created) = client
+            .upsert_entry(
+                notebook,
+                &doc.title(),
+                entry,
+                existing_rkey.map(|r| r.0.as_str()),
+            )
+            .await?;
         let uri = entry_ref.uri.clone();
 
         // Set entry_ref so subsequent publishes update this record
@@ -368,6 +415,9 @@ pub struct PublishButtonProps {
     pub document: EditorDocument,
     /// Storage key for the draft
     pub draft_key: String,
+    /// Pre-selected notebook (from URL param)
+    #[props(optional)]
+    pub target_notebook: Option<String>,
 }
 
 /// Publish button component with notebook selection.
@@ -377,8 +427,10 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
     let auth_state = use_context::<Signal<AuthState>>();
 
     let mut show_dialog = use_signal(|| false);
-    let mut notebook_title = use_signal(|| String::from("Default"));
-    let mut use_notebook = use_signal(|| true);
+    let mut notebook_title = use_signal(|| {
+        props.target_notebook.clone().unwrap_or_else(|| String::from("Default"))
+    });
+    let mut use_notebook = use_signal(|| props.target_notebook.is_some());
     let mut is_publishing = use_signal(|| false);
     let mut error_message: Signal<Option<String>> = use_signal(|| None);
     let mut success_uri: Signal<Option<AtUri<'static>>> = use_signal(|| None);
@@ -420,7 +472,8 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
             error_message.set(None);
 
             let mut doc_snapshot = doc_snapshot;
-            match publish_entry(&fetcher, &mut doc_snapshot, notebook.as_deref(), &draft_key).await {
+            match publish_entry(&fetcher, &mut doc_snapshot, notebook.as_deref(), &draft_key).await
+            {
                 Ok(result) => {
                     success_uri.set(Some(result.uri().clone()));
                 }
@@ -460,17 +513,32 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
                     h2 { "Publish Entry" }
 
                     if let Some(uri) = success_uri() {
-                        div { class: "publish-success",
-                            p { "Entry published successfully!" }
-                            a {
-                                href: "{uri}",
-                                target: "_blank",
-                                "View entry →"
-                            }
-                            button {
-                                class: "publish-done",
-                                onclick: close_dialog,
-                                "Done"
+                        {
+                            // Construct web URL from AT-URI
+                            let did = uri.authority();
+                            let web_url = if use_notebook() {
+                                // Notebook entry: /{did}/{notebook}/{entry_path}
+                                format!("/{}/{}/{}", did, notebook_title(), doc.path())
+                            } else {
+                                // Standalone entry: /{did}/e/{rkey}
+                                let rkey = uri.rkey().map(|r| r.0.as_str()).unwrap_or("");
+                                format!("/{}/e/{}", did, rkey)
+                            };
+
+                            rsx! {
+                                div { class: "publish-success",
+                                    p { "Entry published successfully!" }
+                                    a {
+                                        href: "{web_url}",
+                                        target: "_blank",
+                                        "View entry → "
+                                    }
+                                    button {
+                                        class: "publish-done",
+                                        onclick: close_dialog,
+                                        "Done"
+                                    }
+                                }
                             }
                         }
                     } else {

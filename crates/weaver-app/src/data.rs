@@ -1131,3 +1131,23 @@ pub async fn cache_blob(ident: SmolStr, cid: SmolStr, name: Option<SmolStr>) -> 
     let cid = Cid::new_owned(cid.as_bytes())?;
     cache.cache(ident, cid, name).await
 }
+
+/// Cache blob bytes directly (for pre-warming after upload).
+/// If `notebook` is provided, uses scoped cache key `{notebook}_{name}`.
+#[cfg(feature = "fullstack-server")]
+#[put("/cache-bytes/{cid}?name&notebook", cache: Extension<Arc<BlobCache>>)]
+pub async fn cache_blob_bytes(
+    cid: SmolStr,
+    name: Option<SmolStr>,
+    notebook: Option<SmolStr>,
+    body: jacquard::bytes::Bytes,
+) -> Result<()> {
+    let cid = Cid::new_owned(cid.as_bytes())?;
+    let cache_key = match (&notebook, &name) {
+        (Some(nb), Some(n)) => Some(SmolStr::new(format!("{}_{}", nb, n))),
+        (None, Some(n)) => Some(n.clone()),
+        _ => None,
+    };
+    cache.insert_bytes(cid, body, cache_key);
+    Ok(())
+}

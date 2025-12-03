@@ -5,6 +5,7 @@ use super::paragraph::ParagraphRender;
 use super::render::render_paragraphs_incremental;
 use loro::LoroDoc;
 use serde::Serialize;
+use weaver_common::ResolvedContent;
 
 /// Serializable version of ParagraphRender for snapshot testing.
 #[derive(Debug, Serialize)]
@@ -57,7 +58,8 @@ fn render_test(input: &str) -> Vec<TestParagraph> {
     let doc = LoroDoc::new();
     let text = doc.get_text("content");
     text.insert(0, input).unwrap();
-    let (paragraphs, _cache) = render_paragraphs_incremental(&text, None, None, None);
+    let (paragraphs, _cache, _refs) =
+        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
     paragraphs.iter().map(TestParagraph::from).collect()
 }
 
@@ -645,7 +647,8 @@ fn test_heading_to_non_heading_transition() {
 
     // Initial state: "#" is a valid empty heading
     text.insert(0, "#").unwrap();
-    let (paras1, cache1) = render_paragraphs_incremental(&text, None, None, None);
+    let (paras1, cache1, _refs1) =
+        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
 
     eprintln!("State 1 ('#'): {}", paras1[0].html);
     assert!(paras1[0].html.contains("<h1"), "# alone should be heading");
@@ -656,7 +659,14 @@ fn test_heading_to_non_heading_transition() {
 
     // Transition: add "t" to make "#t" - no longer a heading
     text.insert(1, "t").unwrap();
-    let (paras2, _cache2) = render_paragraphs_incremental(&text, Some(&cache1), None, None);
+    let (paras2, _cache2, _refs2) = render_paragraphs_incremental(
+        &text,
+        Some(&cache1),
+        None,
+        None,
+        None,
+        &ResolvedContent::default(),
+    );
 
     eprintln!("State 2 ('#t'): {}", paras2[0].html);
     assert!(
@@ -765,7 +775,8 @@ fn test_char_range_coverage_allows_paragraph_breaks() {
     let doc = LoroDoc::new();
     let text = doc.get_text("content");
     text.insert(0, input).unwrap();
-    let (paragraphs, _cache) = render_paragraphs_incremental(&text, None, None, None);
+    let (paragraphs, _cache, _refs) =
+        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
 
     // With standard \n\n break, we expect 2 paragraphs (no gap element)
     // Paragraph ranges include some trailing whitespace from markdown parsing
@@ -794,7 +805,8 @@ fn test_char_range_coverage_with_extra_whitespace() {
     let doc = LoroDoc::new();
     let text = doc.get_text("content");
     text.insert(0, input).unwrap();
-    let (paragraphs, _cache) = render_paragraphs_incremental(&text, None, None, None);
+    let (paragraphs, _cache, _refs) =
+        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
 
     // With extra newlines, we expect 3 elements: para, gap, para
     assert_eq!(
@@ -894,11 +906,19 @@ fn test_incremental_cache_reuse() {
     let text = doc.get_text("content");
     text.insert(0, input).unwrap();
 
-    let (paras1, cache1) = render_paragraphs_incremental(&text, None, None, None);
+    let (paras1, cache1, _refs1) =
+        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
     assert!(!cache1.paragraphs.is_empty(), "Cache should be populated");
 
     // Second render with same content should reuse cache
-    let (paras2, _cache2) = render_paragraphs_incremental(&text, Some(&cache1), None, None);
+    let (paras2, _cache2, _refs2) = render_paragraphs_incremental(
+        &text,
+        Some(&cache1),
+        None,
+        None,
+        None,
+        &ResolvedContent::default(),
+    );
 
     // Should produce identical output
     assert_eq!(paras1.len(), paras2.len());

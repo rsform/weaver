@@ -208,16 +208,45 @@ pub fn NotebookEntryEdit(
     rkey: ReadSignal<SmolStr>,
 ) -> Element {
     use crate::components::editor::MarkdownEditor;
+    use crate::data::use_notebook_entries;
     use crate::views::editor::EditorCss;
+    use weaver_common::EntryIndex;
 
     // Construct AT-URI for the entry
     let entry_uri =
         use_memo(move || format!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey()));
 
+    // Fetch notebook entries for wikilink validation
+    let (_entries_resource, entries_memo) = use_notebook_entries(ident, book_title);
+
+    // Build entry index from notebook entries
+    let entry_index = use_memo(move || {
+        entries_memo().map(|entries| {
+            let mut index = EntryIndex::new();
+            let ident_str = ident().to_string();
+            let book = book_title();
+            for book_entry in &entries {
+                // EntryView has optional title/path
+                let title = book_entry.entry.title.as_ref().map(|t| t.as_str()).unwrap_or("");
+                let path = book_entry.entry.path.as_ref().map(|p| p.as_str()).unwrap_or("");
+                if !title.is_empty() || !path.is_empty() {
+                    // Build canonical URL: /{ident}/{book}/{path}
+                    let canonical_url = format!("/{}/{}/{}", ident_str, book, path);
+                    index.add_entry(title, path, canonical_url);
+                }
+            }
+            index
+        })
+    });
+
     rsx! {
         EditorCss {}
         div { class: "editor-page",
-            MarkdownEditor { entry_uri: Some(entry_uri()), target_notebook: Some(book_title()) }
+            MarkdownEditor {
+                entry_uri: Some(entry_uri()),
+                target_notebook: Some(book_title()),
+                entry_index: entry_index(),
+            }
         }
     }
 }

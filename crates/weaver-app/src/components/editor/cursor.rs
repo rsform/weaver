@@ -115,6 +115,7 @@ pub fn restore_cursor_position(
 ///
 /// Walks all text nodes in the container, accumulating their UTF-16 lengths
 /// until we find the node containing the target offset.
+/// Skips text nodes inside contenteditable="false" elements (like embeds).
 ///
 /// Returns (text_node, offset_within_node).
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
@@ -127,14 +128,41 @@ fn find_text_node_at_offset(
         .document()
         .ok_or("no document")?;
 
-    // Create tree walker to find text nodes
-    // SHOW_TEXT = 4 (from DOM spec)
-    let walker = document.create_tree_walker_with_what_to_show(container, 4)?;
+    // Use SHOW_ALL to see element boundaries for tracking non-editable regions
+    let walker = document.create_tree_walker_with_what_to_show(container, 0xFFFFFFFF)?;
 
     let mut accumulated_utf16 = 0;
     let mut last_node: Option<web_sys::Node> = None;
+    let mut skip_until_exit: Option<web_sys::Element> = None;
 
     while let Some(node) = walker.next_node()? {
+        // Check if we've exited the non-editable subtree
+        if let Some(ref skip_elem) = skip_until_exit {
+            if !skip_elem.contains(Some(&node)) {
+                skip_until_exit = None;
+            }
+        }
+
+        // Check if entering a non-editable element
+        if skip_until_exit.is_none() {
+            if let Some(element) = node.dyn_ref::<web_sys::Element>() {
+                if element.get_attribute("contenteditable").as_deref() == Some("false") {
+                    skip_until_exit = Some(element.clone());
+                    continue;
+                }
+            }
+        }
+
+        // Skip everything inside non-editable regions
+        if skip_until_exit.is_some() {
+            continue;
+        }
+
+        // Only process text nodes
+        if node.node_type() != web_sys::Node::TEXT_NODE {
+            continue;
+        }
+
         last_node = Some(node.clone());
 
         if let Some(text) = node.text_content() {

@@ -250,13 +250,16 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
         }
     }
 
-    /// Find or create an entry within a notebook by title
+    /// Find or create an entry within a notebook
     ///
     /// Multi-step workflow:
     /// 1. Find the notebook by title
-    /// 2. Check notebook's entry_list for entry with matching title
+    /// 2. If existing_rkey is provided, match by rkey; otherwise match by title
     /// 3. If found: update the entry with new content
     /// 4. If not found: create new entry and append to notebook's entry_list
+    ///
+    /// The `existing_rkey` parameter allows updating an entry even if its title changed,
+    /// and enables pre-generating rkeys for path rewriting before publish.
     ///
     /// Returns (entry_ref, was_created)
     fn upsert_entry(
@@ -264,6 +267,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
         notebook_title: &str,
         entry_title: &str,
         entry: entry::Entry<'_>,
+        existing_rkey: Option<&str>,
     ) -> impl Future<Output = Result<(StrongRef<'static>, bool), WeaverError>>
     where
         Self: Sized,
@@ -276,6 +280,55 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
 
             // Find or create notebook
             let (notebook_uri, entry_refs) = self.upsert_notebook(notebook_title, &did).await?;
+
+            // If we have an existing rkey, try to find and update that specific entry
+            if let Some(rkey) = existing_rkey {
+                // Check if this entry exists in the notebook by comparing rkeys
+                for entry_ref in &entry_refs {
+                    let ref_rkey = entry_ref.uri.rkey().map(|r| r.0.as_str());
+                    if ref_rkey == Some(rkey) {
+                        // Found it - update
+                        let output = self
+                            .update_record::<entry::Entry>(&entry_ref.uri, |e| {
+                                e.content = entry.content.clone();
+                                e.title = entry.title.clone();
+                                e.path = entry.path.clone();
+                                e.embeds = entry.embeds.clone();
+                                e.tags = entry.tags.clone();
+                            })
+                            .await?;
+                        let updated_ref = StrongRef::new()
+                            .uri(output.uri.into_static())
+                            .cid(output.cid.into_static())
+                            .build();
+                        return Ok((updated_ref, false));
+                    }
+                }
+
+                // Entry with this rkey not in notebook - create with specific rkey
+                let response = self
+                    .create_record(entry, Some(RecordKey::any(rkey)?))
+                    .await?;
+                let new_ref = StrongRef::new()
+                    .uri(response.uri.clone().into_static())
+                    .cid(response.cid.clone().into_static())
+                    .build();
+
+                use weaver_api::sh_weaver::notebook::book::Book;
+                let notebook_entry_ref = StrongRef::new()
+                    .uri(response.uri.into_static())
+                    .cid(response.cid.into_static())
+                    .build();
+
+                self.update_record::<Book>(&notebook_uri, |book| {
+                    book.entry_list.push(notebook_entry_ref);
+                })
+                .await?;
+
+                return Ok((new_ref, true));
+            }
+
+            // No existing rkey - use title-based matching (original behavior)
 
             // Fast path: if notebook is empty, skip search and create directly
             if entry_refs.is_empty() {

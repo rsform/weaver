@@ -348,7 +348,6 @@ impl AgentSession for Client {
     }
 }
 
-//#[cfg(not(feature = "server"))]
 #[derive(Clone)]
 pub struct Fetcher {
     pub client: Arc<Client>,
@@ -357,6 +356,9 @@ pub struct Fetcher {
         (AtIdentifier<'static>, SmolStr),
         Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>,
     >,
+    /// Maps notebook title OR path to ident (book_cache accepts either as key)
+    #[cfg(feature = "server")]
+    notebook_key_cache: cache_impl::Cache<SmolStr, AtIdentifier<'static>>,
     #[cfg(feature = "server")]
     entry_cache: cache_impl::Cache<
         (AtIdentifier<'static>, SmolStr),
@@ -369,13 +371,14 @@ pub struct Fetcher {
         cache_impl::Cache<(AtIdentifier<'static>, SmolStr), Arc<StandaloneEntryData>>,
 }
 
-//#[cfg(not(feature = "server"))]
 impl Fetcher {
     pub fn new(client: OAuthClient<JacquardResolver, AuthStore>) -> Self {
         Self {
             client: Arc::new(Client::new(client)),
             #[cfg(feature = "server")]
             book_cache: cache_impl::new_cache(100, std::time::Duration::from_secs(30)),
+            #[cfg(feature = "server")]
+            notebook_key_cache: cache_impl::new_cache(500, std::time::Duration::from_secs(30)),
             #[cfg(feature = "server")]
             entry_cache: cache_impl::new_cache(100, std::time::Duration::from_secs(30)),
             #[cfg(feature = "server")]
@@ -432,11 +435,44 @@ impl Fetcher {
         {
             let stored = Arc::new((notebook, entries));
             #[cfg(feature = "server")]
-            cache_impl::insert(&self.book_cache, (ident, title), stored.clone());
+            {
+                // Cache by title
+                cache_impl::insert(&self.notebook_key_cache, title.clone(), ident.clone());
+                cache_impl::insert(&self.book_cache, (ident.clone(), title), stored.clone());
+                // Also cache by path if available
+                if let Some(path) = stored.0.path.as_ref() {
+                    let path: SmolStr = path.as_ref().into();
+                    cache_impl::insert(&self.notebook_key_cache, path.clone(), ident.clone());
+                    cache_impl::insert(&self.book_cache, (ident, path), stored.clone());
+                }
+            }
             Ok(Some(stored))
         } else {
             Err(dioxus::CapturedError::from_display("Notebook not found"))
         }
+    }
+
+    /// Get notebook by title or path (for image resolution without knowing owner).
+    /// Checks notebook_key_cache first, falls back to UFOS discovery.
+    #[cfg(feature = "server")]
+    pub async fn get_notebook_by_key(
+        &self,
+        key: &str,
+    ) -> Result<Option<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+        let key: SmolStr = key.into();
+
+        // Check cache first (key could be title or path)
+        if let Some(ident) = cache_impl::get(&self.notebook_key_cache, &key) {
+            return self.get_notebook(ident, key).await;
+        }
+
+        // Fallback: query UFOS and populate caches
+        let notebooks = self.fetch_notebooks_from_ufos().await?;
+        Ok(notebooks.into_iter().find(|arc| {
+            let (view, _) = arc.as_ref();
+            view.title.as_deref() == Some(key.as_str())
+                || view.path.as_deref() == Some(key.as_str())
+        }))
     }
 
     pub async fn get_entry(
@@ -509,7 +545,25 @@ impl Fetcher {
 
                     let result = Arc::new((notebook, entries));
                     #[cfg(feature = "server")]
-                    cache_impl::insert(&self.book_cache, (ident, title), result.clone());
+                    {
+                        // Cache by title
+                        cache_impl::insert(&self.notebook_key_cache, title.clone(), ident.clone());
+                        cache_impl::insert(
+                            &self.book_cache,
+                            (ident.clone(), title),
+                            result.clone(),
+                        );
+                        // Also cache by path if available
+                        if let Some(path) = result.0.path.as_ref() {
+                            let path: SmolStr = path.as_ref().into();
+                            cache_impl::insert(
+                                &self.notebook_key_cache,
+                                path.clone(),
+                                ident.clone(),
+                            );
+                            cache_impl::insert(&self.book_cache, (ident, path), result.clone());
+                        }
+                    }
                     notebooks.push(result);
                 }
                 Err(_) => continue, // Skip notebooks that fail to load
@@ -635,7 +689,29 @@ impl Fetcher {
 
                         let result = Arc::new((notebook, entries));
                         #[cfg(feature = "server")]
-                        cache_impl::insert(&self.book_cache, (ident, title), result.clone());
+                        {
+                            // Cache by title
+                            cache_impl::insert(
+                                &self.notebook_key_cache,
+                                title.clone(),
+                                ident.clone(),
+                            );
+                            cache_impl::insert(
+                                &self.book_cache,
+                                (ident.clone(), title),
+                                result.clone(),
+                            );
+                            // Also cache by path if available
+                            if let Some(path) = result.0.path.as_ref() {
+                                let path: SmolStr = path.as_ref().into();
+                                cache_impl::insert(
+                                    &self.notebook_key_cache,
+                                    path.clone(),
+                                    ident.clone(),
+                                );
+                                cache_impl::insert(&self.book_cache, (ident, path), result.clone());
+                            }
+                        }
                         notebooks.push(result);
                     }
                     Err(_) => continue, // Skip notebooks that fail to load

@@ -14,7 +14,7 @@ mod writer;
 
 pub use client::{ClientContext, DefaultEmbedResolver, EmbedResolver};
 pub use embed_renderer::{
-    fetch_and_render_generic, fetch_and_render_post, fetch_and_render_profile,
+    fetch_and_render, fetch_and_render_generic, fetch_and_render_post, fetch_and_render_profile,
 };
 pub use error::{AtProtoPreprocessError, ClientRenderError};
 pub use markdown_writer::MarkdownWriter;

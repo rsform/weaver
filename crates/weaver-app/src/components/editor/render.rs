@@ -11,6 +11,7 @@ use super::writer::{EditorImageResolver, EditorWriter, ImageResolver, SyntaxSpan
 use loro::LoroText;
 use markdown_weaver::Parser;
 use std::ops::Range;
+use weaver_common::{EntryIndex, ResolvedContent};
 
 /// Cache for incremental paragraph rendering.
 /// Stores previously rendered paragraphs to avoid re-rendering unchanged content.
@@ -104,12 +105,25 @@ fn adjust_paragraph_positions(
 ///
 /// Uses cached paragraph renders when possible, only re-rendering changed paragraphs.
 /// For "safe" edits (no boundary changes), skips boundary rediscovery entirely.
+///
+/// # Parameters
+/// - `entry_index`: Optional index for wikilink validation (adds link-valid/link-broken classes)
+/// - `resolved_content`: Pre-resolved embed content for sync rendering
+///
+/// # Returns
+/// (paragraphs, cache, collected_refs) - collected_refs contains wikilinks and AT embeds found during render
 pub fn render_paragraphs_incremental(
     text: &LoroText,
     cache: Option<&RenderCache>,
     edit: Option<&EditInfo>,
     image_resolver: Option<&EditorImageResolver>,
-) -> (Vec<ParagraphRender>, RenderCache) {
+    entry_index: Option<&EntryIndex>,
+    resolved_content: &ResolvedContent,
+) -> (
+    Vec<ParagraphRender>,
+    RenderCache,
+    Vec<weaver_common::ExtractedRef>,
+) {
     let source = text.to_string();
 
     // Handle empty document
@@ -139,7 +153,7 @@ pub fn render_paragraphs_incremental(
             next_syn_id: 0,
         };
 
-        return (vec![para], new_cache);
+        return (vec![para], new_cache, vec![]);
     }
 
     // Determine if we can use fast path (skip boundary discovery)
@@ -218,7 +232,7 @@ pub fn render_paragraphs_incremental(
         .run()
         {
             Ok(result) => result.paragraph_ranges,
-            Err(_) => return (Vec::new(), RenderCache::default()),
+            Err(_) => return (Vec::new(), RenderCache::default(), vec![]),
         }
     };
 
@@ -241,6 +255,7 @@ pub fn render_paragraphs_incremental(
     // Render paragraphs, reusing cache where possible
     let mut paragraphs = Vec::with_capacity(paragraph_ranges.len());
     let mut new_cached = Vec::with_capacity(paragraph_ranges.len());
+    let mut all_refs: Vec<weaver_common::ExtractedRef> = Vec::new();
     let mut node_id_offset = cache.map(|c| c.next_node_id).unwrap_or(0);
     let mut syn_id_offset = cache.map(|c| c.next_syn_id).unwrap_or(0);
 
@@ -286,63 +301,64 @@ pub fn render_paragraphs_incremental(
             // Use provided resolver or empty default
             let resolver = image_resolver.cloned().unwrap_or_default();
 
-            let (mut offset_map, mut syntax_spans) =
-                match EditorWriter::<_, _, ()>::new_with_offsets(
+            // Build writer with optional entry index for wikilink validation
+            // Pass paragraph's document-level offsets so all embedded char/byte positions are absolute
+            let mut writer =
+                EditorWriter::<_, _, &ResolvedContent, &EditorImageResolver>::new_with_all_offsets(
                     &para_source,
                     &para_text,
                     parser,
                     &mut output,
                     node_id_offset,
                     syn_id_offset,
+                    char_range.start,
+                    byte_range.start,
                 )
                 .with_image_resolver(&resolver)
-                .run()
-                {
-                    Ok(result) => {
-                        // Update node ID offset
-                        let max_node_id = result
-                            .offset_maps
-                            .iter()
-                            .filter_map(|m| {
-                                m.node_id
-                                    .strip_prefix("n")
-                                    .and_then(|s| s.parse::<usize>().ok())
-                            })
-                            .max()
-                            .unwrap_or(node_id_offset);
-                        node_id_offset = max_node_id + 1;
+                .with_embed_provider(resolved_content);
 
-                        // Update syn ID offset
-                        let max_syn_id = result
-                            .syntax_spans
-                            .iter()
-                            .filter_map(|s| {
-                                s.syn_id
-                                    .strip_prefix("s")
-                                    .and_then(|id| id.parse::<usize>().ok())
-                            })
-                            .max()
-                            .unwrap_or(syn_id_offset.saturating_sub(1));
-                        syn_id_offset = max_syn_id + 1;
-
-                        (result.offset_maps, result.syntax_spans)
-                    }
-                    Err(_) => (Vec::new(), Vec::new()),
-                };
-
-            // Adjust offsets to document coordinates
-            let para_char_start = char_range.start;
-            let para_byte_start = byte_range.start;
-            for mapping in &mut offset_map {
-                mapping.byte_range.start += para_byte_start;
-                mapping.byte_range.end += para_byte_start;
-                mapping.char_range.start += para_char_start;
-                mapping.char_range.end += para_char_start;
-            }
-            for span in &mut syntax_spans {
-                span.adjust_positions(para_char_start as isize);
+            if let Some(idx) = entry_index {
+                writer = writer.with_entry_index(idx);
             }
 
+            let (mut offset_map, mut syntax_spans) = match writer.run() {
+                Ok(result) => {
+                    // Update node ID offset
+                    let max_node_id = result
+                        .offset_maps
+                        .iter()
+                        .filter_map(|m| {
+                            m.node_id
+                                .strip_prefix("n")
+                                .and_then(|s| s.parse::<usize>().ok())
+                        })
+                        .max()
+                        .unwrap_or(node_id_offset);
+                    node_id_offset = max_node_id + 1;
+
+                    // Update syn ID offset
+                    let max_syn_id = result
+                        .syntax_spans
+                        .iter()
+                        .filter_map(|s| {
+                            s.syn_id
+                                .strip_prefix("s")
+                                .and_then(|id| id.parse::<usize>().ok())
+                        })
+                        .max()
+                        .unwrap_or(syn_id_offset.saturating_sub(1));
+                    syn_id_offset = max_syn_id + 1;
+
+                    // Collect refs from this paragraph
+                    all_refs.extend(result.collected_refs);
+
+                    (result.offset_maps, result.syntax_spans)
+                }
+                Err(_) => (Vec::new(), Vec::new()),
+            };
+
+            // Offsets are already document-absolute since we pass char_range.start/byte_range.start
+            // to the writer constructor
             (output, offset_map, syntax_spans)
         };
 
@@ -448,5 +464,5 @@ pub fn render_paragraphs_incremental(
         next_syn_id: syn_id_offset,
     };
 
-    (paragraphs_with_gaps, new_cache)
+    (paragraphs_with_gaps, new_cache, all_refs)
 }

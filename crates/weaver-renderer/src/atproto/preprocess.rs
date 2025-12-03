@@ -4,7 +4,10 @@ use dashmap::DashMap;
 use jacquard::{
     client::{Agent, AgentSession, AgentSessionExt},
     prelude::IdentityResolver,
-    types::string::{CowStr, Did, Handle},
+    types::{
+        ident::AtIdentifier,
+        string::{CowStr, Did, Handle},
+    },
 };
 use markdown_weaver::{CowStr as MdCowStr, Tag, WeaverAttributes};
 use std::{path::PathBuf, sync::Arc};
@@ -264,7 +267,11 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
 
                     tracing::debug!("Reading image file: {}", file_path.display());
                     if let Ok(image_data) = fs::read(&file_path).await {
-                        tracing::debug!("Read {} bytes from {}", image_data.len(), file_path.display());
+                        tracing::debug!(
+                            "Read {} bytes from {}",
+                            image_data.len(),
+                            file_path.display()
+                        );
                         // Derive blob name from filename
                         let filename = file_path
                             .file_stem()
@@ -281,7 +288,11 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
                         );
 
                         // Upload blob (dereference Arc)
-                        tracing::debug!("Uploading image blob: {} ({} bytes)", file_path.display(), bytes.len());
+                        tracing::debug!(
+                            "Uploading image blob: {} ({} bytes)",
+                            file_path.display(),
+                            bytes.len()
+                        );
                         if let Ok(blob) = (*self.agent).upload_blob(bytes, mime.clone()).await {
                             use jacquard::IntoStatic;
 
@@ -468,7 +479,12 @@ impl<A: AgentSession + IdentityResolver> NotebookContext for AtProtoPreprocessCo
 
                         tracing::debug!("Fetching profile embed: {}", did.as_ref());
                         // Fetch and render the profile
-                        let content = match fetch_and_render_profile(&did, &*self.agent).await {
+                        let content = match fetch_and_render_profile(
+                            &AtIdentifier::Did(did.clone()),
+                            &*self.agent,
+                        )
+                        .await
+                        {
                             Ok(html) => Some(html),
                             Err(e) => {
                                 eprintln!("Failed to fetch profile {}: {}", did.as_ref(), e);

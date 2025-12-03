@@ -7136,6 +7136,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-latex"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5abae0e37a730c3e0c6805cfc30d80754fa03091bf5bad54ae47d033aae6ba8b"
+dependencies = [
+ "bumpalo",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10455,6 +10464,7 @@ dependencies = [
  "n0-future",
  "pin-project",
  "pin-utils",
+ "pulldown-latex",
  "regex",
  "regex-lite",
  "reqwest",

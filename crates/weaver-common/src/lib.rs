@@ -3,11 +3,15 @@
 pub mod agent;
 pub mod constellation;
 pub mod error;
+pub mod resolve;
 pub mod worker_rt;
 
 // Re-export jacquard for convenience
 pub use agent::WeaverExt;
 pub use error::WeaverError;
+pub use resolve::{EntryIndex, ExtractedRef, RefCollector, ResolvedContent, ResolvedEntry};
+#[cfg(any(test, feature = "standalone-collection"))]
+pub use resolve::collect_refs_from_markdown;
 pub use jacquard;
 use jacquard::CowStr;
 use jacquard::client::{Agent, AgentSession};

@@ -134,6 +134,10 @@ pub struct EditorDocument {
     /// Pending snap direction for cursor restoration after edits.
     /// Set by input handlers, consumed by cursor restoration.
     pub pending_snap: Signal<Option<super::offset_map::SnapDirection>>,
+
+    /// Collected refs (wikilinks, AT embeds) from the most recent render.
+    /// Updated by the render pipeline, read by publish for populating records.
+    pub collected_refs: Signal<Vec<weaver_common::ExtractedRef>>,
 }
 
 /// Cursor state including position and affinity.
@@ -312,6 +316,7 @@ impl EditorDocument {
             composition_ended_at: Signal::new(None),
             last_edit: Signal::new(None),
             pending_snap: Signal::new(None),
+            collected_refs: Signal::new(Vec::new()),
         }
     }
 
@@ -789,6 +794,29 @@ impl EditorDocument {
         self.last_edit.read().clone()
     }
 
+    // --- Collected refs accessors ---
+
+    /// Update collected refs from the render pipeline.
+    pub fn set_collected_refs(&mut self, refs: Vec<weaver_common::ExtractedRef>) {
+        self.collected_refs.set(refs);
+    }
+
+    /// Get AT URIs from collected embeds for populating entry.embeds.records.
+    ///
+    /// Filters for AtEmbed refs and parses to AtUri. Invalid URIs are skipped.
+    pub fn at_embed_uris(&self) -> Vec<AtUri<'static>> {
+        self.collected_refs
+            .read()
+            .iter()
+            .filter_map(|r| match r {
+                weaver_common::ExtractedRef::AtEmbed { uri, .. } => {
+                    AtUri::new(uri).ok().map(|u| u.into_static())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     // --- Edit sync methods ---
 
     /// Get the edit root StrongRef if set.
@@ -951,6 +979,7 @@ impl EditorDocument {
             composition_ended_at: Signal::new(None),
             last_edit: Signal::new(None),
             pending_snap: Signal::new(None),
+            collected_refs: Signal::new(Vec::new()),
         }
     }
 
@@ -1009,6 +1038,7 @@ impl EditorDocument {
             composition_ended_at: Signal::new(None),
             last_edit: Signal::new(None),
             pending_snap: Signal::new(None),
+            collected_refs: Signal::new(Vec::new()),
         }
     }
 }

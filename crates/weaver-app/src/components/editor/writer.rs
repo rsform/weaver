@@ -18,6 +18,7 @@ use markdown_weaver_escape::{
 };
 use std::collections::HashMap;
 use std::ops::Range;
+use weaver_common::{EntryIndex, ResolvedContent};
 
 /// Result of rendering with the EditorWriter.
 #[derive(Debug, Clone)]
@@ -31,6 +32,9 @@ pub struct WriterResult {
 
     /// Syntax spans that can be conditionally hidden
     pub syntax_spans: Vec<SyntaxSpanInfo>,
+
+    /// Refs (wikilinks, AT embeds) collected during this render pass
+    pub collected_refs: Vec<weaver_common::ExtractedRef>,
 }
 
 /// Classification of markdown syntax characters
@@ -116,6 +120,21 @@ pub trait EmbedContentProvider {
 
 impl EmbedContentProvider for () {
     fn get_embed_content(&self, _tag: &Tag<'_>) -> Option<String> {
+        None
+    }
+}
+
+impl EmbedContentProvider for &ResolvedContent {
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String> {
+        if let Tag::Embed { dest_url, .. } = tag {
+            let url = dest_url.as_ref();
+            if url.starts_with("at://") {
+                if let Ok(at_uri) = jacquard::types::string::AtUri::new(url) {
+                    return ResolvedContent::get_embed_content(self, &at_uri)
+                        .map(|s| s.to_string());
+                }
+            }
+        }
         None
     }
 }
@@ -314,6 +333,7 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: St
 
     embed_provider: Option<E>,
     image_resolver: Option<R>,
+    entry_index: Option<&'a EntryIndex>,
 
     code_buffer: Option<(Option<String>, String)>, // (lang, content)
     code_buffer_byte_range: Option<Range<usize>>,  // byte range of buffered code content
@@ -351,6 +371,9 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: St
     /// Stack of pending inline formats: (syn_id of opening span, char start of region)
     /// Used to set formatted_range when closing paired inline markers
     pending_inline_formats: Vec<(String, usize)>,
+
+    /// Collected refs (wikilinks, AT embeds, AT links) during this render pass
+    ref_collector: weaver_common::RefCollector,
 
     _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -391,13 +414,35 @@ impl<
         node_id_offset: usize,
         syn_id_offset: usize,
     ) -> Self {
+        Self::new_with_all_offsets(
+            source,
+            source_text,
+            events,
+            writer,
+            node_id_offset,
+            syn_id_offset,
+            0,
+            0,
+        )
+    }
+
+    pub fn new_with_all_offsets(
+        source: &'a str,
+        source_text: &'a LoroText,
+        events: I,
+        writer: W,
+        node_id_offset: usize,
+        syn_id_offset: usize,
+        char_offset_base: usize,
+        byte_offset_base: usize,
+    ) -> Self {
         Self {
             source,
             source_text,
             events,
             writer,
-            last_byte_offset: 0,
-            last_char_offset: 0,
+            last_byte_offset: byte_offset_base,
+            last_char_offset: char_offset_base,
             end_newline: true,
             in_non_writing_block: false,
             table_state: TableState::Head,
@@ -406,6 +451,7 @@ impl<
             numbers: HashMap::new(),
             embed_provider: None,
             image_resolver: None,
+            entry_index: None,
             code_buffer: None,
             code_buffer_byte_range: None,
             code_buffer_char_range: None,
@@ -425,6 +471,7 @@ impl<
             syntax_spans: Vec::new(),
             next_syn_id: syn_id_offset,
             pending_inline_formats: Vec::new(),
+            ref_collector: weaver_common::RefCollector::new(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -452,6 +499,7 @@ impl<
             numbers: HashMap::new(),
             embed_provider: None,
             image_resolver: None,
+            entry_index: None,
             code_buffer: None,
             code_buffer_byte_range: None,
             code_buffer_char_range: None,
@@ -467,6 +515,7 @@ impl<
             syntax_spans: Vec::new(),
             next_syn_id: 0,
             pending_inline_formats: Vec::new(),
+            ref_collector: weaver_common::RefCollector::new(),
             paragraph_ranges: Vec::new(),
             current_paragraph_start: None,
             list_depth: 0,
@@ -492,6 +541,7 @@ impl<
             numbers: self.numbers,
             embed_provider: Some(provider),
             image_resolver: self.image_resolver,
+            entry_index: self.entry_index,
             code_buffer: self.code_buffer,
             code_buffer_byte_range: self.code_buffer_byte_range,
             code_buffer_char_range: self.code_buffer_char_range,
@@ -511,6 +561,7 @@ impl<
             syntax_spans: self.syntax_spans,
             next_syn_id: self.next_syn_id,
             pending_inline_formats: self.pending_inline_formats,
+            ref_collector: self.ref_collector,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -535,6 +586,7 @@ impl<
             numbers: self.numbers,
             embed_provider: self.embed_provider,
             image_resolver: Some(resolver),
+            entry_index: self.entry_index,
             code_buffer: self.code_buffer,
             code_buffer_byte_range: self.code_buffer_byte_range,
             code_buffer_char_range: self.code_buffer_char_range,
@@ -554,9 +606,17 @@ impl<
             syntax_spans: self.syntax_spans,
             next_syn_id: self.next_syn_id,
             pending_inline_formats: self.pending_inline_formats,
+            ref_collector: self.ref_collector,
             _phantom: std::marker::PhantomData,
         }
     }
+
+    /// Add an entry index for wikilink resolution feedback
+    pub fn with_entry_index(mut self, index: &'a EntryIndex) -> Self {
+        self.entry_index = Some(index);
+        self
+    }
+
     #[inline]
     fn write_newline(&mut self) -> Result<(), W::Error> {
         self.end_newline = true;
@@ -992,6 +1052,7 @@ impl<
             offset_maps: self.offset_maps,
             paragraph_ranges: self.paragraph_ranges,
             syntax_spans: self.syntax_spans,
+            collected_refs: self.ref_collector.take(),
         })
     }
 
@@ -1120,7 +1181,7 @@ impl<
                     let backtick_char_end = char_start + 1;
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">`</span>",
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">`</span>",
                         syn_id, char_start, backtick_char_end
                     )?;
                     self.syntax_spans.push(SyntaxSpanInfo {
@@ -1155,7 +1216,7 @@ impl<
                     let backtick_char_end = backtick_char_start + 1;
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">`</span>",
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">`</span>",
                         syn_id, backtick_char_start, backtick_char_end
                     )?;
 
@@ -1178,112 +1239,191 @@ impl<
                 }
             }
             InlineMath(text) => {
-                let format_start = self.last_char_offset;
+                // Math rendering follows embed pattern: syntax spans hide when cursor outside,
+                // rendered content always visible
                 let raw_text = &self.source[range.clone()];
+                let syn_id = self.gen_syn_id();
+                let opening_char_start = self.last_char_offset;
 
-                // Track opening span index so we can set formatted_range later
-                let opening_span_idx = if raw_text.starts_with('$') {
-                    let syn_id = self.gen_syn_id();
-                    let char_start = self.last_char_offset;
-                    let char_end = char_start + 1;
-                    write!(
-                        &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">$</span>",
-                        syn_id, char_start, char_end
-                    )?;
-                    self.syntax_spans.push(SyntaxSpanInfo {
-                        syn_id,
-                        char_range: char_start..char_end,
-                        syntax_type: SyntaxType::Inline,
-                        formatted_range: None, // Set after we know the full range
-                    });
-                    self.last_char_offset += 1;
-                    Some(self.syntax_spans.len() - 1)
-                } else {
-                    None
-                };
-
-                self.write(r#"<span class="math math-inline">"#)?;
+                // Calculate char positions
                 let text_char_len = text.chars().count();
-                escape_html(&mut self.writer, &text)?;
-                self.last_char_offset += text_char_len;
-                self.write("</span>")?;
+                let opening_char_end = opening_char_start + 1; // "$"
+                let content_char_start = opening_char_end;
+                let content_char_end = content_char_start + text_char_len;
+                let closing_char_start = content_char_end;
+                let closing_char_end = closing_char_start + 1; // "$"
+                let formatted_range = opening_char_start..closing_char_end;
 
-                // Emit closing $ and track it
-                if raw_text.ends_with('$') {
-                    let syn_id = self.gen_syn_id();
-                    let char_start = self.last_char_offset;
-                    let char_end = char_start + 1;
+                // 1. Emit opening $ syntax span
+                if raw_text.starts_with('$') {
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">$</span>",
-                        syn_id, char_start, char_end
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">$</span>",
+                        syn_id, opening_char_start, opening_char_end
                     )?;
-
-                    // Now we know the full formatted range
-                    let formatted_range = format_start..char_end;
-
                     self.syntax_spans.push(SyntaxSpanInfo {
-                        syn_id,
-                        char_range: char_start..char_end,
+                        syn_id: syn_id.clone(),
+                        char_range: opening_char_start..opening_char_end,
                         syntax_type: SyntaxType::Inline,
                         formatted_range: Some(formatted_range.clone()),
                     });
-
-                    // Update opening span with formatted_range
-                    if let Some(idx) = opening_span_idx {
-                        self.syntax_spans[idx].formatted_range = Some(formatted_range);
-                    }
-
-                    self.last_char_offset += 1;
+                    self.record_mapping(
+                        range.start..range.start + 1,
+                        opening_char_start..opening_char_end,
+                    );
                 }
+
+                // 2. Emit raw LaTeX content (hidden with syntax when cursor outside)
+                write!(
+                    &mut self.writer,
+                    "<span class=\"math-source\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
+                    syn_id, content_char_start, content_char_end
+                )?;
+                escape_html(&mut self.writer, &text)?;
+                self.write("</span>")?;
+                self.syntax_spans.push(SyntaxSpanInfo {
+                    syn_id: syn_id.clone(),
+                    char_range: content_char_start..content_char_end,
+                    syntax_type: SyntaxType::Inline,
+                    formatted_range: Some(formatted_range.clone()),
+                });
+                self.record_mapping(
+                    range.start + 1..range.end - 1,
+                    content_char_start..content_char_end,
+                );
+
+                // 3. Emit closing $ syntax span
+                if raw_text.ends_with('$') {
+                    write!(
+                        &mut self.writer,
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">$</span>",
+                        syn_id, closing_char_start, closing_char_end
+                    )?;
+                    self.syntax_spans.push(SyntaxSpanInfo {
+                        syn_id: syn_id.clone(),
+                        char_range: closing_char_start..closing_char_end,
+                        syntax_type: SyntaxType::Inline,
+                        formatted_range: Some(formatted_range.clone()),
+                    });
+                    self.record_mapping(
+                        range.end - 1..range.end,
+                        closing_char_start..closing_char_end,
+                    );
+                }
+
+                // 4. Emit rendered MathML (always visible, not tied to syn_id)
+                // Include data-char-target so clicking moves cursor into the math region
+                // contenteditable="false" so DOM walker skips this for offset counting
+                match weaver_renderer::math::render_math(&text, false) {
+                    weaver_renderer::math::MathResult::Success(mathml) => {
+                        write!(
+                            &mut self.writer,
+                            "<span class=\"math math-inline math-rendered math-clickable\" contenteditable=\"false\" data-char-target=\"{}\">{}</span>",
+                            content_char_start,
+                            mathml
+                        )?;
+                    }
+                    weaver_renderer::math::MathResult::Error { html, .. } => {
+                        // Show error indicator (also always visible)
+                        self.write(&html)?;
+                    }
+                }
+
+                self.last_char_offset = closing_char_end;
             }
             DisplayMath(text) => {
+                // Math rendering follows embed pattern: syntax spans hide when cursor outside,
+                // rendered content always visible
                 let raw_text = &self.source[range.clone()];
+                let syn_id = self.gen_syn_id();
+                let opening_char_start = self.last_char_offset;
 
-                // Emit opening $$ and track it
-                if raw_text.starts_with("$$") {
-                    let syn_id = self.gen_syn_id();
-                    let char_start = self.last_char_offset;
-                    let char_end = char_start + 2;
-                    write!(
-                        &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">$$</span>",
-                        syn_id, char_start, char_end
-                    )?;
-                    self.syntax_spans.push(SyntaxSpanInfo {
-                        syn_id,
-                        char_range: char_start..char_end,
-                        syntax_type: SyntaxType::Inline,
-                        formatted_range: None,
-                    });
-                    self.last_char_offset += 2;
-                }
-
-                self.write(r#"<span class="math math-display">"#)?;
+                // Calculate char positions
                 let text_char_len = text.chars().count();
-                escape_html(&mut self.writer, &text)?;
-                self.last_char_offset += text_char_len;
-                self.write("</span>")?;
+                let opening_char_end = opening_char_start + 2; // "$$"
+                let content_char_start = opening_char_end;
+                let content_char_end = content_char_start + text_char_len;
+                let closing_char_start = content_char_end;
+                let closing_char_end = closing_char_start + 2; // "$$"
+                let formatted_range = opening_char_start..closing_char_end;
 
-                // Emit closing $$ and track it
-                if raw_text.ends_with("$$") {
-                    let syn_id = self.gen_syn_id();
-                    let char_start = self.last_char_offset;
-                    let char_end = char_start + 2;
+                // 1. Emit opening $$ syntax span
+                // Use Block syntax type so visibility is based on "cursor in same paragraph"
+                if raw_text.starts_with("$$") {
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">$$</span>",
-                        syn_id, char_start, char_end
+                        "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">$$</span>",
+                        syn_id, opening_char_start, opening_char_end
                     )?;
                     self.syntax_spans.push(SyntaxSpanInfo {
-                        syn_id,
-                        char_range: char_start..char_end,
-                        syntax_type: SyntaxType::Inline,
-                        formatted_range: None,
+                        syn_id: syn_id.clone(),
+                        char_range: opening_char_start..opening_char_end,
+                        syntax_type: SyntaxType::Block,
+                        formatted_range: Some(formatted_range.clone()),
                     });
-                    self.last_char_offset += 2;
+                    self.record_mapping(
+                        range.start..range.start + 2,
+                        opening_char_start..opening_char_end,
+                    );
                 }
+
+                // 2. Emit raw LaTeX content (hidden with syntax when cursor outside)
+                write!(
+                    &mut self.writer,
+                    "<span class=\"math-source\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
+                    syn_id, content_char_start, content_char_end
+                )?;
+                escape_html(&mut self.writer, &text)?;
+                self.write("</span>")?;
+                self.syntax_spans.push(SyntaxSpanInfo {
+                    syn_id: syn_id.clone(),
+                    char_range: content_char_start..content_char_end,
+                    syntax_type: SyntaxType::Block,
+                    formatted_range: Some(formatted_range.clone()),
+                });
+                self.record_mapping(
+                    range.start + 2..range.end - 2,
+                    content_char_start..content_char_end,
+                );
+
+                // 3. Emit closing $$ syntax span
+                if raw_text.ends_with("$$") {
+                    write!(
+                        &mut self.writer,
+                        "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">$$</span>",
+                        syn_id, closing_char_start, closing_char_end
+                    )?;
+                    self.syntax_spans.push(SyntaxSpanInfo {
+                        syn_id: syn_id.clone(),
+                        char_range: closing_char_start..closing_char_end,
+                        syntax_type: SyntaxType::Block,
+                        formatted_range: Some(formatted_range.clone()),
+                    });
+                    self.record_mapping(
+                        range.end - 2..range.end,
+                        closing_char_start..closing_char_end,
+                    );
+                }
+
+                // 4. Emit rendered MathML (always visible, not tied to syn_id)
+                // Include data-char-target so clicking moves cursor into the math region
+                // contenteditable="false" so DOM walker skips this for offset counting
+                match weaver_renderer::math::render_math(&text, true) {
+                    weaver_renderer::math::MathResult::Success(mathml) => {
+                        write!(
+                            &mut self.writer,
+                            "<span class=\"math math-display math-rendered math-clickable\" contenteditable=\"false\" data-char-target=\"{}\">{}</span>",
+                            content_char_start,
+                            mathml
+                        )?;
+                    }
+                    weaver_renderer::math::MathResult::Error { html, .. } => {
+                        // Show error indicator (also always visible)
+                        self.write(&html)?;
+                    }
+                }
+
+                self.last_char_offset = closing_char_end;
             }
             Html(html) | InlineHtml(html) => {
                 // Track offset mapping for raw HTML
@@ -1418,7 +1558,7 @@ impl<
 
                         write!(
                             &mut self.writer,
-                            "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                            "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
                             syn_id, char_start, char_end
                         )?;
                         escape_html(&mut self.writer, trimmed)?;
@@ -1460,7 +1600,7 @@ impl<
 
                         write!(
                             &mut self.writer,
-                            "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                            "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
                             syn_id, char_start, char_end
                         )?;
                         escape_html(&mut self.writer, syntax)?;
@@ -1590,6 +1730,7 @@ impl<
         }
 
         // Emit the opening tag
+        tracing::debug!(?tag, "start_tag");
         match tag {
             Tag::HtmlBlock => Ok(()),
             Tag::Paragraph => {
@@ -1826,7 +1967,7 @@ impl<
 
                                 write!(
                                     &mut self.writer,
-                                    "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                                    "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
                                     syn_id, char_start, char_end
                                 )?;
                                 escape_html(&mut self.writer, syntax)?;
@@ -1937,7 +2078,7 @@ impl<
                             let syn_id = self.gen_syn_id();
                             write!(
                                 &mut self.writer,
-                                "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                                "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
                                 syn_id, char_start, char_end
                             )?;
                             escape_html(&mut self.writer, syntax)?;
@@ -1970,7 +2111,7 @@ impl<
                                 let syn_id = self.gen_syn_id();
                                 write!(
                                     &mut self.writer,
-                                    "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                                    "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
                                     syn_id, char_start, char_end
                                 )?;
                                 escape_html(&mut self.writer, syntax)?;
@@ -2047,9 +2188,38 @@ impl<
                 self.write("\">")
             }
             Tag::Link {
-                dest_url, title, ..
+                link_type,
+                dest_url,
+                title,
+                ..
             } => {
-                self.write("<a href=\"")?;
+                // Collect refs for later resolution
+                let url = dest_url.as_ref();
+                if matches!(link_type, LinkType::WikiLink { .. }) {
+                    let (target, fragment) = weaver_common::EntryIndex::parse_wikilink(url);
+                    self.ref_collector.add_wikilink(target, fragment, None);
+                } else if url.starts_with("at://") {
+                    self.ref_collector.add_at_link(url);
+                }
+
+                // Determine link validity class for wikilinks
+                let validity_class = if matches!(link_type, LinkType::WikiLink { .. }) {
+                    if let Some(index) = &self.entry_index {
+                        if index.resolve(dest_url.as_ref()).is_some() {
+                            " link-valid"
+                        } else {
+                            " link-broken"
+                        }
+                    } else {
+                        ""
+                    }
+                } else {
+                    ""
+                };
+
+                self.write("<a class=\"link")?;
+                self.write(validity_class)?;
+                self.write("\" href=\"")?;
                 escape_href(&mut self.writer, &dest_url)?;
                 if !title.is_empty() {
                     self.write("\" title=\"")?;
@@ -2058,11 +2228,28 @@ impl<
                 self.write("\">")
             }
             Tag::Image {
+                link_type,
                 dest_url,
                 title,
+                id,
                 attrs,
-                ..
             } => {
+                // Check if this is actually an AT embed disguised as a wikilink image
+                // (markdown-weaver parses ![[at://...]] as Image with WikiLink link_type)
+                let url = dest_url.as_ref();
+                if matches!(link_type, LinkType::WikiLink { .. })
+                    && (url.starts_with("at://") || url.starts_with("did:"))
+                {
+                    return self.write_embed(
+                        range,
+                        EmbedType::Other, // AT embeds - disambiguated via NSID later
+                        dest_url,
+                        title,
+                        id,
+                        attrs,
+                    );
+                }
+
                 // Image rendering: all syntax elements share one syn_id for visibility toggling
                 // Structure: ![  alt text  ](url)  <img>  cursor-landing
                 let raw_text = &self.source[range.clone()];
@@ -2096,7 +2283,7 @@ impl<
                 if raw_text.starts_with("![") {
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">![</span>",
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">![</span>",
                         syn_id, opening_char_start, opening_char_end
                     )?;
 
@@ -2142,7 +2329,7 @@ impl<
                 if !closing_syntax.is_empty() {
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
                         syn_id, closing_char_start, closing_char_end
                     )?;
                     escape_html(&mut self.writer, closing_syntax)?;
@@ -2430,7 +2617,7 @@ impl<
 
                             write!(
                                 &mut self.writer,
-                                "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                                "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
                                 syn_id, char_start, char_end
                             )?;
                             escape_html(&mut self.writer, fence)?;
@@ -2526,7 +2713,7 @@ impl<
 
                     write!(
                         &mut self.writer,
-                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">]]</span>",
+                        "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">]]</span>",
                         syn_id, char_start, char_end
                     )?;
 
@@ -2586,44 +2773,104 @@ impl<
         id: CowStr<'_>,
         attrs: Option<markdown_weaver::WeaverAttributes<'_>>,
     ) -> Result<(), W::Error> {
-        // Track opening span index for formatted_range
-        let opening_span_idx: Option<usize>;
-        let opening_char_start: usize;
+        // Embed rendering: all syntax elements share one syn_id for visibility toggling
+        // Structure: ![[  url-as-link  ]]  <embed-content>
+        let raw_text = &self.source[range.clone()];
+        let syn_id = self.gen_syn_id();
+        let opening_char_start = self.last_char_offset;
 
-        // Emit opening ![[
-        if range.start < range.end {
-            let raw_text = &self.source[range.clone()];
-            if raw_text.starts_with("![[") {
-                let syn_id = self.gen_syn_id();
-                let char_start = self.last_char_offset;
-                let char_end = char_start + 3; // "![["
-
-                write!(
-                    &mut self.writer,
-                    "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">![[</span>",
-                    syn_id, char_start, char_end
-                )?;
-
-                opening_span_idx = Some(self.syntax_spans.len());
-                opening_char_start = char_start;
-                self.syntax_spans.push(SyntaxSpanInfo {
-                    syn_id,
-                    char_range: char_start..char_end,
-                    syntax_type: SyntaxType::Inline,
-                    formatted_range: None,
-                });
-
-                self.last_char_offset = char_end;
-                self.last_byte_offset = range.start + 3;
-            } else {
-                opening_span_idx = None;
-                opening_char_start = self.last_char_offset;
-            }
+        // Extract the URL from raw text (between ![[ and ]])
+        let url_text = if raw_text.starts_with("![[") && raw_text.ends_with("]]") {
+            &raw_text[3..raw_text.len() - 2]
         } else {
-            opening_span_idx = None;
-            opening_char_start = self.last_char_offset;
+            dest_url.as_ref()
+        };
+
+        // Calculate char positions
+        let url_char_len = url_text.chars().count();
+        let opening_char_end = opening_char_start + 3; // "![["
+        let url_char_start = opening_char_end;
+        let url_char_end = url_char_start + url_char_len;
+        let closing_char_start = url_char_end;
+        let closing_char_end = closing_char_start + 2; // "]]"
+        let formatted_range = opening_char_start..closing_char_end;
+
+        // 1. Emit opening ![[ syntax span
+        if raw_text.starts_with("![[") {
+            write!(
+                &mut self.writer,
+                "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">![[</span>",
+                syn_id, opening_char_start, opening_char_end
+            )?;
+
+            self.syntax_spans.push(SyntaxSpanInfo {
+                syn_id: syn_id.clone(),
+                char_range: opening_char_start..opening_char_end,
+                syntax_type: SyntaxType::Inline,
+                formatted_range: Some(formatted_range.clone()),
+            });
+
+            self.record_mapping(
+                range.start..range.start + 3,
+                opening_char_start..opening_char_end,
+            );
         }
 
+        // 2. Emit URL as a clickable link (same syn_id, shown/hidden with syntax)
+        let url = dest_url.as_ref();
+        let link_href = if url.starts_with("at://") {
+            format!("https://alpha.weaver.sh/record/{}", url)
+        } else {
+            url.to_string()
+        };
+
+        write!(
+            &mut self.writer,
+            "<a class=\"image-alt embed-url\" href=\"{}\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" target=\"_blank\">",
+            link_href, syn_id, url_char_start, url_char_end
+        )?;
+        escape_html(&mut self.writer, url_text)?;
+        self.write("</a>")?;
+
+        self.syntax_spans.push(SyntaxSpanInfo {
+            syn_id: syn_id.clone(),
+            char_range: url_char_start..url_char_end,
+            syntax_type: SyntaxType::Inline,
+            formatted_range: Some(formatted_range.clone()),
+        });
+
+        self.record_mapping(
+            range.start + 3..range.end - 2,
+            url_char_start..url_char_end,
+        );
+
+        // 3. Emit closing ]] syntax span
+        if raw_text.ends_with("]]") {
+            write!(
+                &mut self.writer,
+                "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">]]</span>",
+                syn_id, closing_char_start, closing_char_end
+            )?;
+
+            self.syntax_spans.push(SyntaxSpanInfo {
+                syn_id: syn_id.clone(),
+                char_range: closing_char_start..closing_char_end,
+                syntax_type: SyntaxType::Inline,
+                formatted_range: Some(formatted_range.clone()),
+            });
+
+            self.record_mapping(
+                range.end - 2..range.end,
+                closing_char_start..closing_char_end,
+            );
+        }
+
+        // Collect AT URI for later resolution
+        if url.starts_with("at://") || url.starts_with("did:") {
+            self.ref_collector.add_at_embed(url, if title.is_empty() { None } else { Some(title.as_ref()) });
+        }
+
+        // 4. Emit the actual embed content
         // Try to get content from attributes first
         let content_from_attrs = if let Some(ref attrs) = attrs {
             attrs
@@ -2654,78 +2901,20 @@ impl<
         if let Some(html_content) = content {
             // Write the pre-rendered content directly
             self.write(&html_content)?;
-            self.write_newline()?;
         } else {
-            // Fallback: render as iframe
-            self.write("<iframe src=\"")?;
-            escape_href(&mut self.writer, &dest_url)?;
-            self.write("\" title=\"")?;
-            escape_html(&mut self.writer, &title)?;
-            if !id.is_empty() {
-                self.write("\" id=\"")?;
-                escape_html(&mut self.writer, &id)?;
-            }
-            self.write("\"")?;
-
-            if let Some(attrs) = attrs {
-                if !attrs.classes.is_empty() {
-                    self.write(" class=\"")?;
-                    for (i, class) in attrs.classes.iter().enumerate() {
-                        if i > 0 {
-                            self.write(" ")?;
-                        }
-                        escape_html(&mut self.writer, class)?;
-                    }
-                    self.write("\"")?;
-                }
-                for (attr, value) in &attrs.attrs {
-                    // Skip the content attr in HTML output
-                    if attr.as_ref() != "content" {
-                        self.write(" ")?;
-                        escape_html(&mut self.writer, attr)?;
-                        self.write("=\"")?;
-                        escape_html(&mut self.writer, value)?;
-                        self.write("\"")?;
-                    }
-                }
-            }
-            self.write("></iframe>")?;
+            // Fallback: render as placeholder div (iframe doesn't make sense for at:// URIs)
+            self.write("<div class=\"atproto-embed atproto-embed-placeholder\">")?;
+            self.write("<span class=\"embed-loading\">Loading embed...</span>")?;
+            self.write("</div>")?;
         }
 
-        // Emit closing ]]
-        if range.start < range.end {
-            let raw_text = &self.source[range.clone()];
-            if raw_text.ends_with("]]") {
-                let syn_id = self.gen_syn_id();
-                let char_start = self.last_char_offset;
-                let char_end = char_start + 2; // "]]"
+        // Consume the text events for the URL (they're still in the iterator)
+        // Use consume_until_end() since we already wrote the URL from source
+        self.consume_until_end();
 
-                write!(
-                    &mut self.writer,
-                    "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\">]]</span>",
-                    syn_id, char_start, char_end
-                )?;
-
-                // Set formatted_range on both opening and closing spans
-                let formatted_range = opening_char_start..char_end;
-                self.syntax_spans.push(SyntaxSpanInfo {
-                    syn_id,
-                    char_range: char_start..char_end,
-                    syntax_type: SyntaxType::Inline,
-                    formatted_range: Some(formatted_range.clone()),
-                });
-
-                // Update opening span's formatted_range
-                if let Some(idx) = opening_span_idx {
-                    if let Some(span) = self.syntax_spans.get_mut(idx) {
-                        span.formatted_range = Some(formatted_range);
-                    }
-                }
-
-                self.last_char_offset = char_end;
-                self.last_byte_offset = range.end;
-            }
-        }
+        // Update offsets
+        self.last_char_offset = closing_char_end;
+        self.last_byte_offset = range.end;
 
         Ok(())
     }
