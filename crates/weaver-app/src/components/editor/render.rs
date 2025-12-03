@@ -159,7 +159,10 @@ pub fn render_paragraphs_incremental(
     // Determine if we can use fast path (skip boundary discovery)
     // Need cache and non-boundary-affecting edit info (for edit position)
     let current_len = text.len_unicode();
-    let use_fast_path = cache.is_some() && edit.is_some() && !is_boundary_affecting(edit.unwrap());
+
+    let use_fast_path = cache.is_some()
+        && edit.is_some()
+        && !is_boundary_affecting(edit.unwrap());
 
     tracing::debug!(
         target: "weaver::render",
@@ -218,7 +221,29 @@ pub fn render_paragraphs_incremental(
             })
             .collect::<Vec<_>>()
     } else {
-        // Slow path: run boundary-only pass to discover paragraph boundaries
+        vec![] // Will be populated by slow path below
+    };
+
+    // Validate fast path results - if any ranges are invalid, use slow path
+    let paragraph_ranges = if !paragraph_ranges.is_empty() {
+        let all_valid = paragraph_ranges
+            .iter()
+            .all(|(_, char_range)| char_range.start <= char_range.end);
+        if all_valid {
+            paragraph_ranges
+        } else {
+            tracing::debug!(
+                target: "weaver::render",
+                "fast path produced invalid ranges, falling back to slow path"
+            );
+            vec![] // Trigger slow path
+        }
+    } else {
+        paragraph_ranges
+    };
+
+    // Slow path: run boundary-only pass to discover paragraph boundaries
+    let paragraph_ranges = if paragraph_ranges.is_empty() {
         let parser =
             Parser::new_ext(&source, weaver_renderer::default_md_options()).into_offset_iter();
         let mut scratch_output = String::new();
@@ -234,6 +259,8 @@ pub fn render_paragraphs_incremental(
             Ok(result) => result.paragraph_ranges,
             Err(_) => return (Vec::new(), RenderCache::default(), vec![]),
         }
+    } else {
+        paragraph_ranges
     };
 
     // Log discovered paragraphs

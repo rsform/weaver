@@ -338,6 +338,8 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: St
     code_buffer: Option<(Option<String>, String)>, // (lang, content)
     code_buffer_byte_range: Option<Range<usize>>,  // byte range of buffered code content
     code_buffer_char_range: Option<Range<usize>>,  // char range of buffered code content
+    code_block_char_start: Option<usize>,          // char offset where code block started
+    code_block_opening_span_idx: Option<usize>,    // index of opening fence syntax span
     pending_blockquote_range: Option<Range<usize>>, // range for emitting > inside next paragraph
 
     // Table rendering mode
@@ -455,6 +457,8 @@ impl<
             code_buffer: None,
             code_buffer_byte_range: None,
             code_buffer_char_range: None,
+            code_block_char_start: None,
+            code_block_opening_span_idx: None,
             pending_blockquote_range: None,
             render_tables_as_markdown: true, // Default to markdown rendering
             table_start_offset: None,
@@ -503,6 +507,8 @@ impl<
             code_buffer: None,
             code_buffer_byte_range: None,
             code_buffer_char_range: None,
+            code_block_char_start: None,
+            code_block_opening_span_idx: None,
             pending_blockquote_range: None,
             render_tables_as_markdown: true,
             table_start_offset: None,
@@ -545,6 +551,8 @@ impl<
             code_buffer: self.code_buffer,
             code_buffer_byte_range: self.code_buffer_byte_range,
             code_buffer_char_range: self.code_buffer_char_range,
+            code_block_char_start: self.code_block_char_start,
+            code_block_opening_span_idx: self.code_block_opening_span_idx,
             pending_blockquote_range: self.pending_blockquote_range,
             render_tables_as_markdown: self.render_tables_as_markdown,
             table_start_offset: self.table_start_offset,
@@ -590,6 +598,8 @@ impl<
             code_buffer: self.code_buffer,
             code_buffer_byte_range: self.code_buffer_byte_range,
             code_buffer_char_range: self.code_buffer_char_range,
+            code_block_char_start: self.code_block_char_start,
+            code_block_opening_span_idx: self.code_block_opening_span_idx,
             pending_blockquote_range: self.pending_blockquote_range,
             render_tables_as_markdown: self.render_tables_as_markdown,
             table_start_offset: self.table_start_offset,
@@ -1973,11 +1983,15 @@ impl<
                                 escape_html(&mut self.writer, syntax)?;
                                 self.write("</span>\n")?;
 
+                                // Track opening span index for formatted_range update later
+                                self.code_block_opening_span_idx = Some(self.syntax_spans.len());
+                                self.code_block_char_start = Some(char_start);
+
                                 self.syntax_spans.push(SyntaxSpanInfo {
                                     syn_id,
                                     char_range: char_start..char_end,
                                     syntax_type: SyntaxType::Block,
-                                    formatted_range: None,
+                                    formatted_range: None, // Will be set in TagEnd::CodeBlock
                                 });
 
                                 self.last_char_offset += syntax_char_len;
@@ -2570,6 +2584,9 @@ impl<
                         self.record_mapping(code_byte_range, code_char_range);
                     }
 
+                    // Get node_id for data-node-id attribute (needed for cursor positioning)
+                    let node_id = self.current_node_id.clone();
+
                     if let Some(ref lang_str) = lang {
                         // Use a temporary String buffer for syntect
                         let mut temp_output = String::new();
@@ -2580,11 +2597,25 @@ impl<
                             &mut temp_output,
                         ) {
                             Ok(_) => {
-                                self.write(&temp_output)?;
+                                // Inject data-node-id into the <pre> tag for cursor positioning
+                                if let Some(ref nid) = node_id {
+                                    let injected = temp_output.replacen(
+                                        "<pre>",
+                                        &format!("<pre data-node-id=\"{}\">", nid),
+                                        1,
+                                    );
+                                    self.write(&injected)?;
+                                } else {
+                                    self.write(&temp_output)?;
+                                }
                             }
                             Err(_) => {
                                 // Fallback to plain code block
-                                self.write("<pre><code class=\"language-")?;
+                                if let Some(ref nid) = node_id {
+                                    write!(&mut self.writer, "<pre data-node-id=\"{}\"><code class=\"language-", nid)?;
+                                } else {
+                                    self.write("<pre><code class=\"language-")?;
+                                }
                                 escape_html(&mut self.writer, lang_str)?;
                                 self.write("\">")?;
                                 escape_html_body_text(&mut self.writer, &buffer)?;
@@ -2592,7 +2623,11 @@ impl<
                             }
                         }
                     } else {
-                        self.write("<pre><code>")?;
+                        if let Some(ref nid) = node_id {
+                            write!(&mut self.writer, "<pre data-node-id=\"{}\"><code>", nid)?;
+                        } else {
+                            self.write("<pre><code>")?;
+                        }
                         escape_html_body_text(&mut self.writer, &buffer)?;
                         self.write("</code></pre>\n")?;
                     }
@@ -2604,6 +2639,10 @@ impl<
                 }
 
                 // Emit closing ``` (emit_gap_before is skipped while buffering)
+                // Track the opening span index and char start before we potentially clear them
+                let opening_span_idx = self.code_block_opening_span_idx.take();
+                let code_block_start = self.code_block_char_start.take();
+
                 if range.start < range.end {
                     let raw_text = &self.source[range.clone()];
                     if let Some(fence_line) = raw_text.lines().last() {
@@ -2623,15 +2662,28 @@ impl<
                             escape_html(&mut self.writer, fence)?;
                             self.write("</span>")?;
 
+                            self.last_char_offset += fence_char_len;
+                            self.last_byte_offset += fence.len();
+
+                            // Compute formatted_range for entire code block (opening fence to closing fence)
+                            let formatted_range = code_block_start
+                                .map(|start| start..self.last_char_offset);
+
+                            // Update opening fence span with formatted_range
+                            if let (Some(idx), Some(fr)) = (opening_span_idx, formatted_range.as_ref())
+                            {
+                                if let Some(span) = self.syntax_spans.get_mut(idx) {
+                                    span.formatted_range = Some(fr.clone());
+                                }
+                            }
+
+                            // Push closing fence span with formatted_range
                             self.syntax_spans.push(SyntaxSpanInfo {
                                 syn_id,
                                 char_range: char_start..char_end,
                                 syntax_type: SyntaxType::Block,
-                                formatted_range: None,
+                                formatted_range,
                             });
-
-                            self.last_char_offset += fence_char_len;
-                            self.last_byte_offset += fence.len();
                         }
                     }
                 }
