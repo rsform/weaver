@@ -10,6 +10,9 @@ use jacquard::types::ident::AtIdentifier;
 use jacquard::types::string::Did;
 
 const NAVBAR_CSS: Asset = asset!("/assets/styling/navbar.css");
+const CARDS_BASE_CSS: Asset = asset!("/assets/styling/cards-base.css");
+const ENTRY_CARD_CSS: Asset = asset!("/assets/styling/entry-card.css");
+const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 
 /// The Navbar component that will be rendered on all pages of our app since every page is under the layout.
 ///
@@ -61,6 +64,9 @@ pub fn Navbar() -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: NAVBAR_CSS }
         document::Link { rel: "stylesheet", href: asset!("/assets/styling/button.css") }
+        document::Link { rel: "stylesheet", href: CARDS_BASE_CSS }
+        document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
+        document::Link { rel: "stylesheet", href: NOTEBOOK_CARD_CSS }
         div {
             id: "navbar",
             nav { class: "breadcrumbs",

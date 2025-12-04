@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 
 use crate::Route;
-use crate::components::avatar::{Avatar, AvatarImage};
 use crate::components::button::{Button, ButtonVariant};
 use dioxus::prelude::*;
 use jacquard::smol_str::SmolStr;
@@ -129,15 +128,13 @@ fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'stati
                 .unwrap_or("Unknown");
 
             rsx! {
-                div { class: "notebook-author",
+                span { class: "embed-author notebook-author",
                     if let Some(ref avatar) = p.avatar {
-                        Avatar {
-                            AvatarImage { src: avatar.as_ref() }
-                        }
+                        img { class: "embed-avatar", src: avatar.as_ref(), alt: "" }
                     }
-                    div { class: "notebook-author-info",
-                        div { class: "notebook-author-name", "{display_name}" }
-                        div { class: "notebook-author-handle", "@{p.handle}" }
+                    span { class: "embed-author-info",
+                        span { class: "embed-author-name", "{display_name}" }
+                        span { class: "embed-author-handle", "@{p.handle}" }
                     }
                 }
             }
@@ -150,29 +147,31 @@ fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'stati
                 .unwrap_or("Unknown");
 
             rsx! {
-                div { class: "notebook-author",
+                span { class: "embed-author notebook-author",
                     if let Some(ref avatar) = p.avatar {
-                        Avatar {
-                            AvatarImage { src: avatar.as_ref() }
-                        }
+                        img { class: "embed-avatar", src: avatar.as_ref(), alt: "" }
                     }
-                    div { class: "notebook-author-info",
-                        div { class: "notebook-author-name", "{display_name}" }
-                        div { class: "notebook-author-handle", "@{p.handle}" }
+                    span { class: "embed-author-info",
+                        span { class: "embed-author-name", "{display_name}" }
+                        span { class: "embed-author-handle", "@{p.handle}" }
                     }
                 }
             }
         }
         ProfileDataViewInner::TangledProfileView(p) => {
             rsx! {
-                div { class: "notebook-author",
-                    div { class: "notebook-author-name", "@{p.handle.as_ref()}" }
+                span { class: "embed-author notebook-author",
+                    span { class: "embed-author-info",
+                        span { class: "embed-author-handle", "@{p.handle.as_ref()}" }
+                    }
                 }
             }
         }
         _ => rsx! {
-            div { class: "notebook-author",
-                "Unknown author"
+            span { class: "embed-author notebook-author",
+                span { class: "embed-author-info",
+                    span { class: "embed-author-name", "Unknown" }
+                }
             }
         },
     }

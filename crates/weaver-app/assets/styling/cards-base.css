@@ -1,0 +1,150 @@
+/* Shared card primitives
+   Used by entry-card.css and notebook-card.css */
+
+/* ==========================================================================
+   CARD SURFACE
+   Container with background, shadow (light) or border (dark)
+   ========================================================================== */
+
+.card-surface {
+    background: var(--color-surface);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+    .card-surface {
+        box-shadow: none;
+        border: 1px solid var(--color-border);
+    }
+}
+
+/* ==========================================================================
+   CARD TITLE
+   Heading style for card titles
+   ========================================================================== */
+
+.card-title {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    color: var(--color-primary);
+    margin: 0;
+    transition: color 0.2s ease;
+}
+
+/* ==========================================================================
+   CARD META
+   Muted metadata text (dates, counts, etc.)
+   ========================================================================== */
+
+.card-meta {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+}
+
+/* ==========================================================================
+   CARD TAGS
+   Tag list container and individual tags
+   ========================================================================== */
+
+.card-tags {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.card-tag {
+    padding: 0.2rem 0.4rem 0.2rem 0;
+    font-size: 0.75rem;
+    color: var(--color-subtle);
+    border-bottom: 1px solid var(--color-border);
+    transition:
+        color 0.15s ease,
+        border-color 0.15s ease;
+}
+
+/* ==========================================================================
+   CARD PREVIEW
+   Truncated content preview with line clamping
+   ========================================================================== */
+
+.card-preview {
+    color: var(--color-subtle);
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.card-preview-3 {
+    -webkit-line-clamp: 3;
+}
+
+.card-preview-4 {
+    -webkit-line-clamp: 4;
+}
+
+/* Preview content normalization */
+.card-preview h1,
+.card-preview h2,
+.card-preview h3,
+.card-preview h4,
+.card-preview h5,
+.card-preview h6 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-top: 0;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.card-preview p {
+    margin: 0;
+    display: inline;
+}
+
+.card-preview code {
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.card-preview pre {
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-width: 100%;
+}
+
+/* ==========================================================================
+   CARD HOVER STATES
+   Common hover patterns for cards
+   ========================================================================== */
+
+.card-hover-border:hover {
+    border-left-color: var(--color-secondary);
+}
+
+.card-hover-title:hover .card-title {
+    color: var(--color-secondary);
+}
+
+.card-hover-tags:hover .card-tag {
+    color: var(--color-tertiary);
+    border-color: var(--color-tertiary);
+}
+
+/* ==========================================================================
+   LOADING/ERROR STATES
+   ========================================================================== */
+
+.card-loading,
+.card-error {
+    text-align: center;
+    padding: 2rem;
+    color: var(--color-muted);
+}
+
+.card-error {
+    color: var(--color-error);
+}

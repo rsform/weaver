@@ -44,7 +44,8 @@ pub fn NotebookOgMeta(
     }
 }
 
-const ENTRY_CARD_CSS: Asset = asset!("/assets/styling/entry-card.css");
+// Card styles loaded at navbar level
+const LAYOUTS_CSS: Asset = asset!("/assets/styling/layouts.css");
 
 /// The Blog page component that will be rendered when the current route is `[Route::Blog]`
 ///
@@ -96,7 +97,7 @@ pub fn NotebookIndex(
     };
 
     rsx! {
-        document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
+        document::Link { rel: "stylesheet", href: LAYOUTS_CSS }
 
         match (&*notebook_data.read(), &*entries_resource.read()) {
             (Some(data), Some(entries)) => {

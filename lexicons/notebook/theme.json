@@ -28,7 +28,7 @@
           "fonts": {
             "type": "object",
             "required": ["body", "heading", "monospace"],
-            "description": "Fonts to be used in the notebook. Can specify a name or list of names (will load if available) or a file or list of files for each. Empty lists will use site defaults."
+            "description": "Fonts to be used in the notebook. Can specify a name or list of names (will load if available) or a file or list of files for each. Empty lists will use site defaults.",
             "properties": {
               "body": {
                 "type": "array",
@@ -86,11 +86,15 @@
     },
     "codeThemeFile": {
       "type": "object",
-      "required": ["name", "content"],
+      "required": ["name", "did", "content"],
       "description": "Custom syntax highlighting theme file (sublime text/textmate theme format)",
       "properties": {
         "name": {
           "type": "string"
+        },
+        "did": {
+          "type": "string",
+          "format": "did"
         },
         "content": {
           "type": "blob",
@@ -115,11 +119,15 @@
     },
     "fontFile": {
       "type": "object",
-      "required": ["name", "content"],
-      "description": "Custom woff(2) or ttf font file"
+      "required": ["name", "did", "content"],
+      "description": "Custom woff(2) or ttf font file",
       "properties": {
         "name": {
           "type": "string"
+        },
+        "did": {
+          "type": "string",
+          "format": "did"
         },
         "content": {
           "type": "blob",

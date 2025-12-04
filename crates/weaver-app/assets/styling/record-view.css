@@ -549,13 +549,13 @@
 }
 
 /* Array Section Styling */
-.section-header {
+.record-section-header {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
 }
 
-.array-item .section-header {
+.array-item .record-section-header {
 }
 .array-item .section-content .record-field {
 }

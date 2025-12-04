@@ -65,9 +65,8 @@ pub fn SiteOgMeta() -> Element {
     }
 }
 
-const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
+// Card styles (entry-card, notebook-card) loaded at navbar level
 const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
-const ENTRY_CARD_CSS: Asset = asset!("/assets/styling/entry-card.css");
 const HOME_CSS: Asset = asset!("/assets/styling/home.css");
 
 /// The Home page component that will be rendered when the current route is `[Route::Home]`
@@ -86,9 +85,7 @@ pub fn Home() -> Element {
         SiteOgMeta {}
 
         document::Link { rel: "stylesheet", href: HOME_CSS }
-        document::Link { rel: "stylesheet", href: NOTEBOOK_CARD_CSS }
         document::Link { rel: "stylesheet", href: ENTRY_CSS }
-        document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
         DefaultNotebookCss {  }
         div {
             class: "home-container",
@@ -156,7 +153,8 @@ fn PinnedNotebookCard(ident: AtIdentifier<'static>, title: SmolStr) -> Element {
         Some((view, entries)) => rsx! {
             NotebookCard {
                 notebook: view.clone(),
-                entry_refs: entries.clone()
+                entry_refs: entries.clone(),
+                show_author: Some(true)
             }
         },
         None => rsx! {

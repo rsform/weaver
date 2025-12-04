@@ -15,10 +15,16 @@
           "createdAt"
         ],
         "properties": {
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "sh.weaver.actor.defs#author"
+            }
+          },
           "content": {
             "type": "string",
-            "description": "The content of the notebook entry. This should be some flavor of Markdown.",
-            "maxLength": 200000
+            "description": "The content of the notebook entry. This should be some flavor of Markdown."
           },
           "createdAt": {
             "type": "string",

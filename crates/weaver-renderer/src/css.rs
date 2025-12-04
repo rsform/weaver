@@ -1,9 +1,11 @@
 use crate::theme::{ResolvedTheme, ThemeDarkCodeTheme, ThemeLightCodeTheme};
 use miette::IntoDiagnostic;
+use smol_str::format_smolstr;
 use std::io::Cursor;
 use syntect::highlighting::ThemeSet;
 use syntect::html::{ClassStyle, css_for_theme_with_class_style};
 use weaver_api::com_atproto::sync::get_blob::GetBlob;
+use weaver_api::sh_weaver::notebook::theme::FontValue;
 use weaver_common::jacquard::client::BasicClient;
 use weaver_common::jacquard::prelude::*;
 use weaver_common::jacquard::xrpc::XrpcExt;
@@ -17,6 +19,38 @@ pub fn generate_base_css(theme: &ResolvedTheme) -> String {
     let light = &theme.light_scheme;
     let fonts = &theme.fonts;
     let spacing = &theme.spacing;
+
+    // interim until handle fonts from blobs
+    let body = fonts
+        .body
+        .iter()
+        .filter_map(|f| match &f.value {
+            FontValue::FontName(cow_str) => Some(format_smolstr!("'{cow_str}'")),
+            FontValue::FontFile(_font_file) => None,
+            FontValue::Unknown(_data) => None,
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let monospace = fonts
+        .monospace
+        .iter()
+        .filter_map(|f| match &f.value {
+            FontValue::FontName(cow_str) => Some(format_smolstr!("'{cow_str}'")),
+            FontValue::FontFile(_font_file) => None,
+            FontValue::Unknown(_data) => None,
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let heading = fonts
+        .heading
+        .iter()
+        .filter_map(|f| match &f.value {
+            FontValue::FontName(cow_str) => Some(format_smolstr!("'{cow_str}'")),
+            FontValue::FontFile(_font_file) => None,
+            FontValue::Unknown(_data) => None,
+        })
+        .collect::<Vec<_>>()
+        .join(",");
 
     format!(
         r#"/* CSS Reset */
@@ -930,9 +964,9 @@ hr {{
         light.link,
         light.highlight,
         // Fonts and spacing
-        fonts.body,
-        fonts.heading,
-        fonts.monospace,
+        body,
+        heading,
+        monospace,
         spacing.base_size,
         spacing.line_height,
         spacing.scale,

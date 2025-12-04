@@ -46,33 +46,12 @@
     display: none;
 }
 
-.notebook-author {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.notebook-author .avatar {
+/* Cover-specific author sizing (uses embed-author base styles) */
+.notebook-author .embed-avatar {
     width: 48px;
     height: 48px;
-    flex-shrink: 0;
-}
-
-.notebook-author-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.notebook-author-name {
-    font-weight: 600;
-    color: var(--color-text);
-    font-size: 1rem;
-}
-
-.notebook-author-handle {
-    color: var(--color-subtle);
-    font-size: 0.875rem;
+    min-width: 48px;
+    min-height: 48px;
 }
 
 .notebook-cover-description {

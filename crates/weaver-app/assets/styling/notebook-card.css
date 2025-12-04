@@ -1,60 +1,12 @@
 /* Notebook card styling */
+/* Layout classes (.repository-layout, etc.) are now in layouts.css */
 
-/* Repository layout - sidebar in left gutter on desktop, header on mobile */
-
-.repository-layout {
-    display: grid;
-    grid-template-columns: minmax(240px, 1fr) minmax(0, 95ch) minmax(240px, 1fr);
-    gap: 1rem;
-    max-width: calc(95ch + 480px + 4rem); /* content + gutters + gaps */
-    margin: 0 auto;
-    padding: 2.25rem 1.25rem 2.25rem 0;
-}
-
-.repository-sidebar {
-    grid-column: 1;
-    position: sticky;
-    top: 2rem;
-    align-self: flex-start;
-    overflow-y: auto;
-}
-
-.repository-main {
-    grid-column: 2;
-    padding: 0 1rem;
-}
-
-/* Mobile layout - sidebar becomes header */
-@media (max-width: 1400px) {
-    .repository-layout {
-        grid-template-columns: minmax(1rem, 1fr) minmax(0, 95ch) minmax(1rem, 1fr) !important;
-        gap: 0 !important;
-        max-width: 100vw !important;
-        box-sizing: border-box !important;
-    }
-
-    .repository-sidebar {
-        grid-column: 2;
-        position: static;
-        max-height: none;
-        min-width: 0;
-        margin-bottom: 2rem;
-    }
-
-    .repository-main {
-        grid-column: 2;
-        padding: 0;
-        min-width: 0;
-    }
-}
-
-/* Notebook list - width constrained by grid column */
 .notebooks-list {
     margin-top: 0.25rem;
 }
 
 .notebook-card {
-    margin-bottom: 2.5rem; /* 2 grid units */
+    margin-bottom: calc(1.25rem * var(--spacing-scale, 1.25));
 }
 
 .notebook-card-container {

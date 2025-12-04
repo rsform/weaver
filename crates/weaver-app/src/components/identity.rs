@@ -68,17 +68,16 @@ pub fn ProfileOgMeta(
     }
 }
 
-const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
+// Card styles (entry-card, notebook-card) loaded at navbar level
 const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
-const ENTRY_CARD_CSS: Asset = asset!("/assets/styling/entry-card.css");
+const LAYOUTS_CSS: Asset = asset!("/assets/styling/layouts.css");
 
 #[component]
 pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     rsx! {
         DefaultNotebookCss {  }
-        document::Link { rel: "stylesheet", href: NOTEBOOK_CARD_CSS }
+        document::Link { rel: "stylesheet", href: LAYOUTS_CSS }
         document::Link { rel: "stylesheet", href: ENTRY_CSS }
-        document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
         div {
             Outlet::<Route> {}
         }
@@ -316,7 +315,6 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     };
 
     rsx! {
-        document::Stylesheet { href: NOTEBOOK_CARD_CSS }
         {og_meta}
 
         div { class: "repository-layout",
@@ -363,7 +361,8 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                                 entry_view: entry_view.clone(),
                                                                 entry: entry.clone(),
                                                                 show_actions: true,
-                                                                is_pinned: true
+                                                                is_pinned: true,
+                                                                show_author: false
                                                             }
                                                         }
                                                     }
@@ -409,7 +408,8 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                             entry_view: entry_view.clone(),
                                                             entry: entry.clone(),
                                                             show_actions: true,
-                                                            is_pinned: false
+                                                            is_pinned: false,
+                                                            show_author: false
                                                         }
                                                     }
                                                 }
@@ -434,6 +434,7 @@ pub fn NotebookCard(
     notebook: NotebookView<'static>,
     entry_refs: Vec<StrongRef<'static>>,
     #[props(default = false)] is_pinned: bool,
+    #[props(default)] show_author: Option<bool>,
     #[props(default)] on_pinned_changed: Option<EventHandler<bool>>,
     #[props(default)] on_deleted: Option<EventHandler<()>>,
 ) -> Element {
@@ -469,8 +470,8 @@ pub fn NotebookCard(
     // Format date
     let formatted_date = notebook.indexed_at.as_ref().format("%B %d, %Y").to_string();
 
-    // Show authors only if multiple
-    let show_authors = notebook.authors.len() > 1;
+    // Show authors: explicit prop overrides, otherwise show only if multiple
+    let show_authors = show_author.unwrap_or(notebook.authors.len() > 1);
 
     let ident = notebook.uri.authority().clone().into_static();
     let book_title: SmolStr = notebook_path.clone().into();

@@ -1,5 +1,8 @@
 use miette::IntoDiagnostic;
 pub use weaver_api::sh_weaver::notebook::colour_scheme::{ColourScheme, ColourSchemeColours};
+use weaver_api::sh_weaver::notebook::theme::Font;
+use weaver_api::sh_weaver::notebook::theme::FontName;
+use weaver_api::sh_weaver::notebook::theme::FontValue;
 pub use weaver_api::sh_weaver::notebook::theme::{
     Theme, ThemeDarkCodeTheme, ThemeFonts, ThemeLightCodeTheme, ThemeSpacing,
 };
@@ -54,16 +57,63 @@ pub fn default_colour_scheme_dark() -> ColourSchemeColours<'static> {
 pub fn default_fonts() -> ThemeFonts<'static> {
     ThemeFonts {
         // Serif for body text, sans for headings/UI
-        body: CowStr::new_static(
-            "'Adobe Caslon Pro', 'Latin Modern Roman',  'CM Serif', Georgia, serif",
-        ),
-        heading: CowStr::new_static(
-            "'IBM Plex Sans', 'CM Sans','Junction', 'Proza Libre',   system-ui, sans-serif",
-        ),
-        monospace: CowStr::new_static(
-            "'Ioskeley Mono', 'IBM Plex Mono', 'Berkeley Mono', Consolas, monospace",
-        ),
-        ..Default::default()
+        body: vec![
+            Font::new()
+                .value(FontValue::FontName(
+                    CowStr::new_static("Adobe Caslon Pro").into(),
+                ))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(
+                    CowStr::new_static("Latin Modern Roman").into(),
+                ))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(
+                    CowStr::new_static("Times New Roman").into(),
+                ))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(CowStr::new_static("serif").into()))
+                .build(),
+        ],
+        heading: vec![
+            Font::new()
+                .value(FontValue::FontName(
+                    CowStr::new_static("IBM Plex Sans").into(),
+                ))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(CowStr::new_static("system-ui").into()))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(CowStr::new_static("sans-serif").into()))
+                .build(),
+        ],
+        monospace: vec![
+            Font::new()
+                .value(FontValue::FontName(
+                    CowStr::new_static("Ioskeley Mono").into(),
+                ))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(
+                    CowStr::new_static("IBM Plex Mono").into(),
+                ))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(
+                    CowStr::new_static("Berkeley Mono").into(),
+                ))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(CowStr::new_static("Consolas").into()))
+                .build(),
+            Font::new()
+                .value(FontValue::FontName(CowStr::new_static("monospace").into()))
+                .build(),
+        ],
+        extra_data: None,
     }
 }
 

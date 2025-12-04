@@ -1,0 +1,190 @@
+/* Sidebar layouts - 3-column grid with sticky sidebar */
+
+/* Base sidebar layout pattern
+   Uses CSS custom properties for sizing flexibility:
+   --layout-gutter: sidebar/gutter width (default: 240px)
+   --layout-content: main content max-width (default: 95ch)
+   --layout-gap: grid gap (default: 1.5rem)
+   --layout-padding: container padding (default: 2rem 1.25rem 2rem 0)
+*/
+
+.sidebar-layout {
+    display: grid;
+    grid-template-columns:
+        minmax(var(--layout-gutter, 240px), 1fr)
+        minmax(0, var(--layout-content, 95ch))
+        minmax(var(--layout-gutter, 240px), 1fr);
+    gap: var(--layout-gap, 1.5rem);
+    max-width: calc(var(--layout-content, 95ch) + var(--layout-gutter, 240px) * 2 + 4rem);
+    margin: 0 auto;
+    padding: var(--layout-padding, 2rem 1.25rem 2rem 0);
+}
+
+.sidebar-layout-sidebar {
+    grid-column: 1;
+    position: sticky;
+    top: 2rem;
+    align-self: flex-start;
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+}
+
+.sidebar-layout-main {
+    grid-column: 2;
+    padding: 0 1rem;
+}
+
+.sidebar-layout-actions {
+    grid-column: 3;
+    position: sticky;
+    top: 2rem;
+    align-self: flex-start;
+}
+
+/* Mobile: sidebar collapses to header above main content */
+@media (max-width: 1400px) {
+    .sidebar-layout {
+        grid-template-columns: minmax(1rem, 1fr) minmax(0, var(--layout-content, 95ch)) minmax(1rem, 1fr) !important;
+        gap: 0 !important;
+        max-width: 100vw !important;
+        box-sizing: border-box !important;
+    }
+
+    .sidebar-layout-sidebar {
+        grid-column: 2;
+        position: static;
+        max-height: none;
+        min-width: 0;
+        margin-bottom: 2rem;
+    }
+
+    .sidebar-layout-main {
+        grid-column: 2;
+        padding: 0;
+        min-width: 0;
+    }
+
+    .sidebar-layout-actions {
+        display: none;
+    }
+}
+
+/* Variant: notebook layout (wider gutters and content) */
+.sidebar-layout-notebook {
+    --layout-gutter: 280px;
+    --layout-content: 90rem;
+    --layout-gap: 2rem;
+    --layout-padding: 2.5rem 1.25rem 2.5rem 0;
+}
+
+/* Variant: repository/profile layout (standard sizing) */
+.sidebar-layout-repository {
+    --layout-gutter: 240px;
+    --layout-content: 95ch;
+    --layout-gap: 1rem;
+    --layout-padding: 2.25rem 1.25rem 2.25rem 0;
+}
+
+/* ==========================================================================
+   BACKWARD-COMPATIBLE CLASS ALIASES
+   These map existing component class names to the unified layout system.
+   ========================================================================== */
+
+/* Notebook layout (used in notebook.rs) */
+.notebook-layout {
+    display: grid;
+    grid-template-columns:
+        minmax(280px, 1fr)
+        minmax(0, 90rem)
+        minmax(280px, 1fr);
+    gap: 2rem;
+    max-width: calc(90rem + 560px + 4rem);
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 2.5rem 0;
+}
+
+.notebook-sidebar {
+    grid-column: 1;
+    position: sticky;
+    top: 2rem;
+    align-self: flex-start;
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+}
+
+.notebook-main {
+    grid-column: 2;
+    padding: 0 1rem;
+}
+
+@media (max-width: 1400px) {
+    .notebook-layout {
+        grid-template-columns: minmax(1rem, 1fr) minmax(0, 90rem) minmax(1rem, 1fr) !important;
+        gap: 0 !important;
+        max-width: 100vw !important;
+        box-sizing: border-box !important;
+    }
+
+    .notebook-sidebar {
+        grid-column: 2;
+        position: static;
+        max-height: none;
+        min-width: 0;
+        margin-bottom: 2rem;
+    }
+
+    .notebook-main {
+        grid-column: 2;
+        padding: 0;
+        min-width: 0;
+    }
+}
+
+/* Repository layout (used in identity.rs) */
+.repository-layout {
+    display: grid;
+    grid-template-columns:
+        minmax(240px, 1fr)
+        minmax(0, 95ch)
+        minmax(240px, 1fr);
+    gap: 1rem;
+    max-width: calc(95ch + 480px + 4rem);
+    margin: 0 auto;
+    padding: 2.25rem 1.25rem 2.25rem 0;
+}
+
+.repository-sidebar {
+    grid-column: 1;
+    position: sticky;
+    top: 2rem;
+    align-self: flex-start;
+    overflow-y: auto;
+}
+
+.repository-main {
+    grid-column: 2;
+    padding: 0 1rem;
+}
+
+@media (max-width: 1400px) {
+    .repository-layout {
+        grid-template-columns: minmax(1rem, 1fr) minmax(0, 95ch) minmax(1rem, 1fr) !important;
+        gap: 0 !important;
+        max-width: 100vw !important;
+        box-sizing: border-box !important;
+    }
+
+    .repository-sidebar {
+        grid-column: 2;
+        position: static;
+        max-height: none;
+        min-width: 0;
+        margin-bottom: 2rem;
+    }
+
+    .repository-main {
+        grid-column: 2;
+        padding: 0;
+        min-width: 0;
+    }
+}

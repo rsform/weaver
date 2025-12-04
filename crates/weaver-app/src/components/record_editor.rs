@@ -935,7 +935,7 @@ fn EditableArrayField(root: Signal<Data<'static>>, path: String, did: String) ->
                     default_open: true,
                     index: 0,
                     AccordionTrigger {
-                        div { class: "section-header",
+                        div { class: "record-section-header",
                             div { class: "section-label",
                                 {
                                     let parts: Vec<&str> = path.split('.').collect();
@@ -1038,7 +1038,7 @@ fn EditableObjectField(
                         default_open: true,
                         index: 0,
                         AccordionTrigger {
-                            div { class: "section-header",
+                            div { class: "record-section-header",
                                 div { class: "section-label",
                                     {
                                         let parts: Vec<&str> = path.split('.').collect();
