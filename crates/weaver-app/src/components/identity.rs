@@ -1,10 +1,35 @@
 use crate::auth::AuthState;
-use crate::components::{ProfileActions, ProfileActionsMenubar};
+use crate::components::{FeedEntryCard, ProfileActions, ProfileActionsMenubar};
 use crate::{Route, data, fetch};
 use dioxus::prelude::*;
 use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
+use std::collections::HashSet;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
-use weaver_api::sh_weaver::notebook::NotebookView;
+use weaver_api::sh_weaver::notebook::{EntryView, NotebookView, entry::Entry};
+
+/// A single item in the profile timeline (either notebook or standalone entry)
+#[derive(Clone, PartialEq)]
+pub enum ProfileTimelineItem {
+    Notebook {
+        notebook: NotebookView<'static>,
+        entries: Vec<StrongRef<'static>>,
+        /// Most recent entry's created_at for sorting
+        sort_date: jacquard::types::string::Datetime,
+    },
+    StandaloneEntry {
+        entry_view: EntryView<'static>,
+        entry: Entry<'static>,
+    },
+}
+
+impl ProfileTimelineItem {
+    pub fn sort_date(&self) -> &jacquard::types::string::Datetime {
+        match self {
+            Self::Notebook { sort_date, .. } => sort_date,
+            Self::StandaloneEntry { entry, .. } => &entry.created_at,
+        }
+    }
+}
 
 /// OpenGraph and Twitter Card meta tags for profile/repository pages
 #[component]
@@ -56,14 +81,182 @@ pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 #[component]
 pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     use crate::components::ProfileDisplay;
+    use jacquard::from_data;
+    use weaver_api::sh_weaver::notebook::book::Book;
+
     let (notebooks_result, notebooks) = data::use_notebooks_for_did(ident);
+    let (entries_result, all_entries) = data::use_entries_for_did(ident);
     let (profile_result, profile) = crate::data::use_profile_data(ident);
 
     #[cfg(feature = "fullstack-server")]
     notebooks_result?;
 
     #[cfg(feature = "fullstack-server")]
+    entries_result?;
+
+    #[cfg(feature = "fullstack-server")]
     profile_result?;
+
+    // Extract pinned URIs from profile (only Weaver ProfileView has pinned)
+    let pinned_uris = use_memo(move || {
+        use jacquard::IntoStatic;
+        use jacquard::types::aturi::AtUri;
+        use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+
+        let Some(prof) = profile.read().as_ref().cloned() else {
+            return Vec::<AtUri<'static>>::new();
+        };
+
+        match &prof.inner {
+            ProfileDataViewInner::ProfileView(p) => p
+                .pinned
+                .as_ref()
+                .map(|pins| pins.iter().map(|r| r.uri.clone().into_static()).collect())
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    });
+
+    // Compute standalone entries (entries not in any notebook)
+    let standalone_entries = use_memo(move || {
+        let nbs = notebooks.read();
+        let ents = all_entries.read();
+
+        let (Some(nbs), Some(ents)) = (nbs.as_ref(), ents.as_ref()) else {
+            return Vec::new();
+        };
+
+        // Collect all entry URIs from all notebook entry_lists
+        let notebook_entry_uris: HashSet<&str> = nbs
+            .iter()
+            .flat_map(|(_, refs)| refs.iter().map(|r| r.uri.as_ref()))
+            .collect();
+
+        // Filter entries not in any notebook
+        ents.iter()
+            .filter(|(view, _)| !notebook_entry_uris.contains(view.uri.as_ref()))
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+
+    // Helper to check if a URI is pinned
+    fn is_pinned(uri: &str, pinned: &[jacquard::types::aturi::AtUri<'static>]) -> bool {
+        pinned.iter().any(|p| p.as_ref() == uri)
+    }
+
+    // Build pinned items (matching notebooks/entries against pinned URIs)
+    let pinned_items = use_memo(move || {
+        let nbs = notebooks.read();
+        let standalone = standalone_entries.read();
+        let ents = all_entries.read();
+        let pinned = pinned_uris.read();
+
+        let mut items: Vec<ProfileTimelineItem> = Vec::new();
+
+        // Check notebooks
+        if let Some(nbs) = nbs.as_ref() {
+            if let Some(all_ents) = ents.as_ref() {
+                for (notebook, entry_refs) in nbs {
+                    if is_pinned(notebook.uri.as_ref(), &pinned) {
+                        let sort_date = entry_refs
+                            .iter()
+                            .filter_map(|r| {
+                                all_ents
+                                    .iter()
+                                    .find(|(v, _)| v.uri.as_ref() == r.uri.as_ref())
+                            })
+                            .map(|(_, entry)| entry.created_at.clone())
+                            .max()
+                            .unwrap_or_else(|| notebook.indexed_at.clone());
+
+                        items.push(ProfileTimelineItem::Notebook {
+                            notebook: notebook.clone(),
+                            entries: entry_refs.clone(),
+                            sort_date,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Check standalone entries
+        for (view, entry) in standalone.iter() {
+            if is_pinned(view.uri.as_ref(), &pinned) {
+                items.push(ProfileTimelineItem::StandaloneEntry {
+                    entry_view: view.clone(),
+                    entry: entry.clone(),
+                });
+            }
+        }
+
+        // Sort pinned by their order in the pinned list
+        items.sort_by_key(|item| {
+            let uri = match item {
+                ProfileTimelineItem::Notebook { notebook, .. } => notebook.uri.as_ref(),
+                ProfileTimelineItem::StandaloneEntry { entry_view, .. } => entry_view.uri.as_ref(),
+            };
+            pinned
+                .iter()
+                .position(|p| p.as_ref() == uri)
+                .unwrap_or(usize::MAX)
+        });
+
+        items
+    });
+
+    // Build merged timeline sorted by date (newest first), excluding pinned items
+    let timeline = use_memo(move || {
+        let nbs = notebooks.read();
+        let standalone = standalone_entries.read();
+        let ents = all_entries.read();
+        let pinned = pinned_uris.read();
+
+        let mut items: Vec<ProfileTimelineItem> = Vec::new();
+
+        // Add notebooks (excluding pinned)
+        if let Some(nbs) = nbs.as_ref() {
+            if let Some(all_ents) = ents.as_ref() {
+                for (notebook, entry_refs) in nbs {
+                    if !is_pinned(notebook.uri.as_ref(), &pinned) {
+                        let sort_date = entry_refs
+                            .iter()
+                            .filter_map(|r| {
+                                all_ents
+                                    .iter()
+                                    .find(|(v, _)| v.uri.as_ref() == r.uri.as_ref())
+                            })
+                            .map(|(_, entry)| entry.created_at.clone())
+                            .max()
+                            .unwrap_or_else(|| notebook.indexed_at.clone());
+
+                        items.push(ProfileTimelineItem::Notebook {
+                            notebook: notebook.clone(),
+                            entries: entry_refs.clone(),
+                            sort_date,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Add standalone entries (excluding pinned)
+        for (view, entry) in standalone.iter() {
+            if !is_pinned(view.uri.as_ref(), &pinned) {
+                items.push(ProfileTimelineItem::StandaloneEntry {
+                    entry_view: view.clone(),
+                    entry: entry.clone(),
+                });
+            }
+        }
+
+        // Sort by date descending (newest first)
+        items.sort_by(|a, b| b.sort_date().cmp(&a.sort_date()));
+
+        items
+    });
+
+    // Count standalone entries for stats
+    let entry_count = use_memo(move || all_entries.read().as_ref().map(|e| e.len()).unwrap_or(0));
 
     // Build OG metadata when profile is available
     let og_meta = match &*profile.read() {
@@ -130,7 +323,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
         div { class: "repository-layout",
             // Profile sidebar (desktop) / header (mobile)
             aside { class: "repository-sidebar",
-                ProfileDisplay { profile, notebooks }
+                ProfileDisplay { profile, notebooks, entry_count: *entry_count.read() }
             }
 
             // Main content area
@@ -138,27 +331,88 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                 // Mobile menubar (hidden on desktop)
                 ProfileActionsMenubar { ident }
 
-                div { class: "notebooks-list",
-                    match &*notebooks.read() {
-                        Some(notebook_list) => rsx! {
-                            for notebook in notebook_list.iter() {
-                                {
-                                    let view = &notebook.0;
-                                    let entries = &notebook.1;
-                                    rsx! {
-                                        div {
-                                            key: "{view.cid}",
-                                            NotebookCard {
-                                                notebook: view.clone(),
-                                                entry_refs: entries.clone()
+                div { class: "profile-timeline",
+                    // Pinned items section
+                    {
+                        let pinned = pinned_items.read();
+                        if !pinned.is_empty() {
+                            rsx! {
+                                div { class: "pinned-section",
+                                    h3 { class: "pinned-header", "Pinned" }
+                                    for (idx, item) in pinned.iter().enumerate() {
+                                        {
+                                            match item {
+                                                ProfileTimelineItem::Notebook { notebook, entries, .. } => {
+                                                    rsx! {
+                                                        div {
+                                                            key: "pinned-notebook-{notebook.cid}",
+                                                            class: "pinned-item",
+                                                            NotebookCard {
+                                                                notebook: notebook.clone(),
+                                                                entry_refs: entries.clone()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                ProfileTimelineItem::StandaloneEntry { entry_view, entry } => {
+                                                    rsx! {
+                                                        div {
+                                                            key: "pinned-entry-{idx}",
+                                                            class: "pinned-item standalone-entry-item",
+                                                            FeedEntryCard {
+                                                                entry_view: entry_view.clone(),
+                                                                entry: entry.clone()
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        },
-                        None => rsx! {
-                            div { "Loading notebooks..." }
+                        } else {
+                            rsx! {}
+                        }
+                    }
+
+                    // Chronological timeline
+                    {
+                        let timeline_items = timeline.read();
+                        if timeline_items.is_empty() && pinned_items.read().is_empty() {
+                            rsx! { div { class: "timeline-empty", "No content yet" } }
+                        } else {
+                            rsx! {
+                                for (idx, item) in timeline_items.iter().enumerate() {
+                                    {
+                                        match item {
+                                            ProfileTimelineItem::Notebook { notebook, entries, .. } => {
+                                                rsx! {
+                                                    div {
+                                                        key: "notebook-{notebook.cid}",
+                                                        NotebookCard {
+                                                            notebook: notebook.clone(),
+                                                            entry_refs: entries.clone()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            ProfileTimelineItem::StandaloneEntry { entry_view, entry } => {
+                                                rsx! {
+                                                    div {
+                                                        key: "entry-{idx}",
+                                                        class: "standalone-entry-item",
+                                                        FeedEntryCard {
+                                                            entry_view: entry_view.clone(),
+                                                            entry: entry.clone()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

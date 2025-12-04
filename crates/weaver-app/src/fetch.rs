@@ -721,6 +721,80 @@ impl Fetcher {
         Ok(notebooks)
     }
 
+    /// Fetch all entries for a DID (for profile timeline)
+    pub async fn fetch_entries_for_did(
+        &self,
+        ident: &AtIdentifier<'_>,
+    ) -> Result<Vec<Arc<(EntryView<'static>, Entry<'static>)>>> {
+        use jacquard::{
+            IntoStatic,
+            types::{collection::Collection, nsid::Nsid},
+            xrpc::XrpcExt,
+        };
+        use weaver_api::com_atproto::repo::list_records::ListRecords;
+
+        let client = self.get_client();
+
+        // Resolve DID and PDS
+        let (repo_did, pds_url) = match ident {
+            AtIdentifier::Did(did) => {
+                let pds = client
+                    .pds_for_did(did)
+                    .await
+                    .map_err(|e| dioxus::CapturedError::from_display(e))?;
+                (did.clone(), pds)
+            }
+            AtIdentifier::Handle(handle) => client
+                .pds_for_handle(handle)
+                .await
+                .map_err(|e| dioxus::CapturedError::from_display(e))?,
+        };
+
+        // Fetch all entry records for this repo
+        let resp = client
+            .xrpc(pds_url)
+            .send(
+                &ListRecords::new()
+                    .repo(repo_did)
+                    .collection(Nsid::raw(Entry::NSID))
+                    .limit(100)
+                    .build(),
+            )
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let mut entries = Vec::new();
+        let ident_static = ident.clone().into_static();
+
+        if let Ok(list) = resp.parse() {
+            for record in list.records {
+                // Extract rkey from URI
+                let rkey = record
+                    .uri
+                    .rkey()
+                    .map(|r| r.0.as_str())
+                    .unwrap_or_default();
+
+                // Fetch the entry with hydration
+                match client.fetch_entry_by_rkey(&ident_static, rkey).await {
+                    Ok((entry_view, entry)) => {
+                        entries.push(Arc::new((entry_view.into_static(), entry.into_static())));
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[fetch_entries_for_did] failed to load entry {}: {:?}",
+                            rkey,
+                            e
+                        );
+                        continue;
+                    }
+                }
+            }
+        }
+
+        Ok(entries)
+    }
+
     pub async fn list_notebook_entries(
         &self,
         ident: AtIdentifier<'static>,

@@ -656,6 +656,82 @@ pub fn use_notebooks_for_did(
     (res, memo)
 }
 
+/// Fetches all entries for a specific DID with SSR support
+#[cfg(feature = "fullstack-server")]
+pub fn use_entries_for_did(
+    ident: ReadSignal<AtIdentifier<'static>>,
+) -> (
+    Result<Resource<Option<Vec<(serde_json::Value, serde_json::Value)>>>, RenderError>,
+    Memo<Option<Vec<(EntryView<'static>, Entry<'static>)>>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_server_future(use_reactive!(|ident| {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_entries_for_did(&ident())
+                .await
+                .ok()
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(|arc| {
+                            let (view, entry) = arc.as_ref();
+                            let view_json = serde_json::to_value(view).ok()?;
+                            let entry_json = serde_json::to_value(entry).ok()?;
+                            Some((view_json, entry_json))
+                        })
+                        .collect::<Vec<_>>()
+                })
+        }
+    }));
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
+        if let Some(Some(values)) = &*res.read() {
+            let result: Vec<_> = values
+                .iter()
+                .filter_map(|(view_json, entry_json)| {
+                    let view = jacquard::from_json_value::<EntryView>(view_json.clone()).ok()?;
+                    let entry = jacquard::from_json_value::<Entry>(entry_json.clone()).ok()?;
+                    Some((view, entry))
+                })
+                .collect();
+            Some(result)
+        } else {
+            None
+        }
+    }));
+    (res, memo)
+}
+
+/// Fetches all entries for a specific DID client-side only (no SSR)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_entries_for_did(
+    ident: ReadSignal<AtIdentifier<'static>>,
+) -> (
+    Resource<Option<Vec<(EntryView<'static>, Entry<'static>)>>>,
+    Memo<Option<Vec<(EntryView<'static>, Entry<'static>)>>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_entries_for_did(&ident())
+                .await
+                .ok()
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .map(|arc| arc.as_ref().clone())
+                        .collect::<Vec<_>>()
+                })
+        }
+    });
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
 /// Fetches notebooks from UFOS with SSR support in fullstack mode
 #[cfg(feature = "fullstack-server")]
 pub fn use_notebooks_from_ufos() -> (

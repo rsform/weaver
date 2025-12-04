@@ -17,6 +17,7 @@ const PROFILE_CSS: Asset = asset!("/assets/styling/profile.css");
 pub fn ProfileDisplay(
     profile: Memo<Option<ProfileDataView<'static>>>,
     notebooks: Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+    #[props(default)] entry_count: usize,
 ) -> Element {
     match &*profile.read() {
         Some(profile_view) => {
@@ -58,7 +59,7 @@ pub fn ProfileDisplay(
                         div {
                             class: "profile-extras",
                             // Stats
-                            ProfileStats { notebooks: notebooks }
+                            ProfileStats { notebooks, entry_count }
 
                             // Links
                             ProfileLinks { profile_view }
@@ -194,20 +195,20 @@ fn ProfileIdentity(profile_view: Arc<ProfileDataView<'static>>) -> Element {
 #[component]
 fn ProfileStats(
     notebooks: Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+    #[props(default)] entry_count: usize,
 ) -> Element {
-    // Fetch notebook count
-    let notebook_count = if let Some(notebooks) = &*notebooks.read() {
-        notebooks.len()
-    } else {
-        0
-    };
+    let notebook_count = notebooks.read().as_ref().map(|n| n.len()).unwrap_or(0);
 
     rsx! {
         div { class: "profile-stats",
             div { class: "profile-stat",
                 span { class: "profile-stat-label", "{notebook_count} notebooks" }
             }
-            // TODO: Add entry count, subscriber counts when available
+            if entry_count > 0 {
+                div { class: "profile-stat",
+                    span { class: "profile-stat-label", "{entry_count} entries" }
+                }
+            }
         }
     }
 }
