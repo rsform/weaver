@@ -356,10 +356,10 @@ img {{
 .embed-avatar {{
     width: 42px;
     height: 42px;
-    min-width: 42px;
-    min-height: 42px;
+    max-width: 42px;
+    max-height: 42px;
+    aspect-ratio: 1;
     margin: 0;
-    flex-shrink: 0;
     object-fit: cover;
 }}
 
@@ -617,6 +617,8 @@ a.embed-author-name:hover {{
     height: 24px;
     min-width: 24px;
     min-height: 24px;
+    max-width: 24px;
+    max-height: 24px;
 }}
 
 .embed-quote .embed-content {{

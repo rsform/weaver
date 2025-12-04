@@ -463,7 +463,7 @@ pub fn EntryCard(
                                 rsx! {
                                     span { class: "embed-author entry-card-author",
                                         if let Some(ref avatar_url) = profile.avatar {
-                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "" }
+                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
                                         }
                                         span { class: "embed-author-info",
                                             span { class: "embed-author-name", "{display_name}" }
@@ -478,7 +478,7 @@ pub fn EntryCard(
                                 rsx! {
                                     span { class: "embed-author entry-card-author",
                                         if let Some(ref avatar_url) = profile.avatar {
-                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "" }
+                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
                                         }
                                         span { class: "embed-author-info",
                                             span { class: "embed-author-name", "{display_name}" }
@@ -629,7 +629,7 @@ pub fn FeedEntryCard(
                                         to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
                                         class: "embed-author entry-card-author",
                                         if let Some(ref avatar_url) = profile.avatar {
-                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "" }
+                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
                                         }
                                         span { class: "embed-author-info",
                                             span { class: "embed-author-name", "{display_name}" }
@@ -646,7 +646,7 @@ pub fn FeedEntryCard(
                                         to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
                                         class: "embed-author entry-card-author",
                                         if let Some(ref avatar_url) = profile.avatar {
-                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "" }
+                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
                                         }
                                         span { class: "embed-author-info",
                                             span { class: "embed-author-name", "{display_name}" }
@@ -762,7 +762,7 @@ pub fn EntryMetadata(
                                                 to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
                                                 class: "embed-author",
                                                 if let Some(ref avatar_url) = profile.avatar {
-                                                    img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "" }
+                                                    img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
                                                 }
                                                 span { class: "embed-author-info",
                                                     span { class: "embed-author-name", "{display_name}" }
@@ -779,7 +779,7 @@ pub fn EntryMetadata(
                                                 to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
                                                 class: "embed-author",
                                                 if let Some(ref avatar_url) = profile.avatar {
-                                                    img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "" }
+                                                    img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
                                                 }
                                                 span { class: "embed-author-info",
                                                     span { class: "embed-author-name", "{display_name}" }

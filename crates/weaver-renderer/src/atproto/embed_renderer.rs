@@ -250,7 +250,7 @@ fn render_profile_data_view(
             if let Some(avatar) = &profile.avatar {
                 html.push_str("<img class=\"embed-avatar\" src=\"");
                 html.push_str(&html_escape(avatar.as_ref()));
-                html.push_str("\" alt=\"\" />");
+                html.push_str("\" alt=\"\" width=\"42\" height=\"42\" />");
             }
             html.push_str("<span class=\"embed-author-info\">");
             if let Some(display_name) = &profile.display_name {
@@ -288,7 +288,7 @@ fn render_profile_data_view(
             if let Some(avatar) = &profile.avatar {
                 html.push_str("<img class=\"embed-avatar\" src=\"");
                 html.push_str(&html_escape(avatar.as_ref()));
-                html.push_str("\" alt=\"\" />");
+                html.push_str("\" alt=\"\" width=\"42\" height=\"42\" />");
             }
             html.push_str("<span class=\"embed-author-info\">");
             if let Some(display_name) = &profile.display_name {
@@ -573,12 +573,12 @@ fn render_author_block_inner(
             html.push_str("\" target=\"_blank\" rel=\"noopener\">");
             html.push_str("<img class=\"embed-avatar\" src=\"");
             html.push_str(&html_escape(avatar_url));
-            html.push_str("\" alt=\"\" />");
+            html.push_str("\" alt=\"\" width=\"42\" height=\"42\" />");
             html.push_str("</a>");
         } else {
             html.push_str("<img class=\"embed-avatar\" src=\"");
             html.push_str(&html_escape(avatar_url));
-            html.push_str("\" alt=\"\" />");
+            html.push_str("\" alt=\"\" width=\"42\" height=\"42\" />");
         }
     }
 
@@ -886,7 +886,7 @@ fn render_record_embed(record: &ViewUnionRecord<'_>) -> String {
             if let Some(avatar) = &generator.avatar {
                 html.push_str("<img class=\"embed-avatar\" src=\"");
                 html.push_str(&html_escape(avatar.as_ref()));
-                html.push_str("\" alt=\"\" />");
+                html.push_str("\" alt=\"\" width=\"42\" height=\"42\" />");
             }
             html.push_str("<span class=\"embed-author-info\">");
             html.push_str("<span class=\"embed-author-name\">");
@@ -927,7 +927,7 @@ fn render_record_embed(record: &ViewUnionRecord<'_>) -> String {
             if let Some(avatar) = &list.avatar {
                 html.push_str("<img class=\"embed-avatar\" src=\"");
                 html.push_str(&html_escape(avatar.as_ref()));
-                html.push_str("\" alt=\"\" />");
+                html.push_str("\" alt=\"\" width=\"42\" height=\"42\" />");
             }
             html.push_str("<span class=\"embed-author-info\">");
             html.push_str("<span class=\"embed-author-name\">");
@@ -968,7 +968,7 @@ fn render_record_embed(record: &ViewUnionRecord<'_>) -> String {
             if let Some(avatar) = &labeler.creator.avatar {
                 html.push_str("<img class=\"embed-avatar\" src=\"");
                 html.push_str(&html_escape(avatar.as_ref()));
-                html.push_str("\" alt=\"\" />");
+                html.push_str("\" alt=\"\" width=\"42\" height=\"42\" />");
             }
             html.push_str("<span class=\"embed-author-info\">");
             if let Some(name) = &labeler.creator.display_name {
@@ -1001,7 +1001,7 @@ fn render_record_embed(record: &ViewUnionRecord<'_>) -> String {
             if let Some(avatar) = &sp.creator.avatar {
                 html.push_str("<img class=\"embed-avatar\" src=\"");
                 html.push_str(&html_escape(avatar.as_ref()));
-                html.push_str("\" alt=\"\" />");
+                html.push_str("\" alt=\"\" width=\"42\" height=\"42\" />");
             }
             html.push_str("<span class=\"embed-author-info\">");
 

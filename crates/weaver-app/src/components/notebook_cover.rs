@@ -130,7 +130,7 @@ fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'stati
             rsx! {
                 span { class: "embed-author notebook-author",
                     if let Some(ref avatar) = p.avatar {
-                        img { class: "embed-avatar", src: avatar.as_ref(), alt: "" }
+                        img { class: "embed-avatar", src: avatar.as_ref(), alt: "", width: "48", height: "48" }
                     }
                     span { class: "embed-author-info",
                         span { class: "embed-author-name", "{display_name}" }
@@ -149,7 +149,7 @@ fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'stati
             rsx! {
                 span { class: "embed-author notebook-author",
                     if let Some(ref avatar) = p.avatar {
-                        img { class: "embed-avatar", src: avatar.as_ref(), alt: "" }
+                        img { class: "embed-avatar", src: avatar.as_ref(), alt: "", width: "48", height: "48" }
                     }
                     span { class: "embed-author-info",
                         span { class: "embed-author-name", "{display_name}" }
