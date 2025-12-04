@@ -127,14 +127,215 @@ static _IOSK_ITAL_BOLD: Asset = asset!(
         .with_hash_suffix(false)
         .into_asset_options()
 );
+
+// Adobe Caslon Pro
+#[used]
+static _CASLON_REG: Asset = asset!(
+    "/assets/fonts/adobe-caslon/AdobeCaslonPro-Regular.ttf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+#[used]
+static _CASLON_BOLD: Asset = asset!(
+    "/assets/fonts/adobe-caslon/AdobeCaslonPro-Bold.ttf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+#[used]
+static _CASLON_ITAL: Asset = asset!(
+    "/assets/fonts/adobe-caslon/AdobeCaslonPro-Italic.ttf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+#[used]
+static _CASLON_SEMIBOLD: Asset = asset!(
+    "/assets/fonts/adobe-caslon/AdobeCaslonPro-Semibold.ttf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+#[used]
+static _CASLON_ITAL_BOLD: Asset = asset!(
+    "/assets/fonts/adobe-caslon/AdobeCaslonPro-BoldItalic.ttf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+// Latin Modern Roman
+#[used]
+static _LM_REG: Asset = asset!(
+    "/assets/fonts/latin-modern/LatinModernRoman-Regular.otf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _LM_BOLD: Asset = asset!(
+    "/assets/fonts/latin-modern/LatinModernRoman-Bold.otf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _LM_ITAL: Asset = asset!(
+    "/assets/fonts/latin-modern/LatinModernRoman-Italic.otf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _LM_BOLD_ITAL: Asset = asset!(
+    "/assets/fonts/latin-modern/LatinModernRoman-BoldItalic.otf",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+// Computer Modern Serif
+#[used]
+static _CM_SERIF_REG: Asset = asset!(
+    "/assets/fonts/cm-serif/CMSerif-Regular.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _CM_SERIF_BOLD: Asset = asset!(
+    "/assets/fonts/cm-serif/CMSerif-Bold.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _CM_SERIF_ITAL: Asset = asset!(
+    "/assets/fonts/cm-serif/CMSerif-Italic.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _CM_SERIF_BOLD_ITAL: Asset = asset!(
+    "/assets/fonts/cm-serif/CMSerif-BoldItalic.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+// Computer Modern Sans
+#[used]
+static _CM_SANS_REG: Asset = asset!(
+    "/assets/fonts/cm-sans/CMSans-Regular.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _CM_SANS_BOLD: Asset = asset!(
+    "/assets/fonts/cm-sans/CMSans-Bold.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _CM_SANS_ITAL: Asset = asset!(
+    "/assets/fonts/cm-sans/CMSans-Italic.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _CM_SANS_BOLD_ITAL: Asset = asset!(
+    "/assets/fonts/cm-sans/CMSans-BoldItalic.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+// Junction
+#[used]
+static _JUNCTION_LIGHT: Asset = asset!(
+    "/assets/fonts/junction/Junction-Light.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _JUNCTION_REG: Asset = asset!(
+    "/assets/fonts/junction/Junction-Regular.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _JUNCTION_BOLD: Asset = asset!(
+    "/assets/fonts/junction/Junction-Bold.woff",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
+// Proza Libre
+#[used]
+static _PROZA_REG: Asset = asset!(
+    "/assets/fonts/proza-libre/ProzaLibre-Regular.woff2",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _PROZA_ITAL: Asset = asset!(
+    "/assets/fonts/proza-libre/ProzaLibre-Italic.woff2",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _PROZA_MEDIUM: Asset = asset!(
+    "/assets/fonts/proza-libre/ProzaLibre-Medium.woff2",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _PROZA_SEMIBOLD: Asset = asset!(
+    "/assets/fonts/proza-libre/ProzaLibre-SemiBold.woff2",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _PROZA_BOLD: Asset = asset!(
+    "/assets/fonts/proza-libre/ProzaLibre-Bold.woff2",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+#[used]
+static _PROZA_BOLD_ITAL: Asset = asset!(
+    "/assets/fonts/proza-libre/ProzaLibre-BoldItalic.woff2",
+    AssetOptions::builder()
+        .with_hash_suffix(false)
+        .into_asset_options()
+);
+
 pub mod accordion;
 pub mod button;
 pub mod dialog;
 pub mod editor;
 pub mod entry_actions;
 pub mod input;
+pub mod notebook_actions;
 pub mod profile_actions;
 
 pub use entry_actions::EntryActions;
+pub use notebook_actions::NotebookActions;
 pub use profile_actions::{ProfileActions, ProfileActionsMenubar};
 pub mod toast;

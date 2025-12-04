@@ -1,4 +1,5 @@
 use crate::auth::AuthState;
+use crate::components::css::DefaultNotebookCss;
 use crate::components::{FeedEntryCard, ProfileActions, ProfileActionsMenubar};
 use crate::{Route, data, fetch};
 use dioxus::prelude::*;
@@ -68,10 +69,16 @@ pub fn ProfileOgMeta(
 }
 
 const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
+const ENTRY_CSS: Asset = asset!("/assets/styling/entry.css");
+const ENTRY_CARD_CSS: Asset = asset!("/assets/styling/entry-card.css");
 
 #[component]
 pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     rsx! {
+        DefaultNotebookCss {  }
+        document::Link { rel: "stylesheet", href: NOTEBOOK_CARD_CSS }
+        document::Link { rel: "stylesheet", href: ENTRY_CSS }
+        document::Link { rel: "stylesheet", href: ENTRY_CARD_CSS }
         div {
             Outlet::<Route> {}
         }
@@ -84,18 +91,10 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     use jacquard::from_data;
     use weaver_api::sh_weaver::notebook::book::Book;
 
-    let (notebooks_result, notebooks) = data::use_notebooks_for_did(ident);
-    let (entries_result, all_entries) = data::use_entries_for_did(ident);
-    let (profile_result, profile) = crate::data::use_profile_data(ident);
-
-    #[cfg(feature = "fullstack-server")]
-    notebooks_result?;
-
-    #[cfg(feature = "fullstack-server")]
-    entries_result?;
-
-    #[cfg(feature = "fullstack-server")]
-    profile_result?;
+    // Use client-only versions to avoid SSR issues with concurrent server futures
+    let (_profile_res, profile) = data::use_profile_data_client(ident);
+    let (_notebooks_res, notebooks) = data::use_notebooks_for_did_client(ident);
+    let (_entries_res, all_entries) = data::use_entries_for_did_client(ident);
 
     // Extract pinned URIs from profile (only Weaver ProfileView has pinned)
     let pinned_uris = use_memo(move || {
@@ -349,7 +348,8 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                             class: "pinned-item",
                                                             NotebookCard {
                                                                 notebook: notebook.clone(),
-                                                                entry_refs: entries.clone()
+                                                                entry_refs: entries.clone(),
+                                                                is_pinned: true
                                                             }
                                                         }
                                                     }
@@ -361,7 +361,9 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                             class: "pinned-item standalone-entry-item",
                                                             FeedEntryCard {
                                                                 entry_view: entry_view.clone(),
-                                                                entry: entry.clone()
+                                                                entry: entry.clone(),
+                                                                show_actions: true,
+                                                                is_pinned: true
                                                             }
                                                         }
                                                     }
@@ -392,7 +394,8 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                         key: "notebook-{notebook.cid}",
                                                         NotebookCard {
                                                             notebook: notebook.clone(),
-                                                            entry_refs: entries.clone()
+                                                            entry_refs: entries.clone(),
+                                                            is_pinned: false
                                                         }
                                                     }
                                                 }
@@ -404,7 +407,9 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                         class: "standalone-entry-item",
                                                         FeedEntryCard {
                                                             entry_view: entry_view.clone(),
-                                                            entry: entry.clone()
+                                                            entry: entry.clone(),
+                                                            show_actions: true,
+                                                            is_pinned: false
                                                         }
                                                     }
                                                 }
@@ -428,6 +433,9 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 pub fn NotebookCard(
     notebook: NotebookView<'static>,
     entry_refs: Vec<StrongRef<'static>>,
+    #[props(default = false)] is_pinned: bool,
+    #[props(default)] on_pinned_changed: Option<EventHandler<bool>>,
+    #[props(default)] on_deleted: Option<EventHandler<()>>,
 ) -> Element {
     use jacquard::{IntoStatic, from_data};
     use weaver_api::sh_weaver::notebook::book::Book;
@@ -484,29 +492,41 @@ pub fn NotebookCard(
         div { class: "notebook-card",
             div { class: "notebook-card-container",
 
-                Link {
-                    to: Route::EntryPage {
-                        ident: ident.clone(),
-                        book_title: notebook_path.clone().into(),
-                        title: "".into() // Will redirect to first entry
-                    },
-                    class: "notebook-card-header-link",
-
-                    div { class: "notebook-card-header",
-                        div { class: "notebook-card-header-top",
+                div { class: "notebook-card-header",
+                    div { class: "notebook-card-header-top",
+                        Link {
+                            to: Route::EntryPage {
+                                ident: ident.clone(),
+                                book_title: notebook_path.clone().into(),
+                                title: "".into() // Will redirect to first entry
+                            },
+                            class: "notebook-card-header-link",
                             h2 { class: "notebook-card-title", "{title}" }
-                            if is_owner {
+                        }
+                        if is_owner {
+                            div { class: "notebook-header-actions",
                                 Link {
                                     to: Route::NewDraft { ident: notebook_ident.clone(), notebook: Some(book_title.clone()) },
-                                    class: "notebook-add-entry",
-                                    "+ Add"
+                                    class: "notebook-action-link",
+                                    crate::components::button::Button {
+                                        variant: crate::components::button::ButtonVariant::Ghost,
+                                        "Add"
+                                    }
+                                }
+                                crate::components::NotebookActions {
+                                    notebook_uri: notebook.uri.clone().into_static(),
+                                    notebook_cid: notebook.cid.clone().into_static(),
+                                    notebook_title: title.to_string(),
+                                    is_pinned,
+                                    on_pinned_changed,
+                                    on_deleted
                                 }
                             }
                         }
+                    }
 
-                        div { class: "notebook-card-date",
-                            time { datetime: "{notebook.indexed_at.as_str()}", "{formatted_date}" }
-                        }
+                    div { class: "notebook-card-date",
+                        time { datetime: "{notebook.indexed_at.as_str()}", "{formatted_date}" }
                     }
                 }
 
@@ -604,6 +624,7 @@ pub fn NotebookCard(
                                                         if is_owner {
                                                             crate::components::EntryActions {
                                                                 entry_uri,
+                                                                entry_cid: entry_view.entry.cid.clone().into_static(),
                                                                 entry_title: entry_title.to_string(),
                                                                 in_notebook: true,
                                                                 notebook_title: Some(book_title.clone())
@@ -674,6 +695,7 @@ pub fn NotebookCard(
                                                         if is_owner {
                                                             crate::components::EntryActions {
                                                                 entry_uri,
+                                                                entry_cid: first_entry.entry.cid.clone().into_static(),
                                                                 entry_title: entry_title.to_string(),
                                                                 in_notebook: true,
                                                                 notebook_title: Some(book_title.clone())
@@ -753,6 +775,7 @@ pub fn NotebookCard(
                                                         if is_owner {
                                                             crate::components::EntryActions {
                                                                 entry_uri,
+                                                                entry_cid: last_entry.entry.cid.clone().into_static(),
                                                                 entry_title: entry_title.to_string(),
                                                                 in_notebook: true,
                                                                 notebook_title: Some(book_title.clone())

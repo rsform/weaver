@@ -1,4 +1,4 @@
-//! Action buttons for entries (edit, delete, remove from notebook).
+//! Action buttons for entries (edit, delete, remove from notebook, pin/unpin).
 
 use crate::Route;
 use crate::auth::AuthState;
@@ -9,9 +9,12 @@ use dioxus::prelude::*;
 use jacquard::smol_str::SmolStr;
 use jacquard::types::aturi::AtUri;
 use jacquard::types::ident::AtIdentifier;
+use jacquard::types::string::Cid;
 use jacquard::IntoStatic;
 use weaver_api::com_atproto::repo::delete_record::DeleteRecord;
 use weaver_api::com_atproto::repo::put_record::PutRecord;
+use weaver_api::com_atproto::repo::strong_ref::StrongRef;
+use weaver_api::sh_weaver::actor::profile::Profile as WeaverProfile;
 
 const ENTRY_ACTIONS_CSS: Asset = asset!("/assets/styling/entry-actions.css");
 
@@ -19,6 +22,8 @@ const ENTRY_ACTIONS_CSS: Asset = asset!("/assets/styling/entry-actions.css");
 pub struct EntryActionsProps {
     /// The AT-URI of the entry
     pub entry_uri: AtUri<'static>,
+    /// The CID of the entry (for StrongRef when pinning)
+    pub entry_cid: Cid<'static>,
     /// The entry title (for display in confirmation)
     pub entry_title: String,
     /// Whether this entry is in a notebook (enables "remove from notebook")
@@ -27,9 +32,15 @@ pub struct EntryActionsProps {
     /// Notebook title (if in_notebook is true, used for edit route)
     #[props(default)]
     pub notebook_title: Option<SmolStr>,
+    /// Whether this entry is currently pinned
+    #[props(default = false)]
+    pub is_pinned: bool,
     /// Callback when entry is removed from notebook (for optimistic UI update)
     #[props(default)]
     pub on_removed: Option<EventHandler<()>>,
+    /// Callback when pin state changes
+    #[props(default)]
+    pub on_pinned_changed: Option<EventHandler<bool>>,
 }
 
 /// Action buttons for an entry: edit, delete, optionally remove from notebook.
@@ -44,6 +55,7 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
     let mut show_dropdown = use_signal(|| false);
     let mut deleting = use_signal(|| false);
     let mut removing = use_signal(|| false);
+    let mut pinning = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
 
     // Check ownership - compare auth DID with entry's authority
@@ -142,8 +154,9 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
     let entry_uri_for_remove = props.entry_uri.clone();
     let notebook_title_for_remove = props.notebook_title.clone();
     let on_removed = props.on_removed.clone();
+    let remove_fetcher = fetcher.clone();
     let handle_remove_from_notebook = move |_| {
-        let fetcher = fetcher.clone();
+        let fetcher = remove_fetcher.clone();
         let entry_uri = entry_uri_for_remove.clone();
         let notebook_title = notebook_title_for_remove.clone();
         let on_removed = on_removed.clone();
@@ -258,6 +271,151 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
         });
     };
 
+    // Handler for pinning/unpinning
+    let entry_uri_for_pin = props.entry_uri.clone();
+    let entry_cid_for_pin = props.entry_cid.clone();
+    let is_currently_pinned = props.is_pinned;
+    let on_pinned_changed = props.on_pinned_changed.clone();
+    let pin_fetcher = fetcher.clone();
+    let handle_pin_toggle = move |_| {
+        let fetcher = pin_fetcher.clone();
+        let entry_uri = entry_uri_for_pin.clone();
+        let entry_cid = entry_cid_for_pin.clone();
+        let on_pinned_changed = on_pinned_changed.clone();
+
+        spawn(async move {
+            use jacquard::{from_data, prelude::*, to_data, types::string::Nsid};
+            use weaver_api::app_bsky::actor::profile::Profile as BskyProfile;
+
+            pinning.set(true);
+            error.set(None);
+
+            let client = fetcher.get_client();
+
+            let did = match fetcher.current_did().await {
+                Some(d) => d,
+                None => {
+                    error.set(Some("Not authenticated".to_string()));
+                    pinning.set(false);
+                    return;
+                }
+            };
+
+            let profile_uri_str = format!("at://{}/sh.weaver.actor.profile/self", did);
+
+            // Try to fetch existing weaver profile
+            let weaver_uri = match WeaverProfile::uri(&profile_uri_str) {
+                Ok(u) => u,
+                Err(_) => {
+                    error.set(Some("Invalid profile URI".to_string()));
+                    pinning.set(false);
+                    return;
+                }
+            };
+            let existing_profile: Option<WeaverProfile<'static>> =
+                match client.fetch_record(&weaver_uri).await {
+                    Ok(output) => Some(output.value),
+                    Err(_) => None,
+                };
+
+            // Build the new pinned list
+            let new_pinned: Vec<StrongRef<'static>> = if is_currently_pinned {
+                // Unpin: remove from list
+                existing_profile
+                    .as_ref()
+                    .and_then(|p| p.pinned.as_ref())
+                    .map(|pins| {
+                        pins.iter()
+                            .filter(|r| r.uri.as_ref() != entry_uri.as_ref())
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                // Pin: add to list
+                let new_ref = StrongRef::new()
+                    .uri(entry_uri.clone().into_static())
+                    .cid(entry_cid.clone())
+                    .build();
+                let mut pins = existing_profile
+                    .as_ref()
+                    .and_then(|p| p.pinned.clone())
+                    .unwrap_or_default();
+                // Don't add if already exists
+                if !pins.iter().any(|r| r.uri.as_ref() == entry_uri.as_ref()) {
+                    pins.push(new_ref);
+                }
+                pins
+            };
+
+            // Build the profile to save
+            let profile_to_save = if let Some(existing) = existing_profile {
+                // Update existing profile
+                WeaverProfile {
+                    pinned: Some(new_pinned),
+                    ..existing
+                }
+            } else {
+                // Create new profile from bsky data
+                let bsky_uri_str = format!("at://{}/app.bsky.actor.profile/self", did);
+                let bsky_profile: Option<BskyProfile<'static>> =
+                    match BskyProfile::uri(&bsky_uri_str) {
+                        Ok(bsky_uri) => match client.fetch_record(&bsky_uri).await {
+                            Ok(output) => Some(output.value),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    };
+
+                WeaverProfile::new()
+                    .maybe_display_name(
+                        bsky_profile
+                            .as_ref()
+                            .and_then(|p| p.display_name.clone()),
+                    )
+                    .maybe_description(
+                        bsky_profile.as_ref().and_then(|p| p.description.clone()),
+                    )
+                    .maybe_avatar(bsky_profile.as_ref().and_then(|p| p.avatar.clone()))
+                    .maybe_banner(bsky_profile.as_ref().and_then(|p| p.banner.clone()))
+                    .bluesky(true)
+                    .created_at(jacquard::types::string::Datetime::now())
+                    .pinned(new_pinned)
+                    .build()
+            };
+
+            // Serialize and save
+            let profile_data = match to_data(&profile_to_save) {
+                Ok(d) => d,
+                Err(e) => {
+                    error.set(Some(format!("Failed to serialize profile: {:?}", e)));
+                    pinning.set(false);
+                    return;
+                }
+            };
+
+            let request = PutRecord::new()
+                .repo(AtIdentifier::Did(did))
+                .collection(Nsid::new_static("sh.weaver.actor.profile").unwrap())
+                .rkey(jacquard::types::string::Rkey::new("self").unwrap())
+                .record(profile_data)
+                .build();
+
+            match client.send(request).await {
+                Ok(_) => {
+                    show_dropdown.set(false);
+                    if let Some(handler) = &on_pinned_changed {
+                        handler.call(!is_currently_pinned);
+                    }
+                }
+                Err(e) => {
+                    error.set(Some(format!("Failed to update profile: {:?}", e)));
+                }
+            }
+            pinning.set(false);
+        });
+    };
+
     rsx! {
         document::Link { rel: "stylesheet", href: ENTRY_ACTIONS_CSS }
 
@@ -282,6 +440,20 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
 
                 if show_dropdown() {
                     div { class: "dropdown-menu",
+                        // Pin/Unpin (first)
+                        button {
+                            class: "dropdown-item",
+                            disabled: pinning(),
+                            onclick: handle_pin_toggle,
+                            if pinning() {
+                                "Updating..."
+                            } else if props.is_pinned {
+                                "Unpin"
+                            } else {
+                                "Pin"
+                            }
+                        }
+                        // Remove from notebook (if in notebook)
                         if props.in_notebook {
                             button {
                                 class: "dropdown-item",
@@ -292,6 +464,7 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
                                 "Remove from notebook"
                             }
                         }
+                        // Delete (last, danger style)
                         button {
                             class: "dropdown-item dropdown-item-danger",
                             onclick: move |_| {

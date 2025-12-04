@@ -3,9 +3,9 @@
 /* Notebook layout - sidebar in left gutter on desktop, header on mobile */
 .notebook-layout {
     display: grid;
-    grid-template-columns: minmax(280px, 1fr) minmax(0, 90ch) minmax(280px, 1fr);
+    grid-template-columns: minmax(280px, 1fr) minmax(0, 90rem) minmax(280px, 1fr);
     gap: 2rem;
-    max-width: calc(90ch + 560px + 4rem); /* content + gutters + gaps */
+    max-width: calc(90rem + 560px + 4rem); /* content + gutters + gaps */
     margin: 0 auto;
     padding: 2.5rem 1.25rem 2.5rem 0;
 }
@@ -27,7 +27,7 @@
 /* Mobile layout - sidebar becomes header */
 @media (max-width: 1400px) {
     .notebook-layout {
-        grid-template-columns: minmax(1rem, 1fr) minmax(0, 90ch) minmax(1rem, 1fr) !important;
+        grid-template-columns: minmax(1rem, 1fr) minmax(0, 90rem) minmax(1rem, 1fr) !important;
         gap: 0 !important;
         max-width: 100vw !important;
         box-sizing: border-box !important;
@@ -211,6 +211,7 @@ a.entry-card-author,
 .entry-card-preview {
     margin-top: 0.5rem;
     color: var(--color-subtle);
+    font-family: var(--font-body);
     font-size: 0.875rem;
     line-height: 1.5;
     display: -webkit-box;
@@ -227,7 +228,9 @@ a.entry-card-author,
 .entry-card-preview h6 {
     font-size: 0.875rem;
     font-weight: 600;
-    margin: 0.5rem 0;
+    margin-top: 0.5rem;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .entry-card-preview p {

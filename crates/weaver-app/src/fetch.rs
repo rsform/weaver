@@ -92,7 +92,7 @@ impl HttpClient for Client {
         request: http::Request<Vec<u8>>,
     ) -> impl Future<Output = core::result::Result<http::Response<Vec<u8>>, Self::Error>> + Send
     {
-        self.oauth_client.client.send_http(request)
+        self.oauth_client.send_http(request)
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -100,7 +100,7 @@ impl HttpClient for Client {
         &self,
         request: http::Request<Vec<u8>>,
     ) -> impl Future<Output = core::result::Result<http::Response<Vec<u8>>, Self::Error>> {
-        self.oauth_client.client.send_http(request)
+        self.oauth_client.send_http(request)
     }
 }
 
@@ -661,8 +661,14 @@ impl Fetcher {
         };
 
         // Fetch all notebook records for this repo
+        tracing::info!(
+            "fetch_notebooks_for_did: pds_url={}, repo_did={}",
+            pds_url,
+            repo_did
+        );
+
         let resp = client
-            .xrpc(pds_url)
+            .xrpc(pds_url.clone())
             .send(
                 &ListRecords::new()
                     .repo(repo_did)
@@ -671,7 +677,14 @@ impl Fetcher {
                     .build(),
             )
             .await
-            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+            .map_err(|e| {
+                tracing::error!(
+                    "fetch_notebooks_for_did: xrpc failed: {} pds url {}",
+                    e,
+                    pds_url
+                );
+                dioxus::CapturedError::from_display(e)
+            })?;
 
         let mut notebooks = Vec::new();
 
@@ -769,11 +782,7 @@ impl Fetcher {
         if let Ok(list) = resp.parse() {
             for record in list.records {
                 // Extract rkey from URI
-                let rkey = record
-                    .uri
-                    .rkey()
-                    .map(|r| r.0.as_str())
-                    .unwrap_or_default();
+                let rkey = record.uri.rkey().map(|r| r.0.as_str()).unwrap_or_default();
 
                 // Fetch the entry with hydration
                 match client.fetch_entry_by_rkey(&ident_static, rkey).await {

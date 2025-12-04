@@ -53,14 +53,15 @@ pub fn default_colour_scheme_dark() -> ColourSchemeColours<'static> {
 
 pub fn default_fonts() -> ThemeFonts<'static> {
     ThemeFonts {
+        // Serif for body text, sans for headings/UI
         body: CowStr::new_static(
-            "'IBM Plex', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "'Adobe Caslon Pro', 'Latin Modern Roman',  'CM Serif', Georgia, serif",
         ),
         heading: CowStr::new_static(
-            "'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            "'IBM Plex Sans', 'CM Sans','Junction', 'Proza Libre',   system-ui, sans-serif",
         ),
         monospace: CowStr::new_static(
-            "'Ioskeley Mono', 'IBM Plex Mono', 'Berkeley Mono', 'Cascadia Code', 'Roboto Mono', Consolas, monospace",
+            "'Ioskeley Mono', 'IBM Plex Mono', 'Berkeley Mono', Consolas, monospace",
         ),
         ..Default::default()
     }
@@ -76,14 +77,17 @@ pub fn default_spacing() -> ThemeSpacing<'static> {
 }
 
 pub fn default_colour_scheme_light() -> ColourSchemeColours<'static> {
+    // Rose Pine Dawn with moderate contrast text (text/muted/subtle/emphasis darkened)
     ColourSchemeColours {
         base: CowStr::new_static("#faf4ed"),
         surface: CowStr::new_static("#fffaf3"),
         overlay: CowStr::new_static("#f2e9e1"),
-        text: CowStr::new_static("#575279"),
-        muted: CowStr::new_static("#9893a5"),
-        subtle: CowStr::new_static("#797593"),
-        emphasis: CowStr::new_static("#575279"),
+        // Text colors darkened for better contrast
+        text: CowStr::new_static("#1f1d2e"),
+        muted: CowStr::new_static("#635e74"),
+        subtle: CowStr::new_static("#4a4560"),
+        emphasis: CowStr::new_static("#1e1a2d"),
+        // Accent colors kept at original Rose Pine Dawn values
         primary: CowStr::new_static("#907aa9"),
         secondary: CowStr::new_static("#56949f"),
         tertiary: CowStr::new_static("#286983"),

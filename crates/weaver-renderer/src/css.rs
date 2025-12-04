@@ -87,9 +87,8 @@ html {{
     font-family: var(--font-body);
     color: var(--color-text);
     background-color: var(--color-base);
-    max-width: 90ch;
     margin: 0 auto;
-    padding: 2rem 1rem;
+    padding: 1rem 0rem;
     word-wrap: break-word;
     overflow-wrap: break-word;
 }}
@@ -187,6 +186,7 @@ pre {{
 
 /* Code blocks inside pre are handled by syntax theme */
 pre code {{
+
     display: block;
     width: fit-content;
     min-width: 100%;
@@ -652,6 +652,7 @@ a.embed-author-name:hover {{
 .embed-fields {{
     display: block;
     margin-top: 0.5rem;
+    font-family: var(--font-ui);
     font-size: 0.85rem;
     color: var(--color-muted);
 }}
@@ -844,6 +845,7 @@ a.embed-author-name:hover {{
     padding: 0.5rem;
     text-align: center;
     font-size: 0.85em;
+    font-family: var(--font-ui);
     color: var(--color-muted);
     background: var(--color-overlay);
     border-top: 1px solid var(--color-border);

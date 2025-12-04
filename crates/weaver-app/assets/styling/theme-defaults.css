@@ -1,6 +1,12 @@
 /* Default theme variables for non-notebook pages */
 /* These match the Rose Pine light/dark defaults */
 
+/* ==========================================================================
+   FONT FACES
+   Note: Dioxus serves all assets from /assets/ regardless of subdirectory
+   ========================================================================== */
+
+/* --- Ioskeley Mono (monospace) --- */
 @font-face {
     font-family: "Ioskeley Mono";
     font-style: normal;
@@ -38,7 +44,181 @@
     src: url("/assets/IoskeleyMono-BoldItalic.woff2") format("woff2");
 }
 
-/* CSS Variables - Light Mode (default) */
+/* --- Adobe Caslon Pro (serif) --- */
+@font-face {
+    font-family: "Adobe Caslon Pro";
+    font-style: normal;
+    font-weight: normal;
+    src: url("/assets/AdobeCaslonPro-Regular.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Adobe Caslon Pro";
+    font-style: normal;
+    font-weight: bold;
+    src: url("/assets/AdobeCaslonPro-Semibold.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Adobe Caslon Pro";
+    font-style: italic;
+    font-weight: normal;
+    src: url("/assets/AdobeCaslonPro-Italic.ttf") format("truetype");
+}
+
+@font-face {
+    font-family: "Adobe Caslon Pro";
+    font-style: italic;
+    font-weight: bold;
+    src: url("/assets/AdobeCaslonPro-BoldItalic.ttf") format("truetype");
+}
+
+/* --- Latin Modern Roman (serif) --- */
+@font-face {
+    font-family: "Latin Modern Roman";
+    font-style: normal;
+    font-weight: normal;
+    src: url("/assets/LatinModernRoman-Regular.otf") format("opentype");
+}
+@font-face {
+    font-family: "Latin Modern Roman";
+    font-style: normal;
+    font-weight: bold;
+    src: url("/assets/LatinModernRoman-Bold.otf") format("opentype");
+}
+@font-face {
+    font-family: "Latin Modern Roman";
+    font-style: italic;
+    font-weight: normal;
+    src: url("/assets/LatinModernRoman-Italic.otf") format("opentype");
+}
+@font-face {
+    font-family: "Latin Modern Roman";
+    font-style: italic;
+    font-weight: bold;
+    src: url("/assets/LatinModernRoman-BoldItalic.otf") format("opentype");
+}
+
+/* --- Computer Modern Serif --- */
+@font-face {
+    font-family: "CM Serif";
+    font-style: normal;
+    font-weight: normal;
+    src: url("/assets/CMSerif-Regular.woff") format("woff");
+}
+@font-face {
+    font-family: "CM Serif";
+    font-style: normal;
+    font-weight: bold;
+    src: url("/assets/CMSerif-Bold.woff") format("woff");
+}
+@font-face {
+    font-family: "CM Serif";
+    font-style: italic;
+    font-weight: normal;
+    src: url("/assets/CMSerif-Italic.woff") format("woff");
+}
+@font-face {
+    font-family: "CM Serif";
+    font-style: italic;
+    font-weight: bold;
+    src: url("/assets/CMSerif-BoldItalic.woff") format("woff");
+}
+
+/* --- Computer Modern Sans --- */
+@font-face {
+    font-family: "CM Sans";
+    font-style: normal;
+    font-weight: normal;
+    src: url("/assets/CMSans-Regular.woff") format("woff");
+}
+@font-face {
+    font-family: "CM Sans";
+    font-style: normal;
+    font-weight: bold;
+    src: url("/assets/CMSans-Bold.woff") format("woff");
+}
+@font-face {
+    font-family: "CM Sans";
+    font-style: italic;
+    font-weight: normal;
+    src: url("/assets/CMSans-Italic.woff") format("woff");
+}
+@font-face {
+    font-family: "CM Sans";
+    font-style: italic;
+    font-weight: bold;
+    src: url("/assets/CMSans-BoldItalic.woff") format("woff");
+}
+
+/* --- Junction (geometric sans) --- */
+@font-face {
+    font-family: "Junction";
+    font-style: normal;
+    font-weight: 300;
+    src: url("/assets/Junction-Light.woff") format("woff");
+}
+@font-face {
+    font-family: "Junction";
+    font-style: normal;
+    font-weight: normal;
+    src: url("/assets/Junction-Regular.woff") format("woff");
+}
+@font-face {
+    font-family: "Junction";
+    font-style: normal;
+    font-weight: bold;
+    src: url("/assets/Junction-Bold.woff") format("woff");
+}
+
+/* --- Proza Libre (humanist sans) --- */
+@font-face {
+    font-family: "Proza Libre";
+    font-style: normal;
+    font-weight: normal;
+    src: url("/assets/ProzaLibre-Regular.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Proza Libre";
+    font-style: italic;
+    font-weight: normal;
+    src: url("/assets/ProzaLibre-Italic.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Proza Libre";
+    font-style: normal;
+    font-weight: 500;
+    src: url("/assets/ProzaLibre-Medium.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Proza Libre";
+    font-style: normal;
+    font-weight: 600;
+    src: url("/assets/ProzaLibre-SemiBold.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Proza Libre";
+    font-style: normal;
+    font-weight: bold;
+    src: url("/assets/ProzaLibre-Bold.woff2") format("woff2");
+}
+@font-face {
+    font-family: "Proza Libre";
+    font-style: italic;
+    font-weight: bold;
+    src: url("/assets/ProzaLibre-BoldItalic.woff2") format("woff2");
+}
+
+/* ==========================================================================
+   CSS VARIABLES - LIGHT MODE
+
+   CONTRAST OPTIONS: Uncomment ONE of the following sections
+   - ORIGINAL: Rose Pine Dawn defaults (soft, low contrast)
+   - MILD: ~25% darker text, subtle improvement
+   - MODERATE: ~40% darker text, noticeably better contrast
+   ========================================================================== */
+
+/* --- ORIGINAL ROSE PINE DAWN (uncomment to restore) ---
 :root {
     --color-base: #faf4ed;
     --color-surface: #fffaf3;
@@ -57,9 +237,79 @@
     --color-link: #d7827e;
     --color-highlight: #cecacd;
 
-    --font-body: "IBM Plex", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-heading: "IBM Plex Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-mono: "Ioskeley Mono", "IBM Plex Mono", "Berkeley Mono", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+    --font-ui: "Proza Libre", "Junction", system-ui, -apple-system, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, sans-serif;
+    --font-heading: "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "Ioskeley Mono", "IBM Plex Mono", Consolas, monospace;
+
+    --spacing-base: 16px;
+    --spacing-line-height: 1.6;
+    --spacing-scale: 1.25;
+}
+*/
+
+/* --- MILD CONTRAST (uncomment to use) ---
+:root {
+    --color-base: #faf4ed;
+    --color-surface: #fffaf3;
+    --color-overlay: #f2e9e1;
+    --color-text: #453f5c;
+    --color-muted: #7a7589;
+    --color-subtle: #5f5a73;
+    --color-emphasis: #2d2a3d;
+    --color-primary: #907aa9;
+    --color-secondary: #56949f;
+    --color-tertiary: #286983;
+    --color-error: #b4637a;
+    --color-warning: #ea9d34;
+    --color-success: #286983;
+    --color-border: #908caa;
+    --color-link: #d7827e;
+    --color-highlight: #cecacd;
+
+    --font-ui: "Proza Libre", "Junction", system-ui, -apple-system, sans-serif;
+    --font-body: "Latin Modern Roman", "Adobe Caslon Pro", "CM Serif", Georgia, serif;
+    --font-heading: "Proza Libre", "Junction", "CM Sans", system-ui, sans-serif;
+    --font-mono: "Ioskeley Mono", "IBM Plex Mono", "Berkeley Mono", Consolas, monospace;
+
+    --spacing-base: 16px;
+    --spacing-line-height: 1.6;
+    --spacing-scale: 1.25;
+}
+*/
+
+/* --- MODERATE CONTRAST (active) --- */
+:root {
+    --color-base: #faf4ed;
+    --color-surface: #fffaf3;
+    --color-overlay: #f2e9e1;
+    /* Text colors darkened for better contrast */
+    --color-text: #1f1d2e;
+    --color-muted: #635e74;
+    --color-subtle: #4a4560;
+    --color-emphasis: #1e1a2d;
+    /* Accent colors kept at original Rose Pine Dawn values */
+    --color-primary: #907aa9;
+    --color-secondary: #56949f;
+    --color-tertiary: #286983;
+    --color-error: #b4637a;
+    --color-warning: #ea9d34;
+    --color-success: #286983;
+    --color-border: #908caa;
+    --color-link: #d7827e;
+    --color-highlight: #cecacd;
+
+    /* UI FONT - Fixed sans stack for all UI elements (buttons, nav, labels, etc.)
+       This does NOT follow theme - keeps UI consistent across all content themes */
+    --font-ui: "CM Sans", "Junction", "Proza Libre", system-ui, -apple-system, sans-serif;
+
+    /* CONTENT FONT STACKS - Edit these to try different combinations
+       Sans options: "Proza Libre", "Junction", "CM Sans", "IBM Plex Sans"
+       Serif options: "Latin Modern Roman", "Adobe Caslon Pro", "CM Serif"
+    */
+    --font-body: "Adobe Caslon Pro", "Latin Modern Roman", "CM Serif", Georgia, serif;
+    --font-heading: "IBM Plex Sans", "CM Sans", "Junction", "Proza Libre", system-ui, sans-serif;
+    --font-mono: "Ioskeley Mono", "IBM Plex Mono", "Berkeley Mono", Consolas, monospace;
 
     --spacing-base: 16px;
     --spacing-line-height: 1.6;

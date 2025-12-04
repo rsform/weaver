@@ -12,7 +12,7 @@
     grid-template-columns: 1fr auto;
     grid-template-rows: auto auto 1fr;
     height: 100%;
-    max-width: 1200px;
+    max-width: calc(95ch + 100px);
     margin: 0 auto;
     padding: 0 20px;
     font-family: var(--font-body);
@@ -34,7 +34,7 @@
     border-bottom: 2px solid var(--color-border);
     background: transparent;
     color: var(--color-text);
-    font-family: var(--font-body);
+    font-family: var(--font-heading);
     font-size: 24px;
     font-weight: 500;
     outline: none;
@@ -129,7 +129,7 @@
     border-radius: 12px;
     background: transparent;
     color: var(--color-text);
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
     font-size: 13px;
     min-width: 80px;
 }
@@ -314,7 +314,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     color: var(--color-text);
     cursor: pointer;
     font-size: 0.9rem;
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
 }
 
 .report-bug-button:hover {
@@ -385,7 +385,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     border-radius: 4px;
     background: var(--color-base);
     color: var(--color-text);
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
     resize: vertical;
 }
 
@@ -412,7 +412,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     border-radius: 4px;
     color: var(--color-text);
     cursor: pointer;
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
 }
 
 .report-cancel:hover {
@@ -427,7 +427,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     color: var(--color-base);
     cursor: pointer;
     font-weight: 500;
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
 }
 
 .report-submit:hover {
@@ -452,7 +452,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     color: var(--color-base);
     cursor: pointer;
     font-weight: 500;
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
 }
 
 .publish-button:hover:not(:disabled) {
@@ -513,7 +513,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     border-radius: 4px;
     background: var(--color-base);
     color: var(--color-text);
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
     font-size: 14px;
     box-sizing: border-box;
 }
@@ -572,7 +572,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     border-radius: 4px;
     color: var(--color-base);
     cursor: pointer;
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
 }
 
 .publish-actions {
@@ -588,7 +588,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     border-radius: 4px;
     color: var(--color-text);
     cursor: pointer;
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
 }
 
 .publish-cancel:hover:not(:disabled) {
@@ -608,7 +608,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     color: var(--color-base);
     cursor: pointer;
     font-weight: 500;
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
 }
 
 .publish-submit:hover:not(:disabled) {
@@ -652,7 +652,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     border-radius: 4px;
     background: var(--color-base);
     color: var(--color-text);
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
     resize: vertical;
 }
 

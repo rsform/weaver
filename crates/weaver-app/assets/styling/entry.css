@@ -1,12 +1,12 @@
 /* Entry page layout with gutter navigation */
 .entry-page-layout {
     display: grid;
-    grid-template-columns: minmax(200px, 1fr) minmax(0, 90ch) minmax(200px, 1fr);
+    grid-template-columns: minmax(200px, 1fr) minmax(0, 95ch) minmax(200px, 1fr);
     gap: 2rem;
     width: 100%;
     min-height: 100vh;
     background: var(--color-base);
-    max-width: calc(90ch + 400px + 4rem); /* content + gutters + gaps */
+    max-width: calc(95ch + 400px + 4rem); /* content + gutters + gaps */
     margin: 0 auto;
     padding: 0 1rem 0 0;
     box-sizing: border-box;
@@ -132,6 +132,7 @@
 .entry-tags {
     display: flex;
     align-items: center;
+    font-family: var(--font-ui);
     gap: 0.5rem;
 }
 

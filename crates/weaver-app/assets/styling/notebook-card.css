@@ -4,9 +4,9 @@
 
 .repository-layout {
     display: grid;
-    grid-template-columns: minmax(240px, 1fr) minmax(0, 90ch) minmax(240px, 1fr);
-    gap: 2rem;
-    max-width: calc(90ch + 480px + 4rem); /* content + gutters + gaps */
+    grid-template-columns: minmax(240px, 1fr) minmax(0, 95ch) minmax(240px, 1fr);
+    gap: 1rem;
+    max-width: calc(95ch + 480px + 4rem); /* content + gutters + gaps */
     margin: 0 auto;
     padding: 2.25rem 1.25rem 2.25rem 0;
 }
@@ -27,7 +27,7 @@
 /* Mobile layout - sidebar becomes header */
 @media (max-width: 1400px) {
     .repository-layout {
-        grid-template-columns: minmax(1rem, 1fr) minmax(0, 90ch) minmax(1rem, 1fr) !important;
+        grid-template-columns: minmax(1rem, 1fr) minmax(0, 95ch) minmax(1rem, 1fr) !important;
         gap: 0 !important;
         max-width: 100vw !important;
         box-sizing: border-box !important;
@@ -112,8 +112,58 @@
     color: var(--color-base);
 }
 
+.notebook-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.notebook-header-actions .button {
+    font-size: 0.85rem;
+    color: var(--color-primary);
+    background: transparent;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0;
+    border: 1px solid var(--color-border);
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.notebook-header-actions .button:hover {
+    background-color: var(--color-primary);
+    color: var(--color-base);
+}
+
 .notebook-actions {
-    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.notebook-actions-dropdown {
+    position: relative;
+}
+
+.notebook-action-link {
+    text-decoration: none;
+}
+
+.notebook-actions .button {
+    font-size: 0.85rem;
+    color: var(--color-primary);
+    background: transparent;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0;
+    border: 1px solid var(--color-border);
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.notebook-actions .button:hover {
+    background-color: var(--color-primary);
+    color: var(--color-base);
 }
 
 .notebook-card-title {
@@ -128,6 +178,7 @@
 .notebook-card-date {
     color: var(--color-muted);
     font-size: 0.85rem;
+    margin-left: 0.25rem;
 }
 
 .notebook-card-authors {
@@ -226,6 +277,7 @@
 
 .entry-preview-content {
     color: var(--color-subtle);
+    font-family: var(--font-body);
     font-size: 0.875rem;
     line-height: 1.5;
     display: -webkit-box;
@@ -250,7 +302,9 @@
 .entry-preview-content h6 {
     font-size: 0.875rem;
     font-weight: 600;
-    margin: 0;
+    margin-top: 0;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .entry-preview-content code {
@@ -289,6 +343,7 @@
 .notebook-card-preview {
     margin-top: 0.75rem;
     color: var(--color-subtle);
+    font-family: var(--font-body);
     font-size: 0.9rem;
     line-height: 1.5;
     display: -webkit-box;
@@ -301,6 +356,6 @@
 @media (prefers-color-scheme: dark) {
     .notebook-card-container {
         box-shadow: none;
-        border: 1px dashed var(--color-border);
+        border: 1px solid var(--color-border);
     }
 }

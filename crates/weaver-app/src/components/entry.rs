@@ -445,6 +445,7 @@ pub fn EntryCard(
                     if is_owner {
                         EntryActions {
                             entry_uri,
+                            entry_cid: entry_view.cid.clone().into_static(),
                             entry_title: title.to_string(),
                             in_notebook: true,
                             notebook_title: Some(book_title.clone()),
@@ -519,8 +520,15 @@ pub fn EntryCard(
 /// Card for entries in a feed (e.g., home page)
 /// Takes EntryView directly (not BookEntryView) and always shows author info
 #[component]
-pub fn FeedEntryCard(entry_view: EntryView<'static>, entry: entry::Entry<'static>) -> Element {
+pub fn FeedEntryCard(
+    entry_view: EntryView<'static>,
+    entry: entry::Entry<'static>,
+    #[props(default = false)] show_actions: bool,
+    #[props(default = false)] is_pinned: bool,
+    #[props(default)] on_pinned_changed: Option<EventHandler<bool>>,
+) -> Element {
     use crate::Route;
+    use crate::auth::AuthState;
     use jacquard::from_data;
     use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 
@@ -549,6 +557,16 @@ pub fn FeedEntryCard(entry_view: EntryView<'static>, entry: entry::Entry<'static
 
     // Get first author
     let first_author = entry_view.authors.first();
+
+    // Check ownership for actions
+    let auth_state = use_context::<Signal<AuthState>>();
+    let is_owner = {
+        let current_did = auth_state.read().did.clone();
+        match (&current_did, &ident) {
+            (Some(did), AtIdentifier::Did(ident_did)) => *did == *ident_did,
+            _ => false,
+        }
+    };
 
     // Render preview from truncated entry content
     let preview_html = {
@@ -632,6 +650,16 @@ pub fn FeedEntryCard(entry_view: EntryView<'static>, entry: entry::Entry<'static
                 div { class: "entry-card-date",
                     time { datetime: "{entry.created_at.as_str()}", "{formatted_date}" }
                 }
+                if show_actions && is_owner {
+                    crate::components::EntryActions {
+                        entry_uri: entry_view.uri.clone().into_static(),
+                        entry_cid: entry_view.cid.clone().into_static(),
+                        entry_title: title.to_string(),
+                        in_notebook: false,
+                        is_pinned,
+                        on_pinned_changed
+                    }
+                }
             }
 
             div { class: "entry-card-preview", dangerous_inner_html: "{preview_html}" }
@@ -685,6 +713,7 @@ pub fn EntryMetadata(
                 h1 { class: "entry-title", "{title}" }
                 EntryActions {
                     entry_uri: entry_uri.clone(),
+                    entry_cid: entry_view.cid.clone().into_static(),
                     entry_title,
                     in_notebook: book_title.is_some(),
                     notebook_title: book_title.clone(),

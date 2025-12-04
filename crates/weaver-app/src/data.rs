@@ -543,7 +543,7 @@ pub fn use_profile_data(
     Memo<Option<ProfileDataView<'static>>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
-    let res = use_resource(use_reactive!(|ident| {
+    let res = use_server_future(use_reactive!(|ident| {
         let fetcher = fetcher.clone();
         async move {
             fetcher
@@ -555,13 +555,14 @@ pub fn use_profile_data(
         }
     }));
     let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
         if let Some(Some(value)) = &*res.read() {
             jacquard::from_json_value::<ProfileDataView>(value.clone()).ok()
         } else {
             None
         }
     }));
-    (Ok(res), memo)
+    (res, memo)
 }
 
 /// Fetches profile data client-side only (no SSR)
@@ -707,6 +708,86 @@ pub fn use_entries_for_did(
 /// Fetches all entries for a specific DID client-side only (no SSR)
 #[cfg(not(feature = "fullstack-server"))]
 pub fn use_entries_for_did(
+    ident: ReadSignal<AtIdentifier<'static>>,
+) -> (
+    Resource<Option<Vec<(EntryView<'static>, Entry<'static>)>>>,
+    Memo<Option<Vec<(EntryView<'static>, Entry<'static>)>>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_entries_for_did(&ident())
+                .await
+                .ok()
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .map(|arc| arc.as_ref().clone())
+                        .collect::<Vec<_>>()
+                })
+        }
+    });
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
+// ============================================================================
+// Client-only versions (bypass SSR issues on profile page)
+// ============================================================================
+
+/// Fetches profile data client-side only - use when SSR causes issues
+pub fn use_profile_data_client(
+    ident: ReadSignal<AtIdentifier<'static>>,
+) -> (
+    Resource<Option<ProfileDataView<'static>>>,
+    Memo<Option<ProfileDataView<'static>>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_profile(&ident())
+                .await
+                .ok()
+                .map(|arc| (*arc).clone())
+        }
+    });
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
+/// Fetches notebooks client-side only - use when SSR causes issues
+pub fn use_notebooks_for_did_client(
+    ident: ReadSignal<AtIdentifier<'static>>,
+) -> (
+    Resource<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+    Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            fetcher
+                .fetch_notebooks_for_did(&ident())
+                .await
+                .ok()
+                .map(|notebooks| {
+                    notebooks
+                        .iter()
+                        .map(|arc| arc.as_ref().clone())
+                        .collect::<Vec<_>>()
+                })
+        }
+    });
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
+/// Fetches all entries client-side only - use when SSR causes issues
+pub fn use_entries_for_did_client(
     ident: ReadSignal<AtIdentifier<'static>>,
 ) -> (
     Resource<Option<Vec<(EntryView<'static>, Entry<'static>)>>>,

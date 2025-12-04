@@ -1,7 +1,12 @@
 body {
     background-color: var(--color-base);
     color: var(--color-text);
-    font-family: var(--font-body);
+    font-family: var(--font-ui);
+}
+
+a {
+    color: var(--color-link);
+    text-decoration: none;
 }
 
 #header {
@@ -32,6 +37,11 @@ body {
     transition: border-color 0.2s;
 }
 
+.notebook-content {
+    width: 100%;
+    max-width: 95ch;
+}
+
 .uri-input:focus {
     border-color: var(--color-primary);
 }
@@ -40,12 +50,6 @@ body {
     color: var(--color-subtle);
     opacity: 0.5;
 }
-
-a {{
-    color: var(--color-link);
-    text-decoration: none;
-}}
-
 
 @font-face {
     font-family: "Ioskeley Mono";
