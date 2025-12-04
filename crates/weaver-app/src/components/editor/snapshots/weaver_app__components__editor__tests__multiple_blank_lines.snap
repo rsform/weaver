@@ -69,8 +69,8 @@ expression: result
   html: "<p id=\"n1\">Second</p>\n"
   offset_map:
     - byte_range:
-        - 9
-        - 9
+        - 0
+        - 0
       char_range:
         - 9
         - 9
@@ -79,8 +79,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 9
-        - 15
+        - 0
+        - 6
       char_range:
         - 9
         - 15

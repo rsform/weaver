@@ -40,6 +40,8 @@ pub struct CachedParagraph {
     pub offset_map: Vec<OffsetMapping>,
     /// Syntax spans for conditional visibility
     pub syntax_spans: Vec<SyntaxSpanInfo>,
+    /// Collected refs (wikilinks, AT embeds) from this paragraph
+    pub collected_refs: Vec<weaver_common::ExtractedRef>,
 }
 
 /// Check if an edit affects paragraph boundaries.
@@ -148,6 +150,7 @@ pub fn render_paragraphs_incremental(
                 html: empty_html,
                 offset_map: vec![],
                 syntax_spans: vec![],
+                collected_refs: vec![],
             }],
             next_node_id: 1,
             next_syn_id: 0,
@@ -294,7 +297,7 @@ pub fn render_paragraphs_incremental(
         let cached_match =
             cache.and_then(|c| c.paragraphs.iter().find(|p| p.source_hash == source_hash));
 
-        let (html, offset_map, syntax_spans) = if let Some(cached) = cached_match {
+        let (html, offset_map, syntax_spans, para_refs) = if let Some(cached) = cached_match {
             // Reuse cached HTML, offset map, and syntax spans (adjusted for position)
             let char_delta = char_range.start as isize - cached.char_range.start as isize;
             let byte_delta = byte_range.start as isize - cached.byte_range.start as isize;
@@ -314,7 +317,10 @@ pub fn render_paragraphs_incremental(
                 span.adjust_positions(char_delta);
             }
 
-            (cached.html.clone(), adjusted_map, adjusted_syntax)
+            // Include cached refs in all_refs
+            all_refs.extend(cached.collected_refs.clone());
+
+            (cached.html.clone(), adjusted_map, adjusted_syntax, cached.collected_refs.clone())
         } else {
             // Fresh render needed - create detached LoroDoc for this paragraph
             let para_doc = loro::LoroDoc::new();
@@ -348,7 +354,7 @@ pub fn render_paragraphs_incremental(
                 writer = writer.with_entry_index(idx);
             }
 
-            let (mut offset_map, mut syntax_spans) = match writer.run() {
+            let (mut offset_map, mut syntax_spans, para_refs) = match writer.run() {
                 Ok(result) => {
                     // Update node ID offset
                     let max_node_id = result
@@ -377,16 +383,17 @@ pub fn render_paragraphs_incremental(
                     syn_id_offset = max_syn_id + 1;
 
                     // Collect refs from this paragraph
-                    all_refs.extend(result.collected_refs);
+                    let para_refs = result.collected_refs;
+                    all_refs.extend(para_refs.clone());
 
-                    (result.offset_maps, result.syntax_spans)
+                    (result.offset_maps, result.syntax_spans, para_refs)
                 }
-                Err(_) => (Vec::new(), Vec::new()),
+                Err(_) => (Vec::new(), Vec::new(), Vec::new()),
             };
 
             // Offsets are already document-absolute since we pass char_range.start/byte_range.start
             // to the writer constructor
-            (output, offset_map, syntax_spans)
+            (output, offset_map, syntax_spans, para_refs)
         };
 
         // Store in cache
@@ -397,6 +404,7 @@ pub fn render_paragraphs_incremental(
             html: html.clone(),
             offset_map: offset_map.clone(),
             syntax_spans: syntax_spans.clone(),
+            collected_refs: para_refs,
         });
 
         paragraphs.push(ParagraphRender {

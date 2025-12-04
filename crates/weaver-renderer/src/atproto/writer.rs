@@ -3,11 +3,13 @@
 //! Similar to StaticPageWriter but designed for client-side use with
 //! synchronous embed content injection.
 
+use jacquard::types::string::AtUri;
 use markdown_weaver::{
     Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, Tag,
 };
 use markdown_weaver_escape::{StrWrite, escape_href, escape_html, escape_html_body_text};
 use std::collections::HashMap;
+use weaver_common::ResolvedContent;
 
 /// Synchronous callback for injecting embed content
 ///
@@ -18,6 +20,32 @@ pub trait EmbedContentProvider {
 
 impl EmbedContentProvider for () {
     fn get_embed_content(&self, _tag: &Tag<'_>) -> Option<String> {
+        None
+    }
+}
+
+impl EmbedContentProvider for ResolvedContent {
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String> {
+        let url = match tag {
+            Tag::Embed { dest_url, .. } => Some(dest_url.as_ref()),
+            // WikiLink images with at:// URLs are embeds in disguise
+            Tag::Image {
+                link_type: LinkType::WikiLink { .. },
+                dest_url,
+                ..
+            } if dest_url.starts_with("at://") || dest_url.starts_with("did:") => {
+                Some(dest_url.as_ref())
+            }
+            _ => None,
+        };
+
+        if let Some(url) = url {
+            if url.starts_with("at://") {
+                if let Ok(at_uri) = AtUri::new(url) {
+                    return self.get_embed_content(&at_uri).map(|s| s.to_string());
+                }
+            }
+        }
         None
     }
 }
@@ -50,6 +78,28 @@ enum TableState {
     Body,
 }
 
+impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite> ClientWriter<'a, I, W> {
+    /// Add an embed content provider
+    pub fn with_embed_provider<E: EmbedContentProvider>(
+        self,
+        provider: E,
+    ) -> ClientWriter<'a, I, W, E> {
+        ClientWriter {
+            events: self.events,
+            writer: self.writer,
+            end_newline: self.end_newline,
+            in_non_writing_block: self.in_non_writing_block,
+            table_state: self.table_state,
+            table_alignments: self.table_alignments,
+            table_cell_index: self.table_cell_index,
+            numbers: self.numbers,
+            embed_provider: Some(provider),
+            code_buffer: self.code_buffer,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
     ClientWriter<'a, I, W, E>
 {
@@ -69,22 +119,6 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
         }
     }
 
-    /// Add an embed content provider
-    pub fn with_embed_provider(self, provider: E) -> ClientWriter<'a, I, W, E> {
-        ClientWriter {
-            events: self.events,
-            writer: self.writer,
-            end_newline: self.end_newline,
-            in_non_writing_block: self.in_non_writing_block,
-            table_state: self.table_state,
-            table_alignments: self.table_alignments,
-            table_cell_index: self.table_cell_index,
-            numbers: self.numbers,
-            embed_provider: Some(provider),
-            code_buffer: self.code_buffer,
-            _phantom: std::marker::PhantomData,
-        }
-    }
     #[inline]
     fn write_newline(&mut self) -> Result<(), W::Error> {
         self.end_newline = true;
@@ -106,6 +140,25 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
             self.process_event(event)?;
         }
         Ok(self.writer)
+    }
+
+    /// Consume events until End tag without writing anything.
+    /// Used when we've already rendered content and just need to advance the iterator.
+    fn consume_until_end(&mut self) {
+        use Event::*;
+        let mut nest = 0;
+        while let Some(event) = self.events.next() {
+            match event {
+                Start(_) => nest += 1,
+                End(_) => {
+                    if nest == 0 {
+                        break;
+                    }
+                    nest -= 1;
+                }
+                _ => {}
+            }
+        }
     }
 
     // Consume raw text events until end tag, for alt attributes
@@ -173,30 +226,26 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 escape_html_body_text(&mut self.writer, &text)?;
                 self.write("</code>")?;
             }
-            InlineMath(text) => {
-                match crate::math::render_math(&text, false) {
-                    crate::math::MathResult::Success(mathml) => {
-                        self.write(r#"<span class="math math-inline">"#)?;
-                        self.write(&mathml)?;
-                        self.write("</span>")?;
-                    }
-                    crate::math::MathResult::Error { html, .. } => {
-                        self.write(&html)?;
-                    }
+            InlineMath(text) => match crate::math::render_math(&text, false) {
+                crate::math::MathResult::Success(mathml) => {
+                    self.write(r#"<span class="math math-inline">"#)?;
+                    self.write(&mathml)?;
+                    self.write("</span>")?;
                 }
-            }
-            DisplayMath(text) => {
-                match crate::math::render_math(&text, true) {
-                    crate::math::MathResult::Success(mathml) => {
-                        self.write(r#"<span class="math math-display">"#)?;
-                        self.write(&mathml)?;
-                        self.write("</span>")?;
-                    }
-                    crate::math::MathResult::Error { html, .. } => {
-                        self.write(&html)?;
-                    }
+                crate::math::MathResult::Error { html, .. } => {
+                    self.write(&html)?;
                 }
-            }
+            },
+            DisplayMath(text) => match crate::math::render_math(&text, true) {
+                crate::math::MathResult::Success(mathml) => {
+                    self.write(r#"<span class="math math-display">"#)?;
+                    self.write(&mathml)?;
+                    self.write("</span>")?;
+                }
+                crate::math::MathResult::Error { html, .. } => {
+                    self.write(&html)?;
+                }
+            },
             Html(html) | InlineHtml(html) => {
                 self.write(&html)?;
             }
@@ -424,12 +473,42 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 }
                 self.write("\">")
             }
-            Tag::Image {
-                dest_url,
-                title,
-                attrs,
+            ref tag @ Tag::Image {
+                ref dest_url,
+                ref title,
+                ref attrs,
+                ref link_type,
                 ..
             } => {
+                // Check if this is an AT embed disguised as a WikiLink image
+                // (markdown-weaver parses ![[at://...]] as Image with WikiLink link_type)
+                if matches!(link_type, LinkType::WikiLink { .. })
+                    && (dest_url.starts_with("at://") || dest_url.starts_with("did:"))
+                {
+                    tracing::debug!("[ClientWriter] AT embed image detected: {}", dest_url);
+                    if let Some(embed_provider) = &self.embed_provider {
+                        if let Some(html) = embed_provider.get_embed_content(&tag) {
+                            tracing::debug!("[ClientWriter] Got embed content for {}", dest_url);
+                            // Consume events without writing - we're replacing with embed HTML
+                            self.consume_until_end();
+                            return self.write(&html);
+                        } else {
+                            tracing::debug!("[ClientWriter] No embed content from provider for {}", dest_url);
+                        }
+                    } else {
+                        tracing::debug!("[ClientWriter] No embed provider available");
+                    }
+                    // Fallback: render as link if no embed content available
+                    tracing::debug!("[ClientWriter] Using fallback link for {}", dest_url);
+                    self.consume_until_end();
+                    self.write("<a class=\"embed-fallback\" href=\"")?;
+                    escape_href(&mut self.writer, &dest_url)?;
+                    self.write("\">")?;
+                    escape_html(&mut self.writer, &dest_url)?;
+                    return self.write("</a>");
+                }
+
+                // Regular image handling
                 self.write("<img src=\"")?;
                 escape_href(&mut self.writer, &dest_url)?;
                 self.write("\" alt=\"")?;

@@ -46,10 +46,6 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 
 #[component]
 pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
-    tracing::debug!("Repository component rendering for ident: {:?}", ident());
-    // Fetch notebooks for this specific DID with SSR support;
-    tracing::debug!("Repository component context set up");
-
     rsx! {
         div {
             Outlet::<Route> {}
@@ -59,14 +55,9 @@ pub fn Repository(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
 #[component]
 pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
-    tracing::debug!(
-        "RepositoryIndex component rendering for ident: {:?}",
-        ident()
-    );
     use crate::components::ProfileDisplay;
     let (notebooks_result, notebooks) = data::use_notebooks_for_did(ident);
     let (profile_result, profile) = crate::data::use_profile_data(ident);
-    tracing::debug!("RepositoryIndex got profile and notebooks");
 
     #[cfg(feature = "fullstack-server")]
     notebooks_result?;
@@ -81,20 +72,30 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
             let (display_name, handle, bio) = match &profile_view.inner {
                 ProfileDataViewInner::ProfileView(p) => (
-                    p.display_name.as_ref().map(|n| n.as_ref().to_string()).unwrap_or_default(),
+                    p.display_name
+                        .as_ref()
+                        .map(|n| n.as_ref().to_string())
+                        .unwrap_or_default(),
                     p.handle.as_ref().to_string(),
-                    p.description.as_ref().map(|d| d.as_ref().to_string()).unwrap_or_default(),
+                    p.description
+                        .as_ref()
+                        .map(|d| d.as_ref().to_string())
+                        .unwrap_or_default(),
                 ),
                 ProfileDataViewInner::ProfileViewDetailed(p) => (
-                    p.display_name.as_ref().map(|n| n.as_ref().to_string()).unwrap_or_default(),
+                    p.display_name
+                        .as_ref()
+                        .map(|n| n.as_ref().to_string())
+                        .unwrap_or_default(),
                     p.handle.as_ref().to_string(),
-                    p.description.as_ref().map(|d| d.as_ref().to_string()).unwrap_or_default(),
+                    p.description
+                        .as_ref()
+                        .map(|d| d.as_ref().to_string())
+                        .unwrap_or_default(),
                 ),
-                ProfileDataViewInner::TangledProfileView(p) => (
-                    String::new(),
-                    p.handle.as_ref().to_string(),
-                    String::new(),
-                ),
+                ProfileDataViewInner::TangledProfileView(p) => {
+                    (String::new(), p.handle.as_ref().to_string(), String::new())
+                }
                 _ => (String::new(), "unknown".to_string(), String::new()),
             };
 
@@ -174,7 +175,7 @@ pub fn NotebookCard(
     notebook: NotebookView<'static>,
     entry_refs: Vec<StrongRef<'static>>,
 ) -> Element {
-    use jacquard::{from_data, IntoStatic};
+    use jacquard::{IntoStatic, from_data};
     use weaver_api::sh_weaver::notebook::book::Book;
 
     let fetcher = use_context::<fetch::Fetcher>();

@@ -835,7 +835,9 @@ pub struct EntryMarkdownProps {
 
 /// Render some text as markdown.
 pub fn EntryMarkdown(props: EntryMarkdownProps) -> Element {
-    let processed = crate::data::use_rendered_markdown(props.content, props.ident);
+    let (_res, processed) = crate::data::use_rendered_markdown(props.content, props.ident);
+    #[cfg(feature = "fullstack-server")]
+    _res?;
 
     match &*processed.read() {
         Some(html_buf) => rsx! {
@@ -866,7 +868,9 @@ fn EntryMarkdownDirect(
     // Use feature-gated hook for SSR support
     let content = use_signal(|| content);
     let ident = use_signal(|| ident);
-    let processed = crate::data::use_rendered_markdown(content.into(), ident.into());
+    let (_res, processed) = crate::data::use_rendered_markdown(content.into(), ident.into());
+    #[cfg(feature = "fullstack-server")]
+    _res?;
 
     match &*processed.read() {
         Some(html_buf) => rsx! {

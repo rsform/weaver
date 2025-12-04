@@ -1,12 +1,12 @@
 //! OpenGraph image generation module
 //!
 //! Generates social card images for entry pages using SVG templates rendered to PNG.
+pub mod server;
 
+use crate::cache_impl::{Cache, new_cache};
 use askama::Template;
 use std::sync::OnceLock;
 use std::time::Duration;
-
-use crate::cache_impl::{Cache, new_cache};
 
 /// Cache for generated OG images
 /// Key: "{ident}/{book}/{entry}/{cid}" - includes CID for invalidation
@@ -139,8 +139,7 @@ fn get_fontdb() -> &'static fontdb::Database {
         // Load IBM Plex Sans Bold (static weight for proper bold rendering)
         let font_data = include_bytes!("../../assets/fonts/IBMPlexSans-Bold.ttf");
         db.load_font_data(font_data.to_vec());
-        let font_data =
-            include_bytes!("../../assets/fonts/ioskeley-mono/IoskeleyMono-Regular.ttf");
+        let font_data = include_bytes!("../../assets/fonts/ioskeley-mono/IoskeleyMono-Regular.ttf");
         db.load_font_data(font_data.to_vec());
         db
     })

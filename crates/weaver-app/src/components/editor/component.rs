@@ -141,6 +141,38 @@ pub fn MarkdownEditor(
                                         tags.push(tag_str).ok();
                                     }
                                 }
+
+                                // Restore existing embeds from the entry
+                                if let Some(ref embeds) = loaded.entry.embeds {
+                                    let embeds_map = doc.get_map("embeds");
+
+                                    // Restore images
+                                    if let Some(ref images) = embeds.images {
+                                        let images_list = embeds_map
+                                            .get_or_create_container("images", loro::LoroList::new())
+                                            .expect("images list");
+                                        for image in &images.images {
+                                            // Serialize image to JSON and add to list
+                                            // No publishedBlobUri since these are already published
+                                            let json = serde_json::to_value(image)
+                                                .expect("Image serializes");
+                                            images_list.push(json).ok();
+                                        }
+                                    }
+
+                                    // Restore record embeds
+                                    if let Some(ref records) = embeds.records {
+                                        let records_list = embeds_map
+                                            .get_or_create_container("records", loro::LoroList::new())
+                                            .expect("records list");
+                                        for record in &records.records {
+                                            let json = serde_json::to_value(record)
+                                                .expect("RecordEmbed serializes");
+                                            records_list.push(json).ok();
+                                        }
+                                    }
+                                }
+
                                 doc.commit();
 
                                 return LoadResult::Loaded(LoadedDocState {
@@ -233,13 +265,40 @@ fn MarkdownEditorInner(
     let auth_state = use_context::<Signal<AuthState>>();
 
     let mut document = use_hook(|| {
-        let doc = EditorDocument::from_loaded_state(loaded_state.clone());
+        let mut doc = EditorDocument::from_loaded_state(loaded_state.clone());
+
+        // Seed collected_refs with existing record embeds so they get fetched/rendered
+        let record_embeds = doc.record_embeds();
+        if !record_embeds.is_empty() {
+            let refs: Vec<weaver_common::ExtractedRef> = record_embeds
+                .into_iter()
+                .filter_map(|embed| {
+                    embed.name.map(|name| weaver_common::ExtractedRef::AtEmbed {
+                        uri: name.to_string(),
+                        alt_text: None,
+                    })
+                })
+                .collect();
+            doc.set_collected_refs(refs);
+        }
+
         storage::save_to_storage(&doc, &draft_key).ok();
         doc
     });
     let editor_id = "markdown-editor";
     let mut render_cache = use_signal(|| render::RenderCache::default());
-    let mut image_resolver = use_signal(EditorImageResolver::default);
+
+    // Populate resolver from existing images if editing a published entry
+    let mut image_resolver: Signal<EditorImageResolver> = use_signal(|| {
+        let images = document.images();
+        if let (false, Some(ref r)) = (images.is_empty(), document.entry_ref()) {
+            let ident = r.uri.authority().clone().into_static();
+            let entry_rkey = r.uri.rkey().map(|rk| rk.0.clone().into_static());
+            EditorImageResolver::from_images(&images, ident, entry_rkey)
+        } else {
+            EditorImageResolver::default()
+        }
+    });
     let resolved_content = use_signal(weaver_common::ResolvedContent::default);
 
     let doc_for_memo = document.clone();
@@ -1095,14 +1154,29 @@ fn MarkdownEditorInner(
                         } else {
                             uploaded.alt.clone()
                         };
-                        let markdown = format!("![{}](/image/{})", alt_text, name);
+
+                        // Check if authenticated and get DID for draft path
+                        let auth = auth_state.read();
+                        let did_for_path = auth.did.clone();
+                        let is_authenticated = auth.is_authenticated();
+                        drop(auth);
+
+                        // Pre-generate TID for the blob rkey (used in draft path and upload)
+                        let blob_tid = jacquard::types::tid::Ticker::new().next(None);
+
+                        // Build markdown with proper draft path if authenticated
+                        let markdown = if let Some(ref did) = did_for_path {
+                            format!("![{}](/image/{}/draft/{}/{})", alt_text, did, blob_tid.as_str(), name)
+                        } else {
+                            // Fallback for unauthenticated - simple path (won't be publishable anyway)
+                            format!("![{}](/image/{})", alt_text, name)
+                        };
 
                         let pos = doc.cursor.read().offset;
                         let _ = doc.insert_tracked(pos, &markdown);
                         doc.cursor.write().offset = pos + markdown.chars().count();
 
                         // Upload to PDS in background if authenticated
-                        let is_authenticated = auth_state.read().is_authenticated();
                         if is_authenticated {
                             let fetcher = fetcher.clone();
                             let name_for_upload = name.clone();
@@ -1116,8 +1190,12 @@ fn MarkdownEditorInner(
                                 // Clone data for cache pre-warming
                                 let data_for_cache = data.clone();
 
+                                // Use pre-generated TID as rkey for the blob record
+                                let rkey = jacquard::types::recordkey::RecordKey::any(blob_tid.as_str())
+                                    .expect("TID is valid record key");
+
                                 // Upload blob and create temporary PublishedBlob record
-                                match client.publish_blob(data, &name_for_upload, None).await {
+                                match client.publish_blob(data, &name_for_upload, Some(rkey)).await {
                                     Ok((strong_ref, published_blob)) => {
                                         // Get DID from fetcher
                                         let did = match fetcher.current_did().await {

@@ -11,8 +11,8 @@ expression: result
   html: "<blockquote>\n<p id=\"n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"1\">&gt;</span> This is a quote\n</p>\n</blockquote>\n"
   offset_map:
     - byte_range:
-        - 43
-        - 43
+        - 2
+        - 2
       char_range:
         - 0
         - 0
@@ -21,8 +21,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 41
-        - 42
+        - 0
+        - 1
       char_range:
         - 0
         - 1
@@ -31,8 +31,8 @@ expression: result
       child_index: ~
       utf16_len: 1
     - byte_range:
-        - 42
-        - 43
+        - 1
+        - 2
       char_range:
         - 1
         - 2
@@ -41,8 +41,8 @@ expression: result
       child_index: ~
       utf16_len: 1
     - byte_range:
-        - 43
-        - 58
+        - 2
+        - 17
       char_range:
         - 2
         - 17
@@ -51,8 +51,8 @@ expression: result
       child_index: ~
       utf16_len: 15
     - byte_range:
-        - 58
-        - 59
+        - 17
+        - 18
       char_range:
         - 17
         - 18
@@ -89,8 +89,8 @@ expression: result
   html: "<p id=\"n1\">With multiple lines</p>\n"
   offset_map:
     - byte_range:
-        - 22
-        - 22
+        - 0
+        - 0
       char_range:
         - 22
         - 22
@@ -99,8 +99,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 22
-        - 41
+        - 0
+        - 19
       char_range:
         - 22
         - 41

@@ -1,7 +1,7 @@
-use std::{path::Path, sync::OnceLock};
 use markdown_weaver::{CodeBlockKind, CowStr, Event, Tag};
 use miette::IntoDiagnostic;
 use n0_future::TryFutureExt;
+use std::{path::Path, sync::OnceLock};
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use regex::Regex;
@@ -117,121 +117,6 @@ pub fn flatten_dir_to_just_one_parent(path: &str) -> (&str, &str) {
     ("", path)
 }
 
-fn event_to_owned<'a>(event: Event<'a>) -> Event<'a> {
-    match event {
-        Event::Start(tag) => Event::Start(tag_to_owned(tag)),
-        Event::End(tag) => Event::End(tag),
-        Event::Text(cowstr) => Event::Text(CowStr::from(cowstr.into_string())),
-        Event::Code(cowstr) => Event::Code(CowStr::from(cowstr.into_string())),
-        Event::Html(cowstr) => Event::Html(CowStr::from(cowstr.into_string())),
-        Event::InlineHtml(cowstr) => Event::InlineHtml(CowStr::from(cowstr.into_string())),
-        Event::FootnoteReference(cowstr) => {
-            Event::FootnoteReference(CowStr::from(cowstr.into_string()))
-        }
-        Event::SoftBreak => Event::SoftBreak,
-        Event::HardBreak => Event::HardBreak,
-        Event::Rule => Event::Rule,
-        Event::TaskListMarker(checked) => Event::TaskListMarker(checked),
-        Event::InlineMath(cowstr) => Event::InlineMath(CowStr::from(cowstr.into_string())),
-        Event::DisplayMath(cowstr) => Event::DisplayMath(CowStr::from(cowstr.into_string())),
-        Event::WeaverBlock(cow_str) => todo!(),
-    }
-}
-
-fn tag_to_owned<'a>(tag: Tag<'a>) -> Tag<'a> {
-    match tag {
-        Tag::Paragraph => Tag::Paragraph,
-        Tag::Heading {
-            level: heading_level,
-            id,
-            classes,
-            attrs,
-        } => Tag::Heading {
-            level: heading_level,
-            id: id.map(|cowstr| CowStr::from(cowstr.into_string())),
-            classes: classes
-                .into_iter()
-                .map(|cowstr| CowStr::from(cowstr.into_string()))
-                .collect(),
-            attrs: attrs
-                .into_iter()
-                .map(|(attr, value)| {
-                    (
-                        CowStr::from(attr.into_string()),
-                        value.map(|cowstr| CowStr::from(cowstr.into_string())),
-                    )
-                })
-                .collect(),
-        },
-        Tag::BlockQuote(blockquote_kind) => Tag::BlockQuote(blockquote_kind),
-        Tag::CodeBlock(codeblock_kind) => Tag::CodeBlock(codeblock_kind_to_owned(codeblock_kind)),
-        Tag::List(optional) => Tag::List(optional),
-        Tag::Item => Tag::Item,
-        Tag::FootnoteDefinition(cowstr) => {
-            Tag::FootnoteDefinition(CowStr::from(cowstr.into_string()))
-        }
-        Tag::Table(alignment_vector) => Tag::Table(alignment_vector),
-        Tag::TableHead => Tag::TableHead,
-        Tag::TableRow => Tag::TableRow,
-        Tag::TableCell => Tag::TableCell,
-        Tag::Emphasis => Tag::Emphasis,
-        Tag::Strong => Tag::Strong,
-        Tag::Strikethrough => Tag::Strikethrough,
-        Tag::Link {
-            link_type,
-            dest_url,
-            title,
-            id,
-        } => Tag::Link {
-            link_type,
-            dest_url: CowStr::from(dest_url.into_string()),
-            title: CowStr::from(title.into_string()),
-            id: CowStr::from(id.into_string()),
-        },
-        Tag::Embed {
-            embed_type,
-            dest_url,
-            title,
-            id,
-            attrs,
-        } => Tag::Embed {
-            embed_type,
-            dest_url: CowStr::from(dest_url.into_string()),
-            title: CowStr::from(title.into_string()),
-            id: CowStr::from(id.into_string()),
-            attrs,
-        },
-        Tag::Image {
-            link_type,
-            dest_url,
-            title,
-            id,
-            attrs,
-        } => Tag::Image {
-            link_type,
-            dest_url: CowStr::from(dest_url.into_string()),
-            title: CowStr::from(title.into_string()),
-            id: CowStr::from(id.into_string()),
-            attrs,
-        },
-        Tag::HtmlBlock => Tag::HtmlBlock,
-        Tag::MetadataBlock(metadata_block_kind) => Tag::MetadataBlock(metadata_block_kind),
-        Tag::DefinitionList => Tag::DefinitionList,
-        Tag::DefinitionListTitle => Tag::DefinitionListTitle,
-        Tag::DefinitionListDefinition => Tag::DefinitionListDefinition,
-        Tag::Superscript => todo!(),
-        Tag::Subscript => todo!(),
-        Tag::WeaverBlock(weaver_block_kind, weaver_attributes) => todo!(),
-    }
-}
-
-fn codeblock_kind_to_owned<'a>(codeblock_kind: CodeBlockKind<'_>) -> CodeBlockKind<'a> {
-    match codeblock_kind {
-        CodeBlockKind::Indented => CodeBlockKind::Indented,
-        CodeBlockKind::Fenced(cowstr) => CodeBlockKind::Fenced(CowStr::from(cowstr.into_string())),
-    }
-}
-
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 use tokio::fs::{self, File};
 
@@ -252,7 +137,6 @@ pub async fn create_file(dest: &Path) -> miette::Result<File> {
         .into_diagnostic()?;
     Ok(file)
 }
-
 
 /// Path lookup in an Obsidian vault
 ///

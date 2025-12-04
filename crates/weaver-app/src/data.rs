@@ -13,7 +13,7 @@ use dioxus::{CapturedError, fullstack::extract::Extension};
 use jacquard::{
     IntoStatic,
     identity::resolver::IdentityError,
-    types::{did::Did, string::Handle},
+    types::{aturi::AtUri, did::Did, string::Handle},
 };
 #[allow(unused_imports)]
 use jacquard::{
@@ -26,6 +26,7 @@ use std::sync::Arc;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::actor::ProfileDataView;
 use weaver_api::sh_weaver::notebook::{BookEntryView, EntryView, NotebookView, entry::Entry};
+use weaver_common::ResolvedContent;
 // ============================================================================
 // Wrapper Hooks (feature-gated)
 // ============================================================================
@@ -45,9 +46,7 @@ pub fn use_entry_data(
     let res = use_server_future(use_reactive!(|(ident, book_title, title)| {
         let fetcher = fetcher.clone();
         async move {
-            let fetch_result = fetcher
-                .get_entry(ident(), book_title(), title())
-                .await;
+            let fetch_result = fetcher.get_entry(ident(), book_title(), title()).await;
 
             match fetch_result {
                 Ok(Some(entry)) => {
@@ -387,26 +386,35 @@ pub fn use_handle(
 pub fn use_rendered_markdown(
     content: ReadSignal<Entry<'static>>,
     ident: ReadSignal<AtIdentifier<'static>>,
-) -> Memo<Option<String>> {
+) -> (
+    Result<Resource<Option<String>>, RenderError>,
+    Memo<Option<String>>,
+) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
+    let fetcher = fetcher.clone();
     let res = use_server_future(use_reactive!(|(content, ident)| {
-        let client = fetcher.get_client();
+        let fetcher = fetcher.clone();
         async move {
+            let entry = content();
             let did = match ident.read().clone() {
                 AtIdentifier::Did(d) => d,
-                AtIdentifier::Handle(h) => client.resolve_handle(&h).await.ok()?,
+                AtIdentifier::Handle(h) => fetcher.get_client().resolve_handle(&h).await.ok()?,
             };
-            Some(render_markdown_impl(content(), did).await)
+
+            let resolved_content = prefetch_embeds(&entry, &fetcher).await;
+
+            Some(render_markdown_impl(entry, did, resolved_content).await)
         }
     }));
-    use_memo(use_reactive!(|res| {
-        let res = res.ok()?;
+    let memo = use_memo(use_reactive!(|res| {
+        let res = res.as_ref().ok()?;
         if let Some(Some(value)) = &*res.read() {
             Some(value.clone())
         } else {
             None
         }
-    }))
+    }));
+    (res, memo)
 }
 
 /// Hook to render markdown client-side only (no SSR).
@@ -414,29 +422,97 @@ pub fn use_rendered_markdown(
 pub fn use_rendered_markdown(
     content: ReadSignal<Entry<'static>>,
     ident: ReadSignal<AtIdentifier<'static>>,
-) -> Memo<Option<String>> {
+) -> (Resource<Option<String>>, Memo<Option<String>>) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
+    let fetcher = fetcher.clone();
     let res = use_resource(move || {
-        let client = fetcher.get_client();
+        let fetcher = fetcher.clone();
         async move {
+            let entry = content();
             let did = match ident() {
                 AtIdentifier::Did(d) => d,
-                AtIdentifier::Handle(h) => client.resolve_handle(&h).await.ok()?,
+                AtIdentifier::Handle(h) => fetcher.get_client().resolve_handle(&h).await.ok()?,
             };
-            Some(render_markdown_impl(content(), did).await)
+
+            let resolved_content = prefetch_embeds(&entry, &fetcher).await;
+
+            Some(render_markdown_impl(entry, did, resolved_content).await)
         }
     });
-    use_memo(move || {
+    let memo = use_memo(move || {
         if let Some(Some(value)) = &*res.read() {
             Some(value.clone())
         } else {
             None
         }
-    })
+    });
+    (res, memo)
+}
+
+/// Extract AT URIs for embeds from stored records or by parsing markdown.
+///
+/// Tries stored `embeds.records` first, falls back to parsing markdown content.
+fn extract_embed_uris(entry: &Entry<'_>) -> Vec<AtUri<'static>> {
+    use jacquard::IntoStatic;
+
+    // Try stored records first
+    if let Some(ref embeds) = entry.embeds {
+        if let Some(ref records) = embeds.records {
+            let stored_uris: Vec<_> = records
+                .records
+                .iter()
+                .map(|r| r.record.uri.clone().into_static())
+                .collect();
+            if !stored_uris.is_empty() {
+                return stored_uris;
+            }
+        }
+    }
+
+    // Fall back to parsing markdown for at:// URIs
+    use regex_lite::Regex;
+    use std::sync::LazyLock;
+
+    static AT_URI_REGEX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"at://[^\s\)\]]+").unwrap());
+
+    let uris: Vec<_> = AT_URI_REGEX
+        .find_iter(&entry.content)
+        .filter_map(|m| AtUri::new(m.as_str()).ok().map(|u| u.into_static()))
+        .collect();
+    uris
+}
+
+/// Pre-fetch embed content for all AT URIs in an entry.
+async fn prefetch_embeds(
+    entry: &Entry<'static>,
+    fetcher: &crate::fetch::Fetcher,
+) -> weaver_common::ResolvedContent {
+    use weaver_renderer::atproto::fetch_and_render;
+
+    let mut resolved = weaver_common::ResolvedContent::new();
+    let uris = extract_embed_uris(entry);
+
+    for uri in uris {
+        match fetch_and_render(&uri, fetcher).await {
+            Ok(html) => {
+                resolved.add_embed(uri, html, None);
+            }
+            Err(e) => {
+                tracing::warn!("[prefetch_embeds] Failed to fetch {}: {}", uri, e);
+            }
+        }
+    }
+
+    resolved
 }
 
 /// Internal implementation of markdown rendering.
-async fn render_markdown_impl(content: Entry<'static>, did: Did<'static>) -> String {
+async fn render_markdown_impl(
+    content: Entry<'static>,
+    did: Did<'static>,
+    resolved_content: weaver_common::ResolvedContent,
+) -> String {
     use n0_future::stream::StreamExt;
     use weaver_renderer::{
         ContextIterator, NotebookProcessor,
@@ -452,7 +528,9 @@ async fn render_markdown_impl(content: Entry<'static>, did: Did<'static>) -> Str
     let events: Vec<_> = StreamExt::collect(processor).await;
 
     let mut html_buf = String::new();
-    let _ = ClientWriter::<_, _, ()>::new(events.into_iter(), &mut html_buf).run();
+    let writer = ClientWriter::<_, _, ()>::new(events.into_iter(), &mut html_buf)
+        .with_embed_provider(resolved_content);
+    writer.run().ok();
     html_buf
 }
 
@@ -688,7 +766,7 @@ pub fn use_entries_from_ufos() -> (
                                 let entry_json = serde_json::to_value(entry).ok()?;
                                 Some((view_json, entry_json, *time))
                             })
-                            .collect::<Vec<_>>()
+                            .collect::<Vec<_>>(),
                     )
                 }
                 Err(e) => {
@@ -727,16 +805,12 @@ pub fn use_entries_from_ufos() -> (
     let res = use_resource(move || {
         let fetcher = fetcher.clone();
         async move {
-            fetcher
-                .fetch_entries_from_ufos()
-                .await
-                .ok()
-                .map(|entries| {
-                    entries
-                        .iter()
-                        .map(|arc| arc.as_ref().clone())
-                        .collect::<Vec<_>>()
-                })
+            fetcher.fetch_entries_from_ufos().await.ok().map(|entries| {
+                entries
+                    .iter()
+                    .map(|arc| arc.as_ref().clone())
+                    .collect::<Vec<_>>()
+            })
         }
     });
     let memo = use_memo(move || res.read().clone().flatten());
@@ -960,7 +1034,16 @@ pub fn use_standalone_entry_data(
     ident: ReadSignal<AtIdentifier<'static>>,
     rkey: ReadSignal<SmolStr>,
 ) -> (
-    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<(serde_json::Value, serde_json::Value)>)>>, RenderError>,
+    Result<
+        Resource<
+            Option<(
+                serde_json::Value,
+                serde_json::Value,
+                Option<(serde_json::Value, serde_json::Value)>,
+            )>,
+        >,
+        RenderError,
+    >,
     Memo<Option<crate::fetch::StandaloneEntryData>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
@@ -991,11 +1074,16 @@ pub fn use_standalone_entry_data(
                     }
                     let entry_json = serde_json::to_value(&data.entry).ok()?;
                     let entry_view_json = serde_json::to_value(&data.entry_view).ok()?;
-                    let notebook_ctx_json = data.notebook_context.as_ref().map(|ctx| {
-                        let notebook_json = serde_json::to_value(&ctx.notebook).ok()?;
-                        let book_entry_json = serde_json::to_value(&ctx.book_entry_view).ok()?;
-                        Some((notebook_json, book_entry_json))
-                    }).flatten();
+                    let notebook_ctx_json = data
+                        .notebook_context
+                        .as_ref()
+                        .map(|ctx| {
+                            let notebook_json = serde_json::to_value(&ctx.notebook).ok()?;
+                            let book_entry_json =
+                                serde_json::to_value(&ctx.book_entry_view).ok()?;
+                            Some((notebook_json, book_entry_json))
+                        })
+                        .flatten();
                     Some((entry_json, entry_view_json, notebook_ctx_json))
                 }
                 Ok(None) => None,
@@ -1008,23 +1096,38 @@ pub fn use_standalone_entry_data(
     }));
 
     let memo = use_memo(use_reactive!(|res| {
-        use crate::fetch::{StandaloneEntryData, NotebookContext};
-        use weaver_api::sh_weaver::notebook::{EntryView, entry::Entry, BookEntryView, NotebookView};
+        use crate::fetch::{NotebookContext, StandaloneEntryData};
+        use weaver_api::sh_weaver::notebook::{
+            BookEntryView, EntryView, NotebookView, entry::Entry,
+        };
 
         let res = res.as_ref().ok()?;
-        let Some(Some((entry_json, entry_view_json, notebook_ctx_json))) = res.read().clone() else {
+        let Some(Some((entry_json, entry_view_json, notebook_ctx_json))) = res.read().clone()
+        else {
             return None;
         };
 
         let entry: Entry<'static> = jacquard::from_json_value::<Entry>(entry_json).ok()?;
-        let entry_view: EntryView<'static> = jacquard::from_json_value::<EntryView>(entry_view_json).ok()?;
-        let notebook_context = notebook_ctx_json.map(|(notebook_json, book_entry_json)| {
-            let notebook: NotebookView<'static> = jacquard::from_json_value::<NotebookView>(notebook_json).ok()?;
-            let book_entry_view: BookEntryView<'static> = jacquard::from_json_value::<BookEntryView>(book_entry_json).ok()?;
-            Some(NotebookContext { notebook, book_entry_view })
-        }).flatten();
+        let entry_view: EntryView<'static> =
+            jacquard::from_json_value::<EntryView>(entry_view_json).ok()?;
+        let notebook_context = notebook_ctx_json
+            .map(|(notebook_json, book_entry_json)| {
+                let notebook: NotebookView<'static> =
+                    jacquard::from_json_value::<NotebookView>(notebook_json).ok()?;
+                let book_entry_view: BookEntryView<'static> =
+                    jacquard::from_json_value::<BookEntryView>(book_entry_json).ok()?;
+                Some(NotebookContext {
+                    notebook,
+                    book_entry_view,
+                })
+            })
+            .flatten();
 
-        Some(StandaloneEntryData { entry, entry_view, notebook_context })
+        Some(StandaloneEntryData {
+            entry,
+            entry_view,
+            notebook_context,
+        })
     }));
 
     (res, memo)
@@ -1069,7 +1172,10 @@ pub fn use_notebook_entry_by_rkey(
     let res = use_server_future(use_reactive!(|(ident, book_title, rkey)| {
         let fetcher = fetcher.clone();
         async move {
-            match fetcher.get_notebook_entry_by_rkey(ident(), book_title(), rkey()).await {
+            match fetcher
+                .get_notebook_entry_by_rkey(ident(), book_title(), rkey())
+                .await
+            {
                 Ok(Some(data)) => {
                     let book_entry_json = serde_json::to_value(&data.0).ok()?;
                     let entry_json = serde_json::to_value(&data.1).ok()?;
@@ -1087,8 +1193,10 @@ pub fn use_notebook_entry_by_rkey(
     let memo = use_memo(use_reactive!(|res| {
         let res = res.as_ref().ok()?;
         if let Some(Some((book_entry_json, entry_json))) = &*res.read() {
-            let book_entry: BookEntryView<'static> = jacquard::from_json_value::<BookEntryView>(book_entry_json.clone()).ok()?;
-            let entry: Entry<'static> = jacquard::from_json_value::<Entry>(entry_json.clone()).ok()?;
+            let book_entry: BookEntryView<'static> =
+                jacquard::from_json_value::<BookEntryView>(book_entry_json.clone()).ok()?;
+            let entry: Entry<'static> =
+                jacquard::from_json_value::<Entry>(entry_json.clone()).ok()?;
             Some((book_entry, entry))
         } else {
             None

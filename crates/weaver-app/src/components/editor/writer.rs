@@ -206,10 +206,8 @@ impl EditorImageResolver {
         blob_rkey: Rkey<'static>,
         ident: AtIdentifier<'static>,
     ) {
-        self.images.insert(
-            name.to_string(),
-            ResolvedImage::Draft { blob_rkey, ident },
-        );
+        self.images
+            .insert(name.to_string(), ResolvedImage::Draft { blob_rkey, ident });
     }
 
     /// Add an already-uploaded draft image.
@@ -314,7 +312,13 @@ impl ImageResolver for &EditorImageResolver {
 ///
 /// This writer processes offset-iter events to detect gaps (consumed formatting)
 /// and emits them as styled spans for visibility in the editor.
-pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E = (), R = ()> {
+pub struct EditorWriter<
+    'a,
+    I: Iterator<Item = (Event<'a>, Range<usize>)>,
+    W: StrWrite,
+    E = (),
+    R = (),
+> {
     source: &'a str,
     source_text: &'a LoroText,
     events: I,
@@ -387,12 +391,12 @@ enum TableState {
 }
 
 impl<
-        'a,
-        I: Iterator<Item = (Event<'a>, Range<usize>)>,
-        W: StrWrite,
-        E: EmbedContentProvider,
-        R: ImageResolver,
-    > EditorWriter<'a, I, W, E, R>
+    'a,
+    I: Iterator<Item = (Event<'a>, Range<usize>)>,
+    W: StrWrite,
+    E: EmbedContentProvider,
+    R: ImageResolver,
+> EditorWriter<'a, I, W, E, R>
 {
     pub fn new(source: &'a str, source_text: &'a LoroText, events: I, writer: W) -> Self {
         Self::new_with_node_offset(source, source_text, events, writer, 0)
@@ -1329,8 +1333,7 @@ impl<
                         write!(
                             &mut self.writer,
                             "<span class=\"math math-inline math-rendered math-clickable\" contenteditable=\"false\" data-char-target=\"{}\">{}</span>",
-                            content_char_start,
-                            mathml
+                            content_char_start, mathml
                         )?;
                     }
                     weaver_renderer::math::MathResult::Error { html, .. } => {
@@ -1423,8 +1426,7 @@ impl<
                         write!(
                             &mut self.writer,
                             "<span class=\"math math-display math-rendered math-clickable\" contenteditable=\"false\" data-char-target=\"{}\">{}</span>",
-                            content_char_start,
-                            mathml
+                            content_char_start, mathml
                         )?;
                     }
                     weaver_renderer::math::MathResult::Error { html, .. } => {
@@ -1740,7 +1742,6 @@ impl<
         }
 
         // Emit the opening tag
-        tracing::debug!(?tag, "start_tag");
         match tag {
             Tag::HtmlBlock => Ok(()),
             Tag::Paragraph => {
@@ -2612,7 +2613,11 @@ impl<
                             Err(_) => {
                                 // Fallback to plain code block
                                 if let Some(ref nid) = node_id {
-                                    write!(&mut self.writer, "<pre data-node-id=\"{}\"><code class=\"language-", nid)?;
+                                    write!(
+                                        &mut self.writer,
+                                        "<pre data-node-id=\"{}\"><code class=\"language-",
+                                        nid
+                                    )?;
                                 } else {
                                     self.write("<pre><code class=\"language-")?;
                                 }
@@ -2666,11 +2671,12 @@ impl<
                             self.last_byte_offset += fence.len();
 
                             // Compute formatted_range for entire code block (opening fence to closing fence)
-                            let formatted_range = code_block_start
-                                .map(|start| start..self.last_char_offset);
+                            let formatted_range =
+                                code_block_start.map(|start| start..self.last_char_offset);
 
                             // Update opening fence span with formatted_range
-                            if let (Some(idx), Some(fr)) = (opening_span_idx, formatted_range.as_ref())
+                            if let (Some(idx), Some(fr)) =
+                                (opening_span_idx, formatted_range.as_ref())
                             {
                                 if let Some(span) = self.syntax_spans.get_mut(idx) {
                                     span.formatted_range = Some(fr.clone());
@@ -2809,12 +2815,12 @@ impl<
 }
 
 impl<
-        'a,
-        I: Iterator<Item = (Event<'a>, Range<usize>)>,
-        W: StrWrite,
-        E: EmbedContentProvider,
-        R: ImageResolver,
-    > EditorWriter<'a, I, W, E, R>
+    'a,
+    I: Iterator<Item = (Event<'a>, Range<usize>)>,
+    W: StrWrite,
+    E: EmbedContentProvider,
+    R: ImageResolver,
+> EditorWriter<'a, I, W, E, R>
 {
     fn write_embed(
         &mut self,
@@ -2891,10 +2897,7 @@ impl<
             formatted_range: Some(formatted_range.clone()),
         });
 
-        self.record_mapping(
-            range.start + 3..range.end - 2,
-            url_char_start..url_char_end,
-        );
+        self.record_mapping(range.start + 3..range.end - 2, url_char_start..url_char_end);
 
         // 3. Emit closing ]] syntax span
         if raw_text.ends_with("]]") {
@@ -2919,7 +2922,14 @@ impl<
 
         // Collect AT URI for later resolution
         if url.starts_with("at://") || url.starts_with("did:") {
-            self.ref_collector.add_at_embed(url, if title.is_empty() { None } else { Some(title.as_ref()) });
+            self.ref_collector.add_at_embed(
+                url,
+                if title.is_empty() {
+                    None
+                } else {
+                    Some(title.as_ref())
+                },
+            );
         }
 
         // 4. Emit the actual embed content

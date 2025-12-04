@@ -3,6 +3,7 @@
 //! Handles creating/updating/loading AT Protocol notebook entries.
 
 use dioxus::prelude::*;
+use jacquard::cowstr::ToCowStr;
 use jacquard::types::collection::Collection;
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::recordkey::RecordKey;
@@ -171,7 +172,13 @@ pub async fn publish_entry(
     for uri in at_embed_uris {
         match fetcher.confirm_record_ref(&uri).await {
             Ok(strong_ref) => {
-                record_embeds.push(RecordEmbed::new().record(strong_ref).build());
+                // Store original URI in name field for lookup when authority differs (handle vs DID)
+                record_embeds.push(
+                    RecordEmbed::new()
+                        .name(uri.to_cowstr().into_static())
+                        .record(strong_ref)
+                        .build(),
+                );
             }
             Err(e) => {
                 tracing::warn!("Failed to resolve embed {}: {}", uri, e);
@@ -180,6 +187,11 @@ pub async fn publish_entry(
     }
 
     // Build embeds if we have images or records
+    tracing::debug!(
+        "[publish_entry] Building embeds: {} images, {} record embeds",
+        editor_images.len(),
+        record_embeds.len()
+    );
     let entry_embeds = if editor_images.is_empty() && record_embeds.is_empty() {
         None
     } else {
@@ -428,7 +440,10 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
 
     let mut show_dialog = use_signal(|| false);
     let mut notebook_title = use_signal(|| {
-        props.target_notebook.clone().unwrap_or_else(|| String::from("Default"))
+        props
+            .target_notebook
+            .clone()
+            .unwrap_or_else(|| String::from("Default"))
     });
     let mut use_notebook = use_signal(|| props.target_notebook.is_some());
     let mut is_publishing = use_signal(|| false);

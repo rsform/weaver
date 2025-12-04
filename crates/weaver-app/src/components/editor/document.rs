@@ -26,6 +26,7 @@ use jacquard::from_json_value;
 use jacquard::types::string::AtUri;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::embed::images::Image;
+use weaver_api::sh_weaver::embed::records::RecordEmbed;
 use weaver_api::sh_weaver::notebook::entry::Entry;
 
 /// Helper for working with editor images.
@@ -612,6 +613,37 @@ impl EditorDocument {
                 }
             }
         }
+    }
+
+    // --- Record embed methods ---
+
+    /// Get the records LoroList from embeds, creating it if needed.
+    fn get_records_list(&self) -> LoroList {
+        self.embeds
+            .get_or_create_container("records", LoroList::new())
+            .unwrap()
+    }
+
+    /// Get all record embeds as a Vec.
+    pub fn record_embeds(&self) -> Vec<RecordEmbed<'static>> {
+        let records_list = self.get_records_list();
+        let mut result = Vec::new();
+
+        for i in 0..records_list.len() {
+            if let Some(record_embed) = self.loro_value_to_record_embed(&records_list, i) {
+                result.push(record_embed);
+            }
+        }
+
+        result
+    }
+
+    /// Convert a LoroValue at the given index to a RecordEmbed.
+    fn loro_value_to_record_embed(&self, list: &LoroList, index: usize) -> Option<RecordEmbed<'static>> {
+        let value = list.get(index)?;
+        let loro_value = value.as_value()?;
+        let json = loro_value.to_json_value();
+        from_json_value::<RecordEmbed>(json).ok().map(|r| r.into_static())
     }
 
     /// Insert text into content and record edit info for incremental rendering.

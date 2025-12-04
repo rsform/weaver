@@ -50,8 +50,8 @@ expression: result
   html: "<p id=\"n1\">Second paragraph.</p>\n"
   offset_map:
     - byte_range:
-        - 18
-        - 18
+        - 0
+        - 0
       char_range:
         - 18
         - 18
@@ -60,8 +60,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 18
-        - 35
+        - 0
+        - 17
       char_range:
         - 18
         - 35

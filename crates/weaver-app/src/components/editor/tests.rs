@@ -728,8 +728,8 @@ fn test_blockquote_needs_space_or_newline() {
       html: "<blockquote>\n<p id=\"n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"1\">&gt;</span>quote</p>\n</blockquote>\n"
       offset_map:
         - byte_range:
-            - 7
-            - 7
+            - 1
+            - 1
           char_range:
             - 0
             - 0
@@ -738,8 +738,8 @@ fn test_blockquote_needs_space_or_newline() {
           child_index: 0
           utf16_len: 0
         - byte_range:
-            - 6
-            - 7
+            - 0
+            - 1
           char_range:
             - 0
             - 1
@@ -748,8 +748,8 @@ fn test_blockquote_needs_space_or_newline() {
           child_index: ~
           utf16_len: 1
         - byte_range:
-            - 7
-            - 12
+            - 1
+            - 6
           char_range:
             - 1
             - 6

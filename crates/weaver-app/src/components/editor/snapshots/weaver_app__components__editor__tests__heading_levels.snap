@@ -57,11 +57,11 @@ expression: result
   char_range:
     - 6
     - 12
-  html: "<h2 data-node-id=\"n1\"><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"0\" data-char-end=\"3\">## </span>H2\n</h2>\n"
+  html: "<h2 data-node-id=\"n1\"><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"6\" data-char-end=\"9\">## </span>H2\n</h2>\n"
   offset_map:
     - byte_range:
-        - 6
-        - 6
+        - 0
+        - 0
       char_range:
         - 6
         - 6
@@ -70,8 +70,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 6
-        - 9
+        - 0
+        - 3
       char_range:
         - 6
         - 9
@@ -80,8 +80,8 @@ expression: result
       child_index: ~
       utf16_len: 3
     - byte_range:
-        - 9
-        - 11
+        - 3
+        - 5
       char_range:
         - 9
         - 11
@@ -90,8 +90,8 @@ expression: result
       child_index: ~
       utf16_len: 2
     - byte_range:
-        - 11
-        - 12
+        - 5
+        - 6
       char_range:
         - 11
         - 12
@@ -106,11 +106,11 @@ expression: result
   char_range:
     - 13
     - 20
-  html: "<h3 data-node-id=\"n2\"><span class=\"md-syntax-block\" data-syn-id=\"s2\" data-char-start=\"0\" data-char-end=\"4\">### </span>H3\n</h3>\n"
+  html: "<h3 data-node-id=\"n2\"><span class=\"md-syntax-block\" data-syn-id=\"s2\" data-char-start=\"13\" data-char-end=\"17\">### </span>H3\n</h3>\n"
   offset_map:
     - byte_range:
-        - 13
-        - 13
+        - 0
+        - 0
       char_range:
         - 13
         - 13
@@ -119,8 +119,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 13
-        - 17
+        - 0
+        - 4
       char_range:
         - 13
         - 17
@@ -129,8 +129,8 @@ expression: result
       child_index: ~
       utf16_len: 4
     - byte_range:
-        - 17
-        - 19
+        - 4
+        - 6
       char_range:
         - 17
         - 19
@@ -139,8 +139,8 @@ expression: result
       child_index: ~
       utf16_len: 2
     - byte_range:
-        - 19
-        - 20
+        - 6
+        - 7
       char_range:
         - 19
         - 20
@@ -155,11 +155,11 @@ expression: result
   char_range:
     - 21
     - 28
-  html: "<h4 data-node-id=\"n3\"><span class=\"md-syntax-block\" data-syn-id=\"s3\" data-char-start=\"0\" data-char-end=\"5\">#### </span>H4</h4>\n"
+  html: "<h4 data-node-id=\"n3\"><span class=\"md-syntax-block\" data-syn-id=\"s3\" data-char-start=\"21\" data-char-end=\"26\">#### </span>H4</h4>\n"
   offset_map:
     - byte_range:
-        - 21
-        - 21
+        - 0
+        - 0
       char_range:
         - 21
         - 21
@@ -168,8 +168,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 21
-        - 26
+        - 0
+        - 5
       char_range:
         - 21
         - 26
@@ -178,8 +178,8 @@ expression: result
       child_index: ~
       utf16_len: 5
     - byte_range:
-        - 26
-        - 28
+        - 5
+        - 7
       char_range:
         - 26
         - 28

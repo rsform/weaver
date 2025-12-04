@@ -75,10 +75,9 @@ where
     A: AgentSessionExt,
 {
     // Use GetPosts for richer data (author info, engagement counts)
-    let response = agent
-        .send(GetPosts::new().uris(vec![uri.clone()]).build())
-        .await
-        .map_err(|e| AtProtoPreprocessError::FetchFailed(e.to_string()))?;
+    let request = GetPosts::new().uris(vec![uri.clone()]).build();
+    let response = agent.send(request).await;
+    let response = response.map_err(|e| AtProtoPreprocessError::FetchFailed(e.to_string()))?;
 
     let output = response
         .into_output()
@@ -123,10 +122,10 @@ pub async fn fetch_and_render_entry<A>(
 where
     A: AgentSessionExt,
 {
-    use weaver_common::agent::WeaverExt;
-    use markdown_weaver::Parser;
     use crate::atproto::writer::ClientWriter;
     use crate::default_md_options;
+    use markdown_weaver::Parser;
+    use weaver_common::agent::WeaverExt;
 
     // Get rkey from URI
     let rkey = uri
@@ -144,7 +143,9 @@ where
     let mut content_html = String::new();
     ClientWriter::<_, _, ()>::new(parser, &mut content_html)
         .run()
-        .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {}", e)))?;
+        .map_err(|e| {
+            AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {}", e))
+        })?;
 
     // Generate unique ID for the toggle checkbox
     let toggle_id = format!("entry-toggle-{}", rkey.as_ref());
@@ -212,7 +213,10 @@ where
     let collection = uri.collection().map(|c| c.as_ref());
 
     match collection {
-        Some("app.bsky.feed.post") => fetch_and_render_post(uri, agent).await,
+        Some("app.bsky.feed.post") => {
+            let result = fetch_and_render_post(uri, agent).await;
+            result
+        }
         Some("app.bsky.actor.profile") => {
             // Extract DID from URI authority
             fetch_and_render_profile(uri.authority(), agent).await
@@ -224,14 +228,18 @@ where
 }
 
 /// Render a profile from ProfileDataViewInner (weaver, bsky, or tangled)
-fn render_profile_data_view(inner: &ProfileDataViewInner<'_>) -> Result<String, AtProtoPreprocessError> {
+fn render_profile_data_view(
+    inner: &ProfileDataViewInner<'_>,
+) -> Result<String, AtProtoPreprocessError> {
     let mut html = String::new();
 
     match inner {
         ProfileDataViewInner::ProfileView(profile) => {
             // Weaver profile - link to bsky for now
             let profile_url = format!("https://bsky.app/profile/{}", profile.handle.as_ref());
-            html.push_str("<span class=\"atproto-embed atproto-profile\" contenteditable=\"false\">");
+            html.push_str(
+                "<span class=\"atproto-embed atproto-profile\" contenteditable=\"false\">",
+            );
 
             // Background link covers whole card
             html.push_str("<a class=\"embed-card-link\" href=\"");
@@ -267,7 +275,9 @@ fn render_profile_data_view(inner: &ProfileDataViewInner<'_>) -> Result<String, 
         ProfileDataViewInner::ProfileViewDetailed(profile) => {
             // Bsky profile
             let profile_url = format!("https://bsky.app/profile/{}", profile.handle.as_ref());
-            html.push_str("<span class=\"atproto-embed atproto-profile\" contenteditable=\"false\">");
+            html.push_str(
+                "<span class=\"atproto-embed atproto-profile\" contenteditable=\"false\">",
+            );
 
             // Background link covers whole card
             html.push_str("<a class=\"embed-card-link\" href=\"");
@@ -321,7 +331,9 @@ fn render_profile_data_view(inner: &ProfileDataViewInner<'_>) -> Result<String, 
         ProfileDataViewInner::TangledProfileView(profile) => {
             // Tangled profile - link to tangled
             let profile_url = format!("https://tangled.sh/@{}", profile.handle.as_ref());
-            html.push_str("<span class=\"atproto-embed atproto-profile\" contenteditable=\"false\">");
+            html.push_str(
+                "<span class=\"atproto-embed atproto-profile\" contenteditable=\"false\">",
+            );
 
             // Background link covers whole card
             html.push_str("<a class=\"embed-card-link\" href=\"");
@@ -346,7 +358,9 @@ fn render_profile_data_view(inner: &ProfileDataViewInner<'_>) -> Result<String, 
         }
         ProfileDataViewInner::Unknown(data) => {
             // Unknown - no link, just render
-            html.push_str("<span class=\"atproto-embed atproto-profile\" contenteditable=\"false\">");
+            html.push_str(
+                "<span class=\"atproto-embed atproto-profile\" contenteditable=\"false\">",
+            );
             html.push_str(&render_generic_data(data));
             html.push_str("</span>");
         }
@@ -435,17 +449,22 @@ fn render_generic_record(
 
     html.push_str("<span class=\"atproto-embed atproto-record\" contenteditable=\"false\">");
 
-    // Show record type as header
+    // Show record type as header (full NSID)
     if let Some(collection) = uri.collection() {
-        // Extract just the record name (e.g., "entry" from "sh.weaver.notebook.entry")
-        let type_name = collection.as_ref().rsplit('.').next().unwrap_or(collection.as_ref());
         html.push_str("<span class=\"embed-author-handle\">");
-        html.push_str(&html_escape(type_name));
+        html.push_str(&html_escape(collection.as_ref()));
         html.push_str("</span>");
     }
 
     // Priority fields to show first (in order)
-    let priority_fields = ["name", "displayName", "title", "text", "description", "content"];
+    let priority_fields = [
+        "name",
+        "displayName",
+        "title",
+        "text",
+        "description",
+        "content",
+    ];
     let mut shown_fields = Vec::new();
 
     if let Some(obj) = data.as_object() {
@@ -524,7 +543,10 @@ pub fn render_author_block(author: &ProfileViewBasic<'_>, link_to_profile: bool)
 }
 
 /// Render author block from ProfileView (has same fields as ProfileViewBasic)
-pub fn render_author_block_full(author: &weaver_api::app_bsky::actor::ProfileView<'_>, link_to_profile: bool) -> String {
+pub fn render_author_block_full(
+    author: &weaver_api::app_bsky::actor::ProfileView<'_>,
+    link_to_profile: bool,
+) -> String {
     render_author_block_inner(
         author.avatar.as_ref().map(|u| u.as_ref()),
         author.display_name.as_ref().map(|s| s.as_ref()),
@@ -704,10 +726,9 @@ pub fn render_quoted_record(record: &ViewRecord<'_>) -> String {
         }
         Some("app.bsky.feed.generator") => {
             // Custom feed - show feed info with type label
-            if let Ok(generator) =
-                jacquard::from_data::<weaver_api::app_bsky::feed::generator::Generator>(
-                    &record.value,
-                )
+            if let Ok(generator) = jacquard::from_data::<
+                weaver_api::app_bsky::feed::generator::Generator,
+            >(&record.value)
             {
                 html.push_str("<span class=\"embed-type\">Custom Feed</span>");
                 html.push_str("<span class=\"embed-author-name\">");
@@ -740,7 +761,10 @@ pub fn render_quoted_record(record: &ViewRecord<'_>) -> String {
         }
         Some("app.bsky.graph.starterpack") => {
             // Starter pack
-            if let Ok(sp) = jacquard::from_data::<weaver_api::app_bsky::graph::starterpack::Starterpack>(&record.value) {
+            if let Ok(sp) = jacquard::from_data::<
+                weaver_api::app_bsky::graph::starterpack::Starterpack,
+            >(&record.value)
+            {
                 html.push_str("<span class=\"embed-type\">Starter Pack</span>");
                 html.push_str("<span class=\"embed-author-name\">");
                 html.push_str(&html_escape(sp.name.as_ref()));
@@ -773,7 +797,9 @@ pub fn render_quoted_record(record: &ViewRecord<'_>) -> String {
 }
 
 /// Render an embed item from a ViewRecord (nested embeds in quotes)
-fn render_view_record_embed(embed: &weaver_api::app_bsky::embed::record::ViewRecordEmbedsItem<'_>) -> String {
+fn render_view_record_embed(
+    embed: &weaver_api::app_bsky::embed::record::ViewRecordEmbedsItem<'_>,
+) -> String {
     use weaver_api::app_bsky::embed::record::ViewRecordEmbedsItem;
 
     match embed {
@@ -995,7 +1021,12 @@ fn render_record_embed(record: &ViewUnionRecord<'_>) -> String {
             html.push_str("</span>"); // end author
 
             // Description
-            if let Some(desc) = sp.record.query("description").single().and_then(|d| d.as_str()) {
+            if let Some(desc) = sp
+                .record
+                .query("description")
+                .single()
+                .and_then(|d| d.as_str())
+            {
                 html.push_str("<span class=\"embed-description\">");
                 html.push_str(&html_escape(desc));
                 html.push_str("</span>");
@@ -1029,16 +1060,25 @@ fn render_record_embed(record: &ViewUnionRecord<'_>) -> String {
 ///
 /// Used as fallback for Unknown variants of open unions.
 fn render_generic_data(data: &Data<'_>) -> String {
+    render_generic_data_with_depth(data, 0)
+}
+
+/// Render generic data with depth tracking for nested objects
+fn render_generic_data_with_depth(data: &Data<'_>, depth: u8) -> String {
     let mut html = String::new();
 
-    html.push_str("<span class=\"embed-record-card\">");
+    // Only wrap in card at top level
+    let is_nested = depth > 0;
+    if is_nested {
+        html.push_str("<span class=\"embed-fields\">");
+    } else {
+        html.push_str("<span class=\"embed-record-card\">");
+    }
 
     // Show record type as header if present
     if let Some(record_type) = data.type_discriminator() {
-        // Extract just the record name from full NSID (e.g., "app.bsky.feed.post" -> "post")
-        let type_name = record_type.rsplit('.').next().unwrap_or(record_type);
         html.push_str("<span class=\"embed-author-handle\">");
-        html.push_str(&html_escape(type_name));
+        html.push_str(&html_escape(record_type));
         html.push_str("</span>");
     }
 
@@ -1067,11 +1107,13 @@ fn render_generic_data(data: &Data<'_>) -> String {
         }
 
         // Show remaining fields as a simple list
-        html.push_str("<span class=\"embed-fields\">");
+        if !is_nested {
+            html.push_str("<span class=\"embed-fields\">");
+        }
         for (key, value) in obj.iter() {
             let key_str: &str = key.as_ref();
 
-            // Skip already shown, internal fields, and complex nested objects
+            // Skip already shown, internal fields
             if shown_fields.contains(&key_str)
                 || key_str.starts_with('$')
                 || key_str == "facets"
@@ -1080,7 +1122,7 @@ fn render_generic_data(data: &Data<'_>) -> String {
                 continue;
             }
 
-            if let Some(formatted) = format_field_value(key_str, value) {
+            if let Some(formatted) = format_field_value_with_depth(key_str, value, depth) {
                 html.push_str("<span class=\"embed-field\">");
                 html.push_str("<span class=\"embed-field-name\">");
                 html.push_str(&html_escape(&format_field_name(key_str)));
@@ -1089,7 +1131,9 @@ fn render_generic_data(data: &Data<'_>) -> String {
                 html.push_str("</span>");
             }
         }
-        html.push_str("</span>");
+        if !is_nested {
+            html.push_str("</span>");
+        }
     }
 
     html.push_str("</span>");
@@ -1114,6 +1158,14 @@ fn format_field_name(name: &str) -> String {
 
 /// Format a field value for display, returning None for complex/unrenderable values
 fn format_field_value(key: &str, value: &Data<'_>) -> Option<String> {
+    format_field_value_with_depth(key, value, 0)
+}
+
+/// Maximum nesting depth for rendering nested objects
+const MAX_NESTED_DEPTH: u8 = 2;
+
+/// Format a field value for display with depth tracking
+fn format_field_value_with_depth(key: &str, value: &Data<'_>, depth: u8) -> Option<String> {
     // String values - detect AT Protocol types
     if let Some(s) = value.as_str() {
         return Some(format_string_value(key, s));
@@ -1126,21 +1178,100 @@ fn format_field_value(key: &str, value: &Data<'_>) -> Option<String> {
 
     // Booleans
     if let Some(b) = value.as_boolean() {
-        let class = if b { "embed-field-bool-true" } else { "embed-field-bool-false" };
-        return Some(format!("<span class=\"{}\">{}</span>", class, if b { "yes" } else { "no" }));
-    }
-
-    // Arrays - show count
-    if let Some(arr) = value.as_array() {
-        let len = arr.len();
+        let class = if b {
+            "embed-field-bool-true"
+        } else {
+            "embed-field-bool-false"
+        };
         return Some(format!(
-            "<span class=\"embed-field-count\">{} item{}</span>",
-            len,
-            if len == 1 { "" } else { "s" }
+            "<span class=\"{}\">{}</span>",
+            class,
+            if b { "yes" } else { "no" }
         ));
     }
 
-    // Skip nested objects - too complex for inline display
+    // Arrays - show count or render items if simple
+    if let Some(arr) = value.as_array() {
+        return Some(format_array_value(arr, depth));
+    }
+
+    // Nested objects - render if within depth limit
+    if value.as_object().is_some() {
+        if depth < MAX_NESTED_DEPTH {
+            return Some(render_generic_data_with_depth(value, depth + 1));
+        } else {
+            // At max depth, just show field count
+            let count = value.as_object().map(|o| o.len()).unwrap_or(0);
+            return Some(format!(
+                "<span class=\"embed-field-count\">{} field{}</span>",
+                count,
+                if count == 1 { "" } else { "s" }
+            ));
+        }
+    }
+
+    None
+}
+
+/// Format an array value, rendering items if simple enough
+fn format_array_value(arr: &jacquard::Array<'_>, depth: u8) -> String {
+    let len = arr.len();
+
+    // Empty array
+    if len == 0 {
+        return "<span class=\"embed-field-count\">empty</span>".to_string();
+    }
+
+    // For small arrays of simple values, show them inline
+    if len <= 3 && depth < MAX_NESTED_DEPTH {
+        let mut items = Vec::new();
+        let mut all_simple = true;
+
+        for item in arr.iter() {
+            if let Some(formatted) = format_simple_value(item) {
+                items.push(formatted);
+            } else {
+                all_simple = false;
+                break;
+            }
+        }
+
+        if all_simple {
+            return format!(
+                "<span class=\"embed-field-value\">[{}]</span>",
+                items.join(", ")
+            );
+        }
+    }
+
+    // Otherwise just show count
+    format!(
+        "<span class=\"embed-field-count\">{} item{}</span>",
+        len,
+        if len == 1 { "" } else { "s" }
+    )
+}
+
+/// Format a simple value (string, number, bool) without field name context
+fn format_simple_value(value: &Data<'_>) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        // Keep it short for array display
+        let display = if s.len() > 50 {
+            format!("{}…", &s[..50])
+        } else {
+            s.to_string()
+        };
+        return Some(format!("\"{}\"", html_escape(&display)));
+    }
+
+    if let Some(n) = value.as_integer() {
+        return Some(n.to_string());
+    }
+
+    if let Some(b) = value.as_boolean() {
+        return Some(if b { "true" } else { "false" }.to_string());
+    }
+
     None
 }
 
@@ -1173,17 +1304,31 @@ fn format_string_value(key: &str, s: &str) -> String {
     // Datetime fields - show just the date
     if key.ends_with("At") || key == "createdAt" || key == "indexedAt" {
         let date_part = s.split('T').next().unwrap_or(s);
-        return format!("<span class=\"embed-field-date\">{}</span>", html_escape(date_part));
+        return format!(
+            "<span class=\"embed-field-date\">{}</span>",
+            html_escape(date_part)
+        );
     }
 
     // NSID (e.g., app.bsky.feed.post)
-    if s.contains('.') && s.chars().all(|c| c.is_alphanumeric() || c == '.') && s.matches('.').count() >= 2 {
+    if s.contains('.')
+        && s.chars().all(|c| c.is_alphanumeric() || c == '.')
+        && s.matches('.').count() >= 2
+    {
         return format!("<span class=\"embed-field-nsid\">{}</span>", html_escape(s));
     }
 
     // Handle (contains dots, no colons or slashes)
-    if s.contains('.') && !s.contains(':') && !s.contains('/') && s.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
-        return format!("<span class=\"embed-field-handle\">@{}</span>", html_escape(s));
+    if s.contains('.')
+        && !s.contains(':')
+        && !s.contains('/')
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_')
+    {
+        return format!(
+            "<span class=\"embed-field-handle\">@{}</span>",
+            html_escape(s)
+        );
     }
 
     // Plain string
@@ -1197,15 +1342,24 @@ fn format_aturi_display(uri: &str) -> String {
         let mut result = String::from("<span class=\"aturi-scheme\">at://</span>");
 
         if !parts.is_empty() {
-            result.push_str(&format!("<span class=\"aturi-authority\">{}</span>", html_escape(parts[0])));
+            result.push_str(&format!(
+                "<span class=\"aturi-authority\">{}</span>",
+                html_escape(parts[0])
+            ));
         }
         if parts.len() > 1 {
             result.push_str("<span class=\"aturi-slash\">/</span>");
-            result.push_str(&format!("<span class=\"aturi-collection\">{}</span>", html_escape(parts[1])));
+            result.push_str(&format!(
+                "<span class=\"aturi-collection\">{}</span>",
+                html_escape(parts[1])
+            ));
         }
         if parts.len() > 2 {
             result.push_str("<span class=\"aturi-slash\">/</span>");
-            result.push_str(&format!("<span class=\"aturi-rkey\">{}</span>", html_escape(parts[2])));
+            result.push_str(&format!(
+                "<span class=\"aturi-rkey\">{}</span>",
+                html_escape(parts[2])
+            ));
         }
         result
     } else {
@@ -1229,7 +1383,10 @@ fn format_did_display(did: &str) -> String {
             );
         }
     }
-    format!("<span class=\"embed-field-did\">{}</span>", html_escape(did))
+    format!(
+        "<span class=\"embed-field-did\">{}</span>",
+        html_escape(did)
+    )
 }
 
 // =============================================================================

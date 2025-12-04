@@ -50,8 +50,8 @@ expression: result
   html: "<p id=\"n1\">Two.\n</p>\n"
   offset_map:
     - byte_range:
-        - 6
-        - 6
+        - 0
+        - 0
       char_range:
         - 6
         - 6
@@ -60,8 +60,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 6
-        - 10
+        - 0
+        - 4
       char_range:
         - 6
         - 10
@@ -70,8 +70,8 @@ expression: result
       child_index: ~
       utf16_len: 4
     - byte_range:
-        - 10
-        - 11
+        - 4
+        - 5
       char_range:
         - 10
         - 11
@@ -89,8 +89,8 @@ expression: result
   html: "<p id=\"n2\">Three.</p>\n"
   offset_map:
     - byte_range:
-        - 12
-        - 12
+        - 0
+        - 0
       char_range:
         - 12
         - 12
@@ -99,8 +99,8 @@ expression: result
       child_index: 0
       utf16_len: 0
     - byte_range:
-        - 12
-        - 18
+        - 0
+        - 6
       char_range:
         - 12
         - 18

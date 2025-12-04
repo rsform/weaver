@@ -652,13 +652,28 @@ a.embed-author-name:hover {{
 .embed-fields {{
     display: block;
     margin-top: 0.5rem;
-    font-size: 0.85em;
+    font-size: 0.85rem;
     color: var(--color-muted);
 }}
 
 .embed-field {{
     display: block;
     margin-top: 0.25rem;
+}}
+
+/* Nested fields get indentation */
+.embed-fields .embed-fields {{
+    display: block;
+    margin-top: 0.5rem;
+    margin-left: 1rem;
+    padding-left: 0.5rem;
+    border-left: 1px solid var(--color-border);
+}}
+
+/* Type label inside fields should be block with spacing */
+.embed-fields > .embed-author-handle {{
+    display: block;
+    margin-bottom: 0.25rem;
 }}
 
 .embed-field-name {{
@@ -748,7 +763,6 @@ a.embed-author-name:hover {{
 .atproto-record > .embed-author-handle {{
     display: block;
     margin-bottom: 0.25rem;
-    text-transform: capitalize;
 }}
 
 .atproto-record > .embed-author-name {{

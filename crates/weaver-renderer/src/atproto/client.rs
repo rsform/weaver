@@ -104,15 +104,47 @@ impl<A: AgentSession + IdentityResolver> EmbedResolver for DefaultEmbedResolver<
 }
 
 impl EmbedResolver for () {
-    async fn resolve_profile(&self, uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
+    async fn resolve_profile(&self, _uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
         Ok("".to_string())
+    }
+
+    async fn resolve_post(&self, _uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
+        Ok("".to_string())
+    }
+
+    async fn resolve_markdown(
+        &self,
+        _url: &str,
+        _depth: usize,
+    ) -> Result<String, ClientRenderError> {
+        Ok("".to_string())
+    }
+}
+
+impl EmbedResolver for ResolvedContent {
+    async fn resolve_profile(&self, uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
+        self.get_embed_content(uri)
+            .map(|s| s.to_string())
+            .ok_or_else(|| ClientRenderError::EntryFetch {
+                uri: uri.to_string(),
+                source: "Not in pre-resolved content".into(),
+            })
     }
 
     async fn resolve_post(&self, uri: &AtUri<'_>) -> Result<String, ClientRenderError> {
-        Ok("".to_string())
+        self.get_embed_content(uri)
+            .map(|s| s.to_string())
+            .ok_or_else(|| ClientRenderError::EntryFetch {
+                uri: uri.to_string(),
+                source: "Not in pre-resolved content".into(),
+            })
     }
 
-    async fn resolve_markdown(&self, url: &str, depth: usize) -> Result<String, ClientRenderError> {
+    async fn resolve_markdown(
+        &self,
+        _url: &str,
+        _depth: usize,
+    ) -> Result<String, ClientRenderError> {
         Ok("".to_string())
     }
 }
@@ -159,8 +191,22 @@ impl<'a, R: EmbedResolver> ClientContext<'a, R> {
         }
     }
 
+    /// Add an entry index for wikilink resolution
+    pub fn with_entry_index(mut self, index: EntryIndex) -> Self {
+        self.entry_index = Some(index);
+        self
+    }
+
+    /// Add pre-resolved content for sync rendering
+    pub fn with_resolved_content(mut self, content: ResolvedContent) -> Self {
+        self.resolved_content = Some(content);
+        self
+    }
+}
+
+impl<'a> ClientContext<'a> {
     /// Add an embed resolver for fetching embed content
-    pub fn with_embed_resolver(self, resolver: Arc<R>) -> ClientContext<'a, R> {
+    pub fn with_embed_resolver<R: EmbedResolver>(self, resolver: Arc<R>) -> ClientContext<'a, R> {
         ClientContext {
             entry: self.entry,
             creator_did: self.creator_did,
@@ -172,18 +218,6 @@ impl<'a, R: EmbedResolver> ClientContext<'a, R> {
             frontmatter: self.frontmatter,
             title: self.title,
         }
-    }
-
-    /// Add an entry index for wikilink resolution
-    pub fn with_entry_index(mut self, index: EntryIndex) -> Self {
-        self.entry_index = Some(index);
-        self
-    }
-
-    /// Add pre-resolved content for sync rendering
-    pub fn with_resolved_content(mut self, content: ResolvedContent) -> Self {
-        self.resolved_content = Some(content);
-        self
     }
 }
 

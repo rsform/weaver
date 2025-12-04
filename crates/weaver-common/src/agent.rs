@@ -13,7 +13,7 @@ use jacquard::client::{AgentError, AgentErrorKind, AgentSession, AgentSessionExt
 use jacquard::error::ClientError;
 use jacquard::prelude::*;
 use jacquard::types::blob::{BlobRef, MimeType};
-use jacquard::types::string::{AtUri, Did, RecordKey};
+use jacquard::types::string::{AtUri, Did, RecordKey, Rkey};
 use jacquard::types::tid::Tid;
 use jacquard::types::uri::Uri;
 use jacquard::url::Url;
@@ -79,7 +79,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
         &'a self,
         blob: Bytes,
         url_path: &'a str,
-        prev: Option<Tid>,
+        rkey: Option<RecordKey<Rkey<'a>>>,
     ) -> impl Future<Output = Result<(StrongRef<'a>, PublishedBlob<'a>), WeaverError>> + 'a {
         async move {
             let mime_type =
@@ -90,9 +90,15 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 .path(url_path)
                 .upload(BlobRef::Blob(blob))
                 .build();
-            let tid = W_TICKER.lock().await.next(prev);
+            let record_key = match rkey {
+                Some(key) => key,
+                None => {
+                    let tid = W_TICKER.lock().await.next(None);
+                    RecordKey(Rkey::new_owned(tid.as_str())?)
+                }
+            };
             let record = self
-                .create_record(publish_record.clone(), Some(RecordKey::any(tid.as_str())?))
+                .create_record(publish_record.clone(), Some(record_key))
                 .await?;
             let strong_ref = StrongRef::new().uri(record.uri).cid(record.cid).build();
 
