@@ -34,6 +34,7 @@ use weaver_api::com_atproto::repo::create_record::CreateRecord;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::com_atproto::sync::get_blob::GetBlob;
 use weaver_api::sh_weaver::edit::diff::Diff;
+use weaver_api::sh_weaver::edit::draft::Draft;
 use weaver_api::sh_weaver::edit::root::Root;
 use weaver_api::sh_weaver::edit::{DocRef, DocRefValue, DraftRef, EntryRef};
 use weaver_common::constellation::{GetBacklinksQuery, RecordId};
@@ -46,13 +47,18 @@ use loro::LoroDoc;
 
 const ROOT_NSID: &str = "sh.weaver.edit.root";
 const DIFF_NSID: &str = "sh.weaver.edit.diff";
+const DRAFT_NSID: &str = "sh.weaver.edit.draft";
 const CONSTELLATION_URL: &str = "https://constellation.microcosm.blue";
 
 /// Build a DocRef for either a published entry or an unpublished draft.
 ///
 /// If entry_uri and entry_cid are provided, creates an EntryRef.
-/// Otherwise, creates a DraftRef with the given draft key.
+/// Otherwise, creates a DraftRef with a synthetic AT-URI for Constellation indexing.
+///
+/// The synthetic URI format is: `at://{did}/sh.weaver.edit.draft/{rkey}`
+/// This allows Constellation to index drafts as backlinks, enabling discovery.
 fn build_doc_ref(
+    did: &Did<'_>,
     draft_key: &str,
     entry_uri: Option<&AtUri<'_>>,
     entry_cid: Option<&Cid<'_>>,
@@ -68,14 +74,57 @@ fn build_doc_ref(
             })),
             extra_data: None,
         },
-        _ => DocRef {
-            value: DocRefValue::DraftRef(Box::new(DraftRef {
-                draft_key: CowStr::from(draft_key.to_string()),
+        _ => {
+            // Transform localStorage key to synthetic AT-URI for Constellation indexing
+            // localStorage uses "new:{tid}" or AT-URI, PDS uses "at://{did}/sh.weaver.edit.draft/{rkey}"
+            let rkey = if let Some(tid) = draft_key.strip_prefix("new:") {
+                // New draft: extract TID as rkey
+                tid.to_string()
+            } else if draft_key.starts_with("at://") {
+                // Editing existing entry: use the entry's rkey
+                draft_key
+                    .split('/')
+                    .last()
+                    .unwrap_or(draft_key)
+                    .to_string()
+            } else if draft_key.starts_with("did:") && draft_key.contains(':') {
+                // Old canonical format "did:xxx:rkey" - extract rkey
+                draft_key
+                    .rsplit(':')
+                    .next()
+                    .unwrap_or(draft_key)
+                    .to_string()
+            } else {
+                // Fallback: use as-is
+                draft_key.to_string()
+            };
+
+            // Build AT-URI pointing to actual draft record: at://{did}/sh.weaver.edit.draft/{rkey}
+            let canonical_uri = format!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
+
+            DocRef {
+                value: DocRefValue::DraftRef(Box::new(DraftRef {
+                    draft_key: CowStr::from(canonical_uri),
+                    extra_data: None,
+                })),
                 extra_data: None,
-            })),
-            extra_data: None,
-        },
+            }
+        }
     }
+}
+
+/// Extract (authority, rkey) from a canonical draft key (synthetic AT-URI).
+///
+/// Parses `at://{authority}/sh.weaver.edit.draft/{rkey}` and returns the components.
+/// Authority can be a DID or handle.
+#[allow(dead_code)]
+pub fn parse_draft_key(
+    draft_key: &str,
+) -> Option<(jacquard::types::ident::AtIdentifier<'static>, String)> {
+    let uri = AtUri::new(draft_key).ok()?;
+    let authority = uri.authority().clone().into_static();
+    let rkey = uri.rkey()?.0.as_str().to_string();
+    Some((authority, rkey))
 }
 
 /// Result of a sync operation.
@@ -129,6 +178,186 @@ pub async fn find_edit_root_for_entry(
     Ok(output.records.into_iter().next().map(|r| r.into_static()))
 }
 
+/// Find the edit root for a draft using constellation backlinks.
+///
+/// Queries constellation for `sh.weaver.edit.root` records that reference
+/// the given draft URI via the `.doc.value.draft_key` path.
+///
+/// The draft_uri should be in canonical format: `at://{did}/sh.weaver.edit.draft/{rkey}`
+pub async fn find_edit_root_for_draft(
+    fetcher: &Fetcher,
+    draft_uri: &AtUri<'_>,
+) -> Result<Option<RecordId<'static>>, WeaverError> {
+    let constellation_url = Url::parse(CONSTELLATION_URL)
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
+
+    let query = GetBacklinksQuery {
+        subject: Uri::At(draft_uri.clone().into_static()),
+        source: format!("{}:.doc.value.draft_key", ROOT_NSID).into(),
+        cursor: None,
+        did: vec![],
+        limit: 1,
+    };
+
+    let response = fetcher
+        .client
+        .xrpc(constellation_url)
+        .send(&query)
+        .await
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Constellation query failed: {}", e)))?;
+
+    let output = response.into_output().map_err(|e| {
+        WeaverError::InvalidNotebook(format!("Failed to parse constellation response: {}", e))
+    })?;
+
+    Ok(output.records.into_iter().next().map(|r| r.into_static()))
+}
+
+/// Build a canonical draft URI from localStorage key and DID.
+///
+/// Transforms localStorage format ("new:{tid}" or AT-URI) to
+/// draft record URI format: `at://{did}/sh.weaver.edit.draft/{rkey}`
+pub fn build_draft_uri(did: &Did<'_>, draft_key: &str) -> AtUri<'static> {
+    let rkey = if let Some(tid) = draft_key.strip_prefix("new:") {
+        tid.to_string()
+    } else if draft_key.starts_with("at://") {
+        draft_key
+            .split('/')
+            .last()
+            .unwrap_or(draft_key)
+            .to_string()
+    } else {
+        draft_key.to_string()
+    };
+
+    let uri_str = format!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
+    // Safe to unwrap: we're constructing a valid AT-URI
+    AtUri::new(&uri_str).unwrap().into_static()
+}
+
+/// Extract the rkey (TID) from a localStorage draft key.
+fn extract_draft_rkey(draft_key: &str) -> String {
+    if let Some(tid) = draft_key.strip_prefix("new:") {
+        tid.to_string()
+    } else if draft_key.starts_with("at://") {
+        draft_key
+            .split('/')
+            .last()
+            .unwrap_or(draft_key)
+            .to_string()
+    } else {
+        draft_key.to_string()
+    }
+}
+
+/// Create the draft stub record on PDS.
+///
+/// This creates a minimal `sh.weaver.edit.draft` record that acts as an anchor
+/// for edit.root/diff records and enables draft discovery via listRecords.
+async fn create_draft_stub(
+    fetcher: &Fetcher,
+    did: &Did<'_>,
+    rkey: &str,
+) -> Result<(AtUri<'static>, Cid<'static>), WeaverError> {
+    // Build minimal draft record with just createdAt
+    let draft = Draft::new()
+        .created_at(jacquard::types::datetime::Datetime::now())
+        .build();
+
+    let draft_data = to_data(&draft)
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to serialize draft: {}", e)))?;
+
+    let record_key = RecordKey::any(rkey)
+        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
+
+    let collection = Nsid::new(DRAFT_NSID).map_err(WeaverError::AtprotoString)?;
+
+    let request = CreateRecord::new()
+        .repo(AtIdentifier::Did(did.clone().into_static()))
+        .collection(collection)
+        .rkey(record_key)
+        .record(draft_data)
+        .build();
+
+    let response = fetcher
+        .send(request)
+        .await
+        .map_err(jacquard::client::AgentError::from)?;
+
+    let output = response
+        .into_output()
+        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
+
+    Ok((output.uri.into_static(), output.cid.into_static()))
+}
+
+/// Remote draft info from PDS.
+#[derive(Clone, Debug)]
+pub struct RemoteDraft {
+    /// The draft record URI
+    pub uri: AtUri<'static>,
+    /// The rkey (TID) of the draft
+    pub rkey: String,
+    /// When the draft was created
+    pub created_at: String,
+}
+
+/// List all drafts from PDS for the current user.
+///
+/// Returns a list of draft records from `sh.weaver.edit.draft` collection.
+pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>, WeaverError> {
+    use weaver_api::com_atproto::repo::list_records::ListRecords;
+
+    let did = fetcher
+        .current_did()
+        .await
+        .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
+
+    let client = fetcher.get_client();
+    let collection = Nsid::new(DRAFT_NSID).map_err(WeaverError::AtprotoString)?;
+
+    let request = ListRecords::new()
+        .repo(did)
+        .collection(collection)
+        .limit(100)
+        .build();
+
+    let response = client
+        .send(request)
+        .await
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to list drafts: {}", e)))?;
+
+    let output = response.into_output().map_err(|e| {
+        WeaverError::InvalidNotebook(format!("Failed to parse list records response: {}", e))
+    })?;
+
+    tracing::debug!("list_drafts_from_pds: found {} records", output.records.len());
+
+    let mut drafts = Vec::new();
+    for record in output.records {
+        let rkey = record
+            .uri
+            .rkey()
+            .map(|r| r.0.as_str().to_string())
+            .unwrap_or_default();
+
+        tracing::debug!("  Draft record: uri={}, rkey={}", record.uri, rkey);
+
+        // Parse the draft record to get createdAt
+        let created_at = jacquard::from_data::<weaver_api::sh_weaver::edit::draft::Draft>(&record.value)
+            .map(|d| d.created_at.to_string())
+            .unwrap_or_default();
+
+        drafts.push(RemoteDraft {
+            uri: record.uri.into_static(),
+            rkey,
+            created_at,
+        });
+    }
+
+    Ok(drafts)
+}
+
 /// Find all diffs for a root record using constellation backlinks.
 #[allow(dead_code)]
 pub async fn find_diffs_for_root(
@@ -178,6 +407,8 @@ pub async fn find_diffs_for_root(
 ///
 /// Uploads the current Loro snapshot as a blob and creates an `sh.weaver.edit.root`
 /// record referencing the entry (or draft key if unpublished).
+///
+/// For drafts, also creates the `sh.weaver.edit.draft` stub record first.
 pub async fn create_edit_root(
     fetcher: &Fetcher,
     doc: &EditorDocument,
@@ -191,6 +422,24 @@ pub async fn create_edit_root(
         .await
         .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
 
+    // For drafts, create the stub record first (makes it discoverable via listRecords)
+    if entry_uri.is_none() {
+        let rkey = extract_draft_rkey(draft_key);
+        // Try to create draft stub, ignore if it already exists
+        match create_draft_stub(fetcher, &did, &rkey).await {
+            Ok((uri, _cid)) => {
+                tracing::debug!("Created draft stub: {}", uri);
+            }
+            Err(e) => {
+                // Check if it's a "record already exists" error - that's fine
+                let err_str = e.to_string();
+                if !err_str.contains("RecordAlreadyExists") && !err_str.contains("already exists") {
+                    tracing::warn!("Failed to create draft stub (continuing anyway): {}", e);
+                }
+            }
+        }
+    }
+
     // Export full snapshot
     let snapshot = doc.export_snapshot();
 
@@ -202,7 +451,7 @@ pub async fn create_edit_root(
         .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to upload snapshot: {}", e)))?;
 
     // Build DocRef - use EntryRef if published, DraftRef if not
-    let doc_ref = build_doc_ref(draft_key, entry_uri, entry_cid);
+    let doc_ref = build_doc_ref(&did, draft_key, entry_uri, entry_cid);
 
     // Build root record
     let root = Root::new().doc(doc_ref).snapshot(blob_ref).build();
@@ -277,7 +526,7 @@ pub async fn create_diff(
         };
 
     // Build DocRef - use EntryRef if published, DraftRef if not
-    let doc_ref = build_doc_ref(draft_key, entry_uri, entry_cid);
+    let doc_ref = build_doc_ref(&did, draft_key, entry_uri, entry_cid);
 
     // Build root reference
     let root_ref = StrongRef::new()
@@ -464,6 +713,31 @@ pub async fn load_edit_state_from_pds(
         None => return Ok(None),
     };
 
+    load_edit_state_from_root_id(fetcher, root_id).await
+}
+
+/// Load edit state from the PDS for a draft.
+///
+/// Finds the edit root via constellation backlinks using the draft URI,
+/// fetches all diffs, and returns the snapshot + updates.
+pub async fn load_edit_state_from_draft(
+    fetcher: &Fetcher,
+    draft_uri: &AtUri<'_>,
+) -> Result<Option<PdsEditState>, WeaverError> {
+    // Find the edit root for this draft
+    let root_id = match find_edit_root_for_draft(fetcher, draft_uri).await? {
+        Some(id) => id,
+        None => return Ok(None),
+    };
+
+    load_edit_state_from_root_id(fetcher, root_id).await
+}
+
+/// Internal helper to load edit state given a root record ID.
+async fn load_edit_state_from_root_id(
+    fetcher: &Fetcher,
+    root_id: RecordId<'static>,
+) -> Result<Option<PdsEditState>, WeaverError> {
     // Build root URI
     let root_uri = AtUri::new(&format!(
         "at://{}/{}/{}",
@@ -591,6 +865,9 @@ pub async fn load_edit_state_from_pds(
 /// Loads from localStorage and PDS (if available), then merges both using Loro's
 /// CRDT merge. The result is a pre-merged LoroDoc that can be converted to an
 /// EditorDocument inside a reactive context using `use_hook`.
+///
+/// For unpublished drafts, attempts to discover edit state via Constellation
+/// using the synthetic draft URI.
 pub async fn load_and_merge_document(
     fetcher: &Fetcher,
     draft_key: &str,
@@ -601,10 +878,16 @@ pub async fn load_and_merge_document(
     // Load snapshot + entry_ref from localStorage
     let local_data = load_snapshot_from_storage(draft_key);
 
-    // Load from PDS (only if we have an entry URI)
+    // Load from PDS - try entry URI first, then draft discovery
     let pds_state = if let Some(uri) = entry_uri {
+        // Published entry: query by entry URI
         load_edit_state_from_pds(fetcher, uri).await?
+    } else if let Some(did) = fetcher.current_did().await {
+        // Unpublished draft: try to discover via draft URI
+        let draft_uri = build_draft_uri(&did, draft_key);
+        load_edit_state_from_draft(fetcher, &draft_uri).await?
     } else {
+        // Not authenticated, can't query PDS
         None
     };
 
@@ -761,9 +1044,8 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
     let doc = props.document.clone();
     let draft_key = props.draft_key.clone();
 
-    // Check if we're authenticated and have an entry to sync
+    // Check if we're authenticated (drafts can sync via DraftRef even without entry)
     let is_authenticated = auth_state.read().is_authenticated();
-    let has_entry = doc.entry_ref().is_some();
 
     // Auto-sync trigger signal - set to true to trigger a sync
     let mut trigger_sync = use_signal(|| false);
@@ -834,8 +1116,8 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
             return;
         }
 
-        // Check if authenticated and has entry
-        if !is_authenticated || !has_entry {
+        // Check if authenticated (drafts can sync too via DraftRef)
+        if !is_authenticated {
             return;
         }
 
@@ -889,11 +1171,9 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
         trigger_sync.set(true);
     };
 
-    // Determine display state
+    // Determine display state (drafts can sync too via DraftRef)
     let display_state = if !is_authenticated {
         SyncState::Disabled
-    } else if !has_entry {
-        SyncState::Disabled // Can't sync unpublished entries
     } else {
         *sync_state.read()
     };

@@ -194,3 +194,66 @@
         border-right: 1.5px solid var(--color-border);
     }
 }
+
+/* Profile Invites Section */
+.profile-invites {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1.5px dashed var(--color-border);
+}
+
+.profile-invites-header {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0 0 0.75rem 0;
+    font-family: var(--font-heading);
+}
+
+.profile-invites-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.profile-invite-card {
+    padding: 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-surface);
+}
+
+.profile-invite-from {
+    font-size: 0.85rem;
+    color: var(--color-subtle);
+    margin-bottom: 0.5rem;
+}
+
+.profile-invite-did {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.profile-invite-message {
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    margin: 0.5rem 0;
+    font-style: italic;
+}
+
+.profile-invite-error {
+    font-size: 0.8rem;
+    color: var(--color-error, #e53935);
+    margin-bottom: 0.5rem;
+}
+
+.profile-invite-actions {
+    margin-top: 0.5rem;
+}
+
+.profile-invite-accepted {
+    font-size: 0.85rem;
+    color: var(--color-success, #43a047);
+    font-weight: 500;
+}

@@ -16,6 +16,10 @@
           "type": "array",
           "items": { "type": "ref", "ref": "#authorListView" }
         },
+        "permissions": {
+          "type": "ref",
+          "ref": "#permissionsState"
+        },
         "record": { "type": "unknown" },
         "indexedAt": { "type": "string", "format": "datetime" }
       }
@@ -33,6 +37,10 @@
         "authors": {
           "type": "array",
           "items": { "type": "ref", "ref": "#authorListView" }
+        },
+        "permissions": {
+          "type": "ref",
+          "ref": "#permissionsState"
         },
         "record": { "type": "unknown" },
         "renderedView": {
@@ -132,6 +140,46 @@
           "description": "The format of the content. This is used to determine how to render the content.",
           "enum": ["commonmark", "gfm", "obsidian", "weaver"],
           "default": "weaver"
+        }
+      }
+    },
+    "permissionsState": {
+      "type": "object",
+      "description": "ACL-style permissions for a resource. Separate from authors (who contributed).",
+      "required": ["editors"],
+      "properties": {
+        "editors": {
+          "type": "array",
+          "description": "DIDs that can edit this resource",
+          "items": { "type": "ref", "ref": "#permissionGrant" }
+        },
+        "viewers": {
+          "type": "array",
+          "description": "DIDs that can view (future use)",
+          "items": { "type": "ref", "ref": "#permissionGrant" }
+        }
+      }
+    },
+    "permissionGrant": {
+      "type": "object",
+      "description": "A single permission grant. For resource authority: source=resource URI, grantedAt=createdAt. For invitees: source=invite URI, grantedAt=accept createdAt.",
+      "required": ["did", "scope", "source", "grantedAt"],
+      "properties": {
+        "did": { "type": "string", "format": "did" },
+        "scope": {
+          "type": "string",
+          "knownValues": ["direct", "inherited"],
+          "description": "direct = this resource (includes authority), inherited = via notebook invite"
+        },
+        "source": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "For authority: resource URI. For invitees: invite URI"
+        },
+        "grantedAt": {
+          "type": "string",
+          "format": "datetime",
+          "description": "For authority: record createdAt. For invitees: accept createdAt"
         }
       }
     }

@@ -60,7 +60,8 @@ pub use storage::{
 // Sync
 #[allow(unused_imports)]
 pub use sync::{
-    load_and_merge_document, load_edit_state_from_pds, sync_to_pds, 
+    load_and_merge_document, load_edit_state_from_pds, sync_to_pds,
+    list_drafts_from_pds, RemoteDraft,
     PdsEditState, SyncState, SyncStatus,
 };
 

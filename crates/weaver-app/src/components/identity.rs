@@ -90,10 +90,21 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     use jacquard::from_data;
     use weaver_api::sh_weaver::notebook::book::Book;
 
+    let auth_state = use_context::<Signal<AuthState>>();
+
     // Use client-only versions to avoid SSR issues with concurrent server futures
     let (_profile_res, profile) = data::use_profile_data_client(ident);
     let (_notebooks_res, notebooks) = data::use_notebooks_for_did_client(ident);
     let (_entries_res, all_entries) = data::use_entries_for_did_client(ident);
+
+    // Check if viewing own profile
+    let is_own_profile = use_memo(move || {
+        let current_did = auth_state.read().did.clone();
+        match (&current_did, ident()) {
+            (Some(did), AtIdentifier::Did(profile_did)) => *did == profile_did,
+            _ => false,
+        }
+    });
 
     // Extract pinned URIs from profile (only Weaver ProfileView has pinned)
     let pinned_uris = use_memo(move || {
@@ -320,7 +331,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
         div { class: "repository-layout",
             // Profile sidebar (desktop) / header (mobile)
             aside { class: "repository-sidebar",
-                ProfileDisplay { profile, notebooks, entry_count: *entry_count.read() }
+                ProfileDisplay { profile, notebooks, entry_count: *entry_count.read(), is_own_profile: is_own_profile() }
             }
 
             // Main content area
@@ -622,14 +633,14 @@ pub fn NotebookCard(
                                                         if let Some(ref date) = created_at {
                                                             div { class: "entry-preview-date", "{date}" }
                                                         }
-                                                        if is_owner {
-                                                            crate::components::EntryActions {
-                                                                entry_uri,
-                                                                entry_cid: entry_view.entry.cid.clone().into_static(),
-                                                                entry_title: entry_title.to_string(),
-                                                                in_notebook: true,
-                                                                notebook_title: Some(book_title.clone())
-                                                            }
+                                                        // EntryActions handles visibility via permissions
+                                                        crate::components::EntryActions {
+                                                            entry_uri,
+                                                            entry_cid: entry_view.entry.cid.clone().into_static(),
+                                                            entry_title: entry_title.to_string(),
+                                                            in_notebook: true,
+                                                            notebook_title: Some(book_title.clone()),
+                                                            permissions: entry_view.entry.permissions.clone()
                                                         }
                                                     }
                                                     if let Some(ref html) = preview_html {
@@ -693,14 +704,14 @@ pub fn NotebookCard(
                                                         if let Some(ref date) = created_at {
                                                             div { class: "entry-preview-date", "{date}" }
                                                         }
-                                                        if is_owner {
-                                                            crate::components::EntryActions {
-                                                                entry_uri,
-                                                                entry_cid: first_entry.entry.cid.clone().into_static(),
-                                                                entry_title: entry_title.to_string(),
-                                                                in_notebook: true,
-                                                                notebook_title: Some(book_title.clone())
-                                                            }
+                                                        // EntryActions handles visibility via permissions
+                                                        crate::components::EntryActions {
+                                                            entry_uri,
+                                                            entry_cid: first_entry.entry.cid.clone().into_static(),
+                                                            entry_title: entry_title.to_string(),
+                                                            in_notebook: true,
+                                                            notebook_title: Some(book_title.clone()),
+                                                            permissions: first_entry.entry.permissions.clone()
                                                         }
                                                     }
                                                     if let Some(ref html) = preview_html {
@@ -773,14 +784,14 @@ pub fn NotebookCard(
                                                         if let Some(ref date) = created_at {
                                                             div { class: "entry-preview-date", "{date}" }
                                                         }
-                                                        if is_owner {
-                                                            crate::components::EntryActions {
-                                                                entry_uri,
-                                                                entry_cid: last_entry.entry.cid.clone().into_static(),
-                                                                entry_title: entry_title.to_string(),
-                                                                in_notebook: true,
-                                                                notebook_title: Some(book_title.clone())
-                                                            }
+                                                        // EntryActions handles visibility via permissions
+                                                        crate::components::EntryActions {
+                                                            entry_uri,
+                                                            entry_cid: last_entry.entry.cid.clone().into_static(),
+                                                            entry_title: entry_title.to_string(),
+                                                            in_notebook: true,
+                                                            notebook_title: Some(book_title.clone()),
+                                                            permissions: last_entry.entry.permissions.clone()
                                                         }
                                                     }
                                                     if let Some(ref html) = preview_html {

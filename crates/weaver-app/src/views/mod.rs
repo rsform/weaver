@@ -34,3 +34,6 @@ pub use drafts::{DraftEdit, DraftsList, NewDraft, NotebookEntryEdit, StandaloneE
 
 mod entry;
 pub use entry::{NotebookEntryByRkey, StandaloneEntry};
+
+mod invites;
+pub use invites::InvitesPage;

@@ -7,6 +7,7 @@
 
 pub mod cursor;
 pub mod diff;
+pub mod draft;
 pub mod root;
 
 #[jacquard_derive::lexicon]

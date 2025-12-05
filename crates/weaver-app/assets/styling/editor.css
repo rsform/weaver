@@ -744,3 +744,398 @@ li:has(.md-syntax-block:not(.hidden)) {
 .sync-status.disabled:hover {
     opacity: 0.6;
 }
+
+/* ==========================================================================
+   COLLABORATORS
+   ========================================================================== */
+
+/* Inline avatars in meta row */
+.collaborator-avatars {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 2px;
+}
+
+.collaborator-avatars:hover .collab-avatar {
+    border-color: var(--color-primary);
+}
+
+.collab-avatar {
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    margin-left: -6px;
+    position: relative;
+    transition: border-color 0.15s ease;
+}
+
+.collab-avatar:first-child {
+    margin-left: 0;
+}
+
+.collab-avatar.collab-overflow {
+    background: var(--color-overlay);
+    color: var(--color-subtle);
+    font-size: 10px;
+}
+
+.collab-avatar.collab-add {
+    background: transparent;
+    border-style: dashed;
+    color: var(--color-muted);
+    font-size: 14px;
+}
+
+.collab-avatar.collab-add:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+/* Collaborators panel overlay */
+.collaborators-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+@media (prefers-color-scheme: dark) {
+    .collaborators-overlay {
+        background: rgba(0, 0, 0, 0.6);
+    }
+}
+
+.collaborators-modal {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 0;
+    max-width: 400px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+    .collaborators-modal {
+        box-shadow: none;
+    }
+}
+
+/* Collaborators panel content */
+.collaborators-panel {
+    padding: 1rem;
+}
+
+.collaborators-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.collaborators-header h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.collaborators-header-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.collaborators-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 0.75rem;
+}
+
+.collaborator {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    background: var(--color-overlay);
+    border: 1px solid transparent;
+}
+
+.collaborator.pending {
+    border-style: dashed;
+    border-color: var(--color-border);
+    background: transparent;
+}
+
+.collaborator-did {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 280px;
+}
+
+.collaborator-status {
+    font-size: 12px;
+    color: var(--color-muted);
+}
+
+.collaborator.accepted .collaborator-status {
+    color: var(--color-success);
+}
+
+.collaborators-summary {
+    font-size: 11px;
+    color: var(--color-muted);
+    text-align: right;
+}
+
+.collaborators-panel .empty-state {
+    color: var(--color-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 1.5rem 0;
+    margin: 0;
+}
+
+/* ==========================================================================
+   INVITE DIALOG
+   ========================================================================== */
+
+.invite-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+}
+
+@media (prefers-color-scheme: dark) {
+    .invite-dialog-overlay {
+        background: rgba(0, 0, 0, 0.6);
+    }
+}
+
+.invite-dialog {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 1.25rem;
+    max-width: 420px;
+    width: 90%;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+    .invite-dialog {
+        box-shadow: none;
+    }
+}
+
+.invite-dialog h3 {
+    margin: 0 0 1rem 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.invite-dialog .invite-resource-info {
+    font-size: 12px;
+    color: var(--color-muted);
+    margin-bottom: 1rem;
+    padding: 8px 10px;
+    background: var(--color-overlay);
+    border: 1px solid var(--color-border);
+}
+
+.invite-field {
+    margin-bottom: 1rem;
+}
+
+.invite-field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+}
+
+.invite-field input,
+.invite-field textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    background: var(--color-base);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+.invite-field input:focus,
+.invite-field textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+.invite-field textarea {
+    min-height: 60px;
+    resize: vertical;
+}
+
+.invite-error {
+    background: color-mix(in srgb, var(--color-error) 10%, var(--color-surface));
+    border: 1px solid var(--color-error);
+    color: var(--color-error);
+    padding: 8px 10px;
+    margin-bottom: 1rem;
+    font-size: 13px;
+}
+
+.invite-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+}
+
+/* ==========================================================================
+   INVITES LIST
+   ========================================================================== */
+
+.invites-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.invites-section h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 0.75rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.invites-section .empty-state {
+    color: var(--color-muted);
+    font-size: 13px;
+    padding: 1rem 0;
+    margin: 0;
+}
+
+.invite-card {
+    padding: 12px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    margin-bottom: 8px;
+}
+
+.invite-card:last-child {
+    margin-bottom: 0;
+}
+
+.invite-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.invite-from,
+.invite-to {
+    font-size: 13px;
+    color: var(--color-text);
+}
+
+.invite-resource {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--color-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.invite-message {
+    font-size: 13px;
+    color: var(--color-subtle);
+    margin: 6px 0 0 0;
+    padding: 8px;
+    background: var(--color-overlay);
+    border-left: 2px solid var(--color-border);
+}
+
+.invite-actions,
+.invite-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.invite-status .status-badge {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 3px 8px;
+}
+
+.status-badge.pending {
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+    color: var(--color-warning);
+    border: 1px solid var(--color-warning);
+}
+
+.status-badge.accepted {
+    background: color-mix(in srgb, var(--color-success) 15%, transparent);
+    color: var(--color-success);
+    border: 1px solid var(--color-success);
+}
+
+.invite-card .error-message {
+    background: color-mix(in srgb, var(--color-error) 10%, var(--color-surface));
+    border: 1px solid var(--color-error);
+    color: var(--color-error);
+    padding: 6px 8px;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.invite-status.accepted {
+    color: var(--color-success);
+    font-size: 12px;
+    font-weight: 500;
+}

@@ -1,7 +1,8 @@
 use weaver_api::app_bsky::actor::get_profile::GetProfile;
 // Re-export view types for use elsewhere
 pub use weaver_api::sh_weaver::notebook::{
-    AuthorListView, BookEntryRef, BookEntryView, EntryView, NotebookView,
+    AuthorListView, BookEntryRef, BookEntryView, EntryView, NotebookView, PermissionGrant,
+    PermissionsState,
 };
 
 // Re-export jacquard for convenience
@@ -67,7 +68,7 @@ fn title_matches(value: &str, search: &str) -> bool {
 ///
 /// This trait is for multi-step workflows that coordinate between multiple operations.
 //#[cfg_attr(not(target_arch = "wasm32"), trait_variant::make(Send))]
-pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
+pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     /// Publish a blob to the user's PDS
     ///
     /// Multi-step workflow:
@@ -414,6 +415,8 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
         &self,
         uri: &AtUri<'_>,
     ) -> impl Future<Output = Result<(NotebookView<'static>, Vec<StrongRef<'static>>), WeaverError>>
+    where
+        Self: Sized,
     {
         async move {
             use jacquard::to_data;
@@ -460,6 +463,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 .map(IntoStatic::into_static)
                 .collect();
 
+            // Fetch permissions for this notebook
+            let permissions = self.get_permissions_for_resource(uri).await?;
+
             Ok((
                 NotebookView::new()
                     .cid(notebook.cid.ok_or_else(|| {
@@ -471,6 +477,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                     .maybe_path(path)
                     .maybe_tags(tags)
                     .authors(authors)
+                    .permissions(permissions)
                     .record(to_data(&notebook.value).map_err(|_| {
                         AgentError::from(ClientError::invalid_request(
                             "Failed to serialize notebook",
@@ -487,7 +494,10 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
         &self,
         notebook: &NotebookView<'a>,
         entry_ref: &StrongRef<'_>,
-    ) -> impl Future<Output = Result<EntryView<'a>, WeaverError>> {
+    ) -> impl Future<Output = Result<EntryView<'a>, WeaverError>>
+    where
+        Self: Sized,
+    {
         async move {
             use jacquard::to_data;
             use weaver_api::sh_weaver::notebook::entry::Entry;
@@ -499,6 +509,23 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
             let title = entry.value.title.clone();
             let path = entry.value.path.clone();
             let tags = entry.value.tags.clone();
+
+            // Fetch permissions for this entry (includes inherited notebook permissions)
+            let permissions = self.get_permissions_for_resource(&entry_uri).await?;
+
+            // Fetch contributors (evidence-based authors) for this entry
+            let contributor_dids = self.find_contributors_for_resource(&entry_uri).await?;
+            let mut authors = Vec::new();
+            for (index, did) in contributor_dids.iter().enumerate() {
+                let (profile_uri, profile_view) = self.hydrate_profile_view(did).await?;
+                authors.push(
+                    AuthorListView::new()
+                        .maybe_uri(profile_uri)
+                        .record(profile_view)
+                        .index(index as i64)
+                        .build(),
+                );
+            }
 
             Ok(EntryView::new()
                 .cid(entry.cid.ok_or_else(|| {
@@ -512,7 +539,8 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 .maybe_tags(tags)
                 .title(title)
                 .path(path)
-                .authors(notebook.authors.clone())
+                .authors(authors)
+                .permissions(permissions)
                 .build())
         }
     }
@@ -527,6 +555,8 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
         entries: &[StrongRef<'_>],
         title: &str,
     ) -> impl Future<Output = Result<Option<(BookEntryView<'a>, entry::Entry<'a>)>, WeaverError>>
+    where
+        Self: Sized,
     {
         async move {
             use weaver_api::sh_weaver::notebook::BookEntryRef;
@@ -676,6 +706,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                             .map(IntoStatic::into_static)
                             .collect();
 
+                        // Fetch permissions for this notebook
+                        let permissions = self.get_permissions_for_resource(&record.uri).await?;
+
                         return Ok(Some((
                             NotebookView::new()
                                 .cid(record.cid)
@@ -685,6 +718,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                                 .maybe_path(path)
                                 .maybe_tags(tags)
                                 .authors(authors)
+                                .permissions(permissions)
                                 .record(record.value.clone())
                                 .build()
                                 .into_static(),
@@ -933,7 +967,10 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
         &self,
         notebook: &NotebookView<'a>,
         entry_ref: &StrongRef<'_>,
-    ) -> impl Future<Output = Result<EntryView<'a>, WeaverError>> {
+    ) -> impl Future<Output = Result<EntryView<'a>, WeaverError>>
+    where
+        Self: Sized,
+    {
         async move {
             use jacquard::to_data;
             use weaver_api::sh_weaver::notebook::page::Page;
@@ -944,6 +981,23 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
 
             let title = entry.value.title.clone();
             let tags = entry.value.tags.clone();
+
+            // Fetch permissions for this page (includes inherited notebook permissions)
+            let permissions = self.get_permissions_for_resource(&entry_uri).await?;
+
+            // Fetch contributors (evidence-based authors) for this page
+            let contributor_dids = self.find_contributors_for_resource(&entry_uri).await?;
+            let mut authors = Vec::new();
+            for (index, did) in contributor_dids.iter().enumerate() {
+                let (profile_uri, profile_view) = self.hydrate_profile_view(did).await?;
+                authors.push(
+                    AuthorListView::new()
+                        .maybe_uri(profile_uri)
+                        .record(profile_view)
+                        .index(index as i64)
+                        .build(),
+                );
+            }
 
             Ok(EntryView::new()
                 .cid(entry.cid.ok_or_else(|| {
@@ -956,7 +1010,8 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 })?)
                 .maybe_tags(tags)
                 .title(title)
-                .authors(notebook.authors.clone())
+                .authors(authors)
+                .permissions(permissions)
                 .build())
         }
     }
@@ -1103,16 +1158,26 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 )))
             })?;
 
-            // Build EntryView - without notebook authors, just the entry author
+            // Build entry URI for contributor/permission queries
+            let entry_uri = entry::Entry::uri(record.uri.clone())
+                .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid entry URI")))?;
+
+            // Fetch contributors (evidence-based authors)
+            let contributor_dids = self.find_contributors_for_resource(&entry_uri).await?;
             let mut authors = Vec::new();
-            let (profile_uri, profile_view) = self.hydrate_profile_view(&repo_did).await?;
-            authors.push(
-                AuthorListView::new()
-                    .maybe_uri(profile_uri)
-                    .record(profile_view)
-                    .index(0)
-                    .build(),
-            );
+            for (index, did) in contributor_dids.iter().enumerate() {
+                let (profile_uri, profile_view) = self.hydrate_profile_view(did).await?;
+                authors.push(
+                    AuthorListView::new()
+                        .maybe_uri(profile_uri)
+                        .record(profile_view)
+                        .index(index as i64)
+                        .build(),
+                );
+            }
+
+            // Fetch permissions
+            let permissions = self.get_permissions_for_resource(&entry_uri).await?;
 
             let entry_view = EntryView::new()
                 .cid(record.cid.ok_or_else(|| {
@@ -1127,6 +1192,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
                 .title(entry_value.title.clone())
                 .path(entry_value.path.clone())
                 .authors(authors)
+                .permissions(permissions)
                 .build()
                 .into_static();
 
@@ -1196,6 +1262,701 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync {
             ))
         }
     }
+
+    /// Find valid collaborators for a resource.
+    ///
+    /// Queries Constellation for invite/accept record pairs:
+    /// 1. Find all invites targeting this resource URI
+    /// 2. For each invite, check if there's a matching accept record
+    /// 3. Return DIDs that have both invite AND accept
+    fn find_collaborators_for_resource(
+        &self,
+        resource_uri: &AtUri<'_>,
+    ) -> impl Future<Output = Result<Vec<Did<'static>>, WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            use weaver_api::sh_weaver::collab::invite::Invite;
+
+            const INVITE_NSID: &str = "sh.weaver.collab.invite";
+            const ACCEPT_NSID: &str = "sh.weaver.collab.accept";
+
+            let constellation_url = Url::parse(CONSTELLATION_URL).map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Invalid constellation URL: {}",
+                    e
+                )))
+            })?;
+
+            // Step 1: Find all invites for this resource
+            let invite_query = GetBacklinksQuery {
+                subject: Uri::At(resource_uri.clone().into_static()),
+                source: format!("{}:resource.uri", INVITE_NSID).into(),
+                cursor: None,
+                did: vec![],
+                limit: 100,
+            };
+
+            let response = self
+                .xrpc(constellation_url.clone())
+                .send(&invite_query)
+                .await
+                .map_err(|e| {
+                    AgentError::from(ClientError::invalid_request(format!(
+                        "Constellation query failed: {}",
+                        e
+                    )))
+                })?;
+
+            let invite_output = response.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to parse constellation response: {}",
+                    e
+                )))
+            })?;
+
+            let mut collaborators = Vec::new();
+
+            // Step 2: For each invite, check for a matching accept
+            for record_id in invite_output.records {
+                let invite_uri_str = format!(
+                    "at://{}/{}/{}",
+                    record_id.did,
+                    INVITE_NSID,
+                    record_id.rkey.0.as_ref()
+                );
+                let Ok(invite_uri) = AtUri::new(&invite_uri_str) else {
+                    continue;
+                };
+
+                // Fetch the invite to get the invitee DID
+                let Ok(invite_resp) = self.get_record::<Invite>(&invite_uri).await else {
+                    continue;
+                };
+                let Ok(invite_record) = invite_resp.into_output() else {
+                    continue;
+                };
+
+                let invitee_did = invite_record.value.invitee.clone().into_static();
+
+                // Query for accept records referencing this invite
+                let accept_query = GetBacklinksQuery {
+                    subject: Uri::At(invite_uri.into_static()),
+                    source: format!("{}:invite.uri", ACCEPT_NSID).into(),
+                    cursor: None,
+                    did: vec![invitee_did.clone()],
+                    limit: 1,
+                };
+
+                let Ok(accept_resp) = self
+                    .xrpc(constellation_url.clone())
+                    .send(&accept_query)
+                    .await
+                else {
+                    continue;
+                };
+
+                let Ok(accept_output) = accept_resp.into_output() else {
+                    continue;
+                };
+
+                if !accept_output.records.is_empty() {
+                    collaborators.push(invitee_did);
+                }
+            }
+
+            Ok(collaborators)
+        }
+    }
+
+    /// Find all versions of a record across collaborator repositories.
+    ///
+    /// For each collaborator DID, attempts to fetch `at://{did}/{collection}/{rkey}`.
+    /// Returns all found versions sorted by `updated_at` descending (latest first).
+    fn find_all_versions<'a>(
+        &'a self,
+        collection: &'a str,
+        rkey: &'a str,
+        collaborators: &'a [Did<'_>],
+    ) -> impl Future<Output = Result<Vec<CollaboratorVersion<'static>>, WeaverError>> + 'a
+    where
+        Self: Sized,
+    {
+        async move {
+            use jacquard::Data;
+            use weaver_api::com_atproto::repo::get_record::GetRecord;
+
+            let mut versions = Vec::new();
+
+            for collab_did in collaborators {
+                let Ok(pds_url) = self.pds_for_did(collab_did).await else {
+                    continue;
+                };
+
+                let Ok(record_key) = RecordKey::any(rkey) else {
+                    continue;
+                };
+                let request = GetRecord::new()
+                    .repo(jacquard::types::ident::AtIdentifier::Did(
+                        collab_did.clone(),
+                    ))
+                    .collection(jacquard::types::nsid::Nsid::raw(collection))
+                    .rkey(record_key)
+                    .build();
+
+                let Ok(http_request) =
+                    xrpc::build_http_request(&pds_url, &request, &self.opts().await)
+                else {
+                    continue;
+                };
+
+                let Ok(http_response) = self.send_http(http_request).await else {
+                    continue;
+                };
+
+                let response: Response<GetRecordResponse> =
+                    match xrpc::process_response(http_response) {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
+
+                let Ok(record) = response.into_output() else {
+                    continue;
+                };
+
+                let Some(cid) = record.cid else {
+                    continue;
+                };
+
+                let updated_at = record
+                    .value
+                    .query("...updatedAt")
+                    .first()
+                    .or_else(|| record.value.query("...createdAt").first())
+                    .and_then(|v: &Data| v.as_str())
+                    .and_then(|s| s.parse::<jacquard::types::string::Datetime>().ok());
+
+                versions.push(CollaboratorVersion {
+                    did: collab_did.clone().into_static(),
+                    uri: record.uri.into_static(),
+                    cid: cid.into_static(),
+                    updated_at,
+                    value: record.value.into_static(),
+                });
+            }
+
+            // Sort by updated_at descending (latest first)
+            versions.sort_by(|a, b| match (&b.updated_at, &a.updated_at) {
+                (Some(b_time), Some(a_time)) => b_time.as_ref().cmp(a_time.as_ref()),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            });
+
+            Ok(versions)
+        }
+    }
+
+    /// Check if a user can edit a resource based on collaboration records.
+    ///
+    /// Returns true if the user is the resource owner OR has valid invite+accept.
+    fn can_user_edit_resource<'a>(
+        &'a self,
+        resource_uri: &'a AtUri<'_>,
+        user_did: &'a Did<'_>,
+    ) -> impl Future<Output = Result<bool, WeaverError>> + 'a
+    where
+        Self: Sized,
+    {
+        async move {
+            // Check if user is the owner
+            if let jacquard::types::ident::AtIdentifier::Did(owner_did) = resource_uri.authority() {
+                if owner_did == user_did {
+                    return Ok(true);
+                }
+            }
+
+            // Check for valid collaboration
+            let collaborators = self.find_collaborators_for_resource(resource_uri).await?;
+            Ok(collaborators.iter().any(|c| c == user_did))
+        }
+    }
+
+    /// Check if a user can edit an entry, considering notebook-level cascading.
+    ///
+    /// An entry is editable if user owns it, has entry-level collab, or has notebook-level collab.
+    fn can_user_edit_entry<'a>(
+        &'a self,
+        entry_uri: &'a AtUri<'_>,
+        user_did: &'a Did<'_>,
+    ) -> impl Future<Output = Result<bool, WeaverError>> + 'a
+    where
+        Self: Sized,
+    {
+        async move {
+            // Check entry-level access first
+            if self.can_user_edit_resource(entry_uri, user_did).await? {
+                return Ok(true);
+            }
+
+            // Check notebook-level access (cascade)
+            if let Some(notebook_id) = self.find_notebook_for_entry(entry_uri).await? {
+                let notebook_uri_str = format!(
+                    "at://{}/{}/{}",
+                    notebook_id.did,
+                    notebook_id.collection,
+                    notebook_id.rkey.0.as_ref()
+                );
+                if let Ok(notebook_uri) = AtUri::new(&notebook_uri_str) {
+                    if self.can_user_edit_resource(&notebook_uri, user_did).await? {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
+    }
+
+    /// Get the full permissions state for a resource.
+    ///
+    /// Returns PermissionsState with all editors:
+    /// - Resource authority (source = resource URI, grantedAt = createdAt)
+    /// - Invited collaborators (source = invite URI, grantedAt = accept createdAt)
+    /// - For entries: inherited notebook-level collaborators
+    fn get_permissions_for_resource(
+        &self,
+        resource_uri: &AtUri<'_>,
+    ) -> impl Future<Output = Result<PermissionsState<'static>, WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            use weaver_api::sh_weaver::collab::accept::Accept;
+            use weaver_api::sh_weaver::collab::invite::Invite;
+
+            const INVITE_NSID: &str = "sh.weaver.collab.invite";
+            const ACCEPT_NSID: &str = "sh.weaver.collab.accept";
+
+            let constellation_url = Url::parse(CONSTELLATION_URL).map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Invalid constellation URL: {}",
+                    e
+                )))
+            })?;
+
+            let mut editors = Vec::new();
+
+            // 1. Resource authority - creating the resource is its own grant
+            let authority_did = match resource_uri.authority() {
+                jacquard::types::ident::AtIdentifier::Did(did) => did.clone().into_static(),
+                jacquard::types::ident::AtIdentifier::Handle(handle) => {
+                    let (did, _) = self.pds_for_handle(handle).await.map_err(|e| {
+                        AgentError::from(
+                            ClientError::from(e).with_context("Failed to resolve handle"),
+                        )
+                    })?;
+                    did.into_static()
+                }
+            };
+
+            // Fetch the record to get createdAt
+            let record = self
+                .get_record::<weaver_api::sh_weaver::notebook::entry::Entry>(resource_uri)
+                .await
+                .map_err(|e| WeaverError::from(AgentError::from(e)))?
+                .into_output()
+                .map_err(|e| {
+                    WeaverError::from(AgentError::from(ClientError::invalid_request(format!(
+                        "Failed to parse record: {}",
+                        e
+                    ))))
+                })?;
+            let authority_granted_at = record.value.created_at;
+
+            editors.push(
+                PermissionGrant::new()
+                    .did(authority_did.clone())
+                    .scope("direct")
+                    .source(resource_uri.clone().into_static())
+                    .granted_at(authority_granted_at)
+                    .build()
+                    .into_static(),
+            );
+
+            // 2. Find direct invites for this resource
+            let invite_query = GetBacklinksQuery {
+                subject: Uri::At(resource_uri.clone().into_static()),
+                source: format!("{}:resource.uri", INVITE_NSID).into(),
+                cursor: None,
+                did: vec![],
+                limit: 100,
+            };
+
+            let invite_response = self
+                .xrpc(constellation_url.clone())
+                .send(&invite_query)
+                .await
+                .map_err(|e| {
+                    AgentError::from(ClientError::invalid_request(format!(
+                        "Constellation invite query failed: {}",
+                        e
+                    )))
+                })?;
+            let invite_output = invite_response.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to parse Constellation response: {}",
+                    e
+                )))
+            })?;
+
+            for record_id in invite_output.records {
+                let invite_uri_str = format!(
+                    "at://{}/{}/{}",
+                    record_id.did,
+                    INVITE_NSID,
+                    record_id.rkey.0.as_ref()
+                );
+                let invite_uri = AtUri::new(&invite_uri_str).map_err(|_| {
+                    AgentError::from(ClientError::invalid_request(
+                        "Invalid invite URI from Constellation",
+                    ))
+                })?;
+
+                // Fetch invite to get invitee DID
+                let invite_record =
+                    self.get_record::<Invite>(&invite_uri)
+                        .await
+                        .map_err(|e| WeaverError::from(AgentError::from(e)))?
+                        .into_output()
+                        .map_err(|e| {
+                            WeaverError::from(AgentError::from(ClientError::invalid_request(
+                                format!("Failed to parse invite record: {}", e),
+                            )))
+                        })?;
+
+                let invitee_did = invite_record.value.invitee.clone().into_static();
+
+                // Query for accept records referencing this invite
+                let accept_query = GetBacklinksQuery {
+                    subject: Uri::At(invite_uri.clone().into_static()),
+                    source: format!("{}:invite.uri", ACCEPT_NSID).into(),
+                    cursor: None,
+                    did: vec![invitee_did.clone()],
+                    limit: 1,
+                };
+
+                let accept_response = self
+                    .xrpc(constellation_url.clone())
+                    .send(&accept_query)
+                    .await
+                    .map_err(|e| {
+                        AgentError::from(ClientError::invalid_request(format!(
+                            "Constellation accept query failed: {}",
+                            e
+                        )))
+                    })?;
+                let accept_output = accept_response.into_output().map_err(|e| {
+                    AgentError::from(ClientError::invalid_request(format!(
+                        "Failed to parse Constellation accept response: {}",
+                        e
+                    )))
+                })?;
+
+                // No accept = pending invite, not an error - just skip
+                let Some(accept_record_id) = accept_output.records.first() else {
+                    continue;
+                };
+
+                let accept_uri_str = format!(
+                    "at://{}/{}/{}",
+                    accept_record_id.did,
+                    ACCEPT_NSID,
+                    accept_record_id.rkey.0.as_ref()
+                );
+                let accept_uri = AtUri::new(&accept_uri_str).map_err(|_| {
+                    AgentError::from(ClientError::invalid_request(
+                        "Invalid accept URI from Constellation",
+                    ))
+                })?;
+                let accept_record =
+                    self.get_record::<Accept>(&accept_uri)
+                        .await
+                        .map_err(|e| WeaverError::from(AgentError::from(e)))?
+                        .into_output()
+                        .map_err(|e| {
+                            WeaverError::from(AgentError::from(ClientError::invalid_request(
+                                format!("Failed to parse accept record: {}", e),
+                            )))
+                        })?;
+
+                editors.push(
+                    PermissionGrant::new()
+                        .did(invitee_did)
+                        .scope("direct")
+                        .source(invite_uri.into_static())
+                        .granted_at(accept_record.value.created_at)
+                        .build()
+                        .into_static(),
+                );
+            }
+
+            // 3. For entries, check notebook-level invites (inherited)
+            let is_entry = resource_uri
+                .collection()
+                .is_some_and(|c| c.as_ref() == "sh.weaver.notebook.entry");
+
+            if is_entry {
+                // Entry not in a notebook is fine - just no inherited permissions
+                if let Some(notebook_id) = self.find_notebook_for_entry(resource_uri).await? {
+                    let notebook_uri_str = format!(
+                        "at://{}/{}/{}",
+                        notebook_id.did,
+                        notebook_id.collection,
+                        notebook_id.rkey.0.as_ref()
+                    );
+                    let notebook_uri = AtUri::new(&notebook_uri_str).map_err(|_| {
+                        AgentError::from(ClientError::invalid_request(
+                            "Invalid notebook URI from Constellation",
+                        ))
+                    })?;
+
+                    let notebook_invite_query = GetBacklinksQuery {
+                        subject: Uri::At(notebook_uri.clone().into_static()),
+                        source: format!("{}:resource.uri", INVITE_NSID).into(),
+                        cursor: None,
+                        did: vec![],
+                        limit: 100,
+                    };
+
+                    let notebook_invite_response = self
+                        .xrpc(constellation_url.clone())
+                        .send(&notebook_invite_query)
+                        .await
+                        .map_err(|e| {
+                            AgentError::from(ClientError::invalid_request(format!(
+                                "Constellation notebook invite query failed: {}",
+                                e
+                            )))
+                        })?;
+                    let notebook_invite_output =
+                        notebook_invite_response.into_output().map_err(|e| {
+                            AgentError::from(ClientError::invalid_request(format!(
+                                "Failed to parse Constellation response: {}",
+                                e
+                            )))
+                        })?;
+
+                    for record_id in notebook_invite_output.records {
+                        let invite_uri_str = format!(
+                            "at://{}/{}/{}",
+                            record_id.did,
+                            INVITE_NSID,
+                            record_id.rkey.0.as_ref()
+                        );
+                        let invite_uri = AtUri::new(&invite_uri_str).map_err(|_| {
+                            AgentError::from(ClientError::invalid_request(
+                                "Invalid invite URI from Constellation",
+                            ))
+                        })?;
+
+                        let invite_record = self
+                            .get_record::<Invite>(&invite_uri)
+                            .await
+                            .map_err(|e| WeaverError::from(AgentError::from(e)))?
+                            .into_output()
+                            .map_err(|e| {
+                                WeaverError::from(AgentError::from(ClientError::invalid_request(
+                                    format!("Failed to parse invite record: {}", e),
+                                )))
+                            })?;
+
+                        let invitee_did = invite_record.value.invitee.clone().into_static();
+
+                        // Skip if already in direct grants (direct takes precedence)
+                        if editors.iter().any(|g| g.did == invitee_did) {
+                            continue;
+                        }
+
+                        let accept_query = GetBacklinksQuery {
+                            subject: Uri::At(invite_uri.clone().into_static()),
+                            source: format!("{}:.invite.uri", ACCEPT_NSID).into(),
+                            cursor: None,
+                            did: vec![invitee_did.clone()],
+                            limit: 1,
+                        };
+
+                        let accept_response = self
+                            .xrpc(constellation_url.clone())
+                            .send(&accept_query)
+                            .await
+                            .map_err(|e| {
+                                AgentError::from(ClientError::invalid_request(format!(
+                                    "Constellation accept query failed: {}",
+                                    e
+                                )))
+                            })?;
+                        let accept_output = accept_response.into_output().map_err(|e| {
+                            AgentError::from(ClientError::invalid_request(format!(
+                                "Failed to parse Constellation accept response: {}",
+                                e
+                            )))
+                        })?;
+
+                        // No accept = pending invite, not an error - just skip
+                        let Some(accept_record_id) = accept_output.records.first() else {
+                            continue;
+                        };
+
+                        let accept_uri_str = format!(
+                            "at://{}/{}/{}",
+                            accept_record_id.did,
+                            ACCEPT_NSID,
+                            accept_record_id.rkey.0.as_ref()
+                        );
+                        let accept_uri = AtUri::new(&accept_uri_str).map_err(|_| {
+                            AgentError::from(ClientError::invalid_request(
+                                "Invalid accept URI from Constellation",
+                            ))
+                        })?;
+                        let accept_record = self
+                            .get_record::<Accept>(&accept_uri)
+                            .await
+                            .map_err(|e| WeaverError::from(AgentError::from(e)))?
+                            .into_output()
+                            .map_err(|e| {
+                                WeaverError::from(AgentError::from(ClientError::invalid_request(
+                                    format!("Failed to parse accept record: {}", e),
+                                )))
+                            })?;
+
+                        editors.push(
+                            PermissionGrant::new()
+                                .did(invitee_did)
+                                .scope("inherited")
+                                .source(invite_uri.into_static())
+                                .granted_at(accept_record.value.created_at)
+                                .build()
+                                .into_static(),
+                        );
+                    }
+                }
+            }
+
+            Ok(PermissionsState::new()
+                .editors(editors)
+                .build()
+                .into_static())
+        }
+    }
+
+    /// Find contributors (authors) for a resource based on evidence.
+    ///
+    /// Contributors are DIDs who have actually contributed to this resource:
+    /// 1. Edit records (edit.root or edit.diff) referencing this resource
+    /// 2. Published versions of the record in their repo (same rkey)
+    ///
+    /// This is separate from permissions - you can have edit permission without
+    /// having contributed yet.
+    fn find_contributors_for_resource(
+        &self,
+        resource_uri: &AtUri<'_>,
+    ) -> impl Future<Output = Result<Vec<Did<'static>>, WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            const EDIT_ROOT_NSID: &str = "sh.weaver.edit.root";
+
+            let constellation_url = Url::parse(CONSTELLATION_URL).map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Invalid constellation URL: {}",
+                    e
+                )))
+            })?;
+
+            let mut contributors = std::collections::HashSet::new();
+
+            // 1. Resource authority is always a contributor
+            let authority_did = match resource_uri.authority() {
+                jacquard::types::ident::AtIdentifier::Did(did) => did.clone().into_static(),
+                jacquard::types::ident::AtIdentifier::Handle(handle) => {
+                    let (did, _) = self.pds_for_handle(handle).await.map_err(|e| {
+                        AgentError::from(
+                            ClientError::from(e).with_context("Failed to resolve handle"),
+                        )
+                    })?;
+                    did.into_static()
+                }
+            };
+            contributors.insert(authority_did);
+
+            // 2. Find DIDs with edit records for this resource
+            let edit_query = GetBacklinksQuery {
+                subject: Uri::At(resource_uri.clone().into_static()),
+                source: format!("{}:doc.value.entry.uri", EDIT_ROOT_NSID).into(),
+                cursor: None,
+                did: vec![],
+                limit: 100,
+            };
+
+            if let Ok(response) = self.xrpc(constellation_url.clone()).send(&edit_query).await {
+                if let Ok(edit_output) = response.into_output() {
+                    for record_id in edit_output.records {
+                        contributors.insert(record_id.did.into_static());
+                    }
+                }
+            }
+
+            // 3. Find collaborators who have published versions (same rkey)
+            let collaborators = self.find_collaborators_for_resource(resource_uri).await?;
+            let rkey = resource_uri.rkey();
+            let collection = resource_uri.collection();
+
+            if let (Some(rkey), Some(collection)) = (rkey, collection) {
+                for collab_did in collaborators {
+                    // Try to fetch their version of the record
+                    let collab_uri_str = format!(
+                        "at://{}/{}/{}",
+                        collab_did.as_ref(),
+                        collection,
+                        rkey.as_ref()
+                    );
+                    if let Ok(collab_uri) = AtUri::new(&collab_uri_str) {
+                        // Check if record actually exists (200 = found, 400 = not found)
+                        if let Ok(response) = self
+                            .get_record::<weaver_api::sh_weaver::notebook::entry::Entry>(
+                                &collab_uri,
+                            )
+                            .await
+                        {
+                            if response.status().is_success() {
+                                contributors.insert(collab_did);
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(contributors.into_iter().collect())
+        }
+    }
+}
+
+/// A version of a record from a collaborator's repository.
+#[derive(Debug, Clone)]
+pub struct CollaboratorVersion<'a> {
+    /// The DID of the collaborator who owns this version.
+    pub did: Did<'a>,
+    /// The full URI of this version.
+    pub uri: AtUri<'a>,
+    /// CID of this version.
+    pub cid: jacquard::types::string::Cid<'a>,
+    /// When this version was last updated.
+    pub updated_at: Option<jacquard::types::string::Datetime>,
+    /// The raw record value.
+    pub value: jacquard::Data<'a>,
 }
 
 impl<T: AgentSession + IdentityResolver + XrpcExt> WeaverExt for T {}

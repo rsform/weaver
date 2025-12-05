@@ -15,6 +15,7 @@ use weaver_api::com_atproto::repo::delete_record::DeleteRecord;
 use weaver_api::com_atproto::repo::put_record::PutRecord;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::actor::profile::Profile as WeaverProfile;
+use weaver_api::sh_weaver::notebook::PermissionsState;
 
 const ENTRY_ACTIONS_CSS: Asset = asset!("/assets/styling/entry-actions.css");
 
@@ -35,6 +36,9 @@ pub struct EntryActionsProps {
     /// Whether this entry is currently pinned
     #[props(default = false)]
     pub is_pinned: bool,
+    /// Permissions state for edit access checking (if available)
+    #[props(default)]
+    pub permissions: Option<PermissionsState<'static>>,
     /// Callback when entry is removed from notebook (for optimistic UI update)
     #[props(default)]
     pub on_removed: Option<EventHandler<()>>,
@@ -58,15 +62,25 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
     let mut pinning = use_signal(|| false);
     let mut error = use_signal(|| None::<String>);
 
-    // Check ownership - compare auth DID with entry's authority
+    // Check edit access - use permissions if available, fall back to ownership check
     let current_did = auth_state.read().did.clone();
-    let entry_authority = props.entry_uri.authority();
-    let is_owner = match (&current_did, entry_authority) {
-        (Some(current), AtIdentifier::Did(entry_did)) => *current == *entry_did,
-        _ => false,
+    let can_edit = match &current_did {
+        Some(did) => {
+            if let Some(ref perms) = props.permissions {
+                // Use ACL-based permissions
+                perms.editors.iter().any(|grant| grant.did == *did)
+            } else {
+                // Fall back to ownership check
+                match props.entry_uri.authority() {
+                    AtIdentifier::Did(entry_did) => *did == *entry_did,
+                    _ => false,
+                }
+            }
+        }
+        None => false,
     };
 
-    if !is_owner {
+    if !can_edit {
         return rsx! {};
     }
 

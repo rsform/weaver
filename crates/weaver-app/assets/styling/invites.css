@@ -1,0 +1,131 @@
+.invites-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.invites-header {
+    margin-bottom: 2rem;
+}
+
+.invites-header h1 {
+    margin: 0 0 0.5rem 0;
+}
+
+.invites-description {
+    color: var(--color-subtle);
+    margin: 0;
+}
+
+/* Invites list component styles */
+.invites-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.invites-section h3 {
+    margin: 0 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.empty-state {
+    color: var(--color-subtle);
+    text-align: center;
+    padding: 2rem;
+}
+
+.invite-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0;
+    margin-bottom: 0.5rem;
+}
+
+.invite-card:hover {
+    border-color: var(--color-primary);
+}
+
+.invite-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.invite-from,
+.invite-to {
+    font-weight: 500;
+}
+
+.invite-resource {
+    font-size: 0.875rem;
+    color: var(--color-subtle);
+    word-break: break-all;
+}
+
+.invite-message {
+    margin: 0.5rem 0 0 0;
+    padding: 0.5rem;
+    background: var(--color-background);
+    border-left: 3px solid var(--color-primary);
+    font-style: italic;
+}
+
+.invite-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.invite-status {
+    display: flex;
+    align-items: center;
+}
+
+.status-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.status-badge.pending {
+    background: var(--color-surface);
+    color: var(--color-warning);
+    border: 1px solid var(--color-warning);
+}
+
+.status-badge.accepted,
+.invite-status.accepted {
+    background: var(--color-surface);
+    color: var(--color-success);
+    border: 1px solid var(--color-success);
+}
+
+.error-message {
+    color: var(--color-error);
+    font-size: 0.875rem;
+    padding: 0.5rem;
+    background: var(--color-error-background, rgba(220, 38, 38, 0.1));
+    border-radius: 4px;
+}
+
+/* Mobile adjustments */
+@media (max-width: 600px) {
+    .invites-page {
+        padding: 1rem;
+    }
+
+    .invite-card {
+        padding: 0.75rem;
+    }
+
+    .invite-resource {
+        font-size: 0.75rem;
+    }
+}

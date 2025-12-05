@@ -3,9 +3,16 @@
 //! Stores both human-readable content (for debugging) and the full CRDT
 //! snapshot (for undo history preservation across sessions).
 //!
-//! Storage key strategy:
-//! - New entries: `"draft:new:{uuid}"`
-//! - Editing existing: `"draft:{at-uri}"`
+//! ## Storage key strategy (localStorage)
+//!
+//! - New entries: `"new:{tid}"` where tid is a timestamp-based ID
+//! - Editing existing: `"{at-uri}"` the full AT-URI of the entry
+//!
+//! ## PDS canonical format
+//!
+//! When syncing to PDS via DraftRef, keys are transformed to canonical
+//! format: `"{did}:{rkey}"` for discoverability and topic derivation.
+//! This transformation happens in sync.rs `build_doc_ref()`.
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};

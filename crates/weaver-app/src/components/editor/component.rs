@@ -11,6 +11,7 @@ use weaver_api::sh_weaver::embed::images::Image;
 use weaver_common::WeaverExt;
 
 use crate::auth::AuthState;
+use crate::components::collab::CollaboratorAvatars;
 use crate::components::editor::ReportButton;
 use crate::fetch::Fetcher;
 
@@ -711,6 +712,20 @@ fn MarkdownEditorInner(
                     }
 
                     div { class: "meta-actions",
+                        // Show collaborator avatars when editing an existing entry
+                        if let Some(entry_ref) = document.entry_ref() {
+                            {
+                                let title = document.title();
+                                rsx! {
+                                    CollaboratorAvatars {
+                                        resource_uri: entry_ref.uri.clone(),
+                                        resource_cid: entry_ref.cid.to_string(),
+                                        resource_title: if title.is_empty() { None } else { Some(title) },
+                                    }
+                                }
+                            }
+                        }
+
                         SyncStatus {
                             document: document.clone(),
                             draft_key: draft_key.to_string(),

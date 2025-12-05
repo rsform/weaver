@@ -1181,6 +1181,106 @@ pub fn use_is_owner_async(
 }
 
 // ============================================================================
+// Edit Access Checking (Ownership + Collaboration)
+// ============================================================================
+
+use weaver_api::sh_weaver::actor::ProfileDataViewInner;
+use weaver_api::sh_weaver::notebook::{AuthorListView, PermissionsState};
+
+/// Extract DID from a ProfileDataView by matching on the inner variant.
+pub fn extract_did_from_author(author: &AuthorListView<'_>) -> Option<Did<'static>> {
+    match &author.record.inner {
+        ProfileDataViewInner::ProfileView(p) => Some(p.did.clone().into_static()),
+        ProfileDataViewInner::ProfileViewDetailed(p) => Some(p.did.clone().into_static()),
+        ProfileDataViewInner::TangledProfileView(p) => Some(p.did.clone().into_static()),
+        _ => None,
+    }
+}
+
+/// Check if the current user can edit a resource based on the permissions state.
+///
+/// Returns a memo that is:
+/// - `Some(true)` if the user is authenticated and their DID is in permissions.editors
+/// - `Some(false)` if the user is authenticated but not in editors
+/// - `None` if the user is not authenticated or permissions not yet loaded
+///
+/// This checks the ACL-based permissions (who CAN edit), not authors (who contributed).
+pub fn use_can_edit(
+    permissions: Memo<Option<PermissionsState<'static>>>,
+) -> Memo<Option<bool>> {
+    let auth_state = use_context::<Signal<AuthState>>();
+
+    use_memo(move || {
+        let current_did = auth_state.read().did.clone()?;
+        let perms = permissions()?;
+
+        // Check if current user's DID is in the editors list
+        let can_edit = perms
+            .editors
+            .iter()
+            .any(|grant| grant.did == current_did);
+
+        Some(can_edit)
+    })
+}
+
+/// Legacy: Check if the current user can edit based on authors list.
+///
+/// Use `use_can_edit` with permissions instead when available.
+/// This is kept for backwards compatibility during transition.
+pub fn use_can_edit_from_authors(
+    authors: Memo<Vec<AuthorListView<'static>>>,
+) -> Memo<Option<bool>> {
+    let auth_state = use_context::<Signal<AuthState>>();
+
+    use_memo(move || {
+        let current_did = auth_state.read().did.clone()?;
+        let author_list = authors();
+
+        let can_edit = author_list
+            .iter()
+            .filter_map(extract_did_from_author)
+            .any(|did| did == current_did);
+
+        Some(can_edit)
+    })
+}
+
+/// Check edit access for a resource URI using the WeaverExt trait methods.
+///
+/// This performs an async check that queries Constellation for collaboration records.
+/// Use this when you have a resource URI but not the pre-populated authors list.
+pub fn use_can_edit_resource(
+    resource_uri: ReadSignal<AtUri<'static>>,
+) -> Resource<Option<bool>> {
+    let auth_state = use_context::<Signal<AuthState>>();
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    use_resource(move || {
+        let fetcher = fetcher.clone();
+        let uri = resource_uri();
+        async move {
+            use weaver_common::agent::WeaverExt;
+
+            let current_did = auth_state.read().did.clone()?;
+
+            // Check ownership first (fast path)
+            if let AtIdentifier::Did(owner_did) = uri.authority() {
+                if *owner_did == current_did {
+                    return Some(true);
+                }
+            }
+
+            // Check collaboration via Constellation
+            match fetcher.can_user_edit_resource(&uri, &current_did).await {
+                Ok(can_edit) => Some(can_edit),
+                Err(_) => Some(false),
+            }
+        }
+    })
+}
+
+// ============================================================================
 // Standalone Entry by Rkey Hooks
 // ============================================================================
 

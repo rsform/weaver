@@ -17,9 +17,9 @@ use jacquard::{
 use std::sync::{Arc, LazyLock};
 #[allow(unused)]
 use views::{
-    Callback, DraftEdit, DraftsList, Editor, Home, Navbar, NewDraft, Notebook, NotebookEntryByRkey,
-    NotebookEntryEdit, NotebookIndex, NotebookPage, RecordIndex, RecordPage, StandaloneEntry,
-    StandaloneEntryEdit,
+    Callback, DraftEdit, DraftsList, Editor, Home, InvitesPage, Navbar, NewDraft, Notebook,
+    NotebookEntryByRkey, NotebookEntryEdit, NotebookIndex, NotebookPage, RecordIndex, RecordPage,
+    StandaloneEntry, StandaloneEntryEdit,
 };
 
 use crate::{
@@ -80,6 +80,9 @@ enum Route {
             DraftEdit { ident: AtIdentifier<'static>, tid: SmolStr },
             #[route("/new?:notebook")]
             NewDraft { ident: AtIdentifier<'static>, notebook: Option<SmolStr> },
+            // Collaboration invites
+            #[route("/invites")]
+            InvitesPage { ident: AtIdentifier<'static> },
             // Standalone entry routes
             #[route("/e/:rkey")]
             StandaloneEntry { ident: AtIdentifier<'static>, rkey: SmolStr },

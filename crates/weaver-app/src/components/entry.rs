@@ -398,12 +398,22 @@ pub fn EntryCard(
         .format("%B %d, %Y")
         .to_string();
 
-    // Check ownership
-    let is_owner = {
+    // Check edit access via permissions
+    let can_edit = {
         let current_did = auth_state.read().did.clone();
-        match (&current_did, &ident) {
-            (Some(did), AtIdentifier::Did(ident_did)) => *did == *ident_did,
-            _ => false,
+        match &current_did {
+            Some(did) => {
+                if let Some(ref perms) = entry_view.permissions {
+                    perms.editors.iter().any(|grant| grant.did == *did)
+                } else {
+                    // Fall back to ownership check
+                    match &ident {
+                        AtIdentifier::Did(ident_did) => *did == *ident_did,
+                        _ => false,
+                    }
+                }
+            }
+            None => false,
         }
     };
 
@@ -441,13 +451,14 @@ pub fn EntryCard(
                     div { class: "entry-card-date",
                         time { datetime: "{entry_view.indexed_at.as_str()}", "{formatted_date}" }
                     }
-                    if is_owner {
+                    if can_edit {
                         EntryActions {
                             entry_uri,
                             entry_cid: entry_view.cid.clone().into_static(),
                             entry_title: title.to_string(),
                             in_notebook: true,
                             notebook_title: Some(book_title.clone()),
+                            permissions: entry_view.permissions.clone(),
                             on_removed: Some(EventHandler::new(move |_| hidden.set(true)))
                         }
                     }
@@ -568,13 +579,23 @@ pub fn FeedEntryCard(
     // Get first author if we're showing it
     let first_author = if show_author { entry_view.authors.first() } else { None };
 
-    // Check ownership for actions
+    // Check edit access via permissions
     let auth_state = use_context::<Signal<AuthState>>();
-    let is_owner = {
+    let can_edit = {
         let current_did = auth_state.read().did.clone();
-        match (&current_did, &ident) {
-            (Some(did), AtIdentifier::Did(ident_did)) => *did == *ident_did,
-            _ => false,
+        match &current_did {
+            Some(did) => {
+                if let Some(ref perms) = entry_view.permissions {
+                    perms.editors.iter().any(|grant| grant.did == *did)
+                } else {
+                    // Fall back to ownership check
+                    match &ident {
+                        AtIdentifier::Did(ident_did) => *did == *ident_did,
+                        _ => false,
+                    }
+                }
+            }
+            None => false,
         }
     };
 
@@ -604,13 +625,14 @@ pub fn FeedEntryCard(
                         time { datetime: "{entry.created_at.as_str()}", "{formatted_date}" }
                     }
                 }
-                if show_actions && is_owner {
+                if show_actions && can_edit {
                     crate::components::EntryActions {
                         entry_uri: entry_view.uri.clone().into_static(),
                         entry_cid: entry_view.cid.clone().into_static(),
                         entry_title: title.to_string(),
                         in_notebook: false,
                         is_pinned,
+                        permissions: entry_view.permissions.clone(),
                         on_pinned_changed
                     }
                 }
@@ -739,6 +761,7 @@ pub fn EntryMetadata(
                     entry_title,
                     in_notebook: book_title.is_some(),
                     notebook_title: book_title.clone(),
+                    permissions: entry_view.permissions.clone(),
                     on_removed: Some(EventHandler::new(on_removed))
                 }
             }

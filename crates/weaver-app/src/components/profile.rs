@@ -2,10 +2,14 @@
 
 use std::sync::Arc;
 
+use crate::Route;
+use crate::components::button::{Button, ButtonVariant};
+use crate::components::collab::api::{ReceivedInvite, accept_invite, fetch_received_invites};
 use crate::components::{
     BskyIcon, TangledIcon,
     avatar::{Avatar, AvatarImage},
 };
+use crate::fetch::Fetcher;
 use dioxus::prelude::*;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::actor::{ProfileDataView, ProfileDataViewInner};
@@ -18,6 +22,7 @@ pub fn ProfileDisplay(
     profile: Memo<Option<ProfileDataView<'static>>>,
     notebooks: Memo<Option<Vec<(NotebookView<'static>, Vec<StrongRef<'static>>)>>>,
     #[props(default)] entry_count: usize,
+    #[props(default)] is_own_profile: bool,
 ) -> Element {
     match &*profile.read() {
         Some(profile_view) => {
@@ -63,9 +68,12 @@ pub fn ProfileDisplay(
 
                             // Links
                             ProfileLinks { profile_view }
+
+                            // Invites (only on own profile)
+                            if is_own_profile {
+                                ProfileInvites {}
+                            }
                         }
-
-
                     }
                 }
             }
@@ -320,5 +328,142 @@ fn ProfileLinks(profile_view: Arc<ProfileDataView<'static>>) -> Element {
             }
         }
         _ => rsx! {},
+    }
+}
+
+/// Shows pending collaboration invites on the user's own profile.
+#[component]
+fn ProfileInvites() -> Element {
+    let fetcher = use_context::<Fetcher>();
+
+    // Fetch received invites
+    let invites_resource = {
+        let fetcher = fetcher.clone();
+        use_resource(move || {
+            let fetcher = fetcher.clone();
+            async move {
+                fetch_received_invites(&fetcher)
+                    .await
+                    .ok()
+                    .unwrap_or_default()
+            }
+        })
+    };
+
+    let invites: Vec<ReceivedInvite> = invites_resource().unwrap_or_default();
+
+    // Don't render section if no invites
+    if invites.is_empty() {
+        return rsx! {};
+    }
+
+    rsx! {
+        div { class: "profile-invites",
+            h3 { class: "profile-invites-header", "Collaboration Invites" }
+
+            div { class: "profile-invites-list",
+                for invite in invites {
+                    ProfileInviteCard { invite }
+                }
+            }
+        }
+    }
+}
+
+/// A single invite card in the profile sidebar.
+#[component]
+fn ProfileInviteCard(invite: ReceivedInvite) -> Element {
+    let fetcher = use_context::<Fetcher>();
+    let nav = use_navigator();
+    let mut is_accepting = use_signal(|| false);
+    let mut accepted = use_signal(|| false);
+    let mut error = use_signal(|| None::<String>);
+
+    let invite_uri = invite.uri.clone();
+    let invite_cid = invite.cid.clone();
+    let resource_uri = invite.resource_uri.clone();
+    let resource_uri_nav = invite.resource_uri.clone();
+
+    let handle_accept = move |_| {
+        let fetcher = fetcher.clone();
+        let invite_uri = invite_uri.clone();
+        let invite_cid = invite_cid.clone();
+        let resource_uri = resource_uri.clone();
+        let resource_uri_nav = resource_uri_nav.clone();
+
+        spawn(async move {
+            is_accepting.set(true);
+            error.set(None);
+
+            let invite_ref = StrongRef::new().uri(invite_uri).cid(invite_cid).build();
+
+            match accept_invite(&fetcher, invite_ref, resource_uri).await {
+                Ok(_) => {
+                    accepted.set(true);
+                    // Navigate to the resource after a short delay
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        use gloo_timers::future::TimeoutFuture;
+                        TimeoutFuture::new(500).await;
+                    }
+                    // Navigate to the entry - parse AT-URI into path segments
+                    // at://did/collection/rkey -> ["did", "collection", "rkey"]
+                    let uri_str = resource_uri_nav.to_string();
+                    let uri_parts: Vec<String> = uri_str
+                        .strip_prefix("at://")
+                        .unwrap_or(&uri_str)
+                        .split('/')
+                        .map(|s| s.to_string())
+                        .collect();
+                    nav.push(Route::RecordPage { uri: uri_parts });
+                }
+                Err(e) => {
+                    error.set(Some(format!("Failed: {}", e)));
+                }
+            }
+
+            is_accepting.set(false);
+        });
+    };
+
+    // Extract inviter display (last part of DID for now)
+    let inviter_display = invite
+        .inviter
+        .as_ref()
+        .split(':')
+        .last()
+        .unwrap_or("unknown")
+        .chars()
+        .take(12)
+        .collect::<String>();
+
+    rsx! {
+        div { class: "profile-invite-card",
+            div { class: "profile-invite-from",
+                "From: "
+                span { class: "profile-invite-did", "{inviter_display}…" }
+            }
+
+            if let Some(msg) = &invite.message {
+                p { class: "profile-invite-message", "{msg}" }
+            }
+
+            if let Some(err) = error() {
+                div { class: "profile-invite-error", "{err}" }
+            }
+
+            div { class: "profile-invite-actions",
+                if accepted() {
+                    span { class: "profile-invite-accepted", "Accepted ✓" }
+                } else {
+                    Button {
+                        variant: ButtonVariant::Primary,
+                        onclick: handle_accept,
+                        disabled: is_accepting(),
+                        if is_accepting() { "Accepting..." } else { "Accept" }
+                    }
+                }
+            }
+        }
     }
 }

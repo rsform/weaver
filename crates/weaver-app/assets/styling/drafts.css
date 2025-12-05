@@ -60,6 +60,12 @@
     font-weight: 500;
 }
 
+.draft-badges {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
 .draft-badge {
     font-size: 0.75rem;
     padding: 0.125rem 0.5rem;
@@ -68,14 +74,33 @@
 }
 
 .draft-badge-new {
-    background: var(--color-secondary);
-    color: var(--color-base);
+    background: var(--color-surface);
+    color: var(--color-secondary);
+    border: 1px solid var(--color-secondary);
 }
 
 .draft-badge-edit {
     background: var(--color-surface);
     color: var(--color-subtle);
     border: 1px solid var(--color-border);
+}
+
+.draft-badge-synced {
+    background: var(--color-surface);
+    color: var(--color-success);
+    border: 1px solid var(--color-success);
+}
+
+.draft-badge-local {
+    background: var(--color-surface);
+    color: var(--color-warning);
+    border: 1px solid var(--color-warning);
+}
+
+.draft-badge-remote {
+    background: var(--color-surface);
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary);
 }
 
 /* Mobile adjustments */

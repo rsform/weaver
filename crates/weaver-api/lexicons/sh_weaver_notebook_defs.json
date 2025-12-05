@@ -105,6 +105,10 @@
           "type": "ref",
           "ref": "#path"
         },
+        "permissions": {
+          "type": "ref",
+          "ref": "#permissionsState"
+        },
         "record": {
           "type": "unknown"
         },
@@ -155,6 +159,10 @@
           "type": "ref",
           "ref": "#path"
         },
+        "permissions": {
+          "type": "ref",
+          "ref": "#permissionsState"
+        },
         "record": {
           "type": "unknown"
         },
@@ -176,6 +184,65 @@
       "type": "string",
       "description": "The path of the notebook.",
       "maxLength": 100
+    },
+    "permissionGrant": {
+      "type": "object",
+      "description": "A single permission grant. For resource authority: source=resource URI, grantedAt=createdAt. For invitees: source=invite URI, grantedAt=accept createdAt.",
+      "required": [
+        "did",
+        "scope",
+        "source",
+        "grantedAt"
+      ],
+      "properties": {
+        "did": {
+          "type": "string",
+          "format": "did"
+        },
+        "grantedAt": {
+          "type": "string",
+          "description": "For authority: record createdAt. For invitees: accept createdAt",
+          "format": "datetime"
+        },
+        "scope": {
+          "type": "string",
+          "description": "direct = this resource (includes authority), inherited = via notebook invite",
+          "knownValues": [
+            "direct",
+            "inherited"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "description": "For authority: resource URI. For invitees: invite URI",
+          "format": "at-uri"
+        }
+      }
+    },
+    "permissionsState": {
+      "type": "object",
+      "description": "ACL-style permissions for a resource. Separate from authors (who contributed).",
+      "required": [
+        "editors"
+      ],
+      "properties": {
+        "editors": {
+          "type": "array",
+          "description": "DIDs that can edit this resource",
+          "items": {
+            "type": "ref",
+            "ref": "#permissionGrant"
+          }
+        },
+        "viewers": {
+          "type": "array",
+          "description": "DIDs that can view (future use)",
+          "items": {
+            "type": "ref",
+            "ref": "#permissionGrant"
+          }
+        }
+      }
     },
     "renderedView": {
       "type": "object",

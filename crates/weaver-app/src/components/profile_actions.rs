@@ -56,6 +56,15 @@ pub fn ProfileActions(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                             "Drafts"
                         }
                     }
+
+                    Link {
+                        to: Route::InvitesPage { ident: ident() },
+                        class: "profile-action-link",
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            "Invites"
+                        }
+                    }
                 }
             }
         }
@@ -94,6 +103,14 @@ pub fn ProfileActionsMenubar(ident: ReadSignal<AtIdentifier<'static>>) -> Elemen
                 Button {
                     variant: ButtonVariant::Ghost,
                     "Drafts"
+                }
+            }
+
+            Link {
+                to: Route::InvitesPage { ident: ident() },
+                Button {
+                    variant: ButtonVariant::Ghost,
+                    "Invites"
                 }
             }
         }

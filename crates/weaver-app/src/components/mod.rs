@@ -28,6 +28,9 @@ pub mod login;
 pub mod record_editor;
 pub mod record_view;
 
+pub mod collab;
+pub use collab::{CollaboratorAvatars, CollaboratorsPanel, InviteDialog, InvitesList};
+
 use dioxus::prelude::*;
 
 #[derive(PartialEq, Props, Clone)]
