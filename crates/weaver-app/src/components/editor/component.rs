@@ -5,6 +5,7 @@ use jacquard::IntoStatic;
 use jacquard::cowstr::ToCowStr;
 use jacquard::identity::resolver::IdentityResolver;
 use jacquard::smol_str::SmolStr;
+use jacquard::types::aturi::AtUri;
 use jacquard::types::blob::BlobRef;
 use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::embed::images::Image;
@@ -150,7 +151,10 @@ pub fn MarkdownEditor(
                                     // Restore images
                                     if let Some(ref images) = embeds.images {
                                         let images_list = embeds_map
-                                            .get_or_create_container("images", loro::LoroList::new())
+                                            .get_or_create_container(
+                                                "images",
+                                                loro::LoroList::new(),
+                                            )
                                             .expect("images list");
                                         for image in &images.images {
                                             // Serialize image to JSON and add to list
@@ -164,7 +168,10 @@ pub fn MarkdownEditor(
                                     // Restore record embeds
                                     if let Some(ref records) = embeds.records {
                                         let records_list = embeds_map
-                                            .get_or_create_container("records", loro::LoroList::new())
+                                            .get_or_create_container(
+                                                "records",
+                                                loro::LoroList::new(),
+                                            )
                                             .expect("records list");
                                         for record in &records.records {
                                             let json = serde_json::to_value(record)
@@ -176,12 +183,123 @@ pub fn MarkdownEditor(
 
                                 doc.commit();
 
+                                // Pre-warm blob cache for images
+                                if let Some(ref embeds) = loaded.entry.embeds {
+                                    if let Some(ref images) = embeds.images {
+                                        let ident: &str = match uri.authority() {
+                                            AtIdentifier::Did(d) => d.as_ref(),
+                                            AtIdentifier::Handle(h) => h.as_ref(),
+                                        };
+                                        for image in &images.images {
+                                            let cid = image.image.blob().cid();
+                                            let name = image.name.as_ref().map(|n| n.as_ref());
+                                            if let Err(e) = crate::data::cache_blob(
+                                                ident.into(),
+                                                cid.as_ref().into(),
+                                                name.map(|n| n.into()),
+                                            )
+                                            .await
+                                            {
+                                                tracing::warn!(
+                                                    "Failed to pre-warm blob cache for {}: {}",
+                                                    cid,
+                                                    e
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Pre-fetch embeds for initial render
+                                let mut resolved_content =
+                                    weaver_common::ResolvedContent::default();
+                                if let Some(ref embeds) = loaded.entry.embeds {
+                                    if let Some(ref records) = embeds.records {
+                                        for record in &records.records {
+                                            // name is the key used in markdown, fallback to record.uri
+                                            let key_uri = if let Some(ref name) = record.name {
+                                                match jacquard::types::string::AtUri::new(
+                                                    name.as_ref(),
+                                                ) {
+                                                    Ok(uri) => uri.into_static(),
+                                                    Err(_) => continue,
+                                                }
+                                            } else {
+                                                record.record.uri.clone().into_static()
+                                            };
+
+                                            match weaver_renderer::atproto::fetch_and_render(
+                                                &record.record.uri,
+                                                &fetcher,
+                                            )
+                                            .await
+                                            {
+                                                Ok(html) => {
+                                                    resolved_content.add_embed(key_uri, html, None);
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!(
+                                                        "Failed to pre-fetch embed {}: {}",
+                                                        record.record.uri,
+                                                        e
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if resolved_content.embed_content.is_empty() {
+                                    use weaver_common::{ExtractedRef, collect_refs_from_markdown};
+
+                                    let text = doc.get_text("content");
+                                    let markdown = text.to_string();
+
+                                    if !markdown.is_empty() {
+                                        tracing::debug!(
+                                            "Falling back to markdown parsing for embeds"
+                                        );
+                                        let refs = collect_refs_from_markdown(&markdown);
+
+                                        for extracted in refs {
+                                            if let ExtractedRef::AtEmbed { uri, .. } = extracted {
+                                                let key_uri = match AtUri::new(&uri) {
+                                                    Ok(u) => u.into_static(),
+                                                    Err(_) => continue,
+                                                };
+
+                                                match weaver_renderer::atproto::fetch_and_render(
+                                                    &key_uri, &fetcher,
+                                                )
+                                                .await
+                                                {
+                                                    Ok(html) => {
+                                                        tracing::debug!(
+                                                            "Pre-fetched embed from markdown: {}",
+                                                            uri
+                                                        );
+                                                        resolved_content
+                                                            .add_embed(key_uri, html, None);
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!(
+                                                            "Failed to pre-fetch embed {}: {}",
+                                                            uri,
+                                                            e
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 return LoadResult::Loaded(LoadedDocState {
                                     doc,
                                     entry_ref: Some(loaded.entry_ref),
                                     edit_root: None,
                                     last_diff: None,
                                     synced_version: None, // Fresh from entry, never synced
+                                    resolved_content,
                                 });
                             }
                             Err(e) => {
@@ -205,6 +323,7 @@ pub fn MarkdownEditor(
                         edit_root: None,
                         last_diff: None,
                         synced_version: None, // New doc, never synced
+                        resolved_content: weaver_common::ResolvedContent::default(),
                     })
                 }
                 Err(e) => {
@@ -300,22 +419,29 @@ fn MarkdownEditorInner(
             EditorImageResolver::default()
         }
     });
-    let resolved_content = use_signal(weaver_common::ResolvedContent::default);
+    // Use pre-resolved content from loaded state (avoids embed pop-in)
+    let resolved_content = use_signal(|| loaded_state.resolved_content.clone());
 
     let doc_for_memo = document.clone();
     let doc_for_refs = document.clone();
-    let paragraphs = use_memo(move || {
+    let entry_index_for_memo = entry_index.clone();
+    let mut paragraphs = use_memo(move || {
         let edit = doc_for_memo.last_edit();
         let cache = render_cache.peek();
         let resolver = image_resolver();
         let resolved = resolved_content();
+
+        tracing::debug!(
+            "Rendering with {} pre-resolved embeds",
+            resolved.embed_content.len()
+        );
 
         let (paras, new_cache, refs) = render::render_paragraphs_incremental(
             doc_for_memo.loro_text(),
             Some(&cache),
             edit.as_ref(),
             Some(&resolver),
-            entry_index.as_ref(),
+            entry_index_for_memo.as_ref(),
             &resolved,
         );
         let mut doc_for_spawn = doc_for_refs.clone();
@@ -364,13 +490,10 @@ fn MarkdownEditorInner(
                     continue;
                 };
 
-                match weaver_renderer::atproto::fetch_and_render(&at_uri, &fetcher)
-                    .await
-                {
+                match weaver_renderer::atproto::fetch_and_render(&at_uri, &fetcher).await {
                     Ok(html) => {
-                        resolved_content_for_fetch.with_mut(|rc| {
-                            rc.add_embed(at_uri.into_static(), html, None);
-                        });
+                        let mut rc = resolved_content_for_fetch.write();
+                        rc.add_embed(at_uri.into_static(), html, None);
                     }
                     Err(e) => {
                         tracing::warn!("failed to fetch embed {}: {}", uri_str, e);
@@ -430,7 +553,8 @@ fn MarkdownEditorInner(
         // Use peek() to avoid creating reactive dependency on cached_paragraphs
         let prev = cached_paragraphs.peek().clone();
 
-        let cursor_para_updated = update_paragraph_dom(editor_id, &prev, &new_paras, cursor_offset);
+        let cursor_para_updated =
+            update_paragraph_dom(editor_id, &prev, &new_paras, cursor_offset, false);
 
         // Only restore cursor if we actually re-rendered the paragraph it's in
         if cursor_para_updated {
@@ -726,9 +850,53 @@ fn MarkdownEditorInner(
                             }
                         }
 
-                        SyncStatus {
-                            document: document.clone(),
-                            draft_key: draft_key.to_string(),
+                        {
+                            // Enable collaborative sync for any published entry (both owners and collaborators)
+                            let is_published = document.entry_ref().is_some();
+
+                            // Refresh callback: fetch and merge collaborator changes
+                            let on_refresh = if is_published {
+                                let fetcher_for_refresh = fetcher.clone();
+                                let mut doc_for_refresh = document.clone();
+                                let entry_uri = document.entry_ref().map(|r| r.uri.clone().into_static());
+
+                                Some(EventHandler::new(move |_| {
+                                    let fetcher = fetcher_for_refresh.clone();
+                                    let mut doc = doc_for_refresh.clone();
+                                    let uri = entry_uri.clone();
+
+                                    spawn(async move {
+                                        if let Some(uri) = uri {
+                                            match super::sync::load_all_edit_states_from_pds(&fetcher, &uri).await {
+                                                Ok(Some(pds_state)) => {
+                                                    if let Err(e) = doc.import_updates(&pds_state.root_snapshot) {
+                                                        tracing::error!("Failed to import collaborator updates: {:?}", e);
+                                                    } else {
+                                                        tracing::info!("Successfully merged collaborator updates");
+                                                    }
+                                                }
+                                                Ok(None) => {
+                                                    tracing::debug!("No collaborator updates found");
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("Failed to fetch collaborator updates: {}", e);
+                                                }
+                                            }
+                                        }
+                                    });
+                                }))
+                            } else {
+                                None
+                            };
+
+                            rsx! {
+                                SyncStatus {
+                                    document: document.clone(),
+                                    draft_key: draft_key.to_string(),
+                                    on_refresh,
+                                    is_collaborative: is_published,
+                                }
+                            }
                         }
 
                         PublishButton {

@@ -252,7 +252,6 @@ impl RefCollector {
 /// **Note:** This does a separate parsing pass. For production use, prefer
 /// passing a `RefCollector` to the renderer to collect during the render pass.
 /// This function is primarily useful for testing or quick analysis.
-#[cfg(any(test, feature = "standalone-collection"))]
 pub fn collect_refs_from_markdown(markdown: &str) -> Vec<ExtractedRef> {
     use markdown_weaver::{Event, LinkType, Options, Parser, Tag};
 

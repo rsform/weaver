@@ -193,7 +193,7 @@ fn lexicon_doc_sh_weaver_edit_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc<
                     description: None,
                     required: Some(
                         vec![
-                            ::jacquard_common::smol_str::SmolStr::new_static("draft_key")
+                            ::jacquard_common::smol_str::SmolStr::new_static("draftKey")
                         ],
                     ),
                     nullable: None,
@@ -201,9 +201,7 @@ fn lexicon_doc_sh_weaver_edit_defs() -> ::jacquard_lexicon::lexicon::LexiconDoc<
                         #[allow(unused_mut)]
                         let mut map = ::std::collections::BTreeMap::new();
                         map.insert(
-                            ::jacquard_common::smol_str::SmolStr::new_static(
-                                "draft_key",
-                            ),
+                            ::jacquard_common::smol_str::SmolStr::new_static("draftKey"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
                                 description: None,
                                 format: None,

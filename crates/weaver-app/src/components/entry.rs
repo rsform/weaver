@@ -3,10 +3,7 @@
 use crate::Route;
 #[cfg(feature = "server")]
 use crate::blobcache::BlobCache;
-use crate::{
-    components::EntryActions,
-    data::use_handle,
-};
+use crate::{components::EntryActions, data::use_handle};
 use dioxus::prelude::*;
 use jacquard::types::aturi::AtUri;
 use jacquard::{IntoStatic, types::string::Handle};
@@ -577,7 +574,11 @@ pub fn FeedEntryCard(
     let formatted_date = entry.created_at.as_ref().format("%B %d, %Y").to_string();
 
     // Get first author if we're showing it
-    let first_author = if show_author { entry_view.authors.first() } else { None };
+    let first_author = if show_author {
+        entry_view.authors.first()
+    } else {
+        None
+    };
 
     // Check edit access via permissions
     let auth_state = use_context::<Signal<AuthState>>();
@@ -771,7 +772,7 @@ pub fn EntryMetadata(
                 if !entry_view.authors.is_empty() {
                     div { class: "entry-authors",
                         for (i, author) in entry_view.authors.iter().enumerate() {
-                            if i > 0 { span { ", " } }
+                            if i > 0 { span { " " } }
                             {
                                 use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 

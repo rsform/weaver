@@ -10,8 +10,7 @@ pub mod worker_rt;
 pub use agent::WeaverExt;
 pub use error::WeaverError;
 pub use resolve::{EntryIndex, ExtractedRef, RefCollector, ResolvedContent, ResolvedEntry};
-#[cfg(any(test, feature = "standalone-collection"))]
-pub use resolve::collect_refs_from_markdown;
+
 pub use jacquard;
 use jacquard::CowStr;
 use jacquard::client::{Agent, AgentSession};
@@ -19,6 +18,7 @@ use jacquard::prelude::*;
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::string::{AtUri, Cid, Did, Handle};
 use jacquard::types::tid::Ticker;
+pub use resolve::collect_refs_from_markdown;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;

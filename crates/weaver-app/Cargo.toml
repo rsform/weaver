@@ -55,6 +55,7 @@ markdown-weaver-escape = { workspace = true }
 web-time = "1.1"
 urlencoding = "2.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry"] }
+dioxus-sdk = { version = "0.7", features = ["time"] }
 
 # OG image generation (server-only)
 resvg = { version = "0.44", optional = true }
@@ -82,6 +83,7 @@ web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorke
 js-sys = "0.3"
 gloo-storage = "0.3"
 gloo-timers = "0.3"
+
 lol_alloc = "0.4.1"
 
 [build-dependencies]

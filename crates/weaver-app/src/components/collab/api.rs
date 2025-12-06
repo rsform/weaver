@@ -4,12 +4,14 @@ use crate::fetch::Fetcher;
 use jacquard::IntoStatic;
 use jacquard::prelude::*;
 use jacquard::types::collection::Collection;
-use jacquard::types::string::{AtUri, Cid, Datetime, Did, Nsid};
+use jacquard::types::string::{AtUri, Cid, Datetime, Did, Nsid, RecordKey};
 use jacquard::types::uri::Uri;
 use reqwest::Url;
+use std::collections::HashSet;
 use weaver_api::com_atproto::repo::list_records::ListRecords;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::collab::{accept::Accept, invite::Invite};
+use weaver_api::sh_weaver::notebook::entry::Entry;
 use weaver_common::WeaverError;
 use weaver_common::constellation::GetBacklinksQuery;
 
@@ -242,4 +244,82 @@ pub async fn fetch_received_invites(fetcher: &Fetcher) -> Result<Vec<ReceivedInv
     }
 
     Ok(invites)
+}
+
+/// Find all participants (owner + collaborators) for a resource by its rkey.
+///
+/// This works regardless of which copy of the entry you're viewing because it
+/// queries for invites by rkey pattern, then collects all involved DIDs.
+pub async fn find_all_participants(
+    fetcher: &Fetcher,
+    resource_uri: &AtUri<'_>,
+) -> Result<Vec<Did<'static>>, WeaverError> {
+    let Some(rkey) = resource_uri.rkey() else {
+        return Ok(vec![]);
+    };
+
+    let constellation_url = Url::parse(CONSTELLATION_URL)
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
+
+    // Query for all invite records that reference entries with this rkey
+    // We search for invites where resource.uri contains the rkey
+    // The source pattern matches the JSON path in the invite record
+    let query = GetBacklinksQuery {
+        subject: Uri::At(resource_uri.clone().into_static()),
+        source: format!("{}:resource.uri", Invite::NSID).into(),
+        cursor: None,
+        did: vec![],
+        limit: 100,
+    };
+
+    let mut participants: HashSet<Did<'static>> = HashSet::new();
+
+    // First try with the exact URI
+    if let Ok(response) = fetcher.client.xrpc(constellation_url.clone()).send(&query).await {
+        if let Ok(output) = response.into_output() {
+            for record_id in &output.records {
+                // The inviter (owner) is the DID that created the invite
+                participants.insert(record_id.did.clone().into_static());
+
+                // Now we need to fetch the invite to get the invitee
+                let uri_string = format!(
+                    "at://{}/{}/{}",
+                    record_id.did,
+                    Invite::NSID,
+                    record_id.rkey.as_ref()
+                );
+                if let Ok(invite_uri) = AtUri::new(&uri_string) {
+                    if let Ok(response) = fetcher.get_record::<Invite>(&invite_uri).await {
+                        if let Ok(record) = response.into_output() {
+                            let invite = &record.value;
+                            // Check if this invite was accepted
+                            if check_invite_accepted(fetcher, &invite_uri.into_static()).await {
+                                participants.insert(invite.invitee.clone().into_static());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Also try querying with the owner's URI if we can determine it
+    // This handles the case where we're viewing from a collaborator's copy
+    let authority_did = match resource_uri.authority() {
+        jacquard::types::ident::AtIdentifier::Did(d) => Some(d.clone().into_static()),
+        _ => None,
+    };
+
+    if let Some(ref did) = authority_did {
+        participants.insert(did.clone());
+    }
+
+    // If no participants found via invites, return just the current entry's authority
+    if participants.is_empty() {
+        if let Some(did) = authority_did {
+            return Ok(vec![did]);
+        }
+    }
+
+    Ok(participants.into_iter().collect())
 }

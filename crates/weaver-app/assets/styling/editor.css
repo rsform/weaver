@@ -727,6 +727,17 @@ li:has(.md-syntax-block:not(.hidden)) {
     color: var(--color-warning);
 }
 
+/* Remote changes available - collaborator updates */
+.sync-status.remote-changes {
+    background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+    color: var(--color-primary);
+    animation: pulse-subtle 2s ease-in-out infinite;
+}
+
+.sync-status.remote-changes:hover {
+    animation: none;
+}
+
 /* Error state */
 .sync-status.error {
     background: color-mix(in srgb, var(--color-error) 15%, transparent);
@@ -743,6 +754,16 @@ li:has(.md-syntax-block:not(.hidden)) {
 
 .sync-status.disabled:hover {
     opacity: 0.6;
+}
+
+@keyframes pulse-subtle {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 
 /* ==========================================================================
@@ -764,10 +785,10 @@ li:has(.md-syntax-block:not(.hidden)) {
 .collab-avatar {
     width: 24px;
     height: 24px;
-    border: 1px solid var(--color-border);
     background: var(--color-surface);
     color: var(--color-muted);
     display: flex;
+    border-radius: 4px;
     align-items: center;
     justify-content: center;
     font-size: 11px;
@@ -776,7 +797,14 @@ li:has(.md-syntax-block:not(.hidden)) {
     text-transform: uppercase;
     margin-left: -6px;
     position: relative;
-    transition: border-color 0.15s ease;
+    overflow: hidden;
+}
+
+.collab-avatar-img {
+    width: 100%;
+    height: 100%;
+
+    object-fit: cover;
 }
 
 .collab-avatar:first-child {
@@ -791,7 +819,7 @@ li:has(.md-syntax-block:not(.hidden)) {
 
 .collab-avatar.collab-add {
     background: transparent;
-    border-style: dashed;
+    border: 1px solid var(--color-border);
     color: var(--color-muted);
     font-size: 14px;
 }

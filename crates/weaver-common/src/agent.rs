@@ -1,4 +1,3 @@
-use weaver_api::app_bsky::actor::get_profile::GetProfile;
 // Re-export view types for use elsewhere
 pub use weaver_api::sh_weaver::notebook::{
     AuthorListView, BookEntryRef, BookEntryView, EntryView, NotebookView, PermissionGrant,
@@ -18,11 +17,9 @@ use jacquard::types::string::{AtUri, Did, RecordKey, Rkey};
 use jacquard::types::tid::Tid;
 use jacquard::types::uri::Uri;
 use jacquard::url::Url;
-use jacquard::xrpc::Response;
-use jacquard::{CowStr, IntoStatic, xrpc};
+use jacquard::{CowStr, IntoStatic};
 use mime_sniffer::MimeTypeSniffer;
 use std::path::Path;
-use weaver_api::com_atproto::repo::get_record::GetRecordResponse;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::notebook::entry;
 use weaver_api::sh_weaver::publish::blob::Blob as PublishedBlob;
@@ -67,7 +64,6 @@ fn title_matches(value: &str, search: &str) -> bool {
 /// - `agent.upload_blob()` - Upload a single blob
 ///
 /// This trait is for multi-step workflows that coordinate between multiple operations.
-//#[cfg_attr(not(target_arch = "wasm32"), trait_variant::make(Send))]
 pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     /// Publish a blob to the user's PDS
     ///
@@ -112,63 +108,14 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         uri: &'a AtUri<'a>,
     ) -> impl Future<Output = Result<StrongRef<'static>, WeaverError>> + 'a {
         async move {
-            let rkey = uri.rkey().ok_or_else(|| {
-                AgentError::from(
-                    ClientError::invalid_request("AtUri missing rkey")
-                        .with_help("ensure the URI includes a record key after the collection"),
-                )
+            let record = self.fetch_record_slingshot(uri).await?;
+            let cid = record.cid.ok_or_else(|| {
+                AgentError::from(ClientError::invalid_request("Record missing CID"))
             })?;
-
-            // Resolve authority (DID or handle) to get DID and PDS
-            use jacquard::types::ident::AtIdentifier;
-            let (repo_did, pds_url) = match uri.authority() {
-                AtIdentifier::Did(did) => {
-                    let pds =
-                        self.pds_for_did(did).await.map_err(|e| {
-                            AgentError::from(ClientError::from(e).with_context(
-                                "DID document resolution failed during record retrieval",
-                            ))
-                        })?;
-                    (did.clone(), pds)
-                }
-                AtIdentifier::Handle(handle) => self.pds_for_handle(handle).await.map_err(|e| {
-                    AgentError::from(
-                        ClientError::from(e)
-                            .with_context("handle resolution failed during record retrieval"),
-                    )
-                })?,
-            };
-
-            // Make stateless XRPC call to that PDS (no auth required for public records)
-            use weaver_api::com_atproto::repo::get_record::GetRecord;
-            let request = GetRecord::new()
-                .repo(AtIdentifier::Did(repo_did))
-                .collection(
-                    uri.collection()
-                        .expect("collection should exist if rkey does")
-                        .clone(),
-                )
-                .rkey(rkey.clone())
-                .build();
-
-            let response: Response<GetRecordResponse> = {
-                let http_request = xrpc::build_http_request(&pds_url, &request, &self.opts().await)
-                    .map_err(|e| AgentError::from(ClientError::transport(e)))?;
-
-                let http_response = self
-                    .send_http(http_request)
-                    .await
-                    .map_err(|e| AgentError::from(ClientError::transport(e)))?;
-
-                xrpc::process_response(http_response)
-            }
-            .map_err(|e| AgentError::new(AgentErrorKind::Client, Some(e.into())))?;
-            let record = response.parse().map_err(|e| AgentError::xrpc(e))?;
-            let strong_ref = StrongRef::new()
-                .uri(record.uri)
-                .cid(record.cid.expect("when does this NOT have a CID?"))
-                .build();
-            Ok(strong_ref.into_static())
+            Ok(StrongRef::new()
+                .uri(record.uri.into_static())
+                .cid(cid.into_static())
+                .build())
         }
     }
 
@@ -504,14 +451,70 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
 
             let entry_uri = Entry::uri(entry_ref.uri.clone())
                 .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid entry URI")))?;
-            let entry = self.fetch_record(&entry_uri).await?;
 
-            let title = entry.value.title.clone();
-            let path = entry.value.path.clone();
-            let tags = entry.value.tags.clone();
+            // Get the rkey for version lookup
+            let rkey = entry_uri.rkey().ok_or_else(|| {
+                AgentError::from(ClientError::invalid_request("Entry URI missing rkey"))
+            })?;
 
             // Fetch permissions for this entry (includes inherited notebook permissions)
             let permissions = self.get_permissions_for_resource(&entry_uri).await?;
+
+            // Get all collaborators (owner + invited)
+            let owner_did = match entry_uri.authority() {
+                jacquard::types::ident::AtIdentifier::Did(d) => d.clone().into_static(),
+                jacquard::types::ident::AtIdentifier::Handle(h) => {
+                    let (did, _) = self.pds_for_handle(h).await.map_err(|e| {
+                        AgentError::from(
+                            ClientError::from(e).with_context("Failed to resolve handle"),
+                        )
+                    })?;
+                    did.into_static()
+                }
+            };
+            let collaborators = self
+                .find_collaborators_for_resource(&entry_uri)
+                .await
+                .unwrap_or_default();
+            let all_dids: Vec<Did<'static>> = std::iter::once(owner_did)
+                .chain(collaborators.into_iter())
+                .collect();
+
+            // Find all versions across collaborators, get latest by updatedAt
+            let versions = self
+                .find_all_versions(
+                    <Entry as jacquard::types::collection::Collection>::NSID,
+                    rkey.0.as_str(),
+                    &all_dids,
+                )
+                .await
+                .unwrap_or_default();
+
+            // Use latest version if found, otherwise fall back to original entry_ref
+            let (entry_data, final_uri, final_cid) = if let Some(latest) = versions.first() {
+                // Deserialize from the latest version's value
+                let entry: Entry = jacquard::from_data(&latest.value).map_err(|_| {
+                    AgentError::from(ClientError::invalid_request(
+                        "Failed to deserialize latest entry",
+                    ))
+                })?;
+                (entry.into_static(), latest.uri.clone(), latest.cid.clone())
+            } else {
+                // No versions found via find_all_versions, fetch directly
+                let entry = self.fetch_record(&entry_uri).await?;
+                let cid = entry.cid.ok_or_else(|| {
+                    AgentError::from(ClientError::invalid_request("Entry missing CID"))
+                })?;
+                (
+                    entry.value.into_static(),
+                    entry.uri.into_static(),
+                    cid.into_static(),
+                )
+            };
+
+            let title = entry_data.title.clone();
+            let path = entry_data.path.clone();
+            let tags = entry_data.tags.clone();
 
             // Fetch contributors (evidence-based authors) for this entry
             let contributor_dids = self.find_contributors_for_resource(&entry_uri).await?;
@@ -528,12 +531,10 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             }
 
             Ok(EntryView::new()
-                .cid(entry.cid.ok_or_else(|| {
-                    AgentError::from(ClientError::invalid_request("Entry missing CID"))
-                })?)
-                .uri(entry.uri)
+                .cid(final_cid)
+                .uri(final_uri)
                 .indexed_at(jacquard::types::string::Datetime::now())
-                .record(to_data(&entry.value).map_err(|_| {
+                .record(to_data(&entry_data).map_err(|_| {
                     AgentError::from(ClientError::invalid_request("Failed to serialize entry"))
                 })?)
                 .maybe_tags(tags)
@@ -975,18 +976,73 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             use jacquard::to_data;
             use weaver_api::sh_weaver::notebook::page::Page;
 
-            let entry_uri = Page::uri(entry_ref.uri.clone())
+            let page_uri = Page::uri(entry_ref.uri.clone())
                 .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid page URI")))?;
-            let entry = self.fetch_record(&entry_uri).await?;
 
-            let title = entry.value.title.clone();
-            let tags = entry.value.tags.clone();
+            // Get the rkey for version lookup
+            let rkey = page_uri.rkey().ok_or_else(|| {
+                AgentError::from(ClientError::invalid_request("Page URI missing rkey"))
+            })?;
 
             // Fetch permissions for this page (includes inherited notebook permissions)
-            let permissions = self.get_permissions_for_resource(&entry_uri).await?;
+            let permissions = self.get_permissions_for_resource(&page_uri).await?;
+
+            // Get all collaborators (owner + invited)
+            let owner_did = match page_uri.authority() {
+                jacquard::types::ident::AtIdentifier::Did(d) => d.clone().into_static(),
+                jacquard::types::ident::AtIdentifier::Handle(h) => {
+                    let (did, _) = self.pds_for_handle(h).await.map_err(|e| {
+                        AgentError::from(
+                            ClientError::from(e).with_context("Failed to resolve handle"),
+                        )
+                    })?;
+                    did.into_static()
+                }
+            };
+            let collaborators = self
+                .find_collaborators_for_resource(&page_uri)
+                .await
+                .unwrap_or_default();
+            let all_dids: Vec<Did<'static>> = std::iter::once(owner_did)
+                .chain(collaborators.into_iter())
+                .collect();
+
+            // Find all versions across collaborators, get latest by updatedAt
+            let versions = self
+                .find_all_versions(
+                    <Page as jacquard::types::collection::Collection>::NSID,
+                    rkey.0.as_str(),
+                    &all_dids,
+                )
+                .await
+                .unwrap_or_default();
+
+            // Use latest version if found, otherwise fall back to direct fetch
+            let (page_data, final_uri, final_cid) = if let Some(latest) = versions.first() {
+                let page: Page = jacquard::from_data(&latest.value).map_err(|_| {
+                    AgentError::from(ClientError::invalid_request(
+                        "Failed to deserialize latest page",
+                    ))
+                })?;
+                (page.into_static(), latest.uri.clone(), latest.cid.clone())
+            } else {
+                // No versions found, fetch directly from PDS
+                let page = self.fetch_record(&page_uri).await?;
+                let cid = page.cid.ok_or_else(|| {
+                    AgentError::from(ClientError::invalid_request("Page missing CID"))
+                })?;
+                (
+                    page.value.into_static(),
+                    page.uri.into_static(),
+                    cid.into_static(),
+                )
+            };
+
+            let title = page_data.title.clone();
+            let tags = page_data.tags.clone();
 
             // Fetch contributors (evidence-based authors) for this page
-            let contributor_dids = self.find_contributors_for_resource(&entry_uri).await?;
+            let contributor_dids = self.find_contributors_for_resource(&page_uri).await?;
             let mut authors = Vec::new();
             for (index, did) in contributor_dids.iter().enumerate() {
                 let (profile_uri, profile_view) = self.hydrate_profile_view(did).await?;
@@ -1000,12 +1056,10 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             }
 
             Ok(EntryView::new()
-                .cid(entry.cid.ok_or_else(|| {
-                    AgentError::from(ClientError::invalid_request("Page missing CID"))
-                })?)
-                .uri(entry.uri)
+                .cid(final_cid)
+                .uri(final_uri)
                 .indexed_at(jacquard::types::string::Datetime::now())
-                .record(to_data(&entry.value).map_err(|_| {
+                .record(to_data(&page_data).map_err(|_| {
                     AgentError::from(ClientError::invalid_request("Failed to serialize page"))
                 })?)
                 .maybe_tags(tags)
@@ -1102,65 +1156,71 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         async move {
             use jacquard::to_data;
             use jacquard::types::collection::Collection;
-            use weaver_api::com_atproto::repo::get_record::GetRecord;
 
-            // Resolve DID and PDS from ident
-            let (repo_did, pds_url) = match ident {
-                jacquard::types::ident::AtIdentifier::Did(did) => {
-                    let pds = self.pds_for_did(did).await.map_err(|e| {
-                        AgentError::from(
-                            ClientError::from(e).with_context("Failed to resolve PDS for DID"),
-                        )
-                    })?;
-                    (did.clone(), pds)
-                }
+            // Resolve DID from ident
+            let repo_did = match ident {
+                jacquard::types::ident::AtIdentifier::Did(did) => did.clone(),
                 jacquard::types::ident::AtIdentifier::Handle(handle) => {
-                    self.pds_for_handle(handle).await.map_err(|e| {
+                    let (did, _pds) = self.pds_for_handle(handle).await.map_err(|e| {
                         AgentError::from(
                             ClientError::from(e).with_context("Failed to resolve handle"),
                         )
-                    })?
+                    })?;
+                    did
                 }
             };
 
-            // Fetch the entry record
-            let request = GetRecord::new()
-                .repo(jacquard::types::ident::AtIdentifier::Did(repo_did.clone()))
-                .collection(jacquard::types::nsid::Nsid::raw(entry::Entry::NSID))
-                .rkey(RecordKey::any(rkey)?)
-                .build();
-
-            let response: Response<GetRecordResponse> = {
-                let http_request = xrpc::build_http_request(&pds_url, &request, &self.opts().await)
-                    .map_err(|e| AgentError::from(ClientError::transport(e)))?;
-
-                let http_response = self
-                    .send_http(http_request)
-                    .await
-                    .map_err(|e| AgentError::from(ClientError::transport(e)))?;
-
-                xrpc::process_response(http_response)
-            }
-            .map_err(|e| AgentError::new(AgentErrorKind::Client, Some(e.into())))?;
-
-            let record = response.into_output().map_err(|e| {
-                AgentError::from(ClientError::invalid_request(format!(
-                    "Failed to parse entry record: {}",
-                    e
-                )))
-            })?;
-
-            // Parse the entry value
-            let entry_value: entry::Entry = jacquard::from_data(&record.value).map_err(|e| {
-                AgentError::from(ClientError::invalid_request(format!(
-                    "Failed to deserialize entry: {}",
-                    e
-                )))
-            })?;
-
             // Build entry URI for contributor/permission queries
-            let entry_uri = entry::Entry::uri(record.uri.clone())
-                .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid entry URI")))?;
+            let entry_uri_str = format!("at://{}/{}/{}", repo_did, entry::Entry::NSID, rkey);
+            let entry_uri = AtUri::new(&entry_uri_str)
+                .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid entry URI")))?
+                .into_static();
+
+            // Get collaborators for version lookup
+            let collaborators = self
+                .find_collaborators_for_resource(&entry_uri)
+                .await
+                .unwrap_or_default();
+            let all_dids: Vec<Did<'static>> = std::iter::once(repo_did.clone().into_static())
+                .chain(collaborators.into_iter())
+                .collect();
+
+            // Find all versions across collaborators, get latest by updatedAt
+            let versions = self
+                .find_all_versions(entry::Entry::NSID, rkey, &all_dids)
+                .await
+                .unwrap_or_default();
+
+            // Use latest version if found, otherwise fetch directly from original ident
+            let (entry_value, final_uri, final_cid) = if let Some(latest) = versions.first() {
+                let entry: entry::Entry = jacquard::from_data(&latest.value).map_err(|e| {
+                    AgentError::from(ClientError::invalid_request(format!(
+                        "Failed to deserialize latest entry: {}",
+                        e
+                    )))
+                })?;
+                (entry.into_static(), latest.uri.clone(), latest.cid.clone())
+            } else {
+                // Fallback: fetch directly via slingshot
+                let record = self.fetch_record_slingshot(&entry_uri).await?;
+
+                let entry: entry::Entry = jacquard::from_data(&record.value).map_err(|e| {
+                    AgentError::from(ClientError::invalid_request(format!(
+                        "Failed to deserialize entry: {}",
+                        e
+                    )))
+                })?;
+
+                let cid = record.cid.ok_or_else(|| {
+                    AgentError::from(ClientError::invalid_request("Entry missing CID"))
+                })?;
+
+                (
+                    entry.into_static(),
+                    record.uri.into_static(),
+                    cid.into_static(),
+                )
+            };
 
             // Fetch contributors (evidence-based authors)
             let contributor_dids = self.find_contributors_for_resource(&entry_uri).await?;
@@ -1180,10 +1240,8 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             let permissions = self.get_permissions_for_resource(&entry_uri).await?;
 
             let entry_view = EntryView::new()
-                .cid(record.cid.ok_or_else(|| {
-                    AgentError::from(ClientError::invalid_request("Entry missing CID"))
-                })?)
-                .uri(record.uri)
+                .cid(final_cid)
+                .uri(final_uri)
                 .indexed_at(jacquard::types::string::Datetime::now())
                 .record(to_data(&entry_value).map_err(|_| {
                     AgentError::from(ClientError::invalid_request("Failed to serialize entry"))
@@ -1385,43 +1443,18 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     {
         async move {
             use jacquard::Data;
-            use weaver_api::com_atproto::repo::get_record::GetRecord;
 
             let mut versions = Vec::new();
 
             for collab_did in collaborators {
-                let Ok(pds_url) = self.pds_for_did(collab_did).await else {
+                // Build URI for this collaborator's version
+                let uri_str = format!("at://{}/{}/{}", collab_did, collection, rkey);
+                let Ok(uri) = AtUri::new(&uri_str) else {
                     continue;
                 };
 
-                let Ok(record_key) = RecordKey::any(rkey) else {
-                    continue;
-                };
-                let request = GetRecord::new()
-                    .repo(jacquard::types::ident::AtIdentifier::Did(
-                        collab_did.clone(),
-                    ))
-                    .collection(jacquard::types::nsid::Nsid::raw(collection))
-                    .rkey(record_key)
-                    .build();
-
-                let Ok(http_request) =
-                    xrpc::build_http_request(&pds_url, &request, &self.opts().await)
-                else {
-                    continue;
-                };
-
-                let Ok(http_response) = self.send_http(http_request).await else {
-                    continue;
-                };
-
-                let response: Response<GetRecordResponse> =
-                    match xrpc::process_response(http_response) {
-                        Ok(r) => r,
-                        Err(_) => continue,
-                    };
-
-                let Ok(record) = response.into_output() else {
+                // Fetch via slingshot (handles cross-PDS routing)
+                let Ok(record) = self.fetch_record_slingshot(&uri).await else {
                     continue;
                 };
 
@@ -1916,7 +1949,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
 
             if let (Some(rkey), Some(collection)) = (rkey, collection) {
                 for collab_did in collaborators {
-                    // Try to fetch their version of the record
+                    // Try to fetch their version of the record via slingshot
                     let collab_uri_str = format!(
                         "at://{}/{}/{}",
                         collab_did.as_ref(),
@@ -1924,16 +1957,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                         rkey.as_ref()
                     );
                     if let Ok(collab_uri) = AtUri::new(&collab_uri_str) {
-                        // Check if record actually exists (200 = found, 400 = not found)
-                        if let Ok(response) = self
-                            .get_record::<weaver_api::sh_weaver::notebook::entry::Entry>(
-                                &collab_uri,
-                            )
-                            .await
-                        {
-                            if response.status().is_success() {
-                                contributors.insert(collab_did);
-                            }
+                        // Check if record actually exists
+                        if self.fetch_record_slingshot(&collab_uri).await.is_ok() {
+                            contributors.insert(collab_did);
                         }
                     }
                 }

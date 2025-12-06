@@ -274,8 +274,8 @@ pub async fn publish_entry(
             PublishResult::Updated(uri)
         }
     } else if let Some(existing_ref) = doc.entry_ref() {
-        // Update existing free-floating entry - use existing rkey for path rewriting
-        let did = fetcher
+        // Update existing entry (either owner or collaborator)
+        let current_did = fetcher
             .current_did()
             .await
             .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
@@ -284,6 +284,17 @@ pub async fn publish_entry(
             .uri
             .rkey()
             .ok_or_else(|| WeaverError::InvalidNotebook("Entry URI missing rkey".into()))?;
+
+        // Check if we're the owner or a collaborator
+        let owner_did = match existing_ref.uri.authority() {
+            AtIdentifier::Did(d) => d.clone(),
+            AtIdentifier::Handle(h) => fetcher
+                .client
+                .resolve_handle(h)
+                .await
+                .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve handle: {}", e)))?,
+        };
+        let is_collaborator = owner_did != current_did;
 
         // Rewrite draft image paths to published paths
         let content = rewrite_draft_paths(&doc.content(), rkey.0.as_str());
@@ -300,8 +311,10 @@ pub async fn publish_entry(
 
         let collection = Nsid::new(ENTRY_NSID).map_err(|e| WeaverError::AtprotoString(e))?;
 
+        // Collaborator: create/update in THEIR repo with SAME rkey
+        // Owner: update in their own repo
         let request = PutRecord::new()
-            .repo(AtIdentifier::Did(did))
+            .repo(AtIdentifier::Did(current_did.clone()))
             .collection(collection)
             .rkey(rkey.clone())
             .record(entry_data)
@@ -315,14 +328,24 @@ pub async fn publish_entry(
             .into_output()
             .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
 
-        // Update entry_ref with new CID
-        let updated_ref = StrongRef::new()
-            .uri(output.uri.clone().into_static())
-            .cid(output.cid.into_static())
-            .build();
-        doc.set_entry_ref(Some(updated_ref));
-
-        PublishResult::Updated(output.uri.into_static())
+        if is_collaborator {
+            // Collaborator: don't update doc.entry_ref() - it still points to original
+            // Their version is a parallel record at at://{collab_did}/sh.weaver.notebook.entry/{same_rkey}
+            tracing::info!(
+                "Collaborator published version: {} (original: {})",
+                output.uri,
+                existing_ref.uri
+            );
+            PublishResult::Created(output.uri.into_static())
+        } else {
+            // Owner: update entry_ref with new CID
+            let updated_ref = StrongRef::new()
+                .uri(output.uri.clone().into_static())
+                .cid(output.cid.into_static())
+                .build();
+            doc.set_entry_ref(Some(updated_ref));
+            PublishResult::Updated(output.uri.into_static())
+        }
     } else {
         // Create new free-floating entry - pre-generate rkey for path rewriting
         let did = fetcher
@@ -457,6 +480,21 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
     // Check if we're editing an existing entry
     let is_editing_existing = doc.entry_ref().is_some();
 
+    // Check if we're publishing as a collaborator (editing someone else's entry)
+    let is_collaborator = {
+        let entry_ref = doc.entry_ref();
+        let current_did = auth_state.read().did.clone();
+        match (entry_ref, current_did) {
+            (Some(ref r), Some(ref current)) => {
+                match r.uri.authority() {
+                    AtIdentifier::Did(owner_did) => owner_did != current,
+                    AtIdentifier::Handle(_) => false, // Can't determine without async resolve
+                }
+            }
+            _ => false,
+        }
+    };
+
     // Validate that we have required fields
     let can_publish = !doc.title().trim().is_empty() && !doc.content().trim().is_empty();
 
@@ -558,7 +596,14 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
                         }
                     } else {
                         div { class: "publish-form",
-                            if is_editing_existing {
+                            if is_collaborator {
+                                div { class: "publish-info publish-collab-info",
+                                    p { "Publishing as collaborator" }
+                                    p { class: "publish-collab-detail",
+                                        "This creates a version in your repository."
+                                    }
+                                }
+                            } else if is_editing_existing {
                                 div { class: "publish-info",
                                     p { "Updating existing entry" }
                                 }

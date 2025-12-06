@@ -1111,37 +1111,37 @@ pub mod config_region_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type CountryCode;
         type Rules;
+        type CountryCode;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type CountryCode = Unset;
         type Rules = Unset;
-    }
-    ///State transition - sets the `country_code` field to Set
-    pub struct SetCountryCode<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetCountryCode<S> {}
-    impl<S: State> State for SetCountryCode<S> {
-        type CountryCode = Set<members::country_code>;
-        type Rules = S::Rules;
+        type CountryCode = Unset;
     }
     ///State transition - sets the `rules` field to Set
     pub struct SetRules<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetRules<S> {}
     impl<S: State> State for SetRules<S> {
-        type CountryCode = S::CountryCode;
         type Rules = Set<members::rules>;
+        type CountryCode = S::CountryCode;
+    }
+    ///State transition - sets the `country_code` field to Set
+    pub struct SetCountryCode<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetCountryCode<S> {}
+    impl<S: State> State for SetCountryCode<S> {
+        type Rules = S::Rules;
+        type CountryCode = Set<members::country_code>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `country_code` field
-        pub struct country_code(());
         ///Marker type for the `rules` field
         pub struct rules(());
+        ///Marker type for the `country_code` field
+        pub struct country_code(());
     }
 }
 
@@ -1234,8 +1234,8 @@ where
 impl<'a, S> ConfigRegionBuilder<'a, S>
 where
     S: config_region_state::State,
-    S::CountryCode: config_region_state::IsSet,
     S::Rules: config_region_state::IsSet,
+    S::CountryCode: config_region_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> ConfigRegion<'a> {
@@ -1888,37 +1888,37 @@ pub mod config_region_rule_if_assured_over_age_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Age;
         type Access;
+        type Age;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Age = Unset;
         type Access = Unset;
-    }
-    ///State transition - sets the `age` field to Set
-    pub struct SetAge<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetAge<S> {}
-    impl<S: State> State for SetAge<S> {
-        type Age = Set<members::age>;
-        type Access = S::Access;
+        type Age = Unset;
     }
     ///State transition - sets the `access` field to Set
     pub struct SetAccess<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAccess<S> {}
     impl<S: State> State for SetAccess<S> {
-        type Age = S::Age;
         type Access = Set<members::access>;
+        type Age = S::Age;
+    }
+    ///State transition - sets the `age` field to Set
+    pub struct SetAge<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetAge<S> {}
+    impl<S: State> State for SetAge<S> {
+        type Access = S::Access;
+        type Age = Set<members::age>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `age` field
-        pub struct age(());
         ///Marker type for the `access` field
         pub struct access(());
+        ///Marker type for the `age` field
+        pub struct age(());
     }
 }
 
@@ -2008,8 +2008,8 @@ where
 impl<'a, S> ConfigRegionRuleIfAssuredOverAgeBuilder<'a, S>
 where
     S: config_region_rule_if_assured_over_age_state::State,
-    S::Age: config_region_rule_if_assured_over_age_state::IsSet,
     S::Access: config_region_rule_if_assured_over_age_state::IsSet,
+    S::Age: config_region_rule_if_assured_over_age_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> ConfigRegionRuleIfAssuredOverAge<'a> {
@@ -2082,37 +2082,37 @@ pub mod config_region_rule_if_assured_under_age_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Age;
         type Access;
+        type Age;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Age = Unset;
         type Access = Unset;
-    }
-    ///State transition - sets the `age` field to Set
-    pub struct SetAge<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetAge<S> {}
-    impl<S: State> State for SetAge<S> {
-        type Age = Set<members::age>;
-        type Access = S::Access;
+        type Age = Unset;
     }
     ///State transition - sets the `access` field to Set
     pub struct SetAccess<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAccess<S> {}
     impl<S: State> State for SetAccess<S> {
-        type Age = S::Age;
         type Access = Set<members::access>;
+        type Age = S::Age;
+    }
+    ///State transition - sets the `age` field to Set
+    pub struct SetAge<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetAge<S> {}
+    impl<S: State> State for SetAge<S> {
+        type Access = S::Access;
+        type Age = Set<members::age>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `age` field
-        pub struct age(());
         ///Marker type for the `access` field
         pub struct access(());
+        ///Marker type for the `age` field
+        pub struct age(());
     }
 }
 
@@ -2202,8 +2202,8 @@ where
 impl<'a, S> ConfigRegionRuleIfAssuredUnderAgeBuilder<'a, S>
 where
     S: config_region_rule_if_assured_under_age_state::State,
-    S::Age: config_region_rule_if_assured_under_age_state::IsSet,
     S::Access: config_region_rule_if_assured_under_age_state::IsSet,
+    S::Age: config_region_rule_if_assured_under_age_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> ConfigRegionRuleIfAssuredUnderAge<'a> {
@@ -2276,37 +2276,37 @@ pub mod config_region_rule_if_declared_over_age_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Age;
         type Access;
+        type Age;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Age = Unset;
         type Access = Unset;
-    }
-    ///State transition - sets the `age` field to Set
-    pub struct SetAge<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetAge<S> {}
-    impl<S: State> State for SetAge<S> {
-        type Age = Set<members::age>;
-        type Access = S::Access;
+        type Age = Unset;
     }
     ///State transition - sets the `access` field to Set
     pub struct SetAccess<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAccess<S> {}
     impl<S: State> State for SetAccess<S> {
-        type Age = S::Age;
         type Access = Set<members::access>;
+        type Age = S::Age;
+    }
+    ///State transition - sets the `age` field to Set
+    pub struct SetAge<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetAge<S> {}
+    impl<S: State> State for SetAge<S> {
+        type Access = S::Access;
+        type Age = Set<members::age>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `age` field
-        pub struct age(());
         ///Marker type for the `access` field
         pub struct access(());
+        ///Marker type for the `age` field
+        pub struct age(());
     }
 }
 
@@ -2396,8 +2396,8 @@ where
 impl<'a, S> ConfigRegionRuleIfDeclaredOverAgeBuilder<'a, S>
 where
     S: config_region_rule_if_declared_over_age_state::State,
-    S::Age: config_region_rule_if_declared_over_age_state::IsSet,
     S::Access: config_region_rule_if_declared_over_age_state::IsSet,
+    S::Age: config_region_rule_if_declared_over_age_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> ConfigRegionRuleIfDeclaredOverAge<'a> {
@@ -2470,37 +2470,37 @@ pub mod config_region_rule_if_declared_under_age_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Age;
         type Access;
+        type Age;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Age = Unset;
         type Access = Unset;
-    }
-    ///State transition - sets the `age` field to Set
-    pub struct SetAge<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetAge<S> {}
-    impl<S: State> State for SetAge<S> {
-        type Age = Set<members::age>;
-        type Access = S::Access;
+        type Age = Unset;
     }
     ///State transition - sets the `access` field to Set
     pub struct SetAccess<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAccess<S> {}
     impl<S: State> State for SetAccess<S> {
-        type Age = S::Age;
         type Access = Set<members::access>;
+        type Age = S::Age;
+    }
+    ///State transition - sets the `age` field to Set
+    pub struct SetAge<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetAge<S> {}
+    impl<S: State> State for SetAge<S> {
+        type Access = S::Access;
+        type Age = Set<members::age>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `age` field
-        pub struct age(());
         ///Marker type for the `access` field
         pub struct access(());
+        ///Marker type for the `age` field
+        pub struct age(());
     }
 }
 
@@ -2590,8 +2590,8 @@ where
 impl<'a, S> ConfigRegionRuleIfDeclaredUnderAgeBuilder<'a, S>
 where
     S: config_region_rule_if_declared_under_age_state::State,
-    S::Age: config_region_rule_if_declared_under_age_state::IsSet,
     S::Access: config_region_rule_if_declared_under_age_state::IsSet,
+    S::Age: config_region_rule_if_declared_under_age_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> ConfigRegionRuleIfDeclaredUnderAge<'a> {
@@ -2698,85 +2698,85 @@ pub mod event_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type CreatedAt;
         type Status;
-        type Access;
         type AttemptId;
+        type Access;
         type CountryCode;
+        type CreatedAt;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type CreatedAt = Unset;
         type Status = Unset;
-        type Access = Unset;
         type AttemptId = Unset;
+        type Access = Unset;
         type CountryCode = Unset;
-    }
-    ///State transition - sets the `created_at` field to Set
-    pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
-    impl<S: State> State for SetCreatedAt<S> {
-        type CreatedAt = Set<members::created_at>;
-        type Status = S::Status;
-        type Access = S::Access;
-        type AttemptId = S::AttemptId;
-        type CountryCode = S::CountryCode;
+        type CreatedAt = Unset;
     }
     ///State transition - sets the `status` field to Set
     pub struct SetStatus<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetStatus<S> {}
     impl<S: State> State for SetStatus<S> {
-        type CreatedAt = S::CreatedAt;
         type Status = Set<members::status>;
+        type AttemptId = S::AttemptId;
         type Access = S::Access;
-        type AttemptId = S::AttemptId;
         type CountryCode = S::CountryCode;
-    }
-    ///State transition - sets the `access` field to Set
-    pub struct SetAccess<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetAccess<S> {}
-    impl<S: State> State for SetAccess<S> {
         type CreatedAt = S::CreatedAt;
-        type Status = S::Status;
-        type Access = Set<members::access>;
-        type AttemptId = S::AttemptId;
-        type CountryCode = S::CountryCode;
     }
     ///State transition - sets the `attempt_id` field to Set
     pub struct SetAttemptId<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAttemptId<S> {}
     impl<S: State> State for SetAttemptId<S> {
-        type CreatedAt = S::CreatedAt;
         type Status = S::Status;
-        type Access = S::Access;
         type AttemptId = Set<members::attempt_id>;
+        type Access = S::Access;
         type CountryCode = S::CountryCode;
+        type CreatedAt = S::CreatedAt;
+    }
+    ///State transition - sets the `access` field to Set
+    pub struct SetAccess<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetAccess<S> {}
+    impl<S: State> State for SetAccess<S> {
+        type Status = S::Status;
+        type AttemptId = S::AttemptId;
+        type Access = Set<members::access>;
+        type CountryCode = S::CountryCode;
+        type CreatedAt = S::CreatedAt;
     }
     ///State transition - sets the `country_code` field to Set
     pub struct SetCountryCode<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCountryCode<S> {}
     impl<S: State> State for SetCountryCode<S> {
-        type CreatedAt = S::CreatedAt;
         type Status = S::Status;
-        type Access = S::Access;
         type AttemptId = S::AttemptId;
+        type Access = S::Access;
         type CountryCode = Set<members::country_code>;
+        type CreatedAt = S::CreatedAt;
+    }
+    ///State transition - sets the `created_at` field to Set
+    pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
+    impl<S: State> State for SetCreatedAt<S> {
+        type Status = S::Status;
+        type AttemptId = S::AttemptId;
+        type Access = S::Access;
+        type CountryCode = S::CountryCode;
+        type CreatedAt = Set<members::created_at>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `created_at` field
-        pub struct created_at(());
         ///Marker type for the `status` field
         pub struct status(());
-        ///Marker type for the `access` field
-        pub struct access(());
         ///Marker type for the `attempt_id` field
         pub struct attempt_id(());
+        ///Marker type for the `access` field
+        pub struct access(());
         ///Marker type for the `country_code` field
         pub struct country_code(());
+        ///Marker type for the `created_at` field
+        pub struct created_at(());
     }
 }
 
@@ -3032,11 +3032,11 @@ where
 impl<'a, S> EventBuilder<'a, S>
 where
     S: event_state::State,
-    S::CreatedAt: event_state::IsSet,
     S::Status: event_state::IsSet,
-    S::Access: event_state::IsSet,
     S::AttemptId: event_state::IsSet,
+    S::Access: event_state::IsSet,
     S::CountryCode: event_state::IsSet,
+    S::CreatedAt: event_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Event<'a> {
@@ -3129,37 +3129,37 @@ pub mod state_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Status;
         type Access;
+        type Status;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Status = Unset;
         type Access = Unset;
-    }
-    ///State transition - sets the `status` field to Set
-    pub struct SetStatus<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetStatus<S> {}
-    impl<S: State> State for SetStatus<S> {
-        type Status = Set<members::status>;
-        type Access = S::Access;
+        type Status = Unset;
     }
     ///State transition - sets the `access` field to Set
     pub struct SetAccess<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAccess<S> {}
     impl<S: State> State for SetAccess<S> {
-        type Status = S::Status;
         type Access = Set<members::access>;
+        type Status = S::Status;
+    }
+    ///State transition - sets the `status` field to Set
+    pub struct SetStatus<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetStatus<S> {}
+    impl<S: State> State for SetStatus<S> {
+        type Access = S::Access;
+        type Status = Set<members::status>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `status` field
-        pub struct status(());
         ///Marker type for the `access` field
         pub struct access(());
+        ///Marker type for the `status` field
+        pub struct status(());
     }
 }
 
@@ -3252,8 +3252,8 @@ where
 impl<'a, S> StateBuilder<'a, S>
 where
     S: state_state::State,
-    S::Status: state_state::IsSet,
     S::Access: state_state::IsSet,
+    S::Status: state_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> State<'a> {

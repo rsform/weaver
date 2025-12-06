@@ -72,37 +72,6 @@ fn apply_delta(val: usize, delta: isize) -> usize {
     }
 }
 
-/// Adjust a cached paragraph's positions after an earlier edit.
-fn adjust_paragraph_positions(
-    cached: &CachedParagraph,
-    char_delta: isize,
-    byte_delta: isize,
-) -> ParagraphRender {
-    let mut adjusted_map = cached.offset_map.clone();
-    for mapping in &mut adjusted_map {
-        mapping.char_range.start = apply_delta(mapping.char_range.start, char_delta);
-        mapping.char_range.end = apply_delta(mapping.char_range.end, char_delta);
-        mapping.byte_range.start = apply_delta(mapping.byte_range.start, byte_delta);
-        mapping.byte_range.end = apply_delta(mapping.byte_range.end, byte_delta);
-    }
-
-    let mut adjusted_syntax = cached.syntax_spans.clone();
-    for span in &mut adjusted_syntax {
-        span.adjust_positions(char_delta);
-    }
-
-    ParagraphRender {
-        byte_range: apply_delta(cached.byte_range.start, byte_delta)
-            ..apply_delta(cached.byte_range.end, byte_delta),
-        char_range: apply_delta(cached.char_range.start, char_delta)
-            ..apply_delta(cached.char_range.end, char_delta),
-        html: cached.html.clone(),
-        offset_map: adjusted_map,
-        syntax_spans: adjusted_syntax,
-        source_hash: cached.source_hash,
-    }
-}
-
 /// Render markdown with incremental caching.
 ///
 /// Uses cached paragraph renders when possible, only re-rendering changed paragraphs.
@@ -163,9 +132,7 @@ pub fn render_paragraphs_incremental(
     // Need cache and non-boundary-affecting edit info (for edit position)
     let current_len = text.len_unicode();
 
-    let use_fast_path = cache.is_some()
-        && edit.is_some()
-        && !is_boundary_affecting(edit.unwrap());
+    let use_fast_path = cache.is_some() && edit.is_some() && !is_boundary_affecting(edit.unwrap());
 
     tracing::debug!(
         target: "weaver::render",
@@ -320,7 +287,12 @@ pub fn render_paragraphs_incremental(
             // Include cached refs in all_refs
             all_refs.extend(cached.collected_refs.clone());
 
-            (cached.html.clone(), adjusted_map, adjusted_syntax, cached.collected_refs.clone())
+            (
+                cached.html.clone(),
+                adjusted_map,
+                adjusted_syntax,
+                cached.collected_refs.clone(),
+            )
         } else {
             // Fresh render needed - create detached LoroDoc for this paragraph
             let para_doc = loro::LoroDoc::new();

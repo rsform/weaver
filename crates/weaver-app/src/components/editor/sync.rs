@@ -18,6 +18,8 @@
 
 use std::collections::BTreeMap;
 
+use super::document::{EditorDocument, LoadedDocState};
+use crate::fetch::Fetcher;
 use jacquard::bytes::Bytes;
 use jacquard::cowstr::ToCowStr;
 use jacquard::prelude::*;
@@ -30,6 +32,8 @@ use jacquard::types::tid::Ticker;
 use jacquard::types::uri::Uri;
 use jacquard::url::Url;
 use jacquard::{CowStr, IntoStatic, to_data};
+use loro::LoroDoc;
+use loro::ToJson;
 use weaver_api::com_atproto::repo::create_record::CreateRecord;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::com_atproto::sync::get_blob::GetBlob;
@@ -40,15 +44,142 @@ use weaver_api::sh_weaver::edit::{DocRef, DocRefValue, DraftRef, EntryRef};
 use weaver_common::constellation::{GetBacklinksQuery, RecordId};
 use weaver_common::{WeaverError, WeaverExt};
 
-use crate::fetch::Fetcher;
-
-use super::document::{EditorDocument, LoadedDocState};
-use loro::LoroDoc;
-
 const ROOT_NSID: &str = "sh.weaver.edit.root";
 const DIFF_NSID: &str = "sh.weaver.edit.diff";
 const DRAFT_NSID: &str = "sh.weaver.edit.draft";
 const CONSTELLATION_URL: &str = "https://constellation.microcosm.blue";
+
+/// Extract record embeds from a LoroDoc and pre-fetch their rendered content.
+///
+/// Reads the embeds.records list from the document, extracts RecordEmbed entries,
+/// and fetches/renders each one to populate a ResolvedContent map.
+/// Also pre-warms the blob cache for images if `owner_ident` is provided.
+async fn prefetch_embeds_from_doc(
+    doc: &LoroDoc,
+    fetcher: &Fetcher,
+    owner_ident: Option<&str>,
+) -> weaver_common::ResolvedContent {
+    use weaver_api::sh_weaver::embed::images::Image;
+    use weaver_api::sh_weaver::embed::records::RecordEmbed;
+
+    let mut resolved = weaver_common::ResolvedContent::default();
+
+    let embeds_map = doc.get_map("embeds");
+
+    // Pre-warm blob cache for images
+    if let Some(ident) = owner_ident {
+        if let Ok(images_container) =
+            embeds_map.get_or_create_container("images", loro::LoroList::new())
+        {
+            for i in 0..images_container.len() {
+                let Some(value) = images_container.get(i) else {
+                    continue;
+                };
+                let Some(loro_value) = value.as_value() else {
+                    continue;
+                };
+                let json = loro_value.to_json_value();
+                let Ok(image) = jacquard::from_json_value::<Image>(json) else {
+                    continue;
+                };
+
+                let cid = image.image.blob().cid();
+                let name = image.name.as_ref().map(|n| n.as_ref());
+                if let Err(e) = crate::data::cache_blob(
+                    ident.into(),
+                    cid.as_ref().into(),
+                    name.map(|n| n.into()),
+                )
+                .await
+                {
+                    tracing::warn!("Failed to pre-warm blob cache for {}: {}", cid, e);
+                }
+            }
+        }
+    }
+
+    // Strategy 1: Get embeds from Loro embeds map -> records list
+
+    if let Ok(records_container) =
+        embeds_map.get_or_create_container("records", loro::LoroList::new())
+    {
+        tracing::debug!("Loro embeds map records len: {}", records_container.len());
+
+        for i in 0..records_container.len() {
+            let Some(value) = records_container.get(i) else {
+                continue;
+            };
+            let Some(loro_value) = value.as_value() else {
+                continue;
+            };
+            let json = loro_value.to_json_value();
+            let Ok(record_embed) = jacquard::from_json_value::<RecordEmbed>(json) else {
+                continue;
+            };
+
+            // name is the key used in markdown, fallback to record.uri
+            let key_uri = if let Some(ref name) = record_embed.name {
+                match AtUri::new(name.as_ref()) {
+                    Ok(uri) => uri.into_static(),
+                    Err(_) => continue,
+                }
+            } else {
+                record_embed.record.uri.clone().into_static()
+            };
+
+            // Fetch and render
+            match weaver_renderer::atproto::fetch_and_render(&record_embed.record.uri, fetcher)
+                .await
+            {
+                Ok(html) => {
+                    tracing::debug!("Pre-fetched embed from Loro map: {}", key_uri);
+                    resolved.add_embed(key_uri, html, None);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to pre-fetch embed {}: {}",
+                        record_embed.record.uri,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    // Strategy 2: If no embeds found in Loro map, parse markdown text
+    if resolved.embed_content.is_empty() {
+        use weaver_common::{collect_refs_from_markdown, ExtractedRef};
+
+        let text = doc.get_text("content");
+        let markdown = text.to_string();
+
+        if !markdown.is_empty() {
+            tracing::debug!("Falling back to markdown parsing for embeds");
+            let refs = collect_refs_from_markdown(&markdown);
+
+            for extracted in refs {
+                if let ExtractedRef::AtEmbed { uri, .. } = extracted {
+                    let key_uri = match AtUri::new(&uri) {
+                        Ok(u) => u.into_static(),
+                        Err(_) => continue,
+                    };
+
+                    match weaver_renderer::atproto::fetch_and_render(&key_uri, fetcher).await {
+                        Ok(html) => {
+                            tracing::debug!("Pre-fetched embed from markdown: {}", uri);
+                            resolved.add_embed(key_uri, html, None);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to pre-fetch embed {}: {}", uri, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    resolved
+}
 
 /// Build a DocRef for either a published entry or an unpublished draft.
 ///
@@ -82,11 +213,7 @@ fn build_doc_ref(
                 tid.to_string()
             } else if draft_key.starts_with("at://") {
                 // Editing existing entry: use the entry's rkey
-                draft_key
-                    .split('/')
-                    .last()
-                    .unwrap_or(draft_key)
-                    .to_string()
+                draft_key.split('/').last().unwrap_or(draft_key).to_string()
             } else if draft_key.starts_with("did:") && draft_key.contains(':') {
                 // Old canonical format "did:xxx:rkey" - extract rkey
                 draft_key
@@ -158,7 +285,7 @@ pub async fn find_edit_root_for_entry(
 
     let query = GetBacklinksQuery {
         subject: Uri::At(entry_uri.clone().into_static()),
-        source: format!("{}:.doc.value.entry.uri", ROOT_NSID).into(),
+        source: format!("{}:doc.value.entry.uri", ROOT_NSID).into(),
         cursor: None,
         did: vec![],
         limit: 1,
@@ -178,6 +305,76 @@ pub async fn find_edit_root_for_entry(
     Ok(output.records.into_iter().next().map(|r| r.into_static()))
 }
 
+/// Find ALL edit.root records across collaborators for an entry.
+///
+/// 1. Gets list of collaborators via permissions
+/// 2. Queries Constellation for edit.root in each collaborator's repo
+/// 3. Returns all found roots for CRDT merge
+pub async fn find_all_edit_roots_for_entry(
+    fetcher: &Fetcher,
+    entry_uri: &AtUri<'_>,
+) -> Result<Vec<RecordId<'static>>, WeaverError> {
+    // Get collaborators from permissions
+    let collaborators = fetcher
+        .get_client()
+        .find_collaborators_for_resource(entry_uri)
+        .await
+        .unwrap_or_default();
+
+    // Include the entry owner
+    let owner_did = match entry_uri.authority() {
+        AtIdentifier::Did(d) => d.clone().into_static(),
+        AtIdentifier::Handle(h) => fetcher
+            .client
+            .resolve_handle(h)
+            .await
+            .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve handle: {}", e)))?
+            .into_static(),
+    };
+
+    let all_dids: Vec<Did<'static>> = std::iter::once(owner_did)
+        .chain(collaborators.into_iter())
+        .collect();
+
+    let constellation_url = Url::parse(CONSTELLATION_URL)
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
+
+    let mut all_roots = Vec::new();
+
+    // Query for edit.root records from this DID that reference entry_uri
+    let query = GetBacklinksQuery {
+        subject: Uri::At(entry_uri.clone().into_static()),
+        source: format!("{}:doc.value.entry.uri", ROOT_NSID).into(),
+        cursor: None,
+        did: all_dids.clone(),
+        limit: 10,
+    };
+
+    let response = fetcher
+        .get_client()
+        .xrpc(constellation_url.clone())
+        .send(&query)
+        .await;
+
+    if let Ok(response) = response {
+        if let Ok(output) = response.into_output() {
+            all_roots.extend(output.records.into_iter().map(|r| r.into_static()));
+        } else {
+            tracing::warn!("Failed to parse response for edit root query");
+        }
+    } else {
+        tracing::warn!("Failed to fetch edit root query");
+    }
+
+    tracing::debug!(
+        "find_all_edit_roots_for_entry: found {} roots across {} collaborators",
+        all_roots.len(),
+        all_dids.len()
+    );
+
+    Ok(all_roots)
+}
+
 /// Find the edit root for a draft using constellation backlinks.
 ///
 /// Queries constellation for `sh.weaver.edit.root` records that reference
@@ -193,7 +390,7 @@ pub async fn find_edit_root_for_draft(
 
     let query = GetBacklinksQuery {
         subject: Uri::At(draft_uri.clone().into_static()),
-        source: format!("{}:.doc.value.draft_key", ROOT_NSID).into(),
+        source: format!("{}:doc.value.draft_key", ROOT_NSID).into(),
         cursor: None,
         did: vec![],
         limit: 1,
@@ -221,11 +418,7 @@ pub fn build_draft_uri(did: &Did<'_>, draft_key: &str) -> AtUri<'static> {
     let rkey = if let Some(tid) = draft_key.strip_prefix("new:") {
         tid.to_string()
     } else if draft_key.starts_with("at://") {
-        draft_key
-            .split('/')
-            .last()
-            .unwrap_or(draft_key)
-            .to_string()
+        draft_key.split('/').last().unwrap_or(draft_key).to_string()
     } else {
         draft_key.to_string()
     };
@@ -240,11 +433,7 @@ fn extract_draft_rkey(draft_key: &str) -> String {
     if let Some(tid) = draft_key.strip_prefix("new:") {
         tid.to_string()
     } else if draft_key.starts_with("at://") {
-        draft_key
-            .split('/')
-            .last()
-            .unwrap_or(draft_key)
-            .to_string()
+        draft_key.split('/').last().unwrap_or(draft_key).to_string()
     } else {
         draft_key.to_string()
     }
@@ -267,8 +456,8 @@ async fn create_draft_stub(
     let draft_data = to_data(&draft)
         .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to serialize draft: {}", e)))?;
 
-    let record_key = RecordKey::any(rkey)
-        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
+    let record_key =
+        RecordKey::any(rkey).map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
 
     let collection = Nsid::new(DRAFT_NSID).map_err(WeaverError::AtprotoString)?;
 
@@ -331,7 +520,10 @@ pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>,
         WeaverError::InvalidNotebook(format!("Failed to parse list records response: {}", e))
     })?;
 
-    tracing::debug!("list_drafts_from_pds: found {} records", output.records.len());
+    tracing::debug!(
+        "list_drafts_from_pds: found {} records",
+        output.records.len()
+    );
 
     let mut drafts = Vec::new();
     for record in output.records {
@@ -344,9 +536,10 @@ pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>,
         tracing::debug!("  Draft record: uri={}, rkey={}", record.uri, rkey);
 
         // Parse the draft record to get createdAt
-        let created_at = jacquard::from_data::<weaver_api::sh_weaver::edit::draft::Draft>(&record.value)
-            .map(|d| d.created_at.to_string())
-            .unwrap_or_default();
+        let created_at =
+            jacquard::from_data::<weaver_api::sh_weaver::edit::draft::Draft>(&record.value)
+                .map(|d| d.created_at.to_string())
+                .unwrap_or_default();
 
         drafts.push(RemoteDraft {
             uri: record.uri.into_static(),
@@ -373,7 +566,7 @@ pub async fn find_diffs_for_root(
     loop {
         let query = GetBacklinksQuery {
             subject: Uri::At(root_uri.clone().into_static()),
-            source: format!("{}:.root.uri", DIFF_NSID).into(),
+            source: format!("{}:root.uri", DIFF_NSID).into(),
             cursor: cursor.map(Into::into),
             did: vec![],
             limit: 100,
@@ -733,6 +926,88 @@ pub async fn load_edit_state_from_draft(
     load_edit_state_from_root_id(fetcher, root_id).await
 }
 
+/// Load edit state from ALL collaborator repos for an entry, returning merged state.
+///
+/// For each edit.root found across collaborators:
+/// - Fetches the root snapshot
+/// - Finds and fetches all diffs for that root
+/// - Merges all Loro states into one unified document
+///
+/// Returns merged state suitable for CRDT collaboration.
+pub async fn load_all_edit_states_from_pds(
+    fetcher: &Fetcher,
+    entry_uri: &AtUri<'_>,
+) -> Result<Option<PdsEditState>, WeaverError> {
+    let all_roots = find_all_edit_roots_for_entry(fetcher, entry_uri).await?;
+
+    if all_roots.is_empty() {
+        return Ok(None);
+    }
+
+    // We'll merge all snapshots and diffs into one unified LoroDoc
+    let merged_doc = LoroDoc::new();
+    let mut our_root_ref: Option<StrongRef<'static>> = None;
+    let mut our_last_diff_ref: Option<StrongRef<'static>> = None;
+
+    // Get current user's DID to identify "our" root for sync state tracking
+    let current_did = fetcher.current_did().await;
+
+    for root_id in all_roots {
+        // Save the DID before consuming root_id
+        let root_did = root_id.did.clone();
+
+        // Load state from this root
+        if let Some(pds_state) = load_edit_state_from_root_id(fetcher, root_id).await? {
+            // Import root snapshot into merged doc
+            if let Err(e) = merged_doc.import(&pds_state.root_snapshot) {
+                tracing::warn!("Failed to import root snapshot from {}: {:?}", root_did, e);
+                continue;
+            }
+
+            // Import all diffs
+            for diff in &pds_state.diff_updates {
+                if let Err(e) = merged_doc.import(diff) {
+                    tracing::warn!("Failed to import diff from {}: {:?}", root_did, e);
+                }
+            }
+
+            // Track "our" root/diff refs for sync state (used when syncing back)
+            // We want to track our own edit.root so subsequent diffs go to the right place
+            let is_our_root = current_did.as_ref().is_some_and(|did| root_did == *did);
+
+            if is_our_root {
+                // This is our own root - use it for sync state
+                our_root_ref = Some(pds_state.root_ref);
+                our_last_diff_ref = pds_state.last_diff_ref;
+            } else if our_root_ref.is_none() {
+                // We don't have our own root yet - use the first one we find
+                // (this handles the case where we're a new collaborator with no edit state)
+                our_root_ref = Some(pds_state.root_ref);
+                our_last_diff_ref = pds_state.last_diff_ref;
+            }
+        }
+    }
+
+    // Export merged state as new snapshot
+    let merged_snapshot = merged_doc.export(loro::ExportMode::Snapshot).map_err(|e| {
+        WeaverError::InvalidNotebook(format!("Failed to export merged snapshot: {}", e))
+    })?;
+
+    tracing::debug!(
+        "load_all_edit_states_from_pds: merged document, snapshot size = {} bytes",
+        merged_snapshot.len()
+    );
+
+    // If we found any roots, return the merged state
+    // Note: our_root_ref might be from another collaborator if we haven't created our own yet
+    Ok(our_root_ref.map(|root_ref| PdsEditState {
+        root_ref,
+        last_diff_ref: our_last_diff_ref,
+        root_snapshot: merged_snapshot.into(),
+        diff_updates: vec![], // Already merged into snapshot
+    }))
+}
+
 /// Internal helper to load edit state given a root record ID.
 async fn load_edit_state_from_root_id(
     fetcher: &Fetcher,
@@ -797,14 +1072,9 @@ async fn load_edit_state_from_root_id(
 
     for diff_id in &diff_ids {
         let rkey_str: &str = diff_id.rkey.as_ref();
-        let diff_uri = AtUri::new(&format!(
-            "at://{}/{}/{}",
-            diff_id.did,
-            DIFF_NSID,
-            rkey_str
-        ))
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid diff URI: {}", e)))?
-        .into_static();
+        let diff_uri = AtUri::new(&format!("at://{}/{}/{}", diff_id.did, DIFF_NSID, rkey_str))
+            .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid diff URI: {}", e)))?
+            .into_static();
 
         let diff_response = fetcher
             .client
@@ -878,18 +1148,26 @@ pub async fn load_and_merge_document(
     // Load snapshot + entry_ref from localStorage
     let local_data = load_snapshot_from_storage(draft_key);
 
-    // Load from PDS - try entry URI first, then draft discovery
+    // Load from PDS - for entries use multi-repo loading (all collaborators),
+    // for drafts use single-repo loading (draft sharing requires knowing the URI)
     let pds_state = if let Some(uri) = entry_uri {
-        // Published entry: query by entry URI
-        load_edit_state_from_pds(fetcher, uri).await?
+        // Published entry: load from ALL collaborators (multi-repo CRDT merge)
+        load_all_edit_states_from_pds(fetcher, uri).await?
     } else if let Some(did) = fetcher.current_did().await {
-        // Unpublished draft: try to discover via draft URI
+        // Unpublished draft: single-repo for now
+        // (draft sharing would require collaborator to know the draft URI)
         let draft_uri = build_draft_uri(&did, draft_key);
         load_edit_state_from_draft(fetcher, &draft_uri).await?
     } else {
         // Not authenticated, can't query PDS
         None
     };
+
+    // Extract owner identity from entry URI for blob cache warming
+    let owner_ident: Option<String> = entry_uri.map(|uri| match uri.authority() {
+        AtIdentifier::Did(d) => d.as_ref().to_string(),
+        AtIdentifier::Handle(h) => h.as_ref().to_string(),
+    });
 
     match (local_data, pds_state) {
         (None, None) => Ok(None),
@@ -902,12 +1180,16 @@ pub async fn load_and_merge_document(
                 tracing::warn!("Failed to import local snapshot: {:?}", e);
             }
 
+            let resolved_content =
+                prefetch_embeds_from_doc(&doc, fetcher, owner_ident.as_deref()).await;
+
             Ok(Some(LoadedDocState {
                 doc,
                 entry_ref: local.entry_ref, // Restored from localStorage
                 edit_root: None,
                 last_diff: None,
                 synced_version: None, // Local-only, never synced to PDS
+                resolved_content,
             }))
         }
 
@@ -931,12 +1213,16 @@ pub async fn load_and_merge_document(
             // Capture the version after loading all PDS state - this is our sync baseline
             let synced_version = Some(doc.oplog_vv());
 
+            let resolved_content =
+                prefetch_embeds_from_doc(&doc, fetcher, owner_ident.as_deref()).await;
+
             Ok(Some(LoadedDocState {
                 doc,
                 entry_ref: None, // Entry ref comes from the entry itself, not edit state
                 edit_root: Some(pds.root_ref),
                 last_diff: pds.last_diff_ref,
                 synced_version, // Just loaded from PDS, fully synced
+                resolved_content,
             }))
         }
 
@@ -978,12 +1264,16 @@ pub async fn load_and_merge_document(
 
             // Use the PDS version as our sync baseline - any local changes
             // beyond this will be detected as unsynced
+            let resolved_content =
+                prefetch_embeds_from_doc(&doc, fetcher, owner_ident.as_deref()).await;
+
             Ok(Some(LoadedDocState {
                 doc,
                 entry_ref: local.entry_ref, // Restored from localStorage
                 edit_root: Some(pds.root_ref),
                 last_diff: pds.last_diff_ref,
                 synced_version: Some(pds_version),
+                resolved_content,
             }))
         }
     }
@@ -1005,6 +1295,8 @@ pub enum SyncState {
     Syncing,
     /// Has local changes not yet synced
     Unsynced,
+    /// Remote collaborator changes available
+    RemoteChanges,
     /// Last sync failed
     Error,
     /// Not authenticated or sync disabled
@@ -1021,6 +1313,12 @@ pub struct SyncStatusProps {
     /// Auto-sync interval in milliseconds (0 to disable)
     #[props(default = 30_000)]
     pub auto_sync_interval_ms: u32,
+    /// Callback to refresh/reload document from collaborators
+    #[props(default)]
+    pub on_refresh: Option<EventHandler<()>>,
+    /// Whether this is a collaborative document (has collaborators)
+    #[props(default = false)]
+    pub is_collaborative: bool,
 }
 
 /// Sync status indicator with auto-sync functionality.
@@ -1050,33 +1348,58 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
     // Auto-sync trigger signal - set to true to trigger a sync
     let mut trigger_sync = use_signal(|| false);
 
-    // Auto-sync timer (WASM only) - just sets the trigger, doesn't access signals directly
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    // Auto-sync timer - triggers sync when there are unsynced changes
     {
-        let auto_sync_interval = props.auto_sync_interval_ms;
+        let auto_sync_interval_ms = props.auto_sync_interval_ms;
         let doc_for_check = doc.clone();
 
-        use_effect(move || {
-            if auto_sync_interval == 0 {
+        dioxus_sdk::time::use_interval(
+            std::time::Duration::from_millis(auto_sync_interval_ms as u64),
+            move |_| {
+                if auto_sync_interval_ms == 0 {
+                    return;
+                }
+                // Only trigger if there are unsynced changes
+                if doc_for_check.has_unsynced_changes() {
+                    trigger_sync.set(true);
+                }
+            },
+        );
+    }
+
+    // Collaborator poll timer - checks for collaborator updates periodically
+    // For collaborative documents, poll every 60s
+    // - If user has been idle ≥30s: auto-trigger refresh
+    // - If user is actively editing: show RemoteChanges state
+    {
+        let is_collaborative = props.is_collaborative;
+        let on_refresh = props.on_refresh.clone();
+        let doc_for_idle = doc.clone();
+
+        dioxus_sdk::time::use_interval(std::time::Duration::from_secs(60), move |_| {
+            if !is_collaborative {
                 return;
             }
 
-            let doc = doc_for_check.clone();
+            let idle_threshold = std::time::Duration::from_secs(30);
 
-            let interval = gloo_timers::callback::Interval::new(auto_sync_interval, move || {
-                // Only trigger if there are unsynced changes and we're not already syncing
-                if doc.has_unsynced_changes() {
-                    // This just sets a signal - the actual sync happens in use_future below
-                    trigger_sync.set(true);
+            // Check time since last edit
+            let is_idle = match doc_for_idle.last_edit() {
+                Some(edit_info) => edit_info.timestamp.elapsed() >= idle_threshold,
+                None => true, // No edits yet = idle
+            };
+
+            if is_idle {
+                // User is idle - safe to auto-refresh
+                if let Some(ref handler) = on_refresh {
+                    handler.call(());
                 }
-            });
-
-            interval.forget();
+            } else {
+                // User is actively editing - show remote changes indicator
+                sync_state.set(SyncState::RemoteChanges);
+            }
         });
     }
-
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let mut trigger_sync = use_signal(|| false);
 
     // Update sync state when document changes
     // Note: We use peek() to avoid creating a reactive dependency on sync_state
@@ -1157,20 +1480,6 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
         });
     });
 
-    // Manual sync handler - just sets the trigger if there are changes
-    let doc_for_manual = doc.clone();
-    let on_manual_sync = move |_| {
-        if *sync_state.peek() == SyncState::Syncing {
-            return; // Already syncing
-        }
-        if !doc_for_manual.has_unsynced_changes() {
-            // Already synced
-            sync_state.set(SyncState::Synced);
-            return;
-        }
-        trigger_sync.set(true);
-    };
-
     // Determine display state (drafts can sync too via DraftRef)
     let display_state = if !is_authenticated {
         SyncState::Disabled
@@ -1182,15 +1491,40 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
         SyncState::Synced => ("✓", "Synced", "sync-status synced"),
         SyncState::Syncing => ("◌", "Syncing...", "sync-status syncing"),
         SyncState::Unsynced => ("●", "Unsynced", "sync-status unsynced"),
+        SyncState::RemoteChanges => ("↓", "Updates", "sync-status remote-changes"),
         SyncState::Error => ("✕", "Sync error", "sync-status error"),
         SyncState::Disabled => ("○", "Sync disabled", "sync-status disabled"),
+    };
+
+    // Combined sync handler - pulls remote changes first if needed, then pushes local
+    let doc_for_sync = doc.clone();
+    let on_sync_click = {
+        let on_refresh = props.on_refresh.clone();
+        let current_state = display_state;
+        move |_: dioxus::events::MouseEvent| {
+            if *sync_state.peek() == SyncState::Syncing {
+                return; // Already syncing
+            }
+            // If there are remote changes, pull them first
+            if current_state == SyncState::RemoteChanges {
+                if let Some(ref handler) = on_refresh {
+                    handler.call(());
+                }
+            }
+            // Trigger sync if there are local changes
+            if doc_for_sync.has_unsynced_changes() {
+                trigger_sync.set(true);
+            } else if current_state != SyncState::RemoteChanges {
+                sync_state.set(SyncState::Synced);
+            }
+        }
     };
 
     rsx! {
         div {
             class: "{class}",
             title: if let Some(ref err) = *last_error.read() { err.clone() } else { label.to_string() },
-            onclick: on_manual_sync,
+            onclick: on_sync_click,
 
             span { class: "sync-icon", "{icon}" }
             span { class: "sync-label", "{label}" }

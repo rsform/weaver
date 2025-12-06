@@ -21,10 +21,10 @@
     "draftRef": {
       "type": "object",
       "required": [
-        "draft_key"
+        "draftKey"
       ],
       "properties": {
-        "draft_key": {
+        "draftKey": {
           "type": "string",
           "maxLength": 200
         }

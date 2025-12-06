@@ -279,6 +279,7 @@ pub fn update_paragraph_dom(
     old_paragraphs: &[ParagraphRender],
     new_paragraphs: &[ParagraphRender],
     cursor_offset: usize,
+    force: bool,
 ) -> bool {
     use wasm_bindgen::JsCast;
 
@@ -311,17 +312,24 @@ pub fn update_paragraph_dom(
         let para_id = format!("para-{}", idx);
 
         if let Some(old_para) = old_paragraphs.get(idx) {
-            if new_para.source_hash != old_para.source_hash {
+            if force || new_para.source_hash != old_para.source_hash {
                 // Changed - clear and update innerHTML
                 // We clear first to ensure any browser-added content (from IME composition,
                 // contenteditable quirks, etc.) is fully removed before setting new content
                 if let Some(elem) = document.get_element_by_id(&para_id) {
-                    elem.set_text_content(None); // Clear completely
-                    elem.set_inner_html(&new_para.html);
+                    if force && cursor_para_idx.is_some() {
+                        // skip re-rendering where the cursor is if we're forcing it
+                        // we don't want to fuck up what the user is doing
+                    } else {
+                        elem.set_text_content(None); // Clear completely
+                        elem.set_inner_html(&new_para.html);
+                    }
                 }
 
-                if Some(idx) == cursor_para_idx {
-                    cursor_para_updated = true;
+                if !force {
+                    if Some(idx) == cursor_para_idx {
+                        cursor_para_updated = true;
+                    }
                 }
             }
         } else {
@@ -342,6 +350,7 @@ pub fn update_paragraph_dom(
     if new_paragraphs.len() < old_paragraphs.len() {
         cursor_para_updated = true;
     }
+    // TODO: i think this is the cause of a number of bits of cursor jank
     for idx in new_paragraphs.len()..old_paragraphs.len() {
         let para_id = format!("para-{}", idx);
         if let Some(elem) = document.get_element_by_id(&para_id) {
@@ -358,7 +367,7 @@ pub fn update_paragraph_dom(
     _old_paragraphs: &[ParagraphRender],
     _new_paragraphs: &[ParagraphRender],
     _cursor_offset: usize,
+    _force: bool,
 ) -> bool {
     false
 }
-

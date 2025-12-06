@@ -105,17 +105,16 @@ enum Route {
 const FAVICON: Asset = asset!("/assets/weaver_photo_sm.jpg");
 const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
 
-#[cfg(not(feature = "fullstack-server"))]
-#[cfg(feature = "server")]
-async fn serve_sw() -> impl axum::response::IntoResponse {
-    use axum::response::IntoResponse;
-    let sw_js = include_str!("../assets/sw.js");
-    (
-        [(axum::http::header::CONTENT_TYPE, "application/javascript")],
-        sw_js,
-    )
-        .into_response()
-}
+// #[cfg(all(feature = "fullstack-server", feature = "server"))]
+// async fn serve_sw() -> axum::response::Response {
+//     use axum::response::IntoResponse;
+//     let sw_js = include_bytes!("../public/sw.js");
+//     (
+//         [(axum::http::header::CONTENT_TYPE, "application/javascript")],
+//         sw_js,
+//     )
+//         .into_response()
+// }
 
 pub static CONFIG: LazyLock<Config> = LazyLock::new(|| Config {
     oauth: OAuthConfig::from_env().as_metadata(),
@@ -188,6 +187,7 @@ fn main() {
             let blob_cache = Arc::new(BlobCache::new(fetcher.clone()));
             axum::Router::new()
                 .route("/favicon.ico", get(favicon))
+                //.route("/sw.js", get(serve_sw))
                 // Server side render the application, serve static assets, and register server functions
                 .serve_dioxus_application(
                     ServeConfig::builder(), // Enable incremental rendering
@@ -264,11 +264,7 @@ fn App() -> Element {
     #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
     let restore_result: Option<auth::RestoreResult> = None;
 
-    #[cfg(all(
-        target_family = "wasm",
-        target_os = "unknown",
-        not(feature = "fullstack-server")
-    ))]
+    #[cfg(all(target_family = "wasm", target_os = "unknown",))]
     {
         use_effect(move || {
             let fetcher = fetcher.clone();
@@ -325,8 +321,9 @@ fn ErrorLayout() -> Element {
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 pub async fn favicon() -> axum::response::Response {
     use axum::{http::header::CONTENT_TYPE, response::IntoResponse};
-    let bytes = include_bytes!("../assets/weaver_photo_sm.jpg");
-    ([(CONTENT_TYPE, "image/jpg")], bytes).into_response()
+    let favicon_bytes = include_bytes!("../assets/weaver_photo_sm.jpg");
+
+    ([(CONTENT_TYPE, "image/jpg")], favicon_bytes).into_response()
 }
 
 // #[server(endpoint = "static_routes", output = server_fn::codec::Json)]

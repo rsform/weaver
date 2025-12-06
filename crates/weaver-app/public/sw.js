@@ -23,14 +23,16 @@ self.addEventListener("activate", (event) => {
     Promise.all([
       clients.claim(),
       // Clean up old cache versions
-      caches.keys().then((names) =>
-        Promise.all(
-          names
-            .filter((name) => name.startsWith("weaver-blobs-") && name !== CACHE_NAME)
-            .map((name) => caches.delete(name))
-        )
-      ),
-    ])
+      caches
+        .keys()
+        .then((names) =>
+          Promise.all(
+            names
+              .filter((name) => name.startsWith("weaver-blobs-") && name !== CACHE_NAME)
+              .map((name) => caches.delete(name)),
+          ),
+        ),
+    ]),
   );
 });
 
@@ -41,6 +43,15 @@ self.addEventListener("message", (event) => {
     // Store blob URL mappings
     for (const [name, url] of Object.entries(event.data.blobs)) {
       const key = `${notebook}/image/${name}`;
+      urlMappings.set(key, url);
+    }
+  }
+  if (event.data.type === "register_rkey_mappings") {
+    const rkey = event.data.rkey;
+    const ident = event.data.ident;
+    // Store blob URL mappings
+    for (const [name, url] of Object.entries(event.data.blobs)) {
+      const key = `/image/${ident}/${rkey}/${name}`;
       urlMappings.set(key, url);
     }
   }
@@ -82,6 +93,14 @@ self.addEventListener("fetch", (event) => {
 
   // Check legacy mappings (for /{notebook}/image/{name} format)
   if (pathParts.length >= 3 && pathParts[pathParts.length - 2] === "image") {
+    const legacyKey = pathParts.join("/");
+    const mapping = urlMappings.get(legacyKey);
+    if (mapping) {
+      event.respondWith(handleBlobRequest(mapping, cacheKey));
+      return;
+    }
+  }
+  if (pathParts.length >= 4 && pathParts[0] === "image") {
     const legacyKey = pathParts.join("/");
     const mapping = urlMappings.get(legacyKey);
     if (mapping) {

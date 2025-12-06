@@ -126,11 +126,7 @@ pub fn use_entry_data(
                 let (_book_entry_view, entry_record) = (&entry.0, &entry.1);
                 if let Some(embeds) = &entry_record.embeds {
                     if let Some(images) = &embeds.images {
-                        #[cfg(all(
-                            target_family = "wasm",
-                            target_os = "unknown",
-                            not(feature = "fullstack-server")
-                        ))]
+                        #[cfg(all(target_family = "wasm", target_os = "unknown",))]
                         {
                             let _ = crate::service_worker::register_entry_blobs(
                                 &ident(),
@@ -899,16 +895,28 @@ pub fn use_entries_from_ufos() -> (
                                 use jacquard::types::aturi::AtUri;
                                 // Extract ident from the entry's at-uri
                                 if let Ok(at_uri) = AtUri::new(view.uri.as_ref()) {
-                                    let ident = at_uri.authority().to_smolstr();
+                                    let ident = at_uri.authority();
                                     for image in &images.images {
                                         let cid = image.image.blob().cid();
                                         cache_blob(
-                                            ident.clone(),
+                                            ident.clone().to_smolstr(),
                                             cid.to_smolstr(),
                                             image.name.as_ref().map(|n| n.to_smolstr()),
                                         )
                                         .await
                                         .ok();
+                                    }
+                                    #[cfg(all(target_family = "wasm", target_os = "unknown",))]
+                                    {
+                                        tracing::info!("Registering standalone entry blobs");
+                                        let _ =
+                                            crate::service_worker::register_standalone_entry_blobs(
+                                                &ident,
+                                                at_uri.rkey().unwrap().0.as_str(),
+                                                images,
+                                                &fetcher,
+                                            )
+                                            .await;
                                     }
                                 }
                             }
@@ -1205,9 +1213,7 @@ pub fn extract_did_from_author(author: &AuthorListView<'_>) -> Option<Did<'stati
 /// - `None` if the user is not authenticated or permissions not yet loaded
 ///
 /// This checks the ACL-based permissions (who CAN edit), not authors (who contributed).
-pub fn use_can_edit(
-    permissions: Memo<Option<PermissionsState<'static>>>,
-) -> Memo<Option<bool>> {
+pub fn use_can_edit(permissions: Memo<Option<PermissionsState<'static>>>) -> Memo<Option<bool>> {
     let auth_state = use_context::<Signal<AuthState>>();
 
     use_memo(move || {
@@ -1215,10 +1221,7 @@ pub fn use_can_edit(
         let perms = permissions()?;
 
         // Check if current user's DID is in the editors list
-        let can_edit = perms
-            .editors
-            .iter()
-            .any(|grant| grant.did == current_did);
+        let can_edit = perms.editors.iter().any(|grant| grant.did == current_did);
 
         Some(can_edit)
     })
@@ -1250,9 +1253,7 @@ pub fn use_can_edit_from_authors(
 ///
 /// This performs an async check that queries Constellation for collaboration records.
 /// Use this when you have a resource URI but not the pre-populated authors list.
-pub fn use_can_edit_resource(
-    resource_uri: ReadSignal<AtUri<'static>>,
-) -> Resource<Option<bool>> {
+pub fn use_can_edit_resource(resource_uri: ReadSignal<AtUri<'static>>) -> Resource<Option<bool>> {
     let auth_state = use_context::<Signal<AuthState>>();
     let fetcher = use_context::<crate::fetch::Fetcher>();
 
@@ -1316,6 +1317,17 @@ pub fn use_standalone_entry_data(
                             use jacquard::types::aturi::AtUri;
                             if let Ok(at_uri) = AtUri::new(data.entry_view.uri.as_ref()) {
                                 let ident_str = at_uri.authority().to_smolstr();
+                                #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+                                {
+                                    tracing::debug!("Registering standalone entry blobs");
+                                    let _ = crate::service_worker::register_standalone_entry_blobs(
+                                        &ident(),
+                                        rkey().as_str(),
+                                        images,
+                                        &fetcher,
+                                    )
+                                    .await;
+                                }
                                 for image in &images.images {
                                     let cid = image.image.blob().cid();
                                     cache_blob(

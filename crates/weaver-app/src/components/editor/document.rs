@@ -104,7 +104,8 @@ pub struct EditorDocument {
     /// Version vector at the time of last sync to PDS.
     /// Used to export only changes since last sync.
     /// None if never synced.
-    last_synced_version: Option<VersionVector>,
+    /// Signal so cloned docs share the same sync state.
+    last_synced_version: Signal<Option<VersionVector>>,
 
     // --- Editor state (non-reactive) ---
     /// Undo manager for the document.
@@ -176,7 +177,7 @@ pub struct CompositionState {
 
 /// Information about the most recent edit, used for incremental rendering optimization.
 /// Derives PartialEq so it can be used with Dioxus memos for change detection.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EditInfo {
     /// Character offset where the edit occurred
     pub edit_char_pos: usize,
@@ -193,6 +194,8 @@ pub struct EditInfo {
     /// Used to detect stale edit info - if current doc length doesn't match,
     /// the edit info is from a previous render cycle and shouldn't be used.
     pub doc_len_after: usize,
+    /// When this edit occurred. Used for idle detection in collaborative sync.
+    pub timestamp: web_time::Instant,
 }
 
 /// Max distance from line start where block syntax can appear.
@@ -202,7 +205,7 @@ const BLOCK_SYNTAX_ZONE: usize = 6;
 /// Pre-loaded document state that can be created outside of reactive context.
 ///
 /// This struct holds the raw LoroDoc (which is safe outside reactive context)
-/// along with sync state metadata. Use `EditorDocument::from_loaded_state()` 
+/// along with sync state metadata. Use `EditorDocument::from_loaded_state()`
 /// inside a `use_hook` to convert this into a reactive EditorDocument.
 ///
 /// Note: Clone is a shallow/reference clone for LoroDoc (Arc-backed).
@@ -221,6 +224,9 @@ pub struct LoadedDocState {
     /// Used to determine what changes need to be synced.
     /// None if never synced to PDS.
     pub synced_version: Option<VersionVector>,
+    /// Pre-resolved embed content fetched during load.
+    /// Avoids embed pop-in on initial render.
+    pub resolved_content: weaver_common::ResolvedContent,
 }
 
 impl PartialEq for LoadedDocState {
@@ -304,7 +310,7 @@ impl EditorDocument {
             entry_ref: Signal::new(None),
             edit_root: Signal::new(None),
             last_diff: Signal::new(None),
-            last_synced_version: None,
+            last_synced_version: Signal::new(None),
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             // Reactive editor state - wrapped in Signals
@@ -345,6 +351,12 @@ impl EditorDocument {
             if let Some(ref images) = embeds.images {
                 for img in &images.images {
                     doc.add_image(&img.clone().into_static(), None);
+                }
+            }
+
+            if let Some(ref records) = embeds.records {
+                for record in &records.records {
+                    doc.add_record(&record.clone().into_static());
                 }
             }
         }
@@ -580,6 +592,22 @@ impl EditorDocument {
         images_list.push(json).ok();
     }
 
+    pub fn add_record(&mut self, record: &RecordEmbed<'_>) {
+        // Serialize the Record embed to serde_json::Value
+        let json = serde_json::to_value(record).expect("Record serializes");
+
+        // Insert into the record list
+        let record_list = self.get_records_list();
+        record_list.push(json).ok();
+    }
+
+    pub fn remove_record(&mut self, index: usize) {
+        let record_list = self.get_records_list();
+        if index < record_list.len() {
+            record_list.delete(index, 1).ok();
+        }
+    }
+
     /// Remove an image by index.
     pub fn remove_image(&mut self, index: usize) {
         let images_list = self.get_images_list();
@@ -639,11 +667,17 @@ impl EditorDocument {
     }
 
     /// Convert a LoroValue at the given index to a RecordEmbed.
-    fn loro_value_to_record_embed(&self, list: &LoroList, index: usize) -> Option<RecordEmbed<'static>> {
+    fn loro_value_to_record_embed(
+        &self,
+        list: &LoroList,
+        index: usize,
+    ) -> Option<RecordEmbed<'static>> {
         let value = list.get(index)?;
         let loro_value = value.as_value()?;
         let json = loro_value.to_json_value();
-        from_json_value::<RecordEmbed>(json).ok().map(|r| r.into_static())
+        from_json_value::<RecordEmbed>(json)
+            .ok()
+            .map(|r| r.into_static())
     }
 
     /// Insert text into content and record edit info for incremental rendering.
@@ -659,6 +693,7 @@ impl EditorDocument {
             contains_newline: text.contains('\n'),
             in_block_syntax_zone,
             doc_len_after: len_after,
+            timestamp: web_time::Instant::now(),
         }));
         result
     }
@@ -676,6 +711,7 @@ impl EditorDocument {
             contains_newline: text.contains('\n'),
             in_block_syntax_zone,
             doc_len_after: len_after,
+            timestamp: web_time::Instant::now(),
         }));
         result
     }
@@ -694,6 +730,7 @@ impl EditorDocument {
             contains_newline,
             in_block_syntax_zone,
             doc_len_after: self.content.len_unicode(),
+            timestamp: web_time::Instant::now(),
         }));
         result
     }
@@ -720,6 +757,7 @@ impl EditorDocument {
             contains_newline: delete_has_newline || text.contains('\n'),
             in_block_syntax_zone,
             doc_len_after: len_after,
+            timestamp: web_time::Instant::now(),
         }));
         Ok(())
     }
@@ -873,7 +911,7 @@ impl EditorDocument {
 
     /// Check if there are unsynced changes since the last PDS sync.
     pub fn has_unsynced_changes(&self) -> bool {
-        match &self.last_synced_version {
+        match &*self.last_synced_version.read() {
             Some(synced_vv) => self.doc.oplog_vv() != *synced_vv,
             None => true, // Never synced, so there are changes
         }
@@ -883,7 +921,7 @@ impl EditorDocument {
     /// Returns None if there are no changes to export.
     /// After successful upload, call `mark_synced()` to update the sync marker.
     pub fn export_updates_since_sync(&self) -> Option<Vec<u8>> {
-        let from_vv = self.last_synced_version.clone().unwrap_or_default();
+        let from_vv = self.last_synced_version.read().clone().unwrap_or_default();
         let current_vv = self.doc.oplog_vv();
 
         // No changes since last sync
@@ -909,7 +947,7 @@ impl EditorDocument {
     /// Mark the current state as synced.
     /// Call this after successfully uploading a diff to the PDS.
     pub fn mark_synced(&mut self) {
-        self.last_synced_version = Some(self.doc.oplog_vv());
+        self.last_synced_version.set(Some(self.doc.oplog_vv()));
     }
 
     /// Import updates from a PDS diff blob.
@@ -929,7 +967,7 @@ impl EditorDocument {
     ) {
         self.edit_root.set(Some(edit_root));
         self.last_diff.set(last_diff);
-        self.last_synced_version = Some(self.doc.oplog_vv());
+        self.last_synced_version.set(Some(self.doc.oplog_vv()));
     }
 
     /// Create a new EditorDocument from a binary snapshot.
@@ -1001,7 +1039,7 @@ impl EditorDocument {
             entry_ref: Signal::new(None),
             edit_root: Signal::new(None),
             last_diff: Signal::new(None),
-            last_synced_version: None,
+            last_synced_version: Signal::new(None),
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             // Reactive editor state - wrapped in Signals
@@ -1047,9 +1085,6 @@ impl EditorDocument {
         };
         let loro_cursor = content.get_cursor(cursor_offset, Side::default());
 
-        // Use the synced version from state (tracks the PDS version vector)
-        let last_synced_version = state.synced_version;
-
         Self {
             doc,
             content,
@@ -1061,7 +1096,8 @@ impl EditorDocument {
             entry_ref: Signal::new(state.entry_ref),
             edit_root: Signal::new(state.edit_root),
             last_diff: Signal::new(state.last_diff),
-            last_synced_version,
+            // Use the synced version from state (tracks the PDS version vector)
+            last_synced_version: Signal::new(state.synced_version),
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             cursor: Signal::new(cursor_state),
