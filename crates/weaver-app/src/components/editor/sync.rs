@@ -866,6 +866,9 @@ pub struct PdsEditState {
     pub root_snapshot: Bytes,
     /// All diff update bytes in order (oldest first, by TID)
     pub diff_updates: Vec<Bytes>,
+    /// Last seen diff URI per collaborator root (for incremental sync).
+    /// Maps root URI -> last diff URI we've imported from that root.
+    pub last_seen_diffs: std::collections::HashMap<AtUri<'static>, AtUri<'static>>,
 }
 
 /// Fetch a blob from the PDS.
@@ -906,7 +909,7 @@ pub async fn load_edit_state_from_pds(
         None => return Ok(None),
     };
 
-    load_edit_state_from_root_id(fetcher, root_id).await
+    load_edit_state_from_root_id(fetcher, root_id, None).await
 }
 
 /// Load edit state from the PDS for a draft.
@@ -923,20 +926,24 @@ pub async fn load_edit_state_from_draft(
         None => return Ok(None),
     };
 
-    load_edit_state_from_root_id(fetcher, root_id).await
+    load_edit_state_from_root_id(fetcher, root_id, None).await
 }
 
 /// Load edit state from ALL collaborator repos for an entry, returning merged state.
 ///
 /// For each edit.root found across collaborators:
 /// - Fetches the root snapshot
-/// - Finds and fetches all diffs for that root
+/// - Finds and fetches all diffs for that root (skipping already-seen diffs)
 /// - Merges all Loro states into one unified document
 ///
-/// Returns merged state suitable for CRDT collaboration.
+/// `last_seen_diffs` maps root URI -> last diff URI we've imported from that root.
+/// This enables incremental sync by only fetching new diffs.
+///
+/// Returns merged state suitable for CRDT collaboration, including updated last_seen_diffs.
 pub async fn load_all_edit_states_from_pds(
     fetcher: &Fetcher,
     entry_uri: &AtUri<'_>,
+    last_seen_diffs: &std::collections::HashMap<AtUri<'static>, AtUri<'static>>,
 ) -> Result<Option<PdsEditState>, WeaverError> {
     let all_roots = find_all_edit_roots_for_entry(fetcher, entry_uri).await?;
 
@@ -948,6 +955,7 @@ pub async fn load_all_edit_states_from_pds(
     let merged_doc = LoroDoc::new();
     let mut our_root_ref: Option<StrongRef<'static>> = None;
     let mut our_last_diff_ref: Option<StrongRef<'static>> = None;
+    let mut updated_last_seen = last_seen_diffs.clone();
 
     // Get current user's DID to identify "our" root for sync state tracking
     let current_did = fetcher.current_did().await;
@@ -956,8 +964,25 @@ pub async fn load_all_edit_states_from_pds(
         // Save the DID before consuming root_id
         let root_did = root_id.did.clone();
 
-        // Load state from this root
-        if let Some(pds_state) = load_edit_state_from_root_id(fetcher, root_id).await? {
+        // Build root URI to look up last seen diff
+        let root_uri = AtUri::new(&format!(
+            "at://{}/{}/{}",
+            root_id.did,
+            ROOT_NSID,
+            root_id.rkey.as_ref()
+        ))
+        .ok()
+        .map(|u| u.into_static());
+
+        // Get the last seen diff rkey for this root (if any)
+        let after_rkey = root_uri.as_ref().and_then(|uri| {
+            last_seen_diffs.get(uri).and_then(|diff_uri| {
+                diff_uri.rkey().map(|rk| rk.0.to_string())
+            })
+        });
+
+        // Load state from this root (skipping already-seen diffs)
+        if let Some(pds_state) = load_edit_state_from_root_id(fetcher, root_id, after_rkey.as_deref()).await? {
             // Import root snapshot into merged doc
             if let Err(e) = merged_doc.import(&pds_state.root_snapshot) {
                 tracing::warn!("Failed to import root snapshot from {}: {:?}", root_did, e);
@@ -969,6 +994,11 @@ pub async fn load_all_edit_states_from_pds(
                 if let Err(e) = merged_doc.import(diff) {
                     tracing::warn!("Failed to import diff from {}: {:?}", root_did, e);
                 }
+            }
+
+            // Update last seen diff for this root (for incremental sync next time)
+            if let (Some(uri), Some(last_diff)) = (&root_uri, &pds_state.last_diff_ref) {
+                updated_last_seen.insert(uri.clone(), last_diff.uri.clone().into_static());
             }
 
             // Track "our" root/diff refs for sync state (used when syncing back)
@@ -998,20 +1028,25 @@ pub async fn load_all_edit_states_from_pds(
         merged_snapshot.len()
     );
 
-    // If we found any roots, return the merged state
+    // If we found any roots, return the merged state (includes updated last_seen map)
     // Note: our_root_ref might be from another collaborator if we haven't created our own yet
     Ok(our_root_ref.map(|root_ref| PdsEditState {
         root_ref,
         last_diff_ref: our_last_diff_ref,
         root_snapshot: merged_snapshot.into(),
         diff_updates: vec![], // Already merged into snapshot
+        last_seen_diffs: updated_last_seen,
     }))
 }
 
 /// Internal helper to load edit state given a root record ID.
+///
+/// If `after_rkey` is provided, only diffs with rkey > after_rkey are fetched.
+/// This enables incremental sync by skipping diffs we've already imported.
 async fn load_edit_state_from_root_id(
     fetcher: &Fetcher,
     root_id: RecordId<'static>,
+    after_rkey: Option<&str>,
 ) -> Result<Option<PdsEditState>, WeaverError> {
     // Build root URI
     let root_uri = AtUri::new(&format!(
@@ -1060,6 +1095,7 @@ async fn load_edit_state_from_root_id(
             last_diff_ref: None,
             root_snapshot,
             diff_updates: vec![],
+            last_seen_diffs: std::collections::HashMap::new(),
         }));
     }
 
@@ -1072,6 +1108,15 @@ async fn load_edit_state_from_root_id(
 
     for diff_id in &diff_ids {
         let rkey_str: &str = diff_id.rkey.as_ref();
+
+        // Skip diffs we've already seen (rkey/TID is lexicographically sortable by time)
+        if let Some(after) = after_rkey {
+            if rkey_str <= after {
+                tracing::debug!("Skipping already-seen diff rkey: {}", rkey_str);
+                continue;
+            }
+        }
+
         let diff_uri = AtUri::new(&format!("at://{}/{}/{}", diff_id.did, DIFF_NSID, rkey_str))
             .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid diff URI: {}", e)))?
             .into_static();
@@ -1127,6 +1172,7 @@ async fn load_edit_state_from_root_id(
         last_diff_ref,
         root_snapshot,
         diff_updates,
+        last_seen_diffs: std::collections::HashMap::new(),
     }))
 }
 
@@ -1152,7 +1198,8 @@ pub async fn load_and_merge_document(
     // for drafts use single-repo loading (draft sharing requires knowing the URI)
     let pds_state = if let Some(uri) = entry_uri {
         // Published entry: load from ALL collaborators (multi-repo CRDT merge)
-        load_all_edit_states_from_pds(fetcher, uri).await?
+        let empty_last_seen = std::collections::HashMap::new();
+        load_all_edit_states_from_pds(fetcher, uri, &empty_last_seen).await?
     } else if let Some(did) = fetcher.current_did().await {
         // Unpublished draft: single-repo for now
         // (draft sharing would require collaborator to know the draft URI)
@@ -1189,6 +1236,7 @@ pub async fn load_and_merge_document(
                 edit_root: None,
                 last_diff: None,
                 synced_version: None, // Local-only, never synced to PDS
+                last_seen_diffs: std::collections::HashMap::new(),
                 resolved_content,
             }))
         }
@@ -1222,6 +1270,7 @@ pub async fn load_and_merge_document(
                 edit_root: Some(pds.root_ref),
                 last_diff: pds.last_diff_ref,
                 synced_version, // Just loaded from PDS, fully synced
+                last_seen_diffs: pds.last_seen_diffs,
                 resolved_content,
             }))
         }
@@ -1273,10 +1322,331 @@ pub async fn load_and_merge_document(
                 edit_root: Some(pds.root_ref),
                 last_diff: pds.last_diff_ref,
                 synced_version: Some(pds_version),
+                last_seen_diffs: pds.last_seen_diffs,
                 resolved_content,
             }))
         }
     }
+}
+
+// ============================================================================
+// Real-Time P2P Sync (iroh-gossip)
+// ============================================================================
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use crate::collab_context::use_collab_node;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use std::sync::Arc;
+
+use weaver_common::transport::PresenceTracker;
+
+/// Props for real-time P2P sync component.
+#[derive(Props, Clone, PartialEq)]
+pub struct RealTimeSyncProps {
+    /// The editor document to sync
+    pub document: super::document::EditorDocument,
+    /// StrongRef to the resource being edited (for topic derivation and session records)
+    pub resource_ref: Option<StrongRef<'static>>,
+    /// Presence tracker for remote collaborators (shared with editor for rendering)
+    pub presence: Signal<PresenceTracker>,
+}
+
+/// Real-time P2P sync component using iroh-gossip.
+///
+/// When editing a collaborative document, this component:
+/// - Joins a gossip topic for the resource
+/// - Broadcasts local edits to peers via Loro's subscribe_local_update
+/// - Imports incoming edits from peers
+///
+/// This runs alongside the existing async PDS sync for redundancy.
+/// Session TTL in minutes - sessions are refreshed while active
+const SESSION_TTL_MINUTES: u32 = 15;
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+#[component]
+pub fn RealTimeSync(props: RealTimeSyncProps) -> Element {
+    use tokio::sync::mpsc;
+    use weaver_common::transport::{CollabMessage, CollabSession, SessionEvent};
+    use weaver_common::WeaverExt;
+
+    let collab_node = use_collab_node();
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+    let mut session: Signal<Option<Arc<CollabSession>>> = use_signal(|| None);
+    // URI of our published session record (for cleanup)
+    let mut session_record_uri: Signal<Option<AtUri<'static>>> = use_signal(|| None);
+    // Channel for sending local updates from Loro callback to async broadcast task
+    let mut update_tx: Signal<Option<mpsc::UnboundedSender<Vec<u8>>>> = use_signal(|| None);
+    // Channel for sending cursor updates
+    let mut cursor_tx: Signal<Option<mpsc::UnboundedSender<(usize, Option<(usize, usize)>)>>> =
+        use_signal(|| None);
+    // Keep subscription alive
+    let mut _subscription: Signal<Option<loro::Subscription>> = use_signal(|| None);
+    // Our assigned colour (set when we join)
+    let mut our_color: Signal<u32> = use_signal(|| 0x4ECDC4FF);
+
+    let resource_ref = props.resource_ref.clone();
+    let doc = props.document.clone();
+    let mut presence = props.presence;
+
+    // Broadcast cursor position when it changes
+    {
+        let doc = doc.clone();
+        use_effect(move || {
+            // Read cursor to create reactive dependency
+            let cursor_state = doc.cursor.read();
+            let selection = *doc.selection.read();
+
+            // Send cursor update if we have a channel
+            if let Some(ref tx) = *cursor_tx.read() {
+                let sel = selection.map(|s| (s.anchor, s.head));
+                let _ = tx.send((cursor_state.offset, sel));
+            }
+        });
+    }
+
+    // Join the gossip session when we have a node and resource ref
+    {
+        let resource_ref = resource_ref.clone();
+        let doc_for_join = doc.clone();
+        let fetcher = fetcher.clone();
+
+        use_effect(move || {
+            let Some(node) = collab_node.clone() else {
+                tracing::debug!("RealTimeSync: no CollabNode yet");
+                return;
+            };
+
+            let Some(ref strong_ref) = resource_ref else {
+                tracing::debug!("RealTimeSync: no resource ref");
+                return;
+            };
+
+            // Only join if we're not already in a session
+            if session.peek().is_some() {
+                return;
+            }
+
+            let uri = strong_ref.uri.clone().into_static();
+            tracing::info!("RealTimeSync: joining session for {}", uri);
+
+            // Create channel for local update broadcasts
+            let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+            update_tx.set(Some(tx.clone()));
+
+            // Create channel for cursor updates
+            let (ctx, mut crx) = mpsc::unbounded_channel::<(usize, Option<(usize, usize)>)>();
+            cursor_tx.set(Some(ctx));
+
+            // Subscribe to local updates from Loro - fires when local changes are committed
+            let sub = doc_for_join.loro_doc().subscribe_local_update(Box::new(move |update| {
+                tracing::debug!("RealTimeSync: local update ({} bytes)", update.len());
+                if let Err(e) = tx.send(update.to_vec()) {
+                    tracing::warn!("RealTimeSync: failed to queue update: {}", e);
+                }
+                true // Keep subscription active
+            }));
+            _subscription.set(Some(sub));
+
+            let doc_for_recv = doc_for_join.clone();
+            let resource_ref_for_spawn = resource_ref.clone().unwrap();
+            let fetcher = fetcher.clone();
+
+            spawn(async move {
+                // Derive topic from resource URI
+                let topic = CollabSession::topic_from_uri(uri.as_str());
+
+                // Discover existing session peers for bootstrap
+                let bootstrap_peers = match fetcher.find_session_peers(&uri).await {
+                    Ok(peers) => {
+                        tracing::info!("RealTimeSync: found {} existing peers", peers.len());
+                        peers
+                            .into_iter()
+                            .filter_map(|p| {
+                                weaver_common::transport::parse_node_id(&p.node_id).ok()
+                            })
+                            .collect()
+                    }
+                    Err(e) => {
+                        tracing::warn!("RealTimeSync: failed to find peers: {}", e);
+                        vec![]
+                    }
+                };
+
+                // Publish our session record for peer discovery
+                let node_id_str = node.node_id_string();
+                match fetcher
+                    .create_collab_session(
+                        &resource_ref_for_spawn,
+                        &node_id_str,
+                        None, // relay_url - could add if needed
+                        Some(SESSION_TTL_MINUTES),
+                    )
+                    .await
+                {
+                    Ok(uri) => {
+                        tracing::info!("RealTimeSync: published session record: {}", uri);
+                        session_record_uri.set(Some(uri));
+                    }
+                    Err(e) => {
+                        tracing::warn!("RealTimeSync: failed to publish session record: {}", e);
+                    }
+                }
+
+                match CollabSession::join(node, topic, bootstrap_peers).await {
+                    Ok((collab_session, mut event_stream)) => {
+                        let collab_session = Arc::new(collab_session);
+                        session.set(Some(collab_session.clone()));
+
+                        tracing::info!("RealTimeSync: joined session for {}", uri);
+
+                        // Spawn broadcast task - sends local updates to gossip
+                        let session_for_broadcast = collab_session.clone();
+                        spawn(async move {
+                            while let Some(update_bytes) = rx.recv().await {
+                                let msg = CollabMessage::LoroUpdate {
+                                    data: update_bytes,
+                                    version: vec![], // Version included in Loro update bytes
+                                };
+                                if let Err(e) = session_for_broadcast.broadcast(&msg).await {
+                                    tracing::warn!("RealTimeSync: broadcast failed: {}", e);
+                                } else {
+                                    tracing::debug!("RealTimeSync: broadcasted update");
+                                }
+                            }
+                            tracing::debug!("RealTimeSync: broadcast channel closed");
+                        });
+
+                        // Spawn cursor broadcast task - sends cursor positions to gossip
+                        let session_for_cursor = collab_session.clone();
+                        spawn(async move {
+                            while let Some((position, selection)) = crx.recv().await {
+                                let color = *our_color.peek();
+                                let msg = CollabMessage::Cursor {
+                                    position,
+                                    selection,
+                                    color,
+                                };
+                                if let Err(e) = session_for_cursor.broadcast(&msg).await {
+                                    tracing::warn!("RealTimeSync: cursor broadcast failed: {}", e);
+                                }
+                            }
+                        });
+
+                        // Spawn event receiver task - receives updates from peers
+                        let mut doc_for_recv = doc_for_recv.clone();
+                        spawn(async move {
+                            use n0_future::StreamExt;
+
+                            while let Some(event) = event_stream.next().await {
+                                match event {
+                                    SessionEvent::Message { from, message } => {
+                                        match message {
+                                            CollabMessage::LoroUpdate { data, .. } => {
+                                                tracing::debug!(
+                                                    "RealTimeSync: received update from {} ({} bytes)",
+                                                    from,
+                                                    data.len()
+                                                );
+                                                if let Err(e) = doc_for_recv.import_updates(&data) {
+                                                    tracing::warn!(
+                                                        "RealTimeSync: failed to import update: {:?}",
+                                                        e
+                                                    );
+                                                }
+                                            }
+                                            CollabMessage::Cursor {
+                                                position,
+                                                selection,
+                                                ..
+                                            } => {
+                                                presence.write().update_cursor(
+                                                    &from,
+                                                    position,
+                                                    selection,
+                                                );
+                                            }
+                                            CollabMessage::Join { did, display_name } => {
+                                                tracing::info!(
+                                                    "RealTimeSync: peer joined: {} ({})",
+                                                    display_name,
+                                                    did
+                                                );
+                                                presence.write().add_collaborator(
+                                                    from,
+                                                    did,
+                                                    display_name,
+                                                );
+                                            }
+                                            CollabMessage::Leave { did } => {
+                                                tracing::info!("RealTimeSync: peer left: {}", did);
+                                                presence.write().remove_collaborator(&from);
+                                            }
+                                            CollabMessage::SyncRequest { have_version } => {
+                                                tracing::debug!(
+                                                    "RealTimeSync: sync request (have {} entries)",
+                                                    have_version.len()
+                                                );
+                                                // TODO: Send snapshot or updates based on their version
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    SessionEvent::PeerJoined(peer) => {
+                                        tracing::info!("RealTimeSync: peer connected: {}", peer);
+                                        // Add peer with placeholder name until they send Join
+                                        if !presence.read().contains(&peer) {
+                                            presence.write().add_collaborator(
+                                                peer,
+                                                "unknown".into(),
+                                                "Collaborator".into(),
+                                            );
+                                        }
+                                    }
+                                    SessionEvent::PeerLeft(peer) => {
+                                        tracing::info!("RealTimeSync: peer disconnected: {}", peer);
+                                        presence.write().remove_collaborator(&peer);
+                                    }
+                                    SessionEvent::Joined => {
+                                        tracing::info!("RealTimeSync: joined gossip swarm");
+                                    }
+                                }
+                            }
+                            tracing::debug!("RealTimeSync: event stream ended");
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("RealTimeSync: failed to join session: {}", e);
+                    }
+                }
+            });
+        });
+    }
+
+    // Cleanup: delete session record when component unmounts
+    {
+        let fetcher = fetcher.clone();
+        use_drop(move || {
+            if let Some(uri) = session_record_uri.peek().clone() {
+                let fetcher = fetcher.clone();
+                spawn(async move {
+                    tracing::info!("RealTimeSync: cleaning up session record: {}", uri);
+                    if let Err(e) = fetcher.delete_collab_session(&uri).await {
+                        tracing::warn!("RealTimeSync: failed to delete session record: {}", e);
+                    }
+                });
+            }
+        });
+    }
+
+    // No UI - this is a background sync component
+    rsx! {}
+}
+
+/// No-op for non-WASM builds.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[component]
+pub fn RealTimeSync(props: RealTimeSyncProps) -> Element {
+    rsx! {}
 }
 
 // ============================================================================

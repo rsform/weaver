@@ -299,6 +299,7 @@ pub fn MarkdownEditor(
                                     edit_root: None,
                                     last_diff: None,
                                     synced_version: None, // Fresh from entry, never synced
+                                    last_seen_diffs: std::collections::HashMap::new(),
                                     resolved_content,
                                 });
                             }
@@ -323,6 +324,7 @@ pub fn MarkdownEditor(
                         edit_root: None,
                         last_diff: None,
                         synced_version: None, // New doc, never synced
+                        last_seen_diffs: std::collections::HashMap::new(),
                         resolved_content: weaver_common::ResolvedContent::default(),
                     })
                 }
@@ -421,6 +423,42 @@ fn MarkdownEditorInner(
     });
     // Use pre-resolved content from loaded state (avoids embed pop-in)
     let resolved_content = use_signal(|| loaded_state.resolved_content.clone());
+
+    // Presence tracker for remote collaborators (shared with RealTimeSync)
+    let presence = use_signal(weaver_common::transport::PresenceTracker::new);
+
+    // Resolve StrongRef for real-time P2P sync
+    // - For entries: use entry_ref directly
+    // - For drafts: resolve via confirm_record_ref on draft URI
+    let realtime_ref_resource = {
+        let doc_for_ref = document.clone();
+        let fetcher_for_ref = fetcher.clone();
+        let draft_key_for_ref = draft_key.to_string();
+        use_resource(move || {
+            let doc = doc_for_ref.clone();
+            let fetcher = fetcher_for_ref.clone();
+            let draft_key = draft_key_for_ref.clone();
+            async move {
+                // Published entry - use entry_ref directly
+                if let Some(entry_ref) = doc.entry_ref() {
+                    return Some(entry_ref.clone());
+                }
+                // Draft with edit_root - resolve draft StrongRef
+                if doc.edit_root().is_some() {
+                    if let Some(did) = fetcher.current_did().await {
+                        let draft_uri = super::sync::build_draft_uri(&did, &draft_key);
+                        match fetcher.confirm_record_ref(&draft_uri).await {
+                            Ok(strong_ref) => return Some(strong_ref),
+                            Err(e) => {
+                                tracing::warn!("Failed to resolve draft ref: {}", e);
+                            }
+                        }
+                    }
+                }
+                None
+            }
+        })
+    };
 
     let doc_for_memo = document.clone();
     let doc_for_refs = document.clone();
@@ -854,7 +892,7 @@ fn MarkdownEditorInner(
                             // Enable collaborative sync for any published entry (both owners and collaborators)
                             let is_published = document.entry_ref().is_some();
 
-                            // Refresh callback: fetch and merge collaborator changes
+                            // Refresh callback: fetch and merge collaborator changes (incremental)
                             let on_refresh = if is_published {
                                 let fetcher_for_refresh = fetcher.clone();
                                 let mut doc_for_refresh = document.clone();
@@ -867,12 +905,17 @@ fn MarkdownEditorInner(
 
                                     spawn(async move {
                                         if let Some(uri) = uri {
-                                            match super::sync::load_all_edit_states_from_pds(&fetcher, &uri).await {
+                                            // Get last seen diffs for incremental sync
+                                            let last_seen = doc.last_seen_diffs.read().clone();
+
+                                            match super::sync::load_all_edit_states_from_pds(&fetcher, &uri, &last_seen).await {
                                                 Ok(Some(pds_state)) => {
                                                     if let Err(e) = doc.import_updates(&pds_state.root_snapshot) {
                                                         tracing::error!("Failed to import collaborator updates: {:?}", e);
                                                     } else {
                                                         tracing::info!("Successfully merged collaborator updates");
+                                                        // Update the last seen diffs for next incremental sync
+                                                        *doc.last_seen_diffs.write() = pds_state.last_seen_diffs;
                                                     }
                                                 }
                                                 Ok(None) => {
@@ -889,12 +932,21 @@ fn MarkdownEditorInner(
                                 None
                             };
 
+                            // Get resolved StrongRef for real-time P2P sync
+                            let realtime_ref = realtime_ref_resource.read().clone().flatten();
+
                             rsx! {
                                 SyncStatus {
                                     document: document.clone(),
                                     draft_key: draft_key.to_string(),
                                     on_refresh,
                                     is_collaborative: is_published,
+                                }
+                                // Real-time P2P sync (works for both published entries and drafts)
+                                super::sync::RealTimeSync {
+                                    document: document.clone(),
+                                    resource_ref: realtime_ref,
+                                    presence,
                                 }
                             }
                         }
@@ -909,6 +961,8 @@ fn MarkdownEditorInner(
 
                 // Editor content
                 div { class: "editor-content-wrapper",
+                    // Remote collaborator cursors overlay
+                    RemoteCursors { presence, document: document.clone(), render_cache }
                     div {
                         id: "{editor_id}",
                         class: "editor-content",
@@ -1447,6 +1501,96 @@ fn MarkdownEditorInner(
                 },
             }
 
+        }
+    }
+}
+
+/// Remote collaborator cursors overlay.
+///
+/// Renders cursor indicators for each remote collaborator.
+/// Uses the same offset mapping as local cursor restoration.
+#[component]
+fn RemoteCursors(
+    presence: Signal<weaver_common::transport::PresenceTracker>,
+    document: EditorDocument,
+    render_cache: Signal<render::RenderCache>,
+) -> Element {
+    let presence_read = presence.read();
+    let cursors: Vec<_> = presence_read
+        .cursors()
+        .map(|(c, cur)| (c.display_name.clone(), c.color, cur.position, cur.selection))
+        .collect();
+
+    if cursors.is_empty() {
+        return rsx! {};
+    }
+
+    // Get flattened offset map from all paragraphs
+    let cache = render_cache.read();
+    let offset_map: Vec<_> = cache
+        .paragraphs
+        .iter()
+        .flat_map(|p| p.offset_map.iter().cloned())
+        .collect();
+
+    rsx! {
+        div { class: "remote-cursors-overlay",
+            for (display_name, color, position, selection) in cursors {
+                RemoteCursorIndicator {
+                    key: "{display_name}-{position}",
+                    display_name,
+                    position,
+                    selection,
+                    color,
+                    offset_map: offset_map.clone(),
+                }
+            }
+        }
+    }
+}
+
+/// Single remote cursor indicator with DOM-based positioning.
+#[component]
+fn RemoteCursorIndicator(
+    display_name: String,
+    position: usize,
+    selection: Option<(usize, usize)>,
+    color: u32,
+    offset_map: Vec<super::offset_map::OffsetMapping>,
+) -> Element {
+    use super::cursor::{get_cursor_rect_relative, CursorRect};
+
+    // Convert RGBA u32 to CSS color
+    let r = (color >> 24) & 0xFF;
+    let g = (color >> 16) & 0xFF;
+    let b = (color >> 8) & 0xFF;
+    let a = (color & 0xFF) as f32 / 255.0;
+    let color_css = format!("rgba({}, {}, {}, {})", r, g, b, a);
+
+    // Get cursor position relative to editor
+    let rect = get_cursor_rect_relative(position, &offset_map, "markdown-editor");
+
+    let Some(rect) = rect else {
+        return rsx! {};
+    };
+
+    let style = format!(
+        "left: {}px; top: {}px; --cursor-height: {}px; --cursor-color: {};",
+        rect.x, rect.y, rect.height, color_css
+    );
+
+    rsx! {
+        div {
+            class: "remote-cursor",
+            style: "{style}",
+
+            // Cursor caret line
+            div { class: "remote-cursor-caret" }
+
+            // Name label
+            div { class: "remote-cursor-label",
+                "{display_name}"
+            }
         }
     }
 }

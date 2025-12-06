@@ -107,6 +107,11 @@ pub struct EditorDocument {
     /// Signal so cloned docs share the same sync state.
     last_synced_version: Signal<Option<VersionVector>>,
 
+    /// Last seen diff URI per collaborator root.
+    /// Maps root URI -> last diff URI we've imported from that root.
+    /// The diff rkey (TID) is time-sortable, so we skip diffs with rkey <= this.
+    pub last_seen_diffs: Signal<std::collections::HashMap<AtUri<'static>, AtUri<'static>>>,
+
     // --- Editor state (non-reactive) ---
     /// Undo manager for the document.
     undo_mgr: Rc<RefCell<UndoManager>>,
@@ -224,6 +229,9 @@ pub struct LoadedDocState {
     /// Used to determine what changes need to be synced.
     /// None if never synced to PDS.
     pub synced_version: Option<VersionVector>,
+    /// Last seen diff URIs per collaborator root.
+    /// Used for incremental sync on subsequent refreshes.
+    pub last_seen_diffs: std::collections::HashMap<AtUri<'static>, AtUri<'static>>,
     /// Pre-resolved embed content fetched during load.
     /// Avoids embed pop-in on initial render.
     pub resolved_content: weaver_common::ResolvedContent,
@@ -311,6 +319,7 @@ impl EditorDocument {
             edit_root: Signal::new(None),
             last_diff: Signal::new(None),
             last_synced_version: Signal::new(None),
+            last_seen_diffs: Signal::new(std::collections::HashMap::new()),
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             // Reactive editor state - wrapped in Signals
@@ -385,6 +394,11 @@ impl EditorDocument {
     /// Get the underlying LoroText for read operations on content.
     pub fn loro_text(&self) -> &LoroText {
         &self.content
+    }
+
+    /// Get the underlying LoroDoc for subscriptions and advanced operations.
+    pub fn loro_doc(&self) -> &LoroDoc {
+        &self.doc
     }
 
     // --- Content accessors ---
@@ -909,6 +923,19 @@ impl EditorDocument {
         self.last_diff.set(diff);
     }
 
+    /// Get the last seen diff URI for a collaborator root.
+    pub fn last_seen_diff_for_root(&self, root_uri: &AtUri<'_>) -> Option<AtUri<'static>> {
+        self.last_seen_diffs
+            .read()
+            .get(&root_uri.clone().into_static())
+            .cloned()
+    }
+
+    /// Update the last seen diff for a collaborator root.
+    pub fn set_last_seen_diff(&mut self, root_uri: AtUri<'static>, diff_uri: AtUri<'static>) {
+        self.last_seen_diffs.write().insert(root_uri, diff_uri);
+    }
+
     /// Check if there are unsynced changes since the last PDS sync.
     pub fn has_unsynced_changes(&self) -> bool {
         match &*self.last_synced_version.read() {
@@ -954,7 +981,33 @@ impl EditorDocument {
     /// Used when loading edit history from the PDS.
     pub fn import_updates(&mut self, updates: &[u8]) -> LoroResult<()> {
         self.doc.import(updates)?;
+        // Trigger re-render after importing remote changes
+        self.last_edit.set(None);
         Ok(())
+    }
+
+    /// Export updates since the given version vector.
+    /// Used for real-time P2P sync where we track broadcast version separately from PDS sync.
+    pub fn export_updates_from(&self, from_vv: &VersionVector) -> Option<Vec<u8>> {
+        let current_vv = self.doc.oplog_vv();
+
+        // No changes since the given version
+        if *from_vv == current_vv {
+            return None;
+        }
+
+        let updates = self
+            .doc
+            .export(ExportMode::Updates {
+                from: Cow::Borrowed(from_vv),
+            })
+            .ok()?;
+
+        if updates.is_empty() {
+            return None;
+        }
+
+        Some(updates)
     }
 
     /// Set the sync state when loading from PDS.
@@ -1040,6 +1093,7 @@ impl EditorDocument {
             edit_root: Signal::new(None),
             last_diff: Signal::new(None),
             last_synced_version: Signal::new(None),
+            last_seen_diffs: Signal::new(std::collections::HashMap::new()),
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             // Reactive editor state - wrapped in Signals
@@ -1098,6 +1152,7 @@ impl EditorDocument {
             last_diff: Signal::new(state.last_diff),
             // Use the synced version from state (tracks the PDS version vector)
             last_synced_version: Signal::new(state.synced_version),
+            last_seen_diffs: Signal::new(state.last_seen_diffs),
             undo_mgr: Rc::new(RefCell::new(undo_mgr)),
             loro_cursor,
             cursor: Signal::new(cursor_state),

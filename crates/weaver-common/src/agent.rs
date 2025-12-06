@@ -1884,6 +1884,193 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         }
     }
 
+    // =========================================================================
+    // Real-time Collaboration Session Management
+    // =========================================================================
+
+    /// Create a collaboration session record on the user's PDS.
+    ///
+    /// Called when joining a real-time editing session. The session record
+    /// contains the iroh NodeId so other collaborators can discover and
+    /// connect to this peer.
+    ///
+    /// Returns the AT-URI of the created session record.
+    fn create_collab_session<'a>(
+        &'a self,
+        resource: &'a StrongRef<'a>,
+        node_id: &'a str,
+        relay_url: Option<&'a str>,
+        ttl_minutes: Option<u32>,
+    ) -> impl Future<Output = Result<AtUri<'static>, WeaverError>> + 'a {
+        async move {
+            use jacquard::types::string::Datetime;
+            use weaver_api::sh_weaver::collab::session::Session;
+
+            let now_chrono = chrono::Utc::now().fixed_offset();
+            let now = Datetime::new(now_chrono);
+            let expires_at = ttl_minutes.map(|mins| {
+                let expires = now_chrono + chrono::Duration::minutes(mins as i64);
+                Datetime::new(expires)
+            });
+
+            let relay_uri = relay_url
+                .map(|url| jacquard::types::string::Uri::new(url))
+                .transpose()
+                .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid relay URL")))?;
+
+            let session = Session::new()
+                .resource(resource.clone())
+                .node_id(node_id)
+                .created_at(now)
+                .maybe_expires_at(expires_at)
+                .maybe_relay_url(relay_uri)
+                .build();
+
+            let response = self.create_record(session, None).await?;
+            Ok(response.uri.into_static())
+        }
+    }
+
+    /// Delete a collaboration session record.
+    ///
+    /// Called when leaving a real-time editing session to clean up.
+    fn delete_collab_session<'a>(
+        &'a self,
+        session_uri: &'a AtUri<'a>,
+    ) -> impl Future<Output = Result<(), WeaverError>> + 'a {
+        async move {
+            use weaver_api::sh_weaver::collab::session::Session;
+
+            let rkey = session_uri.rkey().ok_or_else(|| {
+                AgentError::from(ClientError::invalid_request("Session URI missing rkey"))
+            })?;
+            self.delete_record::<Session>(rkey.clone()).await?;
+            Ok(())
+        }
+    }
+
+    /// Refresh a collaboration session's TTL.
+    ///
+    /// Called periodically to indicate the session is still active.
+    fn refresh_collab_session<'a>(
+        &'a self,
+        session_uri: &'a AtUri<'a>,
+        ttl_minutes: u32,
+    ) -> impl Future<Output = Result<(), WeaverError>> + 'a {
+        async move {
+            use jacquard::types::string::Datetime;
+            use weaver_api::sh_weaver::collab::session::Session;
+
+            let now_chrono = chrono::Utc::now().fixed_offset();
+            let expires = now_chrono + chrono::Duration::minutes(ttl_minutes as i64);
+            let expires_at = Datetime::new(expires);
+
+            self.update_record::<Session>(session_uri, |session| {
+                session.expires_at = Some(expires_at);
+            })
+            .await?;
+            Ok(())
+        }
+    }
+
+    /// Find active collaboration sessions for a resource.
+    ///
+    /// Queries Constellation for session records referencing the given resource,
+    /// then fetches each to extract peer connection info.
+    ///
+    /// Returns peers with unexpired sessions (or no expiry set).
+    fn find_session_peers<'a>(
+        &'a self,
+        resource_uri: &'a AtUri<'a>,
+    ) -> impl Future<Output = Result<Vec<SessionPeer<'static>>, WeaverError>> + 'a
+    where
+        Self: Sized,
+    {
+        async move {
+            use jacquard::types::string::Datetime;
+            use weaver_api::sh_weaver::collab::session::Session;
+
+            const SESSION_NSID: &str = "sh.weaver.collab.session";
+
+            let constellation_url = Url::parse(CONSTELLATION_URL).map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Invalid constellation URL: {}",
+                    e
+                )))
+            })?;
+
+            // Query for session records referencing this resource
+            let query = GetBacklinksQuery {
+                subject: Uri::At(resource_uri.clone().into_static()),
+                source: format!("{}:resource.uri", SESSION_NSID).into(),
+                cursor: None,
+                did: vec![],
+                limit: 100,
+            };
+
+            let response = self
+                .xrpc(constellation_url)
+                .send(&query)
+                .await
+                .map_err(|e| {
+                    AgentError::from(ClientError::invalid_request(format!(
+                        "Constellation query failed: {}",
+                        e
+                    )))
+                })?;
+
+            let output = response.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to parse constellation response: {}",
+                    e
+                )))
+            })?;
+
+            let mut peers = Vec::new();
+            let now = Datetime::now();
+
+            for record_id in output.records {
+                let session_uri_str = format!(
+                    "at://{}/{}/{}",
+                    record_id.did,
+                    SESSION_NSID,
+                    record_id.rkey.0.as_ref()
+                );
+                let Ok(session_uri) = AtUri::new(&session_uri_str) else {
+                    continue;
+                };
+
+                // Fetch the session record
+                let Ok(session_resp) = self.get_record::<Session>(&session_uri).await else {
+                    continue;
+                };
+                let Ok(session_record) = session_resp.into_output() else {
+                    continue;
+                };
+
+                // Check if session has expired (Datetime implements Ord)
+                if let Some(ref expires_at) = session_record.value.expires_at {
+                    if *expires_at < now {
+                        continue; // Session expired
+                    }
+                }
+
+                peers.push(SessionPeer {
+                    did: record_id.did.into_static(),
+                    node_id: session_record.value.node_id.to_string(),
+                    relay_url: session_record
+                        .value
+                        .relay_url
+                        .map(|u| u.as_str().to_string()),
+                    created_at: session_record.value.created_at,
+                    expires_at: session_record.value.expires_at,
+                });
+            }
+
+            Ok(peers)
+        }
+    }
+
     /// Find contributors (authors) for a resource based on evidence.
     ///
     /// Contributors are DIDs who have actually contributed to this resource:
@@ -1983,6 +2170,21 @@ pub struct CollaboratorVersion<'a> {
     pub updated_at: Option<jacquard::types::string::Datetime>,
     /// The raw record value.
     pub value: jacquard::Data<'a>,
+}
+
+/// Information about a peer discovered from session records.
+#[derive(Debug, Clone)]
+pub struct SessionPeer<'a> {
+    /// The peer's DID.
+    pub did: Did<'a>,
+    /// The peer's iroh NodeId (z-base32 encoded).
+    pub node_id: String,
+    /// Optional relay URL for browser clients.
+    pub relay_url: Option<String>,
+    /// When the session was created.
+    pub created_at: jacquard::types::string::Datetime,
+    /// When the session expires (if set).
+    pub expires_at: Option<jacquard::types::string::Datetime>,
 }
 
 impl<T: AgentSession + IdentityResolver + XrpcExt> WeaverExt for T {}

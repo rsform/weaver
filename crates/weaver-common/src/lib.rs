@@ -4,10 +4,11 @@ pub mod agent;
 pub mod constellation;
 pub mod error;
 pub mod resolve;
+pub mod transport;
 pub mod worker_rt;
 
 // Re-export jacquard for convenience
-pub use agent::WeaverExt;
+pub use agent::{SessionPeer, WeaverExt};
 pub use error::WeaverError;
 pub use resolve::{EntryIndex, ExtractedRef, RefCollector, ResolvedContent, ResolvedEntry};
 

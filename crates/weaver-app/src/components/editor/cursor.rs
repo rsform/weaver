@@ -200,3 +200,110 @@ pub fn restore_cursor_position(
 ) -> Result<(), String> {
     Ok(())
 }
+
+/// Screen coordinates for a cursor position.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorRect {
+    pub x: f64,
+    pub y: f64,
+    pub height: f64,
+}
+
+/// Get screen coordinates for a character offset in the editor.
+///
+/// Returns the bounding rect of a zero-width range at the given offset.
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub fn get_cursor_rect(
+    char_offset: usize,
+    offset_map: &[OffsetMapping],
+    editor_id: &str,
+) -> Option<CursorRect> {
+    if offset_map.is_empty() {
+        return None;
+    }
+
+    // Find mapping for this position
+    let (mapping, char_offset) = match find_mapping_for_char(offset_map, char_offset) {
+        Some((m, _)) => (m, char_offset),
+        None => return None,
+    };
+
+    let window = web_sys::window()?;
+    let document = window.document()?;
+
+    // Get container element
+    let container = document
+        .get_element_by_id(&mapping.node_id)
+        .or_else(|| {
+            let selector = format!("[data-node-id='{}']", mapping.node_id);
+            document.query_selector(&selector).ok().flatten()
+        })?;
+
+    let range = document.create_range().ok()?;
+
+    // Position the range at the character offset
+    if let Some(child_index) = mapping.child_index {
+        range.set_start(&container, child_index as u32).ok()?;
+    } else {
+        let container_element = container.dyn_into::<web_sys::HtmlElement>().ok()?;
+        let offset_in_range = char_offset - mapping.char_range.start;
+        let target_utf16_offset = mapping.char_offset_in_node + offset_in_range;
+
+        if let Ok((text_node, node_offset)) =
+            find_text_node_at_offset(&container_element, target_utf16_offset)
+        {
+            range.set_start(&text_node, node_offset as u32).ok()?;
+        } else {
+            return None;
+        }
+    }
+
+    range.collapse_with_to_start(true);
+
+    // Get the bounding rect
+    let rect = range.get_bounding_client_rect();
+    Some(CursorRect {
+        x: rect.x(),
+        y: rect.y(),
+        height: rect.height().max(16.0), // Minimum height for empty lines
+    })
+}
+
+/// Get screen coordinates relative to the editor container.
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub fn get_cursor_rect_relative(
+    char_offset: usize,
+    offset_map: &[OffsetMapping],
+    editor_id: &str,
+) -> Option<CursorRect> {
+    let cursor_rect = get_cursor_rect(char_offset, offset_map, editor_id)?;
+
+    let window = web_sys::window()?;
+    let document = window.document()?;
+    let editor = document.get_element_by_id(editor_id)?;
+    let editor_rect = editor.get_bounding_client_rect();
+
+    Some(CursorRect {
+        x: cursor_rect.x - editor_rect.x(),
+        y: cursor_rect.y - editor_rect.y(),
+        height: cursor_rect.height,
+    })
+}
+
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+pub fn get_cursor_rect(
+    _char_offset: usize,
+    _offset_map: &[OffsetMapping],
+    _editor_id: &str,
+) -> Option<CursorRect> {
+    None
+}
+
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+pub fn get_cursor_rect_relative(
+    _char_offset: usize,
+    _offset_map: &[OffsetMapping],
+    _editor_id: &str,
+) -> Option<CursorRect> {
+    None
+}

@@ -68,6 +68,7 @@ fontdb = { version = "0.22", optional = true }
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 webbrowser = "1.0.6"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+ring = { version = "0.17", default-features = false, features = ["alloc"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
@@ -83,7 +84,8 @@ web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorke
 js-sys = "0.3"
 gloo-storage = "0.3"
 gloo-timers = "0.3"
-
+ring = { version = "0.17", default-features = false, features = ["wasm32_unknown_unknown_js"]}
+getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
 lol_alloc = "0.4.1"
 
 [build-dependencies]

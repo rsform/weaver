@@ -7,6 +7,7 @@
 
 pub mod accept;
 pub mod invite;
+pub mod session;
 
 /// Collaboration scoped to a chapter.
 #[derive(

@@ -55,6 +55,12 @@ jacquard-lexicon = { path = "../jacquard/crates/jacquard-lexicon", default-featu
 # jacquard-axum = {path = "../jacquard-facet/crates/jacquard-axum" }
 # jacquard-derive = { path = "../jacquard-facet/crates/jacquard-derive" }
 # jacquard-lexicon = { path = "../jacquard-facet/crates/jacquard-lexicon", default-features = false }
+#
+
+# [patch.crates-io]
+# #secp256k1-zkp = { git = "https://github.com/dpc/rust-secp256k1-zkp/", branch = "sanket-pr" }
+# ring = { git = "https://github.com/dpc/ring", rev = "5493e7e76d0d8fb1d3cbb0be9c4944700741b802" }
+
 
 [profile]
 
@@ -66,7 +72,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 incremental = false
-strip = "debuginfo"
+strip = "symbols"
 
 
 [profile.wasm-dev]

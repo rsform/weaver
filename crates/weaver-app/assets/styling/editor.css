@@ -146,6 +146,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    position: relative; /* For remote cursor overlay positioning */
 }
 
 .editor-content {
@@ -1166,4 +1167,52 @@ li:has(.md-syntax-block:not(.hidden)) {
     color: var(--color-success);
     font-size: 12px;
     font-weight: 500;
+}
+
+/* ==========================================================================
+   Remote Collaborator Cursors
+   ========================================================================== */
+
+.remote-cursors-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.remote-cursor {
+    position: absolute;
+    pointer-events: none;
+}
+
+.remote-cursor-caret {
+    width: 2px;
+    height: var(--cursor-height, 18px);
+    background: var(--cursor-color, #4ECDC4);
+    border-radius: 1px;
+    animation: cursor-blink 1.2s ease-in-out infinite;
+}
+
+.remote-cursor-label {
+    position: absolute;
+    top: -18px;
+    left: 0;
+    padding: 2px 6px;
+    background: var(--cursor-color, #4ECDC4);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.2;
+    border-radius: 3px 3px 3px 0;
+    white-space: nowrap;
+    opacity: 0.9;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }

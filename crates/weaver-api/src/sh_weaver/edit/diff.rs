@@ -8,7 +8,13 @@
 /// An edit record for a notebook.
 #[jacquard_derive::lexicon]
 #[derive(
-    serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, jacquard_derive::IntoStatic,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    jacquard_derive::IntoStatic
 )]
 #[serde(rename_all = "camelCase")]
 pub struct Diff<'a> {
@@ -33,7 +39,7 @@ pub struct Diff<'a> {
 
 pub mod diff_state {
 
-    pub use crate::builder_types::{IsSet, IsUnset, Set, Unset};
+    pub use crate::builder_types::{Set, Unset, IsSet, IsUnset};
     #[allow(unused)]
     use ::core::marker::PhantomData;
     mod sealed {
@@ -41,37 +47,37 @@ pub mod diff_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Doc;
         type Root;
+        type Doc;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Doc = Unset;
         type Root = Unset;
-    }
-    ///State transition - sets the `doc` field to Set
-    pub struct SetDoc<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetDoc<S> {}
-    impl<S: State> State for SetDoc<S> {
-        type Doc = Set<members::doc>;
-        type Root = S::Root;
+        type Doc = Unset;
     }
     ///State transition - sets the `root` field to Set
     pub struct SetRoot<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetRoot<S> {}
     impl<S: State> State for SetRoot<S> {
-        type Doc = S::Doc;
         type Root = Set<members::root>;
+        type Doc = S::Doc;
+    }
+    ///State transition - sets the `doc` field to Set
+    pub struct SetDoc<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetDoc<S> {}
+    impl<S: State> State for SetDoc<S> {
+        type Root = S::Root;
+        type Doc = Set<members::doc>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `doc` field
-        pub struct doc(());
         ///Marker type for the `root` field
         pub struct root(());
+        ///Marker type for the `doc` field
+        pub struct doc(());
     }
 }
 
@@ -218,8 +224,8 @@ impl<'a, S: diff_state::State> DiffBuilder<'a, S> {
 impl<'a, S> DiffBuilder<'a, S>
 where
     S: diff_state::State,
-    S::Doc: diff_state::IsSet,
     S::Root: diff_state::IsSet,
+    S::Doc: diff_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Diff<'a> {
@@ -268,7 +274,13 @@ impl<'a> Diff<'a> {
 
 /// Typed wrapper for GetRecord response with this collection's record type.
 #[derive(
-    serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, jacquard_derive::IntoStatic,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    jacquard_derive::IntoStatic
 )]
 #[serde(rename_all = "camelCase")]
 pub struct DiffGetRecordOutput<'a> {
@@ -325,7 +337,9 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Diff<'a> {
     }
 }
 
-fn lexicon_doc_sh_weaver_edit_diff() -> ::jacquard_lexicon::lexicon::LexiconDoc<'static> {
+fn lexicon_doc_sh_weaver_edit_diff() -> ::jacquard_lexicon::lexicon::LexiconDoc<
+    'static,
+> {
     ::jacquard_lexicon::lexicon::LexiconDoc {
         lexicon: ::jacquard_lexicon::lexicon::Lexicon::Lexicon1,
         id: ::jacquard_common::CowStr::new_static("sh.weaver.edit.diff"),

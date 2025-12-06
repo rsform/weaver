@@ -228,13 +228,13 @@
           src = pkgs.fetchCrate {
             pname = "wasm-bindgen-cli";
             version = wasmBindgen.version;
-            hash = "sha256-zLPFFgnqAWq5R2KkaTGAYqVQswfBEYm9x3OPjx8DJRY=";
+            hash = "sha256-M6WuGl7EruNopHZbqBpucu4RWz44/MSdv6f0zkYw+44=";
           };
 
           cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
             inherit src;
             inherit (src) pname version;
-            hash = "sha256-a2X9bzwnMWNt0fTf30qAiJ4noal/ET1jEtf5fBFj5OU=";
+            hash = "sha256-ElDatyOwdKwHg3bNH/1pcxKI7LXkhsotlDPQjiLHBwA=";
           };
         };
       in
@@ -269,7 +269,35 @@
             wasm-pack
             twiggy
             binaryen.out
+            llvmPackages_18.clang-unwrapped
+            llvmPackages_18.llvm
+            llvmPackages_18.libclang
+            wabt
           ];
+
+          nativeBuildInputs = [pkgs.llvmPackages_18.clang-unwrapped pkgs.llvmPackages_18.bintools-unwrapped];
+
+          shellHook = ''
+            export CC_wasm32_unknown_unknown="${pkgs.llvmPackages_18.clang-unwrapped}/bin/clang"
+            export AR_wasm32_unknown_unknown="${pkgs.llvmPackages_18.bintools-unwrapped}/bin/llvm-ar"
+            CLANG_MAJOR_VERSION="18"
+            CLANG_RESOURCE_DIR="${pkgs.llvmPackages_18.clang-unwrapped}/lib/clang/$CLANG_MAJOR_VERSION"
+
+            # Use libclang's include directory which has the standard headers
+            LIBCLANG_INCLUDE="${pkgs.llvmPackages_18.libclang.lib}/lib/clang/$CLANG_MAJOR_VERSION/include"
+
+            export CFLAGS_wasm32_unknown_unknown="-isystem $LIBCLANG_INCLUDE -resource-dir $CLANG_RESOURCE_DIR"
+            export CPPFLAGS="-isystem $LIBCLANG_INCLUDE -resource-dir $CLANG_RESOURCE_DIR"
+
+            # Debug: Print the paths to verify they exist
+            echo "Clang resource dir: $CLANG_RESOURCE_DIR"
+            echo "Libclang include dir: $LIBCLANG_INCLUDE"
+            if [ -f "$LIBCLANG_INCLUDE/stddef.h" ]; then
+                echo "Found stddef.h at: $LIBCLANG_INCLUDE/stddef.h"
+            else
+                echo "stddef.h not found in $LIBCLANG_INCLUDE"
+            fi
+          '';
         };
     });
 }
