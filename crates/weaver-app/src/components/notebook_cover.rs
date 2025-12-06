@@ -1,8 +1,10 @@
 #![allow(non_snake_case)]
 
 use crate::Route;
+use crate::components::AuthorList;
 use crate::components::button::{Button, ButtonVariant};
 use dioxus::prelude::*;
+use jacquard::IntoStatic;
 use jacquard::smol_str::SmolStr;
 use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::notebook::NotebookView;
@@ -41,8 +43,17 @@ pub fn NotebookCover(
 
             // Authors section
             if !notebook.authors.is_empty() {
-                div { class: "notebook-cover-authors",
-                    NotebookAuthors { authors: notebook.authors.clone() }
+                {
+                    let owner = notebook.uri.authority().clone().into_static();
+                    rsx! {
+                        div { class: "notebook-cover-authors",
+                            AuthorList {
+                                authors: notebook.authors.clone(),
+                                owner_ident: Some(owner),
+                                avatar_size: 48,
+                            }
+                        }
+                    }
                 }
             }
 
@@ -97,82 +108,5 @@ pub fn NotebookCover(
                 }
             }
         }
-    }
-}
-
-#[component]
-fn NotebookAuthors(
-    authors: Vec<weaver_api::sh_weaver::notebook::AuthorListView<'static>>,
-) -> Element {
-    rsx! {
-        div { class: "notebook-authors-list",
-            for (i, author) in authors.iter().enumerate() {
-                if i > 0 { span { class: "author-separator", ", " } }
-                NotebookAuthor { author: author.clone() }
-            }
-        }
-    }
-}
-
-#[component]
-fn NotebookAuthor(author: weaver_api::sh_weaver::notebook::AuthorListView<'static>) -> Element {
-    use weaver_api::sh_weaver::actor::ProfileDataViewInner;
-
-    // Author already has profile data hydrated
-    match &author.record.inner {
-        ProfileDataViewInner::ProfileView(p) => {
-            let display_name = p
-                .display_name
-                .as_ref()
-                .map(|n| n.as_ref())
-                .unwrap_or("Unknown");
-
-            rsx! {
-                span { class: "embed-author notebook-author",
-                    if let Some(ref avatar) = p.avatar {
-                        img { class: "embed-avatar", src: avatar.as_ref(), alt: "", width: "48", height: "48" }
-                    }
-                    span { class: "embed-author-info",
-                        span { class: "embed-author-name", "{display_name}" }
-                        span { class: "embed-author-handle", "@{p.handle}" }
-                    }
-                }
-            }
-        }
-        ProfileDataViewInner::ProfileViewDetailed(p) => {
-            let display_name = p
-                .display_name
-                .as_ref()
-                .map(|n| n.as_ref())
-                .unwrap_or("Unknown");
-
-            rsx! {
-                span { class: "embed-author notebook-author",
-                    if let Some(ref avatar) = p.avatar {
-                        img { class: "embed-avatar", src: avatar.as_ref(), alt: "", width: "48", height: "48" }
-                    }
-                    span { class: "embed-author-info",
-                        span { class: "embed-author-name", "{display_name}" }
-                        span { class: "embed-author-handle", "@{p.handle}" }
-                    }
-                }
-            }
-        }
-        ProfileDataViewInner::TangledProfileView(p) => {
-            rsx! {
-                span { class: "embed-author notebook-author",
-                    span { class: "embed-author-info",
-                        span { class: "embed-author-handle", "@{p.handle.as_ref()}" }
-                    }
-                }
-            }
-        }
-        _ => rsx! {
-            span { class: "embed-author notebook-author",
-                span { class: "embed-author-info",
-                    span { class: "embed-author-name", "Unknown" }
-                }
-            }
-        },
     }
 }

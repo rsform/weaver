@@ -1,0 +1,105 @@
+/* AuthorList Component Styles */
+
+.author-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    position: relative;
+}
+
+.author-list-full {
+    flex-direction: row;
+    align-items: center;
+    gap: 1rem;
+}
+
+.author-list-compact,
+.author-list-collapsed {
+    flex-direction: row;
+    align-items: center;
+    cursor: pointer;
+}
+
+.author-list-compact:hover,
+.author-list-collapsed:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--color-muted);
+}
+
+/* Author block (full display with avatar) */
+.author-block {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    color: inherit;
+}
+
+.author-block:hover .embed-author-name {
+    color: var(--color-secondary);
+}
+
+/* Inline author name (compact mode) */
+.author-inline {
+    color: var(--color-text);
+    text-decoration: none;
+}
+
+.author-inline:hover {
+    color: var(--color-secondary);
+}
+
+/* Separator between authors */
+.author-separator {
+    color: var(--color-muted);
+}
+
+/* Et al. text */
+.author-et-al {
+    color: var(--color-muted);
+    font-style: italic;
+    cursor: pointer;
+}
+
+.author-et-al:hover {
+    color: var(--color-secondary);
+}
+
+/* Dropdown overlay */
+.author-list-dropdown-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 10vh;
+}
+
+.author-list-dropdown-content {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    max-height: 60vh;
+    overflow-y: auto;
+    min-width: 200px;
+    max-width: 400px;
+}
+
+.author-list-dropdown {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    .author-list-dropdown-overlay {
+        background: rgba(0, 0, 0, 0.4);
+    }
+    .author-list-dropdown-content {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+}

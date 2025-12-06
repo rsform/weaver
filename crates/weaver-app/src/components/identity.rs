@@ -1,6 +1,6 @@
 use crate::auth::AuthState;
 use crate::components::css::DefaultNotebookCss;
-use crate::components::{FeedEntryCard, ProfileActions, ProfileActionsMenubar};
+use crate::components::{AuthorList, FeedEntryCard, ProfileActions, ProfileActionsMenubar};
 use crate::{Route, data, fetch};
 use dioxus::prelude::*;
 use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
@@ -358,7 +358,8 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                             NotebookCard {
                                                                 notebook: notebook.clone(),
                                                                 entry_refs: entries.clone(),
-                                                                is_pinned: true
+                                                                is_pinned: true,
+                                                                profile_ident: Some(ident()),
                                                             }
                                                         }
                                                     }
@@ -373,7 +374,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                                 entry: entry.clone(),
                                                                 show_actions: true,
                                                                 is_pinned: true,
-                                                                show_author: false
+                                                                profile_ident: Some(ident()),
                                                             }
                                                         }
                                                     }
@@ -405,7 +406,8 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                         NotebookCard {
                                                             notebook: notebook.clone(),
                                                             entry_refs: entries.clone(),
-                                                            is_pinned: false
+                                                            is_pinned: false,
+                                                            profile_ident: Some(ident()),
                                                         }
                                                     }
                                                 }
@@ -420,7 +422,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                             entry: entry.clone(),
                                                             show_actions: true,
                                                             is_pinned: false,
-                                                            show_author: false
+                                                            profile_ident: Some(ident()),
                                                         }
                                                     }
                                                 }
@@ -446,6 +448,8 @@ pub fn NotebookCard(
     entry_refs: Vec<StrongRef<'static>>,
     #[props(default = false)] is_pinned: bool,
     #[props(default)] show_author: Option<bool>,
+    /// Profile identity for context-aware author visibility (hides single author on their own profile)
+    #[props(default)] profile_ident: Option<AtIdentifier<'static>>,
     #[props(default)] on_pinned_changed: Option<EventHandler<bool>>,
     #[props(default)] on_deleted: Option<EventHandler<()>>,
 ) -> Element {
@@ -542,41 +546,13 @@ pub fn NotebookCard(
                     }
                 }
 
-                // Show authors only if multiple
+                // Show authors
                 if show_authors {
                     div { class: "notebook-card-authors",
-                        for (i, author) in notebook.authors.iter().enumerate() {
-                            if i > 0 { span { class: "author-separator", ", " } }
-                            {
-                                use weaver_api::sh_weaver::actor::ProfileDataViewInner;
-
-                                match &author.record.inner {
-                                    ProfileDataViewInner::ProfileView(profile) => {
-                                        let display_name = profile.display_name.as_ref()
-                                            .map(|n| n.as_ref())
-                                            .unwrap_or("Unknown");
-                                        rsx! {
-                                            span { class: "author-name", "{display_name}" }
-                                        }
-                                    }
-                                    ProfileDataViewInner::ProfileViewDetailed(profile) => {
-                                        let display_name = profile.display_name.as_ref()
-                                            .map(|n| n.as_ref())
-                                            .unwrap_or("Unknown");
-                                        rsx! {
-                                            span { class: "author-name", "{display_name}" }
-                                        }
-                                    }
-                                    ProfileDataViewInner::TangledProfileView(profile) => {
-                                        rsx! {
-                                            span { class: "author-name", "@{profile.handle.as_ref()}" }
-                                        }
-                                    }
-                                    _ => rsx! {
-                                        span { class: "author-name", "Unknown" }
-                                    }
-                                }
-                            }
+                        AuthorList {
+                            authors: notebook.authors.clone(),
+                            profile_ident: profile_ident.clone(),
+                            owner_ident: Some(ident.clone()),
                         }
                     }
                 }

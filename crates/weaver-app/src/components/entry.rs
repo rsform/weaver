@@ -3,6 +3,7 @@
 use crate::Route;
 #[cfg(feature = "server")]
 use crate::blobcache::BlobCache;
+use crate::components::AuthorList;
 use crate::{components::EntryActions, data::use_handle};
 use dioxus::prelude::*;
 use jacquard::types::aturi::AtUri;
@@ -416,13 +417,8 @@ pub fn EntryCard(
 
     let entry_uri = entry_view.uri.clone().into_static();
 
-    // Only show author if notebook has multiple authors
+    // Show author list if notebook has multiple authors
     let show_author = author_count > 1;
-    let first_author = if show_author {
-        entry_view.authors.first()
-    } else {
-        None
-    };
 
     // Render preview from truncated entry content
     let preview_html = parsed_entry.as_ref().map(|entry| {
@@ -460,60 +456,11 @@ pub fn EntryCard(
                         }
                     }
                 }
-                if let Some(author) = first_author {
-                    {
-                        use weaver_api::sh_weaver::actor::ProfileDataViewInner;
-
-                        match &author.record.inner {
-                            ProfileDataViewInner::ProfileView(profile) => {
-                                let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
-                                let handle = profile.handle.clone();
-                                rsx! {
-                                    span { class: "embed-author entry-card-author",
-                                        if let Some(ref avatar_url) = profile.avatar {
-                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
-                                        }
-                                        span { class: "embed-author-info",
-                                            span { class: "embed-author-name", "{display_name}" }
-                                            span { class: "embed-author-handle", "@{handle}" }
-                                        }
-                                    }
-                                }
-                            }
-                            ProfileDataViewInner::ProfileViewDetailed(profile) => {
-                                let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
-                                let handle = profile.handle.clone();
-                                rsx! {
-                                    span { class: "embed-author entry-card-author",
-                                        if let Some(ref avatar_url) = profile.avatar {
-                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
-                                        }
-                                        span { class: "embed-author-info",
-                                            span { class: "embed-author-name", "{display_name}" }
-                                            span { class: "embed-author-handle", "@{handle}" }
-                                        }
-                                    }
-                                }
-                            }
-                            ProfileDataViewInner::TangledProfileView(profile) => {
-                                rsx! {
-                                    span { class: "embed-author entry-card-author",
-                                        span { class: "embed-author-info",
-                                            span { class: "embed-author-handle", "@{profile.handle.as_ref()}" }
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {
-                                rsx! {
-                                    span { class: "embed-author entry-card-author",
-                                        span { class: "embed-author-info",
-                                            span { class: "embed-author-name", "Unknown" }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                if show_author && !entry_view.authors.is_empty() {
+                    AuthorList {
+                        authors: entry_view.authors.clone(),
+                        owner_ident: Some(ident.clone()),
+                        class: Some("entry-card-author".to_string()),
                     }
                 }
             }
@@ -543,12 +490,12 @@ pub fn FeedEntryCard(
     #[props(default = false)] show_actions: bool,
     #[props(default = false)] is_pinned: bool,
     #[props(default = true)] show_author: bool,
+    /// Profile identity for context-aware author visibility (hides single author on their own profile)
+    #[props(default)] profile_ident: Option<AtIdentifier<'static>>,
     #[props(default)] on_pinned_changed: Option<EventHandler<bool>>,
 ) -> Element {
     use crate::Route;
     use crate::auth::AuthState;
-    use jacquard::from_data;
-    use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 
     let title = entry_view
         .title
@@ -573,12 +520,8 @@ pub fn FeedEntryCard(
     // Format date from record's created_at
     let formatted_date = entry.created_at.as_ref().format("%B %d, %Y").to_string();
 
-    // Get first author if we're showing it
-    let first_author = if show_author {
-        entry_view.authors.first()
-    } else {
-        None
-    };
+    // Whether to show authors
+    let has_authors = show_author && !entry_view.authors.is_empty();
 
     // Check edit access via permissions
     let auth_state = use_context::<Signal<AuthState>>();
@@ -621,7 +564,7 @@ pub fn FeedEntryCard(
                     h3 { class: "entry-card-title", "{title}" }
                 }
                 // Date inline with title when no author shown
-                if first_author.is_none() {
+                if !has_authors {
                     div { class: "entry-card-date",
                         time { datetime: "{entry.created_at.as_str()}", "{formatted_date}" }
                     }
@@ -639,67 +582,14 @@ pub fn FeedEntryCard(
                 }
             }
 
-            // Byline: author + date (only when author shown)
-            if let Some(author) = first_author {
+            // Byline: author + date (only when authors shown)
+            if has_authors {
                 div { class: "entry-card-byline",
-                    {
-                        match &author.record.inner {
-                            ProfileDataViewInner::ProfileView(profile) => {
-                                let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
-                                let handle = profile.handle.clone();
-                                rsx! {
-                                    Link {
-                                        to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
-                                        class: "embed-author entry-card-author",
-                                        if let Some(ref avatar_url) = profile.avatar {
-                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
-                                        }
-                                        span { class: "embed-author-info",
-                                            span { class: "embed-author-name", "{display_name}" }
-                                            span { class: "embed-author-handle", "@{handle}" }
-                                        }
-                                    }
-                                }
-                            }
-                            ProfileDataViewInner::ProfileViewDetailed(profile) => {
-                                let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
-                                let handle = profile.handle.clone();
-                                rsx! {
-                                    Link {
-                                        to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
-                                        class: "embed-author entry-card-author",
-                                        if let Some(ref avatar_url) = profile.avatar {
-                                            img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
-                                        }
-                                        span { class: "embed-author-info",
-                                            span { class: "embed-author-name", "{display_name}" }
-                                            span { class: "embed-author-handle", "@{handle}" }
-                                        }
-                                    }
-                                }
-                            }
-                            ProfileDataViewInner::TangledProfileView(profile) => {
-                                let handle = profile.handle.clone();
-                                rsx! {
-                                    Link {
-                                        to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
-                                        class: "embed-author entry-card-author",
-                                        span { class: "embed-author-info",
-                                            span { class: "embed-author-handle", "@{handle}" }
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {
-                                rsx! {
-                                    span { class: "embed-author entry-card-author",
-                                        span { class: "embed-author-info",
-                                            span { class: "embed-author-name", "Unknown" }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    AuthorList {
+                        authors: entry_view.authors.clone(),
+                        profile_ident: profile_ident.clone(),
+                        owner_ident: Some(ident.clone()),
+                        class: Some("entry-card-author".to_string()),
                     }
                     div { class: "entry-card-date",
                         time { datetime: "{entry.created_at.as_str()}", "{formatted_date}" }
@@ -771,67 +661,9 @@ pub fn EntryMetadata(
                 // Authors
                 if !entry_view.authors.is_empty() {
                     div { class: "entry-authors",
-                        for (i, author) in entry_view.authors.iter().enumerate() {
-                            if i > 0 { span { " " } }
-                            {
-                                use weaver_api::sh_weaver::actor::ProfileDataViewInner;
-
-                                match &author.record.inner {
-                                    ProfileDataViewInner::ProfileView(profile) => {
-                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
-                                        let handle = profile.handle.clone();
-
-                                        rsx! {
-                                            Link {
-                                                to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
-                                                class: "embed-author",
-                                                if let Some(ref avatar_url) = profile.avatar {
-                                                    img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
-                                                }
-                                                span { class: "embed-author-info",
-                                                    span { class: "embed-author-name", "{display_name}" }
-                                                    span { class: "embed-author-handle", "@{handle}" }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    ProfileDataViewInner::ProfileViewDetailed(profile) => {
-                                        let display_name = profile.display_name.as_ref().map(|n| n.as_ref()).unwrap_or("Unknown");
-                                        let handle = profile.handle.clone();
-                                        rsx! {
-                                            Link {
-                                                to: Route::RepositoryIndex { ident: AtIdentifier::Handle(handle.clone()) },
-                                                class: "embed-author",
-                                                if let Some(ref avatar_url) = profile.avatar {
-                                                    img { class: "embed-avatar", src: avatar_url.as_ref(), alt: "", width: "42", height: "42" }
-                                                }
-                                                span { class: "embed-author-info",
-                                                    span { class: "embed-author-name", "{display_name}" }
-                                                    span { class: "embed-author-handle", "@{handle}" }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    ProfileDataViewInner::TangledProfileView(profile) => {
-                                        rsx! {
-                                            span { class: "embed-author",
-                                                span { class: "embed-author-info",
-                                                    span { class: "embed-author-handle", "@{profile.handle.as_ref()}" }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        rsx! {
-                                            span { class: "embed-author",
-                                                span { class: "embed-author-info",
-                                                    span { class: "embed-author-name", "Unknown" }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        AuthorList {
+                            authors: entry_view.authors.clone(),
+                            owner_ident: Some(ident.clone()),
                         }
                     }
                 }

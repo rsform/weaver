@@ -727,7 +727,10 @@ impl Fetcher {
                         }
                         notebooks.push(result);
                     }
-                    Err(_) => continue, // Skip notebooks that fail to load
+                    Err(e) => {
+                        tracing::warn!("fetch_notebooks_for_did: view_notebook failed for {}: {}", record.uri, e);
+                        continue;
+                    }
                 }
             }
         }

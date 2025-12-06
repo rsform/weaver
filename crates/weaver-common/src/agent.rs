@@ -1601,19 +1601,22 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                 }
             };
 
-            // Fetch the record to get createdAt
+            // Fetch the record to get createdAt (use untyped fetch to handle any collection)
             let record = self
-                .get_record::<weaver_api::sh_weaver::notebook::entry::Entry>(resource_uri)
+                .fetch_record_slingshot(resource_uri)
                 .await
-                .map_err(|e| WeaverError::from(AgentError::from(e)))?
-                .into_output()
-                .map_err(|e| {
-                    WeaverError::from(AgentError::from(ClientError::invalid_request(format!(
-                        "Failed to parse record: {}",
-                        e
-                    ))))
+                .map_err(|e| WeaverError::from(AgentError::from(e)))?;
+            let authority_granted_at = record
+                .value
+                .query("createdAt")
+                .first()
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<jacquard::types::string::Datetime>().ok())
+                .ok_or_else(|| {
+                    WeaverError::from(AgentError::from(ClientError::invalid_request(
+                        "Record missing createdAt",
+                    )))
                 })?;
-            let authority_granted_at = record.value.created_at;
 
             editors.push(
                 PermissionGrant::new()
