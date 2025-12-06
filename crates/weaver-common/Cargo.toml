@@ -58,7 +58,6 @@ wasm-bindgen-futures = "0.4"
 send_wrapper = "0.6"
 wasmworker = "0.1"
 wasmworker-proc-macro = "0.1"
-iroh-quinn = { version = "0.14", default-features = false }
 ring = { version = "0.17", default-features = false, features = ["wasm32_unknown_unknown_js"]}
 getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
 

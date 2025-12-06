@@ -561,13 +561,11 @@ fn MarkdownEditorInner(
     let mut doc_for_dom = document.clone();
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
-        tracing::debug!("DOM update effect triggered");
-
-        tracing::debug!(
-            composition_active = doc_for_dom.composition.read().is_some(),
-            cursor = doc_for_dom.cursor.read().offset,
-            "DOM update: checking state"
-        );
+        // tracing::debug!(
+        //     composition_active = doc_for_dom.composition.read().is_some(),
+        //     cursor = doc_for_dom.cursor.read().offset,
+        //     "DOM update: checking state"
+        // );
 
         // Skip DOM updates during IME composition - browser controls the preview
         if doc_for_dom.composition.read().is_some() {
@@ -575,7 +573,7 @@ fn MarkdownEditorInner(
             return;
         }
 
-        tracing::debug!(
+        tracing::trace!(
             cursor = doc_for_dom.cursor.read().offset,
             len = doc_for_dom.len_chars(),
             "DOM update proceeding (not in composition)"
@@ -1087,7 +1085,7 @@ fn MarkdownEditorInner(
                     onselect: {
                         let mut doc = document.clone();
                         move |_evt| {
-                            tracing::debug!("onselect fired");
+                            tracing::trace!("onselect fired");
                             let paras = cached_paragraphs();
                             sync_cursor_from_dom(&mut doc, editor_id, &paras);
                             let spans = syntax_spans();
@@ -1105,7 +1103,7 @@ fn MarkdownEditorInner(
                     onselectstart: {
                         let mut doc = document.clone();
                         move |_evt| {
-                            tracing::debug!("onselectstart fired");
+                            tracing::trace!("onselectstart fired");
                             let paras = cached_paragraphs();
                             sync_cursor_from_dom(&mut doc, editor_id, &paras);
                             let spans = syntax_spans();
@@ -1123,7 +1121,7 @@ fn MarkdownEditorInner(
                     onselectionchange: {
                         let mut doc = document.clone();
                         move |_evt| {
-                            tracing::debug!("onselectionchange fired");
+                            tracing::trace!("onselectionchange fired");
                             let paras = cached_paragraphs();
                             sync_cursor_from_dom(&mut doc, editor_id, &paras);
                             let spans = syntax_spans();
@@ -1141,7 +1139,7 @@ fn MarkdownEditorInner(
                     onclick: {
                         let mut doc = document.clone();
                         move |evt| {
-                            tracing::debug!("onclick fired");
+                            tracing::trace!("onclick fired");
                             let paras = cached_paragraphs();
 
                             // Check if click target is a math-clickable element
@@ -1255,7 +1253,7 @@ fn MarkdownEditorInner(
                         let mut doc = document.clone();
                         move |evt: CompositionEvent| {
                             let data = evt.data().data();
-                            tracing::debug!(
+                            tracing::trace!(
                                 data = %data,
                                 "compositionstart"
                             );
@@ -1264,7 +1262,7 @@ fn MarkdownEditorInner(
                             if let Some(sel) = sel {
                                 let (start, end) =
                                     (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                                tracing::debug!(
+                                tracing::trace!(
                                     start,
                                     end,
                                     "compositionstart: deleting selection"
@@ -1274,7 +1272,7 @@ fn MarkdownEditorInner(
                             }
 
                             let cursor_offset = doc.cursor.read().offset;
-                            tracing::debug!(
+                            tracing::trace!(
                                 cursor = cursor_offset,
                                 "compositionstart: setting composition state"
                             );
@@ -1289,7 +1287,7 @@ fn MarkdownEditorInner(
                         let mut doc = document.clone();
                         move |evt: CompositionEvent| {
                             let data = evt.data().data();
-                            tracing::debug!(
+                            tracing::trace!(
                                 data = %data,
                                 "compositionupdate"
                             );
@@ -1306,7 +1304,7 @@ fn MarkdownEditorInner(
                         let mut doc = document.clone();
                         move |evt: CompositionEvent| {
                             let final_text = evt.data().data();
-                            tracing::debug!(
+                            tracing::trace!(
                                 data = %final_text,
                                 "compositionend"
                             );
@@ -1354,6 +1352,28 @@ fn MarkdownEditorInner(
                     }
                     div { class: "editor-debug",
                         div { "Cursor: {document.cursor.read().offset}, Chars: {document.len_chars()}" },
+                        // Collab debug info
+                        {
+                            if let Some(debug_state) = crate::collab_context::try_use_collab_debug() {
+                                let ds = debug_state.read();
+                                rsx! {
+                                    div { class: "collab-debug",
+                                        if let Some(ref node_id) = ds.node_id {
+                                            span { title: "{node_id}", "Node: {&node_id[..8.min(node_id.len())]}…" }
+                                        }
+                                        if ds.is_joined {
+                                            span { class: "joined", "✓ Joined" }
+                                        }
+                                        span { "Peers: {ds.discovered_peers}" }
+                                        if let Some(ref err) = ds.last_error {
+                                            span { class: "error", title: "{err}", "⚠" }
+                                        }
+                                    }
+                                }
+                            } else {
+                                rsx! {}
+                            }
+                        },
                         ReportButton {
                             email: "editor-bugs@weaver.sh".to_string(),
                             editor_id: "markdown-editor".to_string(),
@@ -1516,10 +1536,19 @@ fn RemoteCursors(
     render_cache: Signal<render::RenderCache>,
 ) -> Element {
     let presence_read = presence.read();
+    let cursor_count = presence_read.len();
     let cursors: Vec<_> = presence_read
         .cursors()
         .map(|(c, cur)| (c.display_name.clone(), c.color, cur.position, cur.selection))
         .collect();
+
+    if cursor_count > 0 {
+        tracing::debug!(
+            "RemoteCursors: {} collaborators, {} with cursors",
+            cursor_count,
+            cursors.len()
+        );
+    }
 
     if cursors.is_empty() {
         return rsx! {};
@@ -1558,21 +1587,45 @@ fn RemoteCursorIndicator(
     color: u32,
     offset_map: Vec<super::offset_map::OffsetMapping>,
 ) -> Element {
-    use super::cursor::{get_cursor_rect_relative, CursorRect};
+    use super::cursor::{get_cursor_rect_relative, get_selection_rects_relative};
 
-    // Convert RGBA u32 to CSS color
+    // Convert RGBA u32 to CSS color (fully opaque for cursor)
     let r = (color >> 24) & 0xFF;
     let g = (color >> 16) & 0xFF;
     let b = (color >> 8) & 0xFF;
     let a = (color & 0xFF) as f32 / 255.0;
     let color_css = format!("rgba({}, {}, {}, {})", r, g, b, a);
+    // Semi-transparent version for selection highlight
+    let selection_color_css = format!("rgba({}, {}, {}, 0.25)", r, g, b);
 
     // Get cursor position relative to editor
     let rect = get_cursor_rect_relative(position, &offset_map, "markdown-editor");
 
+    // Get selection rectangles if there's a selection
+    let selection_rects = if let Some((start, end)) = selection {
+        let (start, end) = if start <= end { (start, end) } else { (end, start) };
+        get_selection_rects_relative(start, end, &offset_map, "markdown-editor")
+    } else {
+        vec![]
+    };
+
     let Some(rect) = rect else {
+        tracing::debug!(
+            "RemoteCursorIndicator: no rect for position {} (offset_map len: {})",
+            position,
+            offset_map.len()
+        );
         return rsx! {};
     };
+
+    tracing::trace!(
+        "RemoteCursorIndicator: {} at ({}, {}) h={}, selection_rects={}",
+        display_name,
+        rect.x,
+        rect.y,
+        rect.height,
+        selection_rects.len()
+    );
 
     let style = format!(
         "left: {}px; top: {}px; --cursor-height: {}px; --cursor-color: {};",
@@ -1580,6 +1633,15 @@ fn RemoteCursorIndicator(
     );
 
     rsx! {
+        // Selection highlight rectangles (rendered behind cursor)
+        for (i, sel_rect) in selection_rects.iter().enumerate() {
+            div {
+                key: "sel-{i}",
+                class: "remote-selection",
+                style: "left: {sel_rect.x}px; top: {sel_rect.y}px; width: {sel_rect.width}px; height: {sel_rect.height}px; background-color: {selection_color_css};",
+            }
+        }
+
         div {
             class: "remote-cursor",
             style: "{style}",

@@ -80,7 +80,7 @@ mini-moka = { git = "https://github.com/moka-rs/mini-moka", rev = "da864e849f5d0
 chrono = { version = "0.4", features = ["wasmbind"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorker", "ServiceWorkerRegistration", "RegistrationOptions", "Window", "Navigator", "MessageEvent", "console", "Document", "Element", "HtmlImageElement", "Selection", "Range", "Node", "HtmlElement", "TreeWalker", "NodeFilter", "DomTokenList", "Clipboard", "ClipboardItem", "Blob", "BlobPropertyBag", "EventTarget", "InputEvent", "AddEventListenerOptions"] }
+web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorker", "ServiceWorkerRegistration", "RegistrationOptions", "Window", "Navigator", "MessageEvent", "console", "Document", "Element", "HtmlImageElement", "Selection", "Range", "Node", "HtmlElement", "TreeWalker", "NodeFilter", "DomTokenList", "Clipboard", "ClipboardItem", "Blob", "BlobPropertyBag", "EventTarget", "InputEvent", "AddEventListenerOptions", "DomRect", "DomRectList"] }
 js-sys = "0.3"
 gloo-storage = "0.3"
 gloo-timers = "0.3"

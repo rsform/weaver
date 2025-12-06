@@ -307,3 +307,123 @@ pub fn get_cursor_rect_relative(
 ) -> Option<CursorRect> {
     None
 }
+
+/// A rectangle for part of a selection (one per line).
+#[derive(Debug, Clone, Copy)]
+pub struct SelectionRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Get screen rectangles for a selection range, relative to editor.
+///
+/// Returns multiple rects if selection spans multiple lines.
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub fn get_selection_rects_relative(
+    start: usize,
+    end: usize,
+    offset_map: &[OffsetMapping],
+    editor_id: &str,
+) -> Vec<SelectionRect> {
+    use wasm_bindgen::JsCast;
+
+    if offset_map.is_empty() || start >= end {
+        return vec![];
+    }
+
+    let Some(window) = web_sys::window() else {
+        return vec![];
+    };
+    let Some(document) = window.document() else {
+        return vec![];
+    };
+    let Some(editor) = document.get_element_by_id(editor_id) else {
+        return vec![];
+    };
+    let editor_rect = editor.get_bounding_client_rect();
+
+    // Find mappings for start and end
+    let Some((start_mapping, _)) = find_mapping_for_char(offset_map, start) else {
+        return vec![];
+    };
+    let Some((end_mapping, _)) = find_mapping_for_char(offset_map, end) else {
+        return vec![];
+    };
+
+    // Get containers
+    let start_container = document
+        .get_element_by_id(&start_mapping.node_id)
+        .or_else(|| {
+            let selector = format!("[data-node-id='{}']", start_mapping.node_id);
+            document.query_selector(&selector).ok().flatten()
+        });
+    let end_container = document
+        .get_element_by_id(&end_mapping.node_id)
+        .or_else(|| {
+            let selector = format!("[data-node-id='{}']", end_mapping.node_id);
+            document.query_selector(&selector).ok().flatten()
+        });
+
+    let (Some(start_container), Some(end_container)) = (start_container, end_container) else {
+        return vec![];
+    };
+
+    // Create range
+    let Ok(range) = document.create_range() else {
+        return vec![];
+    };
+
+    // Set start
+    if let Some(child_index) = start_mapping.child_index {
+        let _ = range.set_start(&start_container, child_index as u32);
+    } else if let Ok(container_element) = start_container.clone().dyn_into::<web_sys::HtmlElement>() {
+        let offset_in_range = start - start_mapping.char_range.start;
+        let target_utf16_offset = start_mapping.char_offset_in_node + offset_in_range;
+        if let Ok((text_node, node_offset)) = find_text_node_at_offset(&container_element, target_utf16_offset) {
+            let _ = range.set_start(&text_node, node_offset as u32);
+        }
+    }
+
+    // Set end
+    if let Some(child_index) = end_mapping.child_index {
+        let _ = range.set_end(&end_container, child_index as u32);
+    } else if let Ok(container_element) = end_container.dyn_into::<web_sys::HtmlElement>() {
+        let offset_in_range = end - end_mapping.char_range.start;
+        let target_utf16_offset = end_mapping.char_offset_in_node + offset_in_range;
+        if let Ok((text_node, node_offset)) = find_text_node_at_offset(&container_element, target_utf16_offset) {
+            let _ = range.set_end(&text_node, node_offset as u32);
+        }
+    }
+
+    // Get all rects (one per line)
+    let Some(rects) = range.get_client_rects() else {
+        return vec![];
+    };
+    let mut result = Vec::new();
+
+    for i in 0..rects.length() {
+        if let Some(rect) = rects.get(i) {
+            let rect: web_sys::DomRect = rect;
+            result.push(SelectionRect {
+                x: rect.x() - editor_rect.x(),
+                y: rect.y() - editor_rect.y(),
+                width: rect.width(),
+                height: rect.height().max(16.0),
+            });
+        }
+    }
+
+    result
+}
+
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+pub fn get_selection_rects_relative(
+    _start: usize,
+    _end: usize,
+    _offset_map: &[OffsetMapping],
+    _editor_id: &str,
+) -> Vec<SelectionRect> {
+    vec![]
+}

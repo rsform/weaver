@@ -9,6 +9,25 @@ use dioxus::prelude::*;
 use std::sync::Arc;
 use weaver_common::transport::CollabNode;
 
+/// Debug state for the collab session, displayed in editor debug panel.
+#[derive(Clone, Default)]
+pub struct CollabDebugState {
+    /// Our node ID
+    pub node_id: Option<String>,
+    /// Our relay URL
+    pub relay_url: Option<String>,
+    /// URI of our published session record
+    pub session_record_uri: Option<String>,
+    /// Number of discovered peers
+    pub discovered_peers: usize,
+    /// Number of connected peers
+    pub connected_peers: usize,
+    /// Whether we've joined the gossip swarm
+    pub is_joined: bool,
+    /// Last error message
+    pub last_error: Option<String>,
+}
+
 /// Context state for the collaboration node.
 ///
 /// This is provided as a Dioxus context and can be accessed by editor components
@@ -39,6 +58,7 @@ impl Default for CollabContext {
 #[component]
 pub fn CollabProvider(children: Element) -> Element {
     let mut collab_ctx = use_signal(CollabContext::default);
+    let debug_state = use_signal(CollabDebugState::default);
 
     // Spawn the CollabNode on mount
     let _spawn_result = use_resource(move || async move {
@@ -62,8 +82,9 @@ pub fn CollabProvider(children: Element) -> Element {
         }
     });
 
-    // Provide the context
+    // Provide the contexts
     use_context_provider(|| collab_ctx);
+    use_context_provider(|| debug_state);
 
     rsx! { {children} }
 }
@@ -74,7 +95,9 @@ pub fn CollabProvider(children: Element) -> Element {
 pub fn CollabProvider(children: Element) -> Element {
     // On server/native, provide an empty context (collab happens in browser)
     let collab_ctx = use_signal(CollabContext::default);
+    let debug_state = use_signal(CollabDebugState::default);
     use_context_provider(|| collab_ctx);
+    use_context_provider(|| debug_state);
     rsx! { {children} }
 }
 
@@ -90,4 +113,10 @@ pub fn use_collab_node() -> Option<Arc<CollabNode>> {
 pub fn use_collab_available() -> bool {
     let ctx = use_context::<Signal<CollabContext>>();
     ctx.read().node.is_some()
+}
+
+/// Hook to get the collab debug state signal.
+/// Returns None if called outside CollabProvider.
+pub fn try_use_collab_debug() -> Option<Signal<CollabDebugState>> {
+    try_use_context::<Signal<CollabDebugState>>()
 }

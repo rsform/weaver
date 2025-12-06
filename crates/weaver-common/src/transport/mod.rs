@@ -14,10 +14,7 @@ mod session;
 
 pub use discovery::{node_id_to_string, parse_node_id, DiscoveredPeer, DiscoveryError};
 pub use iroh::EndpointId;
-pub use messages::CollabMessage;
+pub use messages::{CollabMessage, ReceivedMessage, SignedMessage, SignedMessageError};
 pub use node::{CollabNode, TransportError};
 pub use presence::{Collaborator, PresenceTracker, RemoteCursor};
 pub use session::{CollabSession, SessionError, SessionEvent, TopicId};
-
-/// ALPN protocol identifier for weaver collaboration
-pub const WEAVER_GOSSIP_ALPN: &[u8] = b"weaver/collab/0";

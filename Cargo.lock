@@ -11563,7 +11563,6 @@ dependencies = [
  "http",
  "iroh",
  "iroh-gossip",
- "iroh-quinn",
  "iroh-tickets",
  "jacquard",
  "jacquard-common",

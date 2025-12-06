@@ -148,7 +148,8 @@ fn main() {
         );
 
         // Filter out noisy crates
-        let filter = EnvFilter::new("debug,loro_internal=warn");
+        let filter =
+            EnvFilter::new("debug,loro_internal=warn,jacquard_identity=info,jacquard_common=info");
 
         let reg = Registry::default()
             .with(filter)

@@ -1420,9 +1420,16 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                 };
 
                 if !accept_output.records.is_empty() {
+                    // Both parties in a valid invite+accept pair are authorized
+                    let inviter_did = record_id.did.clone().into_static();
+                    collaborators.push(inviter_did);
                     collaborators.push(invitee_did);
                 }
             }
+
+            // Deduplicate (someone might appear in multiple pairs)
+            collaborators.sort();
+            collaborators.dedup();
 
             Ok(collaborators)
         }
@@ -1906,6 +1913,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             use jacquard::types::string::Datetime;
             use weaver_api::sh_weaver::collab::session::Session;
 
+            // Clean up any expired sessions first
+            let _ = self.cleanup_expired_sessions().await;
+
             let now_chrono = chrono::Utc::now().fixed_offset();
             let now = Datetime::new(now_chrono);
             let expires_at = ttl_minutes.map(|mins| {
@@ -1973,6 +1983,98 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         }
     }
 
+    /// Update the relay URL in an existing session record.
+    ///
+    /// Called when the relay connection changes during a session.
+    fn update_collab_session_relay<'a>(
+        &'a self,
+        session_uri: &'a AtUri<'a>,
+        relay_url: Option<&'a str>,
+    ) -> impl Future<Output = Result<(), WeaverError>> + 'a {
+        async move {
+            use weaver_api::sh_weaver::collab::session::Session;
+
+            let relay_uri = relay_url
+                .map(|url| jacquard::types::string::Uri::new(url))
+                .transpose()
+                .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid relay URL")))?;
+
+            self.update_record::<Session>(session_uri, |session| {
+                session.relay_url = relay_uri.clone();
+            })
+            .await?;
+            Ok(())
+        }
+    }
+
+    /// Delete all expired session records for the current user.
+    ///
+    /// Called before creating a new session to clean up stale records.
+    fn cleanup_expired_sessions<'a>(
+        &'a self,
+    ) -> impl Future<Output = Result<u32, WeaverError>> + 'a
+    where
+        Self: Sized,
+    {
+        async move {
+            use jacquard::types::nsid::Nsid;
+            use weaver_api::com_atproto::repo::list_records::ListRecords;
+            use weaver_api::sh_weaver::collab::session::Session;
+
+            let (did, _) = self.session_info().await.ok_or_else(|| {
+                AgentError::from(ClientError::invalid_request("No active session"))
+            })?;
+            let now = chrono::Utc::now();
+            let mut deleted = 0u32;
+
+            // List all our session records
+            let collection =
+                Nsid::new("sh.weaver.collab.session").map_err(WeaverError::AtprotoString)?;
+            let request = ListRecords::new()
+                .repo(did.clone())
+                .collection(collection)
+                .limit(100)
+                .build();
+
+            let response = self.send(request).await.map_err(AgentError::from)?;
+            let output = response.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to list sessions: {}",
+                    e
+                )))
+            })?;
+
+            for record in output.records {
+                if let Ok(session) = jacquard::from_data::<Session>(&record.value) {
+                    // Check if expired
+                    if let Some(ref expires_at) = session.expires_at {
+                        let expires_str = expires_at.as_str();
+                        if let Ok(expires) = chrono::DateTime::parse_from_rfc3339(expires_str) {
+                            if expires.with_timezone(&chrono::Utc) < now {
+                                // Delete expired session
+                                if let Some(rkey) = record.uri.rkey() {
+                                    if let Err(e) =
+                                        self.delete_record::<Session>(rkey.clone()).await
+                                    {
+                                        tracing::warn!("Failed to delete expired session: {}", e);
+                                    } else {
+                                        deleted += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if deleted > 0 {
+                tracing::info!("Cleaned up {} expired session records", deleted);
+            }
+
+            Ok(deleted)
+        }
+    }
+
     /// Find active collaboration sessions for a resource.
     ///
     /// Queries Constellation for session records referencing the given resource,
@@ -1991,6 +2093,14 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             use weaver_api::sh_weaver::collab::session::Session;
 
             const SESSION_NSID: &str = "sh.weaver.collab.session";
+
+            // Get authorized collaborators (owner is checked separately via URI authority)
+            let collaborators: std::collections::HashSet<Did<'static>> = self
+                .find_collaborators_for_resource(resource_uri)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
 
             let constellation_url = Url::parse(CONSTELLATION_URL).map_err(|e| {
                 AgentError::from(ClientError::invalid_request(format!(
@@ -2053,6 +2163,16 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                     if *expires_at < now {
                         continue; // Session expired
                     }
+                }
+
+                // Check if peer is authorized (has valid invite+accept pair)
+                let peer_did = record_id.did.clone().into_static();
+                if !collaborators.contains(&peer_did) {
+                    tracing::debug!(
+                        peer = %peer_did,
+                        "Filtering out unauthorized session peer"
+                    );
+                    continue;
                 }
 
                 peers.push(SessionPeer {

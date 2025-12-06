@@ -9,7 +9,7 @@ use n0_future::StreamExt;
 use n0_future::boxed::BoxStream;
 use n0_future::stream;
 
-use super::{CollabMessage, CollabNode};
+use super::{CollabMessage, CollabNode, SignedMessage};
 
 /// Topic ID for a gossip session - derived from resource URI.
 pub type TopicId = iroh_gossip::TopicId;
@@ -57,7 +57,6 @@ pub enum SessionEvent {
 pub struct CollabSession {
     topic: TopicId,
     sender: GossipSender,
-    #[allow(dead_code)]
     node: Arc<CollabNode>,
 }
 
@@ -79,14 +78,26 @@ impl CollabSession {
         node: Arc<CollabNode>,
         topic: TopicId,
         bootstrap_peers: Vec<EndpointId>,
-    ) -> Result<(Self, BoxStream<SessionEvent>), SessionError> {
+    ) -> Result<(Self, BoxStream<Result<SessionEvent, SessionError>>), SessionError> {
+        tracing::info!(
+            topic = ?topic,
+            bootstrap_count = bootstrap_peers.len(),
+            "CollabSession: joining topic"
+        );
+
+        for peer in &bootstrap_peers {
+            tracing::debug!(peer = %peer, "CollabSession: bootstrap peer");
+        }
+
         // Subscribe to the gossip topic
         let (sender, receiver) = node
             .gossip()
-            .subscribe(topic, bootstrap_peers)
+            .subscribe_and_join(topic, bootstrap_peers)
             .await
             .map_err(|e| SessionError::Subscribe(Box::new(e)))?
             .split();
+
+        tracing::info!("CollabSession: subscribed to gossip topic");
 
         let session = Self {
             topic,
@@ -101,48 +112,78 @@ impl CollabSession {
     }
 
     /// Convert gossip receiver into a stream of session events.
-    fn event_stream(receiver: GossipReceiver) -> BoxStream<SessionEvent> {
-        let stream = stream::unfold(receiver, |mut receiver| async move {
+    fn event_stream(receiver: GossipReceiver) -> BoxStream<Result<SessionEvent, SessionError>> {
+        let stream = stream::try_unfold(receiver, |mut receiver| async move {
             loop {
-                match receiver.next().await {
-                    Some(Ok(event)) => {
-                        let session_event = match event {
-                            Event::NeighborUp(peer) => SessionEvent::PeerJoined(peer),
-                            Event::NeighborDown(peer) => SessionEvent::PeerLeft(peer),
-                            Event::Received(msg) => match CollabMessage::from_bytes(&msg.content) {
-                                Ok(message) => SessionEvent::Message {
-                                    from: msg.delivered_from,
-                                    message,
-                                },
-                                Err(e) => {
-                                    tracing::warn!(?e, "failed to decode collab message");
+                let Some(event) = receiver.try_next().await.map_err(|e| {
+                    tracing::error!(?e, "CollabSession: gossip receiver error");
+                    SessionError::Decode(Box::new(e))
+                })?
+                else {
+                    tracing::debug!("CollabSession: gossip stream ended");
+                    return Ok(None);
+                };
+
+                tracing::debug!(?event, "CollabSession: raw gossip event");
+                let session_event = match event {
+                    Event::NeighborUp(peer) => {
+                        tracing::info!(peer = %peer, "CollabSession: neighbor up");
+                        SessionEvent::PeerJoined(peer)
+                    }
+                    Event::NeighborDown(peer) => {
+                        tracing::info!(peer = %peer, "CollabSession: neighbor down");
+                        SessionEvent::PeerLeft(peer)
+                    }
+                    Event::Received(msg) => {
+                        tracing::debug!(
+                            from = %msg.delivered_from,
+                            bytes = msg.content.len(),
+                            "CollabSession: received message"
+                        );
+                        match SignedMessage::decode_and_verify(&msg.content) {
+                            Ok(received) => {
+                                // Verify claimed sender matches transport sender
+                                if received.from != msg.delivered_from {
+                                    tracing::warn!(
+                                        claimed = %received.from,
+                                        transport = %msg.delivered_from,
+                                        "sender mismatch - possible spoofing attempt"
+                                    );
                                     continue;
                                 }
-                            },
-                            Event::Lagged => {
-                                tracing::warn!("gossip receiver lagged, some messages may be lost");
+                                SessionEvent::Message {
+                                    from: received.from,
+                                    message: received.message,
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(?e, "failed to verify/decode signed message");
                                 continue;
                             }
-                        };
-                        return Some((session_event, receiver));
+                        }
                     }
-                    Some(Err(e)) => {
-                        tracing::warn!(?e, "gossip receiver error");
+                    Event::Lagged => {
+                        tracing::warn!("gossip receiver lagged, some messages may be lost");
                         continue;
                     }
-                    None => return None,
-                }
+                };
+                break Ok(Some((session_event, receiver)));
             }
         });
 
         Box::pin(stream)
     }
 
-    /// Broadcast a message to all peers in the session.
+    /// Broadcast a signed message to all peers in the session.
     pub async fn broadcast(&self, message: &CollabMessage) -> Result<(), SessionError> {
-        let bytes = message
-            .to_bytes()
+        let bytes = SignedMessage::sign_and_encode(&self.node.secret_key(), message)
             .map_err(|e| SessionError::Broadcast(Box::new(e)))?;
+
+        tracing::debug!(
+            bytes = bytes.len(),
+            topic = ?self.topic,
+            "CollabSession: broadcasting signed message"
+        );
 
         self.sender
             .broadcast(bytes.into())
@@ -155,5 +196,27 @@ impl CollabSession {
     /// Get the topic ID for this session.
     pub fn topic(&self) -> TopicId {
         self.topic
+    }
+
+    /// Add new peers to the gossip session.
+    ///
+    /// Use this to add peers discovered after initial subscription.
+    /// The gossip layer will attempt to connect to these peers.
+    pub async fn join_peers(&self, peers: Vec<EndpointId>) -> Result<(), SessionError> {
+        if peers.is_empty() {
+            return Ok(());
+        }
+        tracing::info!(
+            count = peers.len(),
+            "CollabSession: joining additional peers"
+        );
+        for peer in &peers {
+            tracing::debug!(peer = %peer, "CollabSession: adding peer");
+        }
+        self.sender
+            .join_peers(peers)
+            .await
+            .map_err(|e| SessionError::Subscribe(Box::new(e)))?;
+        Ok(())
     }
 }

@@ -3,11 +3,9 @@
 use iroh::Endpoint;
 use iroh::EndpointId;
 use iroh::SecretKey;
-use iroh_gossip::net::Gossip;
+use iroh_gossip::net::{GOSSIP_ALPN, Gossip};
 use miette::Diagnostic;
 use std::sync::Arc;
-
-use super::WEAVER_GOSSIP_ALPN;
 
 /// Error type for transport operations
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -48,7 +46,7 @@ impl CollabNode {
         // In native, this can do direct P2P with relay fallback
         let endpoint = Endpoint::builder()
             .secret_key(secret_key.clone())
-            .alpns(vec![WEAVER_GOSSIP_ALPN.to_vec()])
+            .alpns(vec![GOSSIP_ALPN.to_vec()])
             .bind()
             .await
             .map_err(|e| TransportError::Bind(Box::new(e)))?;
@@ -58,7 +56,7 @@ impl CollabNode {
 
         // Build router to dispatch incoming connections by ALPN
         let router = iroh::protocol::Router::builder(endpoint.clone())
-            .accept(WEAVER_GOSSIP_ALPN, gossip.clone())
+            .accept(GOSSIP_ALPN, gossip.clone())
             .spawn();
 
         tracing::info!(node_id = %endpoint.id(), "CollabNode started");
@@ -97,5 +95,53 @@ impl CollabNode {
     /// Get a clone of the secret key (for session persistence if needed).
     pub fn secret_key(&self) -> SecretKey {
         self.secret_key.clone()
+    }
+
+    /// Get the relay URL this node is connected to (if any).
+    ///
+    /// This should be published in session records so other peers can connect
+    /// via relay (essential for browser-to-browser connections).
+    pub fn relay_url(&self) -> Option<String> {
+        self.endpoint
+            .addr()
+            .relay_urls()
+            .next()
+            .map(|url| url.to_string())
+    }
+
+    /// Get the full node address including relay info.
+    ///
+    /// Use this when you need to connect to this node from another peer.
+    pub fn node_addr(&self) -> iroh::EndpointAddr {
+        self.endpoint.addr()
+    }
+
+    /// Wait for the endpoint to be online (relay connected).
+    ///
+    /// This should be called before publishing session records to ensure
+    /// the relay URL is available for peer discovery. For browser clients,
+    /// relay is required - we wait indefinitely since there's no fallback.
+    pub async fn wait_online(&self) {
+        self.endpoint.online().await;
+    }
+
+    /// Wait for relay connection and return the relay URL.
+    ///
+    /// Waits indefinitely for relay - browser clients require relay URLs
+    /// for peer discovery. Returns the relay URL once connected.
+    pub async fn wait_for_relay(&self) -> String {
+        self.endpoint.online().await;
+        // After online(), relay_url should always be Some for browser clients
+        self.relay_url()
+            .expect("relay URL should be available after online()")
+    }
+
+    /// Watch for address changes (including relay URL changes).
+    ///
+    /// Returns a stream that yields the address on each change.
+    /// Use this to detect relay URL changes and update session records.
+    pub fn watch_addr(&self) -> n0_future::boxed::BoxStream<iroh::EndpointAddr> {
+        use iroh::Watcher;
+        Box::pin(self.endpoint.watch_addr().stream())
     }
 }

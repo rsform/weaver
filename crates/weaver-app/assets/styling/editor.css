@@ -1188,6 +1188,12 @@ li:has(.md-syntax-block:not(.hidden)) {
     pointer-events: none;
 }
 
+.remote-selection {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 2px;
+}
+
 .remote-cursor-caret {
     width: 2px;
     height: var(--cursor-height, 18px);
