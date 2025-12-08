@@ -35,7 +35,9 @@
             "type": "string",
             "format": "datetime",
             "description": "Client-declared timestamp when this was originally created."
-          }
+          },
+          "contentWarnings": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentWarnings" },
+          "rating": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentRating" }
         }
       }
     }

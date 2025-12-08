@@ -1,0 +1,41 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.edit.getEditHistory",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get edit history (roots and diffs) for a resource.",
+      "parameters": {
+        "type": "params",
+        "required": ["resource"],
+        "properties": {
+          "resource": { "type": "string", "format": "at-uri" },
+          "afterRkey": {
+            "type": "string",
+            "description": "Only diffs after this rkey (incremental sync)"
+          },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 },
+          "cursor": { "type": "string" }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["roots", "diffs"],
+          "properties": {
+            "roots": {
+              "type": "array",
+              "items": { "type": "ref", "ref": "sh.weaver.edit.defs#editHistoryEntry" }
+            },
+            "diffs": {
+              "type": "array",
+              "items": { "type": "ref", "ref": "sh.weaver.edit.defs#editHistoryEntry" }
+            },
+            "cursor": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

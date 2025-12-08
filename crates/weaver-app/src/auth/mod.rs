@@ -41,20 +41,24 @@ pub async fn restore_session(_fetcher: Fetcher, _auth_state: Signal<AuthState>) 
 
 #[cfg(target_arch = "wasm32")]
 pub async fn restore_session(fetcher: Fetcher, mut auth_state: Signal<AuthState>) -> RestoreResult {
+    use std::collections::BTreeMap;
+
     use gloo_storage::{LocalStorage, Storage};
     use jacquard::oauth::authstore::ClientAuthStore;
+    use jacquard::smol_str::SmolStr;
     use jacquard::types::string::Did;
 
     // Look for session keys in localStorage (format: oauth_session_{did}_{session_id})
-    let Ok(keys) = LocalStorage::get_all::<serde_json::Value>() else {
-        return RestoreResult::NoSession;
-    };
-    let Some(keys) = keys.as_object() else {
-        return RestoreResult::NoSession;
+    let entries = match LocalStorage::get_all::<BTreeMap<SmolStr, serde_json::Value>>() {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!("restore_session: localStorage.get_all failed: {:?}", e);
+            return RestoreResult::NoSession;
+        }
     };
 
     let mut found_session: Option<(String, String)> = None;
-    for key in keys.keys() {
+    for key in entries.keys() {
         if key.starts_with("oauth_session_") {
             let parts: Vec<&str> = key
                 .strip_prefix("oauth_session_")
@@ -71,7 +75,9 @@ pub async fn restore_session(fetcher: Fetcher, mut auth_state: Signal<AuthState>
     let Some((did_str, session_id)) = found_session else {
         return RestoreResult::NoSession;
     };
-    let Ok(did) = Did::new_owned(did_str) else {
+
+    let Ok(did) = Did::new_owned(did_str.clone()) else {
+        tracing::warn!("restore_session: invalid DID format: {}", did_str);
         return RestoreResult::NoSession;
     };
 
@@ -82,11 +88,10 @@ pub async fn restore_session(fetcher: Fetcher, mut auth_state: Signal<AuthState>
                 .write()
                 .set_authenticated(restored_did, session_id);
             fetcher.upgrade_to_authenticated(session).await;
-            tracing::debug!("session restored");
             RestoreResult::Restored
         }
         Err(e) => {
-            tracing::warn!("Session restore failed, clearing dead session: {e}");
+            tracing::warn!("restore_session: failed, clearing dead session: {e}");
             let _ = AuthStore::new().delete_session(&did, &session_id).await;
             RestoreResult::SessionExpired
         }

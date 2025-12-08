@@ -1,0 +1,34 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.getPage",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get a page with its entries (all entries, since pages display together).",
+      "parameters": {
+        "type": "params",
+        "required": ["page"],
+        "properties": {
+          "page": { "type": "string", "format": "at-uri" }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["page", "entries"],
+          "properties": {
+            "page": { "type": "ref", "ref": "sh.weaver.notebook.defs#pageView" },
+            "entries": {
+              "type": "array",
+              "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#entryView" }
+            }
+          }
+        }
+      },
+      "errors": [
+        { "name": "PageNotFound" }
+      ]
+    }
+  }
+}

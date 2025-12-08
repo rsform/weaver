@@ -97,7 +97,7 @@
 
 .feed-entry-card .entry-card-byline {
     display: flex;
-    align-items: center;
+    align-items: last baseline;
     gap: 0.5rem;
     margin-bottom: 0.5rem;
 }

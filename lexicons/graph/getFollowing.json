@@ -1,0 +1,34 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.graph.getFollowing",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get actors that an actor follows (accepted follows only).",
+      "parameters": {
+        "type": "params",
+        "required": ["actor"],
+        "properties": {
+          "actor": { "type": "string", "format": "at-identifier" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 },
+          "cursor": { "type": "string" }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["subject", "following"],
+          "properties": {
+            "subject": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+            "following": {
+              "type": "array",
+              "items": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" }
+            },
+            "cursor": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

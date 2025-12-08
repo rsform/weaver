@@ -48,9 +48,21 @@
               "icon": "lucide-file",
               "title": "Why I rewrote pdsls in Rust (tm)"
             }
+          },
+          {
+            "id": "4b584137400d2323",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.10.6"
+              },
+              "icon": "lucide-book-up",
+              "title": "Release Notes 1.10.6"
+            }
           }
         ],
-        "currentTab": 2
+        "currentTab": 3
       }
     ],
     "direction": "vertical"
@@ -199,7 +211,7 @@
       "bases:Create new base": false
     }
   },
-  "active": "6029beecc3d03bce",
+  "active": "4b584137400d2323",
   "lastOpenFiles": [
     "light_mode_excerpt.png",
     "notebook_entry_preview.png",

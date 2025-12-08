@@ -13,6 +13,155 @@
     "chapter": {
       "type": "token",
       "description": "Collaboration scoped to a chapter."
+    },
+    "inviteView": {
+      "type": "object",
+      "description": "Hydrated view of a collaboration invite with status.",
+      "required": ["uri", "cid", "inviter", "invitee", "resource", "createdAt", "status"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "inviter": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "invitee": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "resource": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "resourceTitle": { "type": "string" },
+        "scope": {
+          "type": "string",
+          "knownValues": ["notebook", "entry", "chapter"]
+        },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "datetime" },
+        "expiresAt": { "type": "string", "format": "datetime" },
+        "status": {
+          "type": "string",
+          "knownValues": ["pending", "accepted", "expired", "revoked"]
+        },
+        "acceptUri": { "type": "string", "format": "at-uri" },
+        "acceptedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "sessionView": {
+      "type": "object",
+      "description": "Active real-time collaboration session.",
+      "required": ["uri", "user", "resource", "nodeId", "createdAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "user": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "resource": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "nodeId": { "type": "string" },
+        "relayUrl": { "type": "string", "format": "uri" },
+        "createdAt": { "type": "string", "format": "datetime" },
+        "expiresAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "collaborationStateView": {
+      "type": "object",
+      "description": "Full state of a collaboration relationship including version reconciliation. Tracks both current and former collaborators.",
+      "required": ["resource", "status", "participants"],
+      "properties": {
+        "resource": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "canonicalUri": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "The 'canonical' version URI (usually owner's)"
+        },
+        "status": {
+          "type": "string",
+          "knownValues": ["active", "broken", "diverged", "reconciled"],
+          "description": "active=normal, broken=all invites revoked/expired, diverged=versions differ, reconciled=was diverged but resolved"
+        },
+        "participants": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#participantStateView" },
+          "description": "Current active + invited participants"
+        },
+        "formerParticipants": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#formerCollaboratorView" },
+          "description": "People who used to collaborate but relationship ended"
+        },
+        "publishedVersions": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#publishedVersionView" }
+        },
+        "hasDivergence": { "type": "boolean" },
+        "hasFormerCollaborators": { "type": "boolean" },
+        "hasOrphanedVersions": {
+          "type": "boolean",
+          "description": "Published versions from former collaborators still exist"
+        },
+        "lastSyncedAt": { "type": "string", "format": "datetime" },
+        "createdAt": { "type": "string", "format": "datetime" },
+        "firstCollaboratorAddedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "participantStateView": {
+      "type": "object",
+      "description": "Individual participant's state in a collaboration. Distinguishes 'was collaborator' vs 'never was'.",
+      "required": ["user", "role", "status"],
+      "properties": {
+        "user": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "role": {
+          "type": "string",
+          "knownValues": ["owner", "collaborator", "former_collaborator"]
+        },
+        "status": {
+          "type": "string",
+          "knownValues": ["active", "invited", "left", "removed", "expired"],
+          "description": "active=can edit, invited=pending, left=voluntarily departed, removed=invite revoked, expired=invite timed out"
+        },
+        "wasCollaborator": {
+          "type": "boolean",
+          "description": "True if they ever had active collaboration status"
+        },
+        "inviteUri": { "type": "string", "format": "at-uri" },
+        "acceptUri": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "If they accepted (even if later broken)"
+        },
+        "publishedVersion": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef",
+          "description": "Their published copy if any"
+        },
+        "firstEditAt": {
+          "type": "string",
+          "format": "datetime",
+          "description": "When they first contributed"
+        },
+        "lastEditAt": { "type": "string", "format": "datetime" },
+        "relationshipEndedAt": {
+          "type": "string",
+          "format": "datetime",
+          "description": "When left/removed/expired"
+        },
+        "endReason": {
+          "type": "string",
+          "knownValues": ["voluntary_leave", "invite_revoked", "invite_expired", "owner_deleted_resource"],
+          "description": "Why the relationship ended, if applicable"
+        }
+      }
+    },
+    "formerCollaboratorView": {
+      "type": "object",
+      "description": "Lightweight view for 'this person used to collaborate but doesn't anymore'.",
+      "required": ["user", "wasActiveFrom", "wasActiveUntil", "endReason"],
+      "properties": {
+        "user": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "wasActiveFrom": { "type": "string", "format": "datetime" },
+        "wasActiveUntil": { "type": "string", "format": "datetime" },
+        "endReason": {
+          "type": "string",
+          "knownValues": ["voluntary_leave", "invite_revoked", "invite_expired", "owner_deleted_resource"]
+        },
+        "contributionCount": {
+          "type": "integer",
+          "description": "Number of diffs they created while active"
+        },
+        "hasPublishedVersion": { "type": "boolean" },
+        "publishedVersionUri": { "type": "string", "format": "at-uri" }
+      }
     }
   }
 }

@@ -9,6 +9,116 @@
     "readinglist": {
       "type": "token",
       "description": "A personal reading list."
+    },
+    "serieslist": {
+      "type": "token",
+      "description": "An ordered series of related works (sequels, spin-offs)."
+    },
+    "tagView": {
+      "type": "object",
+      "description": "Aggregated view of a tag with usage statistics.",
+      "required": ["tag", "useCount"],
+      "properties": {
+        "tag": { "type": "string" },
+        "useCount": {
+          "type": "integer",
+          "description": "Total number of resources tagged with this tag."
+        },
+        "notebookCount": { "type": "integer" },
+        "entryCount": { "type": "integer" },
+        "recentUseCount": {
+          "type": "integer",
+          "description": "Uses in the last 30 days."
+        },
+        "trendingScore": {
+          "type": "number",
+          "description": "Appview-computed trending score."
+        }
+      }
+    },
+    "tagApplicationView": {
+      "type": "object",
+      "description": "A single tag application with who applied it.",
+      "required": ["uri", "tag", "appliedBy", "createdAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "tag": { "type": "string" },
+        "appliedBy": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "createdAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "resourceTagsView": {
+      "type": "object",
+      "description": "All tags for a resource, grouped by source.",
+      "required": ["resource", "authorTags", "communityTags"],
+      "properties": {
+        "resource": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "authorTags": {
+          "type": "array",
+          "description": "Tags from the record itself (author-applied).",
+          "items": { "type": "string" }
+        },
+        "communityTags": {
+          "type": "array",
+          "description": "Aggregated community-applied tags with counts.",
+          "items": { "type": "ref", "ref": "#communityTagCount" }
+        },
+        "viewerAppliedTags": {
+          "type": "array",
+          "description": "Tags the current viewer has applied.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "communityTagCount": {
+      "type": "object",
+      "description": "A community tag with how many people applied it.",
+      "required": ["tag", "count"],
+      "properties": {
+        "tag": { "type": "string" },
+        "count": { "type": "integer" }
+      }
+    },
+    "listView": {
+      "type": "object",
+      "description": "Hydrated view of a list.",
+      "required": ["uri", "cid", "creator", "name", "purpose", "itemCount", "indexedAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "creator": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "name": { "type": "string" },
+        "purpose": { "type": "ref", "ref": "#listPurpose" },
+        "description": { "type": "string" },
+        "avatar": { "type": "string", "format": "uri" },
+        "itemCount": { "type": "integer" },
+        "indexedAt": { "type": "string", "format": "datetime" },
+        "viewerSubscribed": { "type": "string", "format": "at-uri" }
+      }
+    },
+    "listPurpose": {
+      "type": "string",
+      "knownValues": [
+        "sh.weaver.graph.defs#curatelist",
+        "sh.weaver.graph.defs#readinglist",
+        "sh.weaver.graph.defs#serieslist"
+      ]
+    },
+    "listItemView": {
+      "type": "object",
+      "description": "An item in a list with hydrated subject.",
+      "required": ["uri", "subject"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "subject": {
+          "type": "union",
+          "refs": [
+            "sh.weaver.notebook.defs#notebookView",
+            "sh.weaver.notebook.defs#entryView"
+          ]
+        },
+        "addedAt": { "type": "string", "format": "datetime" }
+      }
     }
   }
 }

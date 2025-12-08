@@ -1,0 +1,34 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.graph.getSubscribers",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get subscribers to a notebook (accepted subscriptions only).",
+      "parameters": {
+        "type": "params",
+        "required": ["notebook"],
+        "properties": {
+          "notebook": { "type": "string", "format": "at-uri" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 },
+          "cursor": { "type": "string" }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["notebook", "subscribers"],
+          "properties": {
+            "notebook": { "type": "ref", "ref": "sh.weaver.notebook.defs#notebookView" },
+            "subscribers": {
+              "type": "array",
+              "items": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" }
+            },
+            "cursor": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

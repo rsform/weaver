@@ -252,6 +252,9 @@
 
           LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:$NIX_LD_LIBRARY_PATH";
 
+          # musl linker for static builds
+          #CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = "${pkgs.pkgsMusl.stdenv.cc}/bin/cc";
+
           # Additional dev-shell environment variables can be set directly
           # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
 
@@ -269,6 +272,7 @@
             wasm-pack
             twiggy
             binaryen.out
+            patchelf
             llvmPackages_18.clang-unwrapped
             llvmPackages_18.llvm
             llvmPackages_18.libclang

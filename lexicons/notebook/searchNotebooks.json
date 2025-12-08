@@ -1,0 +1,54 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.searchNotebooks",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Full-text search for notebooks.",
+      "parameters": {
+        "type": "params",
+        "required": ["q"],
+        "properties": {
+          "q": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "author": {
+            "type": "string",
+            "format": "at-identifier",
+            "description": "Filter by author."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "maxLength": 10,
+            "description": "Filter by tags (all must match)."
+          },
+          "rating": {
+            "type": "array",
+            "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentRating" },
+            "description": "Filter by content rating (any of these)."
+          },
+          "sort": {
+            "type": "string",
+            "knownValues": ["relevance", "recent", "popular"],
+            "default": "relevance"
+          },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 },
+          "cursor": { "type": "string" }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["notebooks"],
+          "properties": {
+            "notebooks": {
+              "type": "array",
+              "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#notebookView" }
+            },
+            "cursor": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

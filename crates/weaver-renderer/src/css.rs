@@ -354,10 +354,10 @@ img {{
 }}
 
 .embed-avatar {{
-    width: 42px;
-    height: 42px;
-    max-width: 42px;
-    max-height: 42px;
+    width: 36px;
+    height: 36px;
+    max-width: 36px;
+    max-height: 36px;
     aspect-ratio: 1;
     margin: 0;
     object-fit: cover;
@@ -366,7 +366,7 @@ img {{
 .embed-author-info {{
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    gap: 0;
     min-width: 0;
 }}
 
@@ -382,6 +382,7 @@ img {{
     text-overflow: ellipsis;
     white-space: nowrap;
     text-decoration: none;
+    line-height: 1.2;
 }}
 
 a.embed-author-name:hover {{
@@ -389,13 +390,14 @@ a.embed-author-name:hover {{
 }}
 
 .embed-author-handle {{
-    font-size: 0.9em;
+    font-size: 0.85em;
     font-family: var(--font-mono);
     color: var(--color-subtle);
     text-decoration: none;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.2;
 }}
 
 .embed-author-handle:hover {{

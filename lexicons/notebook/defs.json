@@ -21,7 +21,15 @@
           "ref": "#permissionsState"
         },
         "record": { "type": "unknown" },
-        "indexedAt": { "type": "string", "format": "datetime" }
+        "indexedAt": { "type": "string", "format": "datetime" },
+        "likeCount": { "type": "integer" },
+        "bookmarkCount": { "type": "integer" },
+        "subscriberCount": { "type": "integer" },
+        "entryCount": { "type": "integer" },
+        "viewerLike": { "type": "string", "format": "at-uri" },
+        "viewerBookmark": { "type": "string", "format": "at-uri" },
+        "viewerSubscription": { "type": "string", "format": "at-uri" },
+        "viewerReadingProgress": { "type": "ref", "ref": "#readingProgress" }
       }
     },
     "entryView": {
@@ -47,7 +55,12 @@
           "type": "ref",
           "ref": "#renderedView"
         },
-        "indexedAt": { "type": "string", "format": "datetime" }
+        "indexedAt": { "type": "string", "format": "datetime" },
+        "likeCount": { "type": "integer" },
+        "bookmarkCount": { "type": "integer" },
+        "viewerLike": { "type": "string", "format": "at-uri" },
+        "viewerBookmark": { "type": "string", "format": "at-uri" },
+        "viewerReadingProgress": { "type": "ref", "ref": "#readingProgress" }
       }
     },
 
@@ -181,6 +194,171 @@
           "format": "datetime",
           "description": "For authority: record createdAt. For invitees: accept createdAt"
         }
+      }
+    },
+    "feedEntryView": {
+      "type": "object",
+      "description": "Entry with feed-specific context (discovery reason, notebook context).",
+      "required": ["entry"],
+      "properties": {
+        "entry": { "type": "ref", "ref": "#entryView" },
+        "reason": { "type": "ref", "ref": "#feedReason" },
+        "notebookContext": { "type": "ref", "ref": "#feedNotebookContext" }
+      }
+    },
+    "feedNotebookContext": {
+      "type": "object",
+      "description": "Minimal notebook context for feed display.",
+      "required": ["uri", "title"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "title": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "feedReason": {
+      "type": "union",
+      "description": "Why this entry appeared in the feed.",
+      "refs": ["#reasonLike", "#reasonBookmark", "#reasonSubscription"]
+    },
+    "reasonLike": {
+      "type": "object",
+      "required": ["by", "indexedAt"],
+      "properties": {
+        "by": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "reasonBookmark": {
+      "type": "object",
+      "required": ["by", "indexedAt"],
+      "properties": {
+        "by": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "reasonSubscription": {
+      "type": "object",
+      "required": ["indexedAt"],
+      "properties": {
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "publishedVersionView": {
+      "type": "object",
+      "description": "A published version of an entry in a collaborator's repo.",
+      "required": ["uri", "cid", "publisher", "publishedAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "publisher": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "publishedAt": { "type": "string", "format": "datetime" },
+        "updatedAt": { "type": "string", "format": "datetime" },
+        "isCanonical": {
+          "type": "boolean",
+          "description": "True if this is the 'primary' version (owner's repo)"
+        },
+        "divergedFrom": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef",
+          "description": "If content differs, the version it diverged from"
+        }
+      }
+    },
+    "contentWarning": {
+      "type": "string",
+      "description": "Author-applied content warning.",
+      "knownValues": [
+        "violence",
+        "graphic-violence",
+        "death",
+        "major-character-death",
+        "sexual-content",
+        "explicit-sexual-content",
+        "language",
+        "substance-use",
+        "self-harm",
+        "abuse",
+        "disturbing-imagery"
+      ]
+    },
+    "contentWarnings": {
+      "type": "array",
+      "description": "Author-applied content warnings.",
+      "maxLength": 10,
+      "items": { "type": "ref", "ref": "#contentWarning" }
+    },
+    "contentRating": {
+      "type": "string",
+      "description": "Author-applied content rating.",
+      "knownValues": ["general", "teen", "mature", "explicit"]
+    },
+    "chapterView": {
+      "type": "object",
+      "description": "Hydrated view of a chapter.",
+      "required": ["uri", "cid", "notebook", "authors", "record", "indexedAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "title": { "type": "ref", "ref": "#title" },
+        "tags": { "type": "ref", "ref": "#tags" },
+        "notebook": { "type": "ref", "ref": "#notebookView" },
+        "authors": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#authorListView" }
+        },
+        "record": { "type": "unknown" },
+        "entryCount": { "type": "integer" },
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "chapterEntryView": {
+      "type": "object",
+      "description": "An entry within a chapter context.",
+      "required": ["entry", "index"],
+      "properties": {
+        "entry": { "type": "ref", "ref": "#entryView" },
+        "index": { "type": "integer" },
+        "next": { "type": "ref", "ref": "#bookEntryRef" },
+        "prev": { "type": "ref", "ref": "#bookEntryRef" }
+      }
+    },
+    "pageView": {
+      "type": "object",
+      "description": "Hydrated view of a page (entries displayed together).",
+      "required": ["uri", "cid", "notebook", "record", "indexedAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "title": { "type": "ref", "ref": "#title" },
+        "tags": { "type": "ref", "ref": "#tags" },
+        "notebook": { "type": "ref", "ref": "#notebookView" },
+        "record": { "type": "unknown" },
+        "entryCount": { "type": "integer" },
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "readingProgress": {
+      "type": "object",
+      "description": "Viewer's reading progress (appview-side state, not a record).",
+      "properties": {
+        "status": {
+          "type": "string",
+          "knownValues": ["reading", "finished", "abandoned", "want-to-read"]
+        },
+        "currentEntry": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "Last entry the viewer was reading."
+        },
+        "percentComplete": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "lastReadAt": { "type": "string", "format": "datetime" },
+        "startedAt": { "type": "string", "format": "datetime" },
+        "finishedAt": { "type": "string", "format": "datetime" }
       }
     }
   }

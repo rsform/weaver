@@ -42,6 +42,65 @@
           "maxLength": 200
         }
       }
+    },
+    "editHistoryEntry": {
+      "type": "object",
+      "description": "Summary of an edit (root or diff) for history queries.",
+      "required": ["uri", "cid", "author", "createdAt", "type"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "author": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "type": {
+          "type": "string",
+          "knownValues": ["root", "diff"]
+        },
+        "rootRef": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "prevRef": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "snapshotCid": { "type": "string", "format": "cid" },
+        "hasInlineDiff": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "editBranchView": {
+      "type": "object",
+      "description": "A branch/fork in edit history (for when collaborators diverge).",
+      "required": ["head", "author", "length", "lastUpdated"],
+      "properties": {
+        "head": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "root": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "author": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "length": {
+          "type": "integer",
+          "description": "Number of diffs in this branch"
+        },
+        "lastUpdated": { "type": "string", "format": "datetime" },
+        "divergesFrom": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef",
+          "description": "Common ancestor if this is a fork"
+        },
+        "isMerged": { "type": "boolean" }
+      }
+    },
+    "editTreeView": {
+      "type": "object",
+      "description": "Full tree structure showing all branches for a resource.",
+      "required": ["resource", "branches"],
+      "properties": {
+        "resource": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+        "mainBranch": { "type": "ref", "ref": "#editBranchView" },
+        "branches": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#editBranchView" }
+        },
+        "hasConflicts": { "type": "boolean" },
+        "conflictPoints": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "com.atproto.repo.strongRef" },
+          "description": "Diffs where branches diverge"
+        }
+      }
     }
   }
 }

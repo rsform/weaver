@@ -1,0 +1,46 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.graph.getActorLikes",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get resources an actor has liked.",
+      "parameters": {
+        "type": "params",
+        "required": ["actor"],
+        "properties": {
+          "actor": { "type": "string", "format": "at-identifier" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 },
+          "cursor": { "type": "string" }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["likes"],
+          "properties": {
+            "likes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["subject", "createdAt"],
+                "properties": {
+                  "subject": {
+                    "type": "union",
+                    "refs": [
+                      "sh.weaver.notebook.defs#notebookView",
+                      "sh.weaver.notebook.defs#entryView"
+                    ]
+                  },
+                  "createdAt": { "type": "string", "format": "datetime" }
+                }
+              }
+            },
+            "cursor": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.actor.getSuggestedAuthors",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get author recommendations for the authenticated user.",
+      "parameters": {
+        "type": "params",
+        "properties": {
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["authors"],
+          "properties": {
+            "authors": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["author", "reason"],
+                "properties": {
+                  "author": { "type": "ref", "ref": "sh.weaver.actor.defs#profileView" },
+                  "reason": {
+                    "type": "string",
+                    "knownValues": [
+                      "similar-to-followed",
+                      "writes-similar-content",
+                      "popular-in-tags-you-read",
+                      "followed-by-people-you-follow"
+                    ]
+                  },
+                  "mutualFollows": {
+                    "type": "array",
+                    "maxLength": 3,
+                    "items": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+                    "description": "People you follow who also follow this author."
+                  },
+                  "notebookCount": { "type": "integer" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

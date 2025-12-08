@@ -34,6 +34,8 @@
             "format": "datetime",
             "description": "Client-declared timestamp of last modification. Used for canonicality tiebreaking in multi-author scenarios."
           },
+          "contentWarnings": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentWarnings" },
+          "rating": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentRating" },
           "embeds": {
             "type": "object",
             "description": "The set of images and records, if any, embedded in the notebook entry.",

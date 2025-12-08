@@ -1,0 +1,38 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.resolveNotebook",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Resolve a notebook by actor + title/path, returns full detail.",
+      "parameters": {
+        "type": "params",
+        "required": ["actor", "name"],
+        "properties": {
+          "actor": { "type": "string", "format": "at-identifier" },
+          "name": { "type": "string", "maxLength": 300 },
+          "entryLimit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 },
+          "entryCursor": { "type": "string" }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["notebook", "entries"],
+          "properties": {
+            "notebook": { "type": "ref", "ref": "sh.weaver.notebook.defs#notebookView" },
+            "entries": {
+              "type": "array",
+              "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#bookEntryView" }
+            },
+            "entryCursor": { "type": "string" }
+          }
+        }
+      },
+      "errors": [
+        { "name": "NotebookNotFound" }
+      ]
+    }
+  }
+}

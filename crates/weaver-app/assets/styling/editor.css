@@ -156,7 +156,6 @@
     outline: none;
     min-height: 700px;
     line-height: var(--spacing-line-height);
-    font-size: 16px;
     background: var(--color-base);
     border: 1px solid var(--color-overlay);
     color: var(--color-text);
@@ -1197,7 +1196,7 @@ li:has(.md-syntax-block:not(.hidden)) {
 .remote-cursor-caret {
     width: 2px;
     height: var(--cursor-height, 18px);
-    background: var(--cursor-color, #4ECDC4);
+    background: var(--cursor-color, #4ecdc4);
     border-radius: 1px;
     animation: cursor-blink 1.2s ease-in-out infinite;
 }
@@ -1207,7 +1206,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     top: -18px;
     left: 0;
     padding: 2px 6px;
-    background: var(--cursor-color, #4ECDC4);
+    background: var(--cursor-color, #4ecdc4);
     color: #fff;
     font-size: 10px;
     font-weight: 500;
@@ -1219,6 +1218,11 @@ li:has(.md-syntax-block:not(.hidden)) {
 }
 
 @keyframes cursor-blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
 }

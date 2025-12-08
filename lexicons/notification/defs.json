@@ -1,0 +1,87 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notification.defs",
+  "defs": {
+    "notification": {
+      "type": "object",
+      "description": "A notification for a user.",
+      "required": ["uri", "cid", "author", "reason", "isRead", "indexedAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "author": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+        "reason": { "type": "ref", "ref": "#notificationReason" },
+        "reasonSubject": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "The subject of the notification (entry, notebook, etc)."
+        },
+        "record": { "type": "unknown" },
+        "isRead": { "type": "boolean" },
+        "indexedAt": { "type": "string", "format": "datetime" }
+      }
+    },
+    "notificationReason": {
+      "type": "string",
+      "description": "Why this notification was generated.",
+      "knownValues": [
+        "like",
+        "bookmark",
+        "follow",
+        "followAccept",
+        "subscribe",
+        "subscribeAccept",
+        "collaborationInvite",
+        "collaborationAccept",
+        "newEntry",
+        "entryUpdate",
+        "mention",
+        "tag",
+        "comment"
+      ]
+    },
+    "notificationGroup": {
+      "type": "object",
+      "description": "Grouped notifications (e.g., '5 people liked your entry').",
+      "required": ["reason", "subject", "count", "actors", "mostRecentAt"],
+      "properties": {
+        "reason": { "type": "ref", "ref": "#notificationReason" },
+        "subject": {
+          "type": "union",
+          "refs": [
+            "sh.weaver.notebook.defs#notebookView",
+            "sh.weaver.notebook.defs#entryView"
+          ]
+        },
+        "count": { "type": "integer" },
+        "actors": {
+          "type": "array",
+          "maxLength": 5,
+          "items": { "type": "ref", "ref": "sh.weaver.actor.defs#profileViewBasic" },
+          "description": "Most recent actors (up to 5)."
+        },
+        "mostRecentAt": { "type": "string", "format": "datetime" },
+        "isRead": { "type": "boolean" }
+      }
+    },
+    "subscriptionUpdateView": {
+      "type": "object",
+      "description": "New content from a notebook subscription.",
+      "required": ["notebook", "newEntries", "updatedAt"],
+      "properties": {
+        "notebook": { "type": "ref", "ref": "sh.weaver.notebook.defs#notebookView" },
+        "newEntries": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#entryView" },
+          "description": "New entries since last check."
+        },
+        "updatedEntries": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#entryView" },
+          "description": "Entries that were updated."
+        },
+        "updatedAt": { "type": "string", "format": "datetime" }
+      }
+    }
+  }
+}

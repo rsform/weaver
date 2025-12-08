@@ -40,7 +40,9 @@
             "type": "string",
             "format": "datetime",
             "description": "Client-declared timestamp of last modification. Used for canonicality tiebreaking in multi-author scenarios."
-          }
+          },
+          "contentWarnings": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentWarnings" },
+          "rating": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentRating" }
         }
       }
     }
