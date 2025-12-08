@@ -67,6 +67,7 @@ async fn prefetch_embeds_from_doc(
     let embeds_map = doc.get_map("embeds");
 
     // Pre-warm blob cache for images
+    #[cfg(feature = "fullstack-server")]
     if let Some(ident) = owner_ident {
         if let Ok(images_container) =
             embeds_map.get_or_create_container("images", loro::LoroList::new())
@@ -97,6 +98,8 @@ async fn prefetch_embeds_from_doc(
             }
         }
     }
+    #[cfg(not(feature = "fullstack-server"))]
+    let _ = owner_ident;
 
     // Strategy 1: Get embeds from Loro embeds map -> records list
 

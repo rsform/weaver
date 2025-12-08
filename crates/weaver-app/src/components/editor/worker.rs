@@ -312,7 +312,7 @@ mod embed_worker_impl {
                                     results.insert(uri_str, html);
                                 }
                                 Err(e) => {
-                                    errors.insert(uri_str, e.to_string());
+                                    errors.insert(uri_str, format!("{:?}", e));
                                 }
                             }
                         }

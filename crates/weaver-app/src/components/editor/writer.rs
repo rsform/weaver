@@ -6,8 +6,6 @@
 //! Uses Parser::into_offset_iter() to track gaps between events, which
 //! represent consumed formatting characters.
 
-use crate::data::cache_blob;
-
 use super::offset_map::{OffsetMapping, RenderResult};
 use jacquard::types::{ident::AtIdentifier, string::Rkey};
 use loro::LoroText;
@@ -948,7 +946,7 @@ impl<
             self.offset_maps.push(mapping);
             self.current_node_char_offset += utf16_len;
         } else {
-            tracing::warn!("[RECORD_MAPPING] SKIPPED - current_node_id is None!");
+            tracing::debug!("[RECORD_MAPPING] SKIPPED - current_node_id is None!");
         }
     }
 

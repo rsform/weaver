@@ -184,6 +184,7 @@ pub fn MarkdownEditor(
                                 doc.commit();
 
                                 // Pre-warm blob cache for images
+                                #[cfg(feature = "fullstack-server")]
                                 if let Some(ref embeds) = loaded.entry.embeds {
                                     if let Some(ref images) = embeds.images {
                                         let ident: &str = match uri.authority() {
@@ -491,55 +492,143 @@ fn MarkdownEditorInner(
         paras
     });
 
-    // Background fetch for AT embeds
-    let mut resolved_content_for_fetch = resolved_content.clone();
-    let doc_for_embeds = document.clone();
-    let fetcher_for_embeds = fetcher.clone();
-    use_effect(move || {
-        let refs = doc_for_embeds.collected_refs.read();
-        let current_resolved = resolved_content_for_fetch.peek();
-        let fetcher = fetcher_for_embeds.clone();
+    // Background fetch for AT embeds via worker
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        use super::worker::{EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput};
+        use dioxus::prelude::Writable;
+        use gloo_worker::Spawnable;
 
-        // Find AT embeds that need fetching
-        let to_fetch: Vec<String> = refs
-            .iter()
-            .filter_map(|r| match r {
-                weaver_common::ExtractedRef::AtEmbed { uri, .. } => {
-                    // Skip if already resolved
-                    if let Ok(at_uri) = jacquard::types::string::AtUri::new(uri) {
-                        if current_resolved.get_embed_content(&at_uri).is_none() {
-                            return Some(uri.clone());
+        let resolved_content_for_fetch = resolved_content;
+        let mut embed_worker_bridge: Signal<Option<gloo_worker::WorkerBridge<EmbedWorker>>> =
+            use_signal(|| None);
+
+        // Spawn embed worker on mount
+        let doc_for_embeds = document.clone();
+        use_effect(move || {
+            // Callback for worker responses - uses write_unchecked since we're in a Fn closure
+            let on_output = move |output: EmbedWorkerOutput| match output {
+                EmbedWorkerOutput::Embeds {
+                    results,
+                    errors,
+                    fetch_ms,
+                } => {
+                    if !results.is_empty() {
+                        let mut rc = resolved_content_for_fetch.write_unchecked();
+                        for (uri_str, html) in results {
+                            if let Ok(at_uri) =
+                                jacquard::types::string::AtUri::new_owned(uri_str)
+                            {
+                                rc.add_embed(at_uri, html, None);
+                            }
                         }
+                        tracing::debug!(
+                            count = rc.embed_content.len(),
+                            fetch_ms,
+                            "embed worker fetched embeds"
+                        );
                     }
-                    None
-                }
-                _ => None,
-            })
-            .collect();
-
-        if to_fetch.is_empty() {
-            return;
-        }
-
-        // Spawn background fetches
-        dioxus::prelude::spawn(async move {
-            for uri_str in to_fetch {
-                let Ok(at_uri) = jacquard::types::string::AtUri::new(&uri_str) else {
-                    continue;
-                };
-
-                match weaver_renderer::atproto::fetch_and_render(&at_uri, &fetcher).await {
-                    Ok(html) => {
-                        let mut rc = resolved_content_for_fetch.write();
-                        rc.add_embed(at_uri.into_static(), html, None);
-                    }
-                    Err(e) => {
-                        tracing::warn!("failed to fetch embed {}: {}", uri_str, e);
+                    for (uri, err) in errors {
+                        tracing::warn!("embed worker failed to fetch {}: {}", uri, err);
                     }
                 }
+                EmbedWorkerOutput::CacheCleared => {
+                    tracing::debug!("embed worker cache cleared");
+                }
+            };
+
+            let bridge = EmbedWorker::spawner()
+                .callback(on_output)
+                .spawn("/embed_worker.js");
+            embed_worker_bridge.set(Some(bridge));
+            tracing::info!("Embed worker spawned");
+        });
+
+        // Send embeds to worker when collected_refs changes
+        use_effect(move || {
+            let refs = doc_for_embeds.collected_refs.read();
+            let current_resolved = resolved_content_for_fetch.peek();
+
+            // Find AT embeds that need fetching
+            let to_fetch: Vec<String> = refs
+                .iter()
+                .filter_map(|r| match r {
+                    weaver_common::ExtractedRef::AtEmbed { uri, .. } => {
+                        // Skip if already resolved
+                        if let Ok(at_uri) = jacquard::types::string::AtUri::new(uri) {
+                            if current_resolved.get_embed_content(&at_uri).is_none() {
+                                return Some(uri.clone());
+                            }
+                        }
+                        None
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            if to_fetch.is_empty() {
+                return;
+            }
+
+            // Send to worker
+            if let Some(ref bridge) = *embed_worker_bridge.peek() {
+                bridge.send(EmbedWorkerInput::FetchEmbeds { uris: to_fetch });
             }
         });
-    });
+    }
+
+    // Fallback for non-WASM (server-side rendering)
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        let mut resolved_content_for_fetch = resolved_content.clone();
+        let doc_for_embeds = document.clone();
+        let fetcher_for_embeds = fetcher.clone();
+        use_effect(move || {
+            let refs = doc_for_embeds.collected_refs.read();
+            let current_resolved = resolved_content_for_fetch.peek();
+            let fetcher = fetcher_for_embeds.clone();
+
+            // Find AT embeds that need fetching
+            let to_fetch: Vec<String> = refs
+                .iter()
+                .filter_map(|r| match r {
+                    weaver_common::ExtractedRef::AtEmbed { uri, .. } => {
+                        // Skip if already resolved
+                        if let Ok(at_uri) = jacquard::types::string::AtUri::new(uri) {
+                            if current_resolved.get_embed_content(&at_uri).is_none() {
+                                return Some(uri.clone());
+                            }
+                        }
+                        None
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            if to_fetch.is_empty() {
+                return;
+            }
+
+            // Spawn background fetches (main thread fallback)
+            dioxus::prelude::spawn(async move {
+                for uri_str in to_fetch {
+                    let Ok(at_uri) = jacquard::types::string::AtUri::new(&uri_str) else {
+                        continue;
+                    };
+
+                    match weaver_renderer::atproto::fetch_and_render(&at_uri, &fetcher).await {
+                        Ok(html) => {
+                            let mut rc = resolved_content_for_fetch.write();
+                            rc.add_embed(at_uri.into_static(), html, None);
+                        }
+                        Err(e) => {
+                            tracing::warn!("failed to fetch embed {}: {}", uri_str, e);
+                        }
+                    }
+                }
+            });
+        });
+    }
 
     let mut new_tag = use_signal(String::new);
 

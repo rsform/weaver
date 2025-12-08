@@ -46,12 +46,11 @@ where
     let did = match ident {
         AtIdentifier::Did(d) => d.clone(),
         AtIdentifier::Handle(h) => {
-            let did_str = agent
-                .resolve_handle(h)
-                .await
-                .map_err(|e| AtProtoPreprocessError::FetchFailed(e.to_string()))?;
+            let did_str = agent.resolve_handle(h).await.map_err(|e| {
+                AtProtoPreprocessError::FetchFailed(format!("resolving handle {:?}", e))
+            })?;
             Did::new(&did_str)
-                .map_err(|e| AtProtoPreprocessError::InvalidUri(e.to_string()))?
+                .map_err(|e| AtProtoPreprocessError::InvalidUri(format!("{:?}", e)))?
                 .into_static()
         }
     };
@@ -60,7 +59,7 @@ where
     let (_uri, profile_view) = agent
         .hydrate_profile_view(&did)
         .await
-        .map_err(|e| AtProtoPreprocessError::FetchFailed(e.to_string()))?;
+        .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("{:?}", e)))?;
 
     // Render based on which profile type we got
     render_profile_data_view(&profile_view.inner)
@@ -77,11 +76,13 @@ where
     // Use GetPosts for richer data (author info, engagement counts)
     let request = GetPosts::new().uris(vec![uri.clone()]).build();
     let response = agent.send(request).await;
-    let response = response.map_err(|e| AtProtoPreprocessError::FetchFailed(e.to_string()))?;
+    let response = response.map_err(|e| {
+        AtProtoPreprocessError::FetchFailed(format!("getting post from appview {:?}", e))
+    })?;
 
     let output = response
         .into_output()
-        .map_err(|e| AtProtoPreprocessError::FetchFailed(e.to_string()))?;
+        .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("{:?}", e)))?;
 
     let post_view = output
         .posts
@@ -106,7 +107,7 @@ where
     let output = agent
         .fetch_record_slingshot(uri)
         .await
-        .map_err(|e| AtProtoPreprocessError::FetchFailed(e.to_string()))?;
+        .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("{:?}", e)))?;
 
     // Probe for meaningful fields
     render_generic_record(&output.value, uri)
@@ -144,7 +145,7 @@ where
     ClientWriter::<_, _, ()>::new(parser, &mut content_html)
         .run()
         .map_err(|e| {
-            AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {}", e))
+            AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {:?}", e))
         })?;
 
     // Generate unique ID for the toggle checkbox

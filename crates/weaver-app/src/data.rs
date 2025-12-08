@@ -138,7 +138,7 @@ pub fn use_entry_data(
                         }
                     }
                 }
-                Some(entry)
+                Some((entry.0.clone(), entry.1.clone()))
             } else {
                 None
             }
