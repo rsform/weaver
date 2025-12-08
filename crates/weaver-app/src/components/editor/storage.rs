@@ -83,12 +83,17 @@ pub fn save_to_storage(
     doc: &EditorDocument,
     key: &str,
 ) -> Result<(), gloo_storage::errors::StorageError> {
+    let export_start = crate::perf::now();
     let snapshot_bytes = doc.export_snapshot();
+    let export_ms = crate::perf::now() - export_start;
+
+    let encode_start = crate::perf::now();
     let snapshot_b64 = if snapshot_bytes.is_empty() {
         None
     } else {
         Some(BASE64.encode(&snapshot_bytes))
     };
+    let encode_ms = crate::perf::now() - encode_start;
 
     let snapshot = EditorSnapshot {
         content: doc.content(),
@@ -99,7 +104,20 @@ pub fn save_to_storage(
         editing_uri: doc.entry_ref().map(|r| r.uri.to_string()),
         editing_cid: doc.entry_ref().map(|r| r.cid.to_string()),
     };
-    LocalStorage::set(storage_key(key), &snapshot)
+
+    let write_start = crate::perf::now();
+    let result = LocalStorage::set(storage_key(key), &snapshot);
+    let write_ms = crate::perf::now() - write_start;
+
+    tracing::debug!(
+        export_ms,
+        encode_ms,
+        write_ms,
+        bytes = snapshot_bytes.len(),
+        "save_to_storage timing"
+    );
+
+    result
 }
 
 /// Load editor state from LocalStorage (WASM only).

@@ -632,38 +632,152 @@ fn MarkdownEditorInner(
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let mut interval_holder: Signal<Option<gloo_timers::callback::Interval>> = use_signal(|| None);
 
+    // Worker-based autosave (offloads export + encode to worker thread)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    let doc_for_autosave = document.clone();
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    let draft_key_for_autosave = draft_key.clone();
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    use_effect(move || {
-        // Check every 500ms if there are unsaved changes
-        let mut doc = doc_for_autosave.clone();
-        let draft_key = draft_key_for_autosave.clone();
-        let interval = gloo_timers::callback::Interval::new(500, move || {
-            let current_frontiers = doc.state_frontiers();
+    {
+        use super::worker::{EditorWorker, WorkerInput, WorkerOutput};
+        use gloo_storage::Storage;
+        use gloo_worker::Spawnable;
 
-            // Only save if frontiers changed (document was edited)
-            let needs_save = {
-                let last_frontiers = last_saved_frontiers.peek();
-                match &*last_frontiers {
-                    None => true,
-                    Some(last) => &current_frontiers != last,
+        // Track if worker is available (false = fallback to main thread)
+        let use_worker: Signal<bool> = use_signal(|| true);
+        // Worker bridge handle
+        let mut worker_bridge: Signal<Option<gloo_worker::WorkerBridge<EditorWorker>>> =
+            use_signal(|| None);
+        // Track version vector sent to worker (for incremental updates)
+        let mut last_worker_vv: Signal<Option<loro::VersionVector>> = use_signal(|| None);
+
+        // Spawn worker on mount
+        let doc_for_worker_init = document.clone();
+        let draft_key_for_worker = draft_key.clone();
+        use_effect(move || {
+            let doc = doc_for_worker_init.clone();
+            let draft_key = draft_key_for_worker.clone();
+
+            // Callback for worker responses
+            let on_output = move |output: WorkerOutput| {
+                match output {
+                    WorkerOutput::Ready => {
+                        tracing::info!("Editor worker ready");
+                    }
+                    WorkerOutput::Snapshot {
+                        draft_key,
+                        b64_snapshot,
+                        content,
+                        title,
+                        cursor_offset,
+                        editing_uri,
+                        editing_cid,
+                        export_ms,
+                        encode_ms,
+                    } => {
+                        // Write to localStorage (fast - just string assignment)
+                        let snapshot = storage::EditorSnapshot {
+                            content,
+                            title,
+                            snapshot: Some(b64_snapshot),
+                            cursor: None, // Worker doesn't have Loro cursor
+                            cursor_offset,
+                            editing_uri,
+                            editing_cid,
+                        };
+                        let write_start = crate::perf::now();
+                        let _ = gloo_storage::LocalStorage::set(
+                            format!("{}{}", storage::DRAFT_KEY_PREFIX, draft_key),
+                            &snapshot,
+                        );
+                        let write_ms = crate::perf::now() - write_start;
+                        tracing::debug!(export_ms, encode_ms, write_ms, "worker autosave complete");
+                    }
+                    WorkerOutput::Error { message } => {
+                        tracing::error!("Worker error: {}", message);
+                    }
                 }
             };
 
-            if needs_save {
-                doc.sync_loro_cursor();
-                let _ = storage::save_to_storage(&doc, &draft_key);
+            // Spawn worker (panics on failure in debug, returns bridge directly)
+            let bridge = EditorWorker::spawner()
+                .callback(on_output)
+                .spawn("/editor_worker.js");
 
-                // Update last saved frontiers
-                last_saved_frontiers.set(Some(current_frontiers));
-            }
+            // Initialize with current document snapshot
+            let snapshot = doc.export_snapshot();
+            bridge.send(WorkerInput::Init {
+                snapshot,
+                draft_key: draft_key.clone(),
+            });
+            worker_bridge.set(Some(bridge));
+            tracing::info!("Editor worker spawned");
         });
-        // Store in signal instead of forget - interval drops when component unmounts
-        interval_holder.set(Some(interval));
-    });
+
+        // Autosave interval
+        let doc_for_autosave = document.clone();
+        let draft_key_for_autosave = draft_key.clone();
+        use_effect(move || {
+            let mut doc = doc_for_autosave.clone();
+            let draft_key = draft_key_for_autosave.clone();
+
+            let interval = gloo_timers::callback::Interval::new(500, move || {
+                let callback_start = crate::perf::now();
+                let current_frontiers = doc.state_frontiers();
+
+                // Only save if frontiers changed (document was edited)
+                let needs_save = {
+                    let last_frontiers = last_saved_frontiers.peek();
+                    match &*last_frontiers {
+                        None => true,
+                        Some(last) => &current_frontiers != last,
+                    }
+                };
+
+                if !needs_save {
+                    return;
+                }
+
+                doc.sync_loro_cursor();
+
+                // Try worker path first
+                if *use_worker.peek() {
+                    if let Some(ref bridge) = *worker_bridge.peek() {
+                        // Send updates to worker (or full snapshot if first time)
+                        let current_vv = doc.version_vector();
+                        let updates = if let Some(ref last_vv) = *last_worker_vv.peek() {
+                            doc.export_updates_from(last_vv).unwrap_or_default()
+                        } else {
+                            doc.export_snapshot()
+                        };
+
+                        if !updates.is_empty() {
+                            bridge.send(WorkerInput::ApplyUpdates { updates });
+                        }
+
+                        // Request snapshot export
+                        bridge.send(WorkerInput::ExportSnapshot {
+                            cursor_offset: doc.cursor.read().offset,
+                            editing_uri: doc.entry_ref().map(|r| r.uri.to_string()),
+                            editing_cid: doc.entry_ref().map(|r| r.cid.to_string()),
+                        });
+
+                        last_worker_vv.set(Some(current_vv));
+                        last_saved_frontiers.set(Some(current_frontiers));
+
+                        let callback_ms = crate::perf::now() - callback_start;
+                        tracing::debug!(callback_ms, "autosave via worker");
+                        return;
+                    }
+                }
+
+                // Fallback: main thread save
+                let _ = storage::save_to_storage(&doc, &draft_key);
+                last_saved_frontiers.set(Some(current_frontiers));
+
+                let callback_ms = crate::perf::now() - callback_start;
+                tracing::debug!(callback_ms, "autosave callback (main thread fallback)");
+            });
+
+            interval_holder.set(Some(interval));
+        });
+    }
 
     // Set up beforeinput listener for all text input handling.
     // This is the primary handler for text insertion, deletion, etc.
@@ -1603,7 +1717,11 @@ fn RemoteCursorIndicator(
 
     // Get selection rectangles if there's a selection
     let selection_rects = if let Some((start, end)) = selection {
-        let (start, end) = if start <= end { (start, end) } else { (end, start) };
+        let (start, end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
         get_selection_rects_relative(start, end, &offset_map, "markdown-editor")
     } else {
         vec![]

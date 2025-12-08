@@ -776,6 +776,8 @@ pub async fn sync_to_pds(
     doc: &mut EditorDocument,
     draft_key: &str,
 ) -> Result<SyncResult, WeaverError> {
+    let fn_start = crate::perf::now();
+
     // Check if we have changes to sync
     if !doc.has_unsynced_changes() {
         return Ok(SyncResult::NoChanges);
@@ -786,6 +788,7 @@ pub async fn sync_to_pds(
 
     if doc.edit_root().is_none() {
         // First sync - create root
+        let create_start = crate::perf::now();
         let (root_uri, root_cid) = create_edit_root(
             fetcher,
             doc,
@@ -794,6 +797,7 @@ pub async fn sync_to_pds(
             entry_ref.as_ref().map(|r| &r.cid),
         )
         .await?;
+        let create_ms = crate::perf::now() - create_start;
 
         // Build StrongRef for the root
         let root_ref = StrongRef::new()
@@ -806,6 +810,9 @@ pub async fn sync_to_pds(
         doc.set_last_diff(None);
         doc.mark_synced();
 
+        let total_ms = crate::perf::now() - fn_start;
+        tracing::debug!(total_ms, create_ms, "sync_to_pds: created root");
+
         Ok(SyncResult::CreatedRoot {
             uri: root_uri,
             cid: root_cid,
@@ -815,6 +822,7 @@ pub async fn sync_to_pds(
         let root_ref = doc.edit_root().unwrap();
         let prev_diff = doc.last_diff();
 
+        let create_start = crate::perf::now();
         let result = create_diff(
             fetcher,
             doc,
@@ -826,6 +834,7 @@ pub async fn sync_to_pds(
             entry_ref.as_ref().map(|r| &r.cid),
         )
         .await?;
+        let create_ms = crate::perf::now() - create_start;
 
         match result {
             Some((diff_uri, diff_cid)) => {
@@ -838,12 +847,19 @@ pub async fn sync_to_pds(
                 doc.set_last_diff(Some(diff_ref));
                 doc.mark_synced();
 
+                let total_ms = crate::perf::now() - fn_start;
+                tracing::debug!(total_ms, create_ms, "sync_to_pds: created diff");
+
                 Ok(SyncResult::CreatedDiff {
                     uri: diff_uri,
                     cid: diff_cid,
                 })
             }
-            None => Ok(SyncResult::NoChanges),
+            None => {
+                let total_ms = crate::perf::now() - fn_start;
+                tracing::debug!(total_ms, create_ms, "sync_to_pds: no changes in diff");
+                Ok(SyncResult::NoChanges)
+            }
         }
     }
 }

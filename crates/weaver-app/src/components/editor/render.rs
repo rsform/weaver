@@ -95,6 +95,7 @@ pub fn render_paragraphs_incremental(
     RenderCache,
     Vec<weaver_common::ExtractedRef>,
 ) {
+    let fn_start = crate::perf::now();
     let source = text.to_string();
 
     // Handle empty document
@@ -214,11 +215,12 @@ pub fn render_paragraphs_incremental(
 
     // Slow path: run boundary-only pass to discover paragraph boundaries
     let paragraph_ranges = if paragraph_ranges.is_empty() {
+        let boundary_start = crate::perf::now();
         let parser =
             Parser::new_ext(&source, weaver_renderer::default_md_options()).into_offset_iter();
         let mut scratch_output = String::new();
 
-        match EditorWriter::<_, _, ()>::new_boundary_only(
+        let result = match EditorWriter::<_, _, ()>::new_boundary_only(
             &source,
             text,
             parser,
@@ -228,7 +230,10 @@ pub fn render_paragraphs_incremental(
         {
             Ok(result) => result.paragraph_ranges,
             Err(_) => return (Vec::new(), RenderCache::default(), vec![]),
-        }
+        };
+        let boundary_ms = crate::perf::now() - boundary_start;
+        tracing::debug!(boundary_ms, paragraphs = result.len(), "boundary discovery (slow path)");
+        result
     } else {
         paragraph_ranges
     };
@@ -250,11 +255,15 @@ pub fn render_paragraphs_incremental(
     }
 
     // Render paragraphs, reusing cache where possible
+    let render_loop_start = crate::perf::now();
     let mut paragraphs = Vec::with_capacity(paragraph_ranges.len());
     let mut new_cached = Vec::with_capacity(paragraph_ranges.len());
     let mut all_refs: Vec<weaver_common::ExtractedRef> = Vec::new();
     let mut node_id_offset = cache.map(|c| c.next_node_id).unwrap_or(0);
     let mut syn_id_offset = cache.map(|c| c.next_syn_id).unwrap_or(0);
+    let mut cache_hits = 0usize;
+    let mut cache_misses = 0usize;
+    let mut fresh_render_ms = 0.0f64;
 
     for (idx, (byte_range, char_range)) in paragraph_ranges.iter().enumerate() {
         let para_source = text_slice_to_string(text, char_range.clone());
@@ -265,6 +274,7 @@ pub fn render_paragraphs_incremental(
             cache.and_then(|c| c.paragraphs.iter().find(|p| p.source_hash == source_hash));
 
         let (html, offset_map, syntax_spans, para_refs) = if let Some(cached) = cached_match {
+            cache_hits += 1;
             // Reuse cached HTML, offset map, and syntax spans (adjusted for position)
             let char_delta = char_range.start as isize - cached.char_range.start as isize;
             let byte_delta = byte_range.start as isize - cached.byte_range.start as isize;
@@ -294,6 +304,8 @@ pub fn render_paragraphs_incremental(
                 cached.collected_refs.clone(),
             )
         } else {
+            cache_misses += 1;
+            let para_render_start = crate::perf::now();
             // Fresh render needed - create detached LoroDoc for this paragraph
             let para_doc = loro::LoroDoc::new();
             let para_text = para_doc.get_text("content");
@@ -365,6 +377,7 @@ pub fn render_paragraphs_incremental(
 
             // Offsets are already document-absolute since we pass char_range.start/byte_range.start
             // to the writer constructor
+            fresh_render_ms += crate::perf::now() - para_render_start;
             (output, offset_map, syntax_spans, para_refs)
         };
 
@@ -470,6 +483,19 @@ pub fn render_paragraphs_incremental(
         next_node_id: node_id_offset,
         next_syn_id: syn_id_offset,
     };
+
+    let render_loop_ms = crate::perf::now() - render_loop_start;
+    let total_ms = crate::perf::now() - fn_start;
+    tracing::debug!(
+        total_ms,
+        render_loop_ms,
+        fresh_render_ms,
+        cache_hits,
+        cache_misses,
+        paragraphs = paragraphs_with_gaps.len(),
+        use_fast_path,
+        "render_paragraphs_incremental timing"
+    );
 
     (paragraphs_with_gaps, new_cache, all_refs)
 }

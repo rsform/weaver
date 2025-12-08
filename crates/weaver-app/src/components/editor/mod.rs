@@ -24,6 +24,8 @@ mod storage;
 mod sync;
 mod toolbar;
 mod visibility;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+mod worker;
 mod writer;
 
 #[cfg(test)]
@@ -79,3 +81,9 @@ pub use visibility::VisibilityState;
 // Logging
 #[allow(unused_imports)]
 pub use log_buffer::LogCaptureLayer;
+
+// Worker
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub use worker::{
+    EditorWorker, EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput, WorkerInput, WorkerOutput,
+};

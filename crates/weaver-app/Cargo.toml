@@ -4,6 +4,22 @@ version = "0.1.0"
 authors = ["Orual <orual@nonbinary.computer>"]
 edition = "2024"
 
+[lib]
+name = "weaver_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "weaver-app"
+path = "src/main.rs"
+
+[[bin]]
+name = "editor_worker"
+path = "src/bin/editor_worker.rs"
+
+[[bin]]
+name = "embed_worker"
+path = "src/bin/embed_worker.rs"
+
 [features]
 default = ["web", "fullstack-server", "no-app-index"]
 # Fullstack mode with SSR and server functions
@@ -84,6 +100,8 @@ web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorke
 js-sys = "0.3"
 gloo-storage = "0.3"
 gloo-timers = "0.3"
+gloo-worker = { version = "0.5", features = ["futures"] }
+postcard = "1.1"
 ring = { version = "0.17", default-features = false, features = ["wasm32_unknown_unknown_js"]}
 getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
 lol_alloc = "0.4.1"
