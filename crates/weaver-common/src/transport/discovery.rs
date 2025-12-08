@@ -1,3 +1,5 @@
+#![cfg(feature = "iroh")]
+
 //! Peer discovery via AT Protocol session records.
 //!
 //! Collaborators publish `sh.weaver.collab.session` records to their PDS

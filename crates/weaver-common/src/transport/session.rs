@@ -1,3 +1,5 @@
+#![cfg(feature = "iroh")]
+
 //! CollabSession - per-resource gossip session for real-time collaboration.
 
 use std::sync::Arc;

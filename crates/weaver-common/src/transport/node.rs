@@ -1,3 +1,5 @@
+#![cfg(feature = "iroh")]
+
 //! CollabNode - iroh endpoint with gossip router for real-time collaboration.
 
 use iroh::Endpoint;

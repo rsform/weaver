@@ -1,3 +1,5 @@
+#![cfg(feature = "iroh")]
+
 //! Presence tracking for collaborative editing sessions.
 //!
 //! Tracks active collaborators, their cursor positions, and display info.

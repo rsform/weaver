@@ -10,6 +10,7 @@
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use weaver_common::transport::PresenceSnapshot;
 
 /// Input messages to the editor worker.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -35,6 +36,32 @@ pub enum WorkerInput {
         /// Editing CID if editing existing entry
         editing_cid: Option<String>,
     },
+    /// Start collab session (worker will spawn CollabNode)
+    StartCollab {
+        /// blake3 hash of resource URI (32 bytes)
+        topic: [u8; 32],
+        /// Bootstrap peer node IDs (z-base32 strings)
+        bootstrap_peers: Vec<String>,
+    },
+    /// Loro updates from local edits (forward to gossip)
+    BroadcastUpdate {
+        /// Loro update bytes
+        data: Vec<u8>,
+    },
+    /// New peers discovered by main thread
+    AddPeers {
+        /// Node ID strings
+        peers: Vec<String>,
+    },
+    /// Local cursor position changed
+    BroadcastCursor {
+        /// Cursor position
+        position: usize,
+        /// Selection range if any
+        selection: Option<(usize, usize)>,
+    },
+    /// Stop collab session
+    StopCollab,
 }
 
 /// Output messages from the editor worker.
@@ -65,6 +92,24 @@ pub enum WorkerOutput {
     },
     /// Error occurred.
     Error { message: String },
+    /// Collab node ready, here's info for session record
+    CollabReady {
+        /// Node ID (z-base32 string)
+        node_id: String,
+        /// Relay URL for browser connectivity
+        relay_url: Option<String>,
+    },
+    /// Collab session joined successfully
+    CollabJoined,
+    /// Remote updates to merge into main doc
+    RemoteUpdates {
+        /// Loro update bytes
+        data: Vec<u8>,
+    },
+    /// Presence state changed
+    PresenceUpdate(PresenceSnapshot),
+    /// Collab session ended
+    CollabStopped,
 }
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]

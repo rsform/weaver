@@ -1,6 +1,5 @@
 //! Wire protocol for collaborative editing messages.
 
-use iroh::{PublicKey, SecretKey, Signature};
 use serde::{Deserialize, Serialize};
 
 /// Messages exchanged between collaborators over gossip.
@@ -65,77 +64,99 @@ impl CollabMessage {
     }
 }
 
-/// A signed message wrapper for authenticated transport.
-///
-/// Includes the sender's public key so receivers can verify without context.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SignedMessage {
-    /// Sender's public key (also their EndpointId).
-    pub from: PublicKey,
-    /// The serialized TimestampedMessage (postcard bytes).
-    pub data: Vec<u8>,
-    /// Ed25519 signature over data.
-    pub signature: Signature,
-}
+// ============================================================================
+// Signed message wrapper (requires iroh for crypto)
+// ============================================================================
 
-/// Versioned wire format with timestamp.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-enum WireMessage {
-    V0 { timestamp: u64, message: CollabMessage },
-}
+#[cfg(feature = "iroh")]
+mod signed {
+    use super::*;
+    use iroh::{PublicKey, SecretKey, Signature};
 
-/// A verified message with sender and timestamp info.
-#[derive(Debug, Clone)]
-pub struct ReceivedMessage {
-    /// Sender's public key.
-    pub from: PublicKey,
-    /// When the message was sent (micros since epoch).
-    pub timestamp: u64,
-    /// The decoded message.
-    pub message: CollabMessage,
-}
-
-/// Error type for signed message operations.
-#[derive(Debug, thiserror::Error)]
-pub enum SignedMessageError {
-    #[error("serialization failed: {0}")]
-    Serialization(#[from] postcard::Error),
-    #[error("signature verification failed")]
-    InvalidSignature,
-}
-
-impl SignedMessage {
-    /// Sign a message and encode to bytes for wire transmission.
-    pub fn sign_and_encode(secret_key: &SecretKey, message: &CollabMessage) -> Result<Vec<u8>, SignedMessageError> {
-        use web_time::SystemTime;
-
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as u64;
-        let wire = WireMessage::V0 { timestamp, message: message.clone() };
-        let data = postcard::to_stdvec(&wire)?;
-        let signature = secret_key.sign(&data);
-        let from = secret_key.public();
-        let signed = Self { from, data, signature };
-        Ok(postcard::to_stdvec(&signed)?)
+    /// A signed message wrapper for authenticated transport.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SignedMessage {
+        /// Sender's public key (also their EndpointId).
+        pub from: PublicKey,
+        /// The serialized TimestampedMessage (postcard bytes).
+        pub data: Vec<u8>,
+        /// Ed25519 signature over data.
+        pub signature: Signature,
     }
 
-    /// Decode from bytes and verify signature.
-    pub fn decode_and_verify(bytes: &[u8]) -> Result<ReceivedMessage, SignedMessageError> {
-        let signed: Self = postcard::from_bytes(bytes)?;
-        signed.from
-            .verify(&signed.data, &signed.signature)
-            .map_err(|_| SignedMessageError::InvalidSignature)?;
-        let wire: WireMessage = postcard::from_bytes(&signed.data)?;
-        let WireMessage::V0 { timestamp, message } = wire;
-        Ok(ReceivedMessage {
-            from: signed.from,
-            timestamp,
-            message,
-        })
+    /// Versioned wire format with timestamp.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    enum WireMessage {
+        V0 { timestamp: u64, message: CollabMessage },
+    }
+
+    /// A verified message with sender and timestamp info.
+    #[derive(Debug, Clone)]
+    pub struct ReceivedMessage {
+        /// Sender's public key.
+        pub from: PublicKey,
+        /// When the message was sent (micros since epoch).
+        pub timestamp: u64,
+        /// The decoded message.
+        pub message: CollabMessage,
+    }
+
+    /// Error type for signed message operations.
+    #[derive(Debug, thiserror::Error)]
+    pub enum SignedMessageError {
+        #[error("serialization failed: {0}")]
+        Serialization(#[from] postcard::Error),
+        #[error("signature verification failed")]
+        InvalidSignature,
+    }
+
+    impl SignedMessage {
+        /// Sign a message and encode to bytes for wire transmission.
+        pub fn sign_and_encode(
+            secret_key: &SecretKey,
+            message: &CollabMessage,
+        ) -> Result<Vec<u8>, SignedMessageError> {
+            use web_time::SystemTime;
+
+            let timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_micros() as u64;
+            let wire = WireMessage::V0 {
+                timestamp,
+                message: message.clone(),
+            };
+            let data = postcard::to_stdvec(&wire)?;
+            let signature = secret_key.sign(&data);
+            let from = secret_key.public();
+            let signed = Self {
+                from,
+                data,
+                signature,
+            };
+            Ok(postcard::to_stdvec(&signed)?)
+        }
+
+        /// Decode from bytes and verify signature.
+        pub fn decode_and_verify(bytes: &[u8]) -> Result<ReceivedMessage, SignedMessageError> {
+            let signed: Self = postcard::from_bytes(bytes)?;
+            signed
+                .from
+                .verify(&signed.data, &signed.signature)
+                .map_err(|_| SignedMessageError::InvalidSignature)?;
+            let wire: WireMessage = postcard::from_bytes(&signed.data)?;
+            let WireMessage::V0 { timestamp, message } = wire;
+            Ok(ReceivedMessage {
+                from: signed.from,
+                timestamp,
+                message,
+            })
+        }
     }
 }
+
+#[cfg(feature = "iroh")]
+pub use signed::{ReceivedMessage, SignedMessage, SignedMessageError};
 
 #[cfg(test)]
 mod tests {

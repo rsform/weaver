@@ -33,6 +33,7 @@ web = ["dioxus/web", "dioxus-primitives/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
 server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum", "dep:resvg", "dep:usvg", "dep:tiny-skia", "dep:textwrap", "dep:askama", "dep:fontdb"]
+collab-worker = ["weaver-common/iroh"]
 
 
 [dependencies]

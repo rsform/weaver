@@ -1,20 +1,34 @@
-//! Real-time collaboration transport layer using iroh P2P networking.
+//! Real-time collaboration transport layer.
 //!
-//! This module provides the infrastructure for real-time collaborative editing:
-//! - `CollabNode`: iroh endpoint + gossip router (one per app instance)
-//! - `CollabSession`: per-resource session management
-//! - `CollabMessage`: wire protocol for CRDT updates, cursors, presence
-//! - `discovery`: utilities for parsing NodeIds from session records
+//! Core message types are always available. iroh-based networking
+//! requires the `iroh` feature.
 
-mod discovery;
 mod messages;
+mod presence_types;
+
+#[cfg(feature = "iroh")]
+mod discovery;
+#[cfg(feature = "iroh")]
 mod node;
+#[cfg(feature = "iroh")]
 mod presence;
+#[cfg(feature = "iroh")]
 mod session;
 
+// Always available - wire protocol
+pub use messages::CollabMessage;
+pub use presence_types::{CollaboratorInfo, PresenceSnapshot, RemoteCursorInfo};
+
+// iroh feature - networking
+#[cfg(feature = "iroh")]
 pub use discovery::{node_id_to_string, parse_node_id, DiscoveredPeer, DiscoveryError};
+#[cfg(feature = "iroh")]
 pub use iroh::EndpointId;
-pub use messages::{CollabMessage, ReceivedMessage, SignedMessage, SignedMessageError};
+#[cfg(feature = "iroh")]
+pub use messages::{ReceivedMessage, SignedMessage, SignedMessageError};
+#[cfg(feature = "iroh")]
 pub use node::{CollabNode, TransportError};
+#[cfg(feature = "iroh")]
 pub use presence::{Collaborator, PresenceTracker, RemoteCursor};
+#[cfg(feature = "iroh")]
 pub use session::{CollabSession, SessionError, SessionEvent, TopicId};

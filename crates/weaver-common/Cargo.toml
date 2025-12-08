@@ -9,6 +9,7 @@ publish = false
 default = ["dev"]
 dev = []
 native = ["jacquard/dns"]
+iroh = ["dep:iroh", "dep:iroh-gossip", "dep:iroh-tickets"]
 
 [dependencies]
 n0-future = { workspace = true }
@@ -34,14 +35,16 @@ mime-sniffer = "^0.1"
 # Real-time collaboration transport (iroh P2P)
 chrono = "0.4"
 blake3 = { version = "1", default-features = false, features = ["pure"] }
-iroh = { version = "0.95", default-features = false }
-iroh-gossip = { version = "0.95", default-features = false, features = ["net"] }
 postcard = "1.1.1"
 rand = "0.9.2"
-getrandom = { version = "0.3", features = [] }
-iroh-tickets = "0.2"
-ring = { version = "0.17", default-features = false }
 web-time = "1"
+
+iroh = { version = "0.95", default-features = false, optional = true }
+iroh-gossip = { version = "0.95", default-features = false, features = ["net"], optional = true }
+iroh-tickets = { version = "0.2", optional = true }
+
+getrandom = { version = "0.3", features = [] }
+ring = { version = "0.17", default-features = false }
 
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
