@@ -38,7 +38,7 @@ pub struct Collaborator {
 }
 
 /// Tracks all collaborators in a session.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct PresenceTracker {
     /// Collaborators by EndpointId.
     collaborators: HashMap<EndpointId, Collaborator>,

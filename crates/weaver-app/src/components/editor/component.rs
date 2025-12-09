@@ -11,11 +11,6 @@ use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::embed::images::Image;
 use weaver_common::WeaverExt;
 
-use crate::auth::AuthState;
-use crate::components::collab::CollaboratorAvatars;
-use crate::components::editor::ReportButton;
-use crate::fetch::Fetcher;
-
 use super::actions::{
     EditorAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Range, execute_action,
     handle_keydown_with_bindings,
@@ -39,6 +34,11 @@ use super::sync::{SyncStatus, load_and_merge_document};
 use super::toolbar::EditorToolbar;
 use super::visibility::update_syntax_visibility;
 use super::writer::{EditorImageResolver, SyntaxSpanInfo};
+use crate::auth::AuthState;
+use crate::components::collab::CollaboratorAvatars;
+use crate::components::editor::ReportButton;
+use crate::components::editor::collab::CollabCoordinator;
+use crate::fetch::Fetcher;
 
 /// Result of loading document state.
 enum LoadResult {
@@ -425,41 +425,11 @@ fn MarkdownEditorInner(
     // Use pre-resolved content from loaded state (avoids embed pop-in)
     let resolved_content = use_signal(|| loaded_state.resolved_content.clone());
 
-    // Presence tracker for remote collaborators (shared with RealTimeSync)
-    let presence = use_signal(weaver_common::transport::PresenceTracker::new);
+    // Presence snapshot for remote collaborators (updated by collab coordinator)
+    let presence = use_signal(weaver_common::transport::PresenceSnapshot::default);
 
-    // Resolve StrongRef for real-time P2P sync
-    // - For entries: use entry_ref directly
-    // - For drafts: resolve via confirm_record_ref on draft URI
-    let realtime_ref_resource = {
-        let doc_for_ref = document.clone();
-        let fetcher_for_ref = fetcher.clone();
-        let draft_key_for_ref = draft_key.to_string();
-        use_resource(move || {
-            let doc = doc_for_ref.clone();
-            let fetcher = fetcher_for_ref.clone();
-            let draft_key = draft_key_for_ref.clone();
-            async move {
-                // Published entry - use entry_ref directly
-                if let Some(entry_ref) = doc.entry_ref() {
-                    return Some(entry_ref.clone());
-                }
-                // Draft with edit_root - resolve draft StrongRef
-                if doc.edit_root().is_some() {
-                    if let Some(did) = fetcher.current_did().await {
-                        let draft_uri = super::sync::build_draft_uri(&did, &draft_key);
-                        match fetcher.confirm_record_ref(&draft_uri).await {
-                            Ok(strong_ref) => return Some(strong_ref),
-                            Err(e) => {
-                                tracing::warn!("Failed to resolve draft ref: {}", e);
-                            }
-                        }
-                    }
-                }
-                None
-            }
-        })
-    };
+    // Resource URI for real-time collab (entry URI if editing published entry)
+    let collab_resource_uri = document.entry_ref().map(|r| r.uri.to_string());
 
     let doc_for_memo = document.clone();
     let doc_for_refs = document.clone();
@@ -516,9 +486,7 @@ fn MarkdownEditorInner(
                     if !results.is_empty() {
                         let mut rc = resolved_content_for_fetch.write_unchecked();
                         for (uri_str, html) in results {
-                            if let Ok(at_uri) =
-                                jacquard::types::string::AtUri::new_owned(uri_str)
-                            {
+                            if let Ok(at_uri) = jacquard::types::string::AtUri::new_owned(uri_str) {
                                 rc.add_embed(at_uri, html, None);
                             }
                         }
@@ -724,27 +692,34 @@ fn MarkdownEditorInner(
     // Worker-based autosave (offloads export + encode to worker thread)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
-        use super::worker::{EditorWorker, WorkerInput, WorkerOutput};
+        use super::worker::{EditorReactor, WorkerInput, WorkerOutput};
         use gloo_storage::Storage;
         use gloo_worker::Spawnable;
+        use gloo_worker::reactor::ReactorBridge;
+
+        use futures_util::stream::{SplitSink, SplitStream};
 
         // Track if worker is available (false = fallback to main thread)
         let use_worker: Signal<bool> = use_signal(|| true);
-        // Worker bridge handle
-        let mut worker_bridge: Signal<Option<gloo_worker::WorkerBridge<EditorWorker>>> =
-            use_signal(|| None);
+        // Worker sink for sending (split from bridge)
+        type WorkerSink = SplitSink<ReactorBridge<EditorReactor>, WorkerInput>;
+        let worker_sink: std::rc::Rc<std::cell::RefCell<Option<WorkerSink>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(None));
         // Track version vector sent to worker (for incremental updates)
         let mut last_worker_vv: Signal<Option<loro::VersionVector>> = use_signal(|| None);
 
         // Spawn worker on mount
         let doc_for_worker_init = document.clone();
         let draft_key_for_worker = draft_key.clone();
+        let worker_sink_for_spawn = worker_sink.clone();
+        let mut presence_for_worker = presence;
         use_effect(move || {
             let doc = doc_for_worker_init.clone();
             let draft_key = draft_key_for_worker.clone();
+            let worker_sink = worker_sink_for_spawn.clone();
 
             // Callback for worker responses
-            let on_output = move |output: WorkerOutput| {
+            let mut on_output = move |output: WorkerOutput| {
                 match output {
                     WorkerOutput::Ready => {
                         tracing::info!("Editor worker ready");
@@ -781,30 +756,65 @@ fn MarkdownEditorInner(
                     WorkerOutput::Error { message } => {
                         tracing::error!("Worker error: {}", message);
                     }
+                    WorkerOutput::PresenceUpdate(snapshot) => {
+                        tracing::debug!(
+                            collaborators = snapshot.collaborators.len(),
+                            peers = snapshot.peer_count,
+                            "presence update from worker"
+                        );
+                        presence_for_worker.set(snapshot);
+                    }
+                    // Ignore other collab outputs for now (handled by CollabCoordinator)
+                    WorkerOutput::CollabReady { .. }
+                    | WorkerOutput::CollabJoined
+                    | WorkerOutput::RemoteUpdates { .. }
+                    | WorkerOutput::CollabStopped
+                    | WorkerOutput::PeerConnected => {}
                 }
             };
 
-            // Spawn worker (panics on failure in debug, returns bridge directly)
-            let bridge = EditorWorker::spawner()
-                .callback(on_output)
-                .spawn("/editor_worker.js");
+            // Spawn reactor and split into sink/stream
+            use futures_util::StreamExt;
+            let bridge = EditorReactor::spawner().spawn("/editor_worker.js");
+            let (sink, mut stream) = bridge.split();
+
+            // Store sink for sending
+            *worker_sink.borrow_mut() = Some(sink);
 
             // Initialize with current document snapshot
             let snapshot = doc.export_snapshot();
-            bridge.send(WorkerInput::Init {
-                snapshot,
-                draft_key: draft_key.clone(),
+            let sink_for_init = worker_sink.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                use futures_util::SinkExt;
+                if let Some(ref mut sink) = *sink_for_init.borrow_mut() {
+                    let _ = sink
+                        .send(WorkerInput::Init {
+                            snapshot,
+                            draft_key,
+                        })
+                        .await;
+                }
             });
-            worker_bridge.set(Some(bridge));
-            tracing::info!("Editor worker spawned");
+
+            // Spawn receiver task to poll stream for outputs
+            wasm_bindgen_futures::spawn_local(async move {
+                while let Some(msg) = stream.next().await {
+                    on_output(msg);
+                }
+                tracing::info!("Editor reactor stream ended");
+            });
+
+            tracing::info!("Editor reactor spawned");
         });
 
         // Autosave interval
         let doc_for_autosave = document.clone();
         let draft_key_for_autosave = draft_key.clone();
+        let worker_sink_for_autosave = worker_sink.clone();
         use_effect(move || {
             let mut doc = doc_for_autosave.clone();
             let draft_key = draft_key_for_autosave.clone();
+            let worker_sink = worker_sink_for_autosave.clone();
 
             let interval = gloo_timers::callback::Interval::new(500, move || {
                 let callback_start = crate::perf::now();
@@ -826,34 +836,46 @@ fn MarkdownEditorInner(
                 doc.sync_loro_cursor();
 
                 // Try worker path first
-                if *use_worker.peek() {
-                    if let Some(ref bridge) = *worker_bridge.peek() {
-                        // Send updates to worker (or full snapshot if first time)
-                        let current_vv = doc.version_vector();
-                        let updates = if let Some(ref last_vv) = *last_worker_vv.peek() {
-                            doc.export_updates_from(last_vv).unwrap_or_default()
-                        } else {
-                            doc.export_snapshot()
-                        };
+                if *use_worker.peek() && worker_sink.borrow().is_some() {
+                    // Send updates to worker (or full snapshot if first time)
+                    let current_vv = doc.version_vector();
+                    let updates = if let Some(ref last_vv) = *last_worker_vv.peek() {
+                        doc.export_updates_from(last_vv).unwrap_or_default()
+                    } else {
+                        doc.export_snapshot()
+                    };
 
-                        if !updates.is_empty() {
-                            bridge.send(WorkerInput::ApplyUpdates { updates });
+                    let cursor_offset = doc.cursor.read().offset;
+                    let editing_uri = doc.entry_ref().map(|r| r.uri.to_string());
+                    let editing_cid = doc.entry_ref().map(|r| r.cid.to_string());
+
+                    let sink_clone = worker_sink.clone();
+
+                    // Spawn async sends
+                    wasm_bindgen_futures::spawn_local(async move {
+                        use futures_util::SinkExt;
+                        if let Some(ref mut sink) = *sink_clone.borrow_mut() {
+                            if !updates.is_empty() {
+                                let _ = sink.send(WorkerInput::ApplyUpdates { updates }).await;
+                            }
+
+                            // Request snapshot export
+                            let _ = sink
+                                .send(WorkerInput::ExportSnapshot {
+                                    cursor_offset,
+                                    editing_uri,
+                                    editing_cid,
+                                })
+                                .await;
                         }
+                    });
 
-                        // Request snapshot export
-                        bridge.send(WorkerInput::ExportSnapshot {
-                            cursor_offset: doc.cursor.read().offset,
-                            editing_uri: doc.entry_ref().map(|r| r.uri.to_string()),
-                            editing_cid: doc.entry_ref().map(|r| r.cid.to_string()),
-                        });
+                    last_worker_vv.set(Some(current_vv));
+                    last_saved_frontiers.set(Some(current_frontiers));
 
-                        last_worker_vv.set(Some(current_vv));
-                        last_saved_frontiers.set(Some(current_frontiers));
-
-                        let callback_ms = crate::perf::now() - callback_start;
-                        tracing::debug!(callback_ms, "autosave via worker");
-                        return;
-                    }
+                    let callback_ms = crate::perf::now() - callback_start;
+                    tracing::debug!(callback_ms, "autosave via worker");
+                    return;
                 }
 
                 // Fallback: main thread save
@@ -997,281 +1019,295 @@ fn MarkdownEditorInner(
 
     rsx! {
         Stylesheet { href: asset!("/assets/styling/editor.css") }
-        div { class: "markdown-editor-container",
-            // Title bar
-            div { class: "editor-title-bar",
-                input {
-                    r#type: "text",
-                    class: "title-input",
-                    placeholder: "Entry title...",
-                    value: "{document.title()}",
-                    oninput: {
-                        let doc = document.clone();
-                        move |e| {
-                            doc.set_title(&e.value());
-                        }
-                    },
-                }
-            }
-
-            // Meta row - path, tags, publish
-            div { class: "editor-meta-row",
-                    div { class: "meta-path",
-                        label { "Path" }
-                        input {
-                            r#type: "text",
-                            class: "path-input",
-                            placeholder: "url-slug",
-                            value: "{document.path()}",
-                            oninput: {
-                                let doc = document.clone();
-                                move |e| {
-                                    doc.set_path(&e.value());
-                                }
-                            },
-                        }
-                    }
-
-                    div { class: "meta-tags",
-                        label { "Tags" }
-                        div { class: "tags-container",
-                            for tag in document.tags() {
-                                span {
-                                    class: "tag-chip",
-                                    "{tag}"
-                                    button {
-                                        class: "tag-remove",
-                                        onclick: {
-                                            let doc = document.clone();
-                                            let tag_to_remove = tag.clone();
-                                            move |_| {
-                                                doc.remove_tag(&tag_to_remove);
-                                            }
-                                        },
-                                        "×"
-                                    }
-                                }
+        CollabCoordinator {
+            document: document.clone(),
+            resource_uri: collab_resource_uri.clone().unwrap_or(draft_key.clone()),
+            presence,
+            div { class: "markdown-editor-container",
+                // Title bar
+                div { class: "editor-title-bar",
+                    input {
+                        r#type: "text",
+                        class: "title-input",
+                        placeholder: "Entry title...",
+                        value: "{document.title()}",
+                        oninput: {
+                            let doc = document.clone();
+                            move |e| {
+                                doc.set_title(&e.value());
                             }
+                        },
+                    }
+                }
+
+                // Meta row - path, tags, publish
+                div { class: "editor-meta-row",
+                        div { class: "meta-path",
+                            label { "Path" }
                             input {
                                 r#type: "text",
-                                class: "tag-input",
-                                placeholder: "Add tag...",
-                                value: "{new_tag}",
-                                oninput: move |e| new_tag.set(e.value()),
-                                onkeydown: {
+                                class: "path-input",
+                                placeholder: "url-slug",
+                                value: "{document.path()}",
+                                oninput: {
                                     let doc = document.clone();
                                     move |e| {
-                                        use dioxus::prelude::keyboard_types::Key;
-                                        if e.key() == Key::Enter && !new_tag().trim().is_empty() {
-                                            e.prevent_default();
-                                            let tag = new_tag().trim().to_string();
-                                            doc.add_tag(&tag);
-                                            new_tag.set(String::new());
-                                        }
+                                        doc.set_path(&e.value());
                                     }
                                 },
                             }
                         }
-                    }
 
-                    div { class: "meta-actions",
-                        // Show collaborator avatars when editing an existing entry
-                        if let Some(entry_ref) = document.entry_ref() {
-                            {
-                                let title = document.title();
-                                rsx! {
-                                    CollaboratorAvatars {
-                                        resource_uri: entry_ref.uri.clone(),
-                                        resource_cid: entry_ref.cid.to_string(),
-                                        resource_title: if title.is_empty() { None } else { Some(title) },
+                        div { class: "meta-tags",
+                            label { "Tags" }
+                            div { class: "tags-container",
+                                for tag in document.tags() {
+                                    span {
+                                        class: "tag-chip",
+                                        "{tag}"
+                                        button {
+                                            class: "tag-remove",
+                                            onclick: {
+                                                let doc = document.clone();
+                                                let tag_to_remove = tag.clone();
+                                                move |_| {
+                                                    doc.remove_tag(&tag_to_remove);
+                                                }
+                                            },
+                                            "×"
+                                        }
+                                    }
+                                }
+                                input {
+                                    r#type: "text",
+                                    class: "tag-input",
+                                    placeholder: "Add tag...",
+                                    value: "{new_tag}",
+                                    oninput: move |e| new_tag.set(e.value()),
+                                    onkeydown: {
+                                        let doc = document.clone();
+                                        move |e| {
+                                            use dioxus::prelude::keyboard_types::Key;
+                                            if e.key() == Key::Enter && !new_tag().trim().is_empty() {
+                                                e.prevent_default();
+                                                let tag = new_tag().trim().to_string();
+                                                doc.add_tag(&tag);
+                                                new_tag.set(String::new());
+                                            }
+                                        }
+                                    },
+                                }
+                            }
+                        }
+
+                        div { class: "meta-actions",
+                            // Show collaborator avatars when editing an existing entry
+                            if let Some(entry_ref) = document.entry_ref() {
+                                {
+                                    let title = document.title();
+                                    rsx! {
+                                        CollaboratorAvatars {
+                                            resource_uri: entry_ref.uri.clone(),
+                                            resource_cid: entry_ref.cid.to_string(),
+                                            resource_title: if title.is_empty() { None } else { Some(title) },
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        {
-                            // Enable collaborative sync for any published entry (both owners and collaborators)
-                            let is_published = document.entry_ref().is_some();
+                            {
+                                // Enable collaborative sync for any published entry (both owners and collaborators)
+                                let is_published = document.entry_ref().is_some();
 
-                            // Refresh callback: fetch and merge collaborator changes (incremental)
-                            let on_refresh = if is_published {
-                                let fetcher_for_refresh = fetcher.clone();
-                                let mut doc_for_refresh = document.clone();
-                                let entry_uri = document.entry_ref().map(|r| r.uri.clone().into_static());
+                                // Refresh callback: fetch and merge collaborator changes (incremental)
+                                let on_refresh = if is_published {
+                                    let fetcher_for_refresh = fetcher.clone();
+                                    let mut doc_for_refresh = document.clone();
+                                    let entry_uri = document.entry_ref().map(|r| r.uri.clone().into_static());
 
-                                Some(EventHandler::new(move |_| {
-                                    let fetcher = fetcher_for_refresh.clone();
-                                    let mut doc = doc_for_refresh.clone();
-                                    let uri = entry_uri.clone();
+                                    Some(EventHandler::new(move |_| {
+                                        let fetcher = fetcher_for_refresh.clone();
+                                        let mut doc = doc_for_refresh.clone();
+                                        let uri = entry_uri.clone();
 
-                                    spawn(async move {
-                                        if let Some(uri) = uri {
-                                            // Get last seen diffs for incremental sync
-                                            let last_seen = doc.last_seen_diffs.read().clone();
+                                        spawn(async move {
+                                            if let Some(uri) = uri {
+                                                // Get last seen diffs for incremental sync
+                                                let last_seen = doc.last_seen_diffs.read().clone();
 
-                                            match super::sync::load_all_edit_states_from_pds(&fetcher, &uri, &last_seen).await {
-                                                Ok(Some(pds_state)) => {
-                                                    if let Err(e) = doc.import_updates(&pds_state.root_snapshot) {
-                                                        tracing::error!("Failed to import collaborator updates: {:?}", e);
-                                                    } else {
-                                                        tracing::info!("Successfully merged collaborator updates");
-                                                        // Update the last seen diffs for next incremental sync
-                                                        *doc.last_seen_diffs.write() = pds_state.last_seen_diffs;
+                                                match super::sync::load_all_edit_states_from_pds(&fetcher, &uri, &last_seen).await {
+                                                    Ok(Some(pds_state)) => {
+                                                        if let Err(e) = doc.import_updates(&pds_state.root_snapshot) {
+                                                            tracing::error!("Failed to import collaborator updates: {:?}", e);
+                                                        } else {
+                                                            tracing::info!("Successfully merged collaborator updates");
+                                                            // Update the last seen diffs for next incremental sync
+                                                            *doc.last_seen_diffs.write() = pds_state.last_seen_diffs;
+                                                        }
+                                                    }
+                                                    Ok(None) => {
+                                                        tracing::debug!("No collaborator updates found");
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::error!("Failed to fetch collaborator updates: {}", e);
                                                     }
                                                 }
-                                                Ok(None) => {
-                                                    tracing::debug!("No collaborator updates found");
-                                                }
-                                                Err(e) => {
-                                                    tracing::error!("Failed to fetch collaborator updates: {}", e);
-                                                }
                                             }
-                                        }
-                                    });
-                                }))
-                            } else {
-                                None
-                            };
+                                        });
+                                    }))
+                                } else {
+                                    None
+                                };
 
-                            // Get resolved StrongRef for real-time P2P sync
-                            let realtime_ref = realtime_ref_resource.read().clone().flatten();
-
-                            rsx! {
-                                SyncStatus {
-                                    document: document.clone(),
-                                    draft_key: draft_key.to_string(),
-                                    on_refresh,
-                                    is_collaborative: is_published,
-                                }
-                                // Real-time P2P sync (works for both published entries and drafts)
-                                super::sync::RealTimeSync {
-                                    document: document.clone(),
-                                    resource_ref: realtime_ref,
-                                    presence,
+                                rsx! {
+                                    SyncStatus {
+                                        document: document.clone(),
+                                        draft_key: draft_key.to_string(),
+                                        on_refresh,
+                                        is_collaborative: is_published,
+                                    }
                                 }
                             }
-                        }
 
-                        PublishButton {
-                            document: document.clone(),
-                            draft_key: draft_key.to_string(),
-                            target_notebook: target_notebook.as_ref().map(|s| s.to_string()),
+                            PublishButton {
+                                document: document.clone(),
+                                draft_key: draft_key.to_string(),
+                                target_notebook: target_notebook.as_ref().map(|s| s.to_string()),
+                            }
                         }
                     }
-                }
 
-                // Editor content
-                div { class: "editor-content-wrapper",
-                    // Remote collaborator cursors overlay
-                    RemoteCursors { presence, document: document.clone(), render_cache }
-                    div {
-                        id: "{editor_id}",
-                        class: "editor-content",
-                        contenteditable: "true",
+                    // Editor content
+                    div { class: "editor-content-wrapper",
+                        // Remote collaborator cursors overlay
+                        RemoteCursors { presence, document: document.clone(), render_cache }
+                        div {
+                            id: "{editor_id}",
+                            class: "editor-content",
+                            contenteditable: "true",
 
-                        onkeydown: {
-                        let mut doc = document.clone();
-                        let keybindings = KeybindingConfig::default_for_platform(&platform::platform());
-                        move |evt| {
-                            use dioxus::prelude::keyboard_types::Key;
-                            use std::time::Duration;
+                            onkeydown: {
+                            let mut doc = document.clone();
+                            let keybindings = KeybindingConfig::default_for_platform(&platform::platform());
+                            move |evt| {
+                                use dioxus::prelude::keyboard_types::Key;
+                                use std::time::Duration;
 
-                            let plat = platform::platform();
-                            let mods = evt.modifiers();
-                            let has_modifier = mods.ctrl() || mods.meta() || mods.alt();
+                                let plat = platform::platform();
+                                let mods = evt.modifiers();
+                                let has_modifier = mods.ctrl() || mods.meta() || mods.alt();
 
-                            // During IME composition:
-                            // - Allow modifier shortcuts (Ctrl+B, Ctrl+Z, etc.)
-                            // - Allow Escape to cancel composition
-                            // - Block text input (let browser handle composition preview)
-                            if doc.composition.read().is_some() {
-                                if evt.key() == Key::Escape {
-                                    tracing::debug!("Escape pressed - cancelling composition");
-                                    doc.composition.set(None);
-                                    return;
-                                }
+                                // During IME composition:
+                                // - Allow modifier shortcuts (Ctrl+B, Ctrl+Z, etc.)
+                                // - Allow Escape to cancel composition
+                                // - Block text input (let browser handle composition preview)
+                                if doc.composition.read().is_some() {
+                                    if evt.key() == Key::Escape {
+                                        tracing::debug!("Escape pressed - cancelling composition");
+                                        doc.composition.set(None);
+                                        return;
+                                    }
 
-                                // Allow modifier shortcuts through during composition
-                                if !has_modifier {
-                                    tracing::debug!(
-                                        key = ?evt.key(),
-                                        "keydown during composition - delegating to browser"
-                                    );
-                                    return;
-                                }
-                                // Fall through to handle the shortcut
-                            }
-
-                            // Safari workaround: After Japanese IME composition ends, both
-                            // compositionend and keydown fire for Enter. Ignore keydown
-                            // within 500ms of composition end to prevent double-newline.
-                            if plat.safari && evt.key() == Key::Enter {
-                                if let Some(ended_at) = *doc.composition_ended_at.read() {
-                                    if ended_at.elapsed() < Duration::from_millis(500) {
+                                    // Allow modifier shortcuts through during composition
+                                    if !has_modifier {
                                         tracing::debug!(
-                                            "Safari: ignoring Enter within 500ms of compositionend"
+                                            key = ?evt.key(),
+                                            "keydown during composition - delegating to browser"
                                         );
                                         return;
                                     }
+                                    // Fall through to handle the shortcut
+                                }
+
+                                // Safari workaround: After Japanese IME composition ends, both
+                                // compositionend and keydown fire for Enter. Ignore keydown
+                                // within 500ms of composition end to prevent double-newline.
+                                if plat.safari && evt.key() == Key::Enter {
+                                    if let Some(ended_at) = *doc.composition_ended_at.read() {
+                                        if ended_at.elapsed() < Duration::from_millis(500) {
+                                            tracing::debug!(
+                                                "Safari: ignoring Enter within 500ms of compositionend"
+                                            );
+                                            return;
+                                        }
+                                    }
+                                }
+
+                                // Try keybindings first (for shortcuts like Ctrl+B, Ctrl+Z, etc.)
+                                let combo = KeyCombo::from_keyboard_event(&evt.data());
+                                let cursor_offset = doc.cursor.read().offset;
+                                let selection = *doc.selection.read();
+                                let range = selection
+                                    .map(|s| Range::new(s.anchor.min(s.head), s.anchor.max(s.head)))
+                                    .unwrap_or_else(|| Range::caret(cursor_offset));
+                                match handle_keydown_with_bindings(&mut doc, &keybindings, combo, range) {
+                                    KeydownResult::Handled => {
+                                        evt.prevent_default();
+                                        return;
+                                    }
+                                    KeydownResult::PassThrough => {
+                                        // Navigation keys - let browser handle, sync in keyup
+                                        return;
+                                    }
+                                    KeydownResult::NotHandled => {
+                                        // Text input - let beforeinput handle it
+                                    }
+                                }
+
+                                // Text input keys: let beforeinput handle them
+                                // We don't prevent default here - beforeinput will do that
+                            }
+                        },
+
+                        onkeyup: {
+                            let mut doc = document.clone();
+                            move |evt| {
+                                use dioxus::prelude::keyboard_types::Key;
+
+                                // Arrow keys with direction hint for snapping
+                                let direction_hint = match evt.key() {
+                                    Key::ArrowLeft | Key::ArrowUp => Some(SnapDirection::Backward),
+                                    Key::ArrowRight | Key::ArrowDown => Some(SnapDirection::Forward),
+                                    _ => None,
+                                };
+
+                                // Navigation keys (with or without Shift for selection)
+                                let navigation = matches!(
+                                    evt.key(),
+                                    Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown |
+                                    Key::Home | Key::End | Key::PageUp | Key::PageDown
+                                );
+
+                                // Cmd/Ctrl+A for select all
+                                let select_all = (evt.modifiers().meta() || evt.modifiers().ctrl())
+                                    && matches!(evt.key(), Key::Character(ref c) if c == "a");
+
+                                if navigation || select_all {
+                                    let paras = cached_paragraphs();
+                                    if let Some(dir) = direction_hint {
+                                        sync_cursor_from_dom_with_direction(&mut doc, editor_id, &paras, Some(dir));
+                                    } else {
+                                        sync_cursor_from_dom(&mut doc, editor_id, &paras);
+                                    }
+                                    let spans = syntax_spans();
+                                    let cursor_offset = doc.cursor.read().offset;
+                                    let selection = *doc.selection.read();
+                                    update_syntax_visibility(
+                                        cursor_offset,
+                                        selection.as_ref(),
+                                        &spans,
+                                        &paras,
+                                    );
                                 }
                             }
+                        },
 
-                            // Try keybindings first (for shortcuts like Ctrl+B, Ctrl+Z, etc.)
-                            let combo = KeyCombo::from_keyboard_event(&evt.data());
-                            let cursor_offset = doc.cursor.read().offset;
-                            let selection = *doc.selection.read();
-                            let range = selection
-                                .map(|s| Range::new(s.anchor.min(s.head), s.anchor.max(s.head)))
-                                .unwrap_or_else(|| Range::caret(cursor_offset));
-                            match handle_keydown_with_bindings(&mut doc, &keybindings, combo, range) {
-                                KeydownResult::Handled => {
-                                    evt.prevent_default();
-                                    return;
-                                }
-                                KeydownResult::PassThrough => {
-                                    // Navigation keys - let browser handle, sync in keyup
-                                    return;
-                                }
-                                KeydownResult::NotHandled => {
-                                    // Text input - let beforeinput handle it
-                                }
-                            }
-
-                            // Text input keys: let beforeinput handle them
-                            // We don't prevent default here - beforeinput will do that
-                        }
-                    },
-
-                    onkeyup: {
-                        let mut doc = document.clone();
-                        move |evt| {
-                            use dioxus::prelude::keyboard_types::Key;
-
-                            // Arrow keys with direction hint for snapping
-                            let direction_hint = match evt.key() {
-                                Key::ArrowLeft | Key::ArrowUp => Some(SnapDirection::Backward),
-                                Key::ArrowRight | Key::ArrowDown => Some(SnapDirection::Forward),
-                                _ => None,
-                            };
-
-                            // Navigation keys (with or without Shift for selection)
-                            let navigation = matches!(
-                                evt.key(),
-                                Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown |
-                                Key::Home | Key::End | Key::PageUp | Key::PageDown
-                            );
-
-                            // Cmd/Ctrl+A for select all
-                            let select_all = (evt.modifiers().meta() || evt.modifiers().ctrl())
-                                && matches!(evt.key(), Key::Character(ref c) if c == "a");
-
-                            if navigation || select_all {
+                        onselect: {
+                            let mut doc = document.clone();
+                            move |_evt| {
+                                tracing::trace!("onselect fired");
                                 let paras = cached_paragraphs();
-                                if let Some(dir) = direction_hint {
-                                    sync_cursor_from_dom_with_direction(&mut doc, editor_id, &paras, Some(dir));
-                                } else {
-                                    sync_cursor_from_dom(&mut doc, editor_id, &paras);
-                                }
+                                sync_cursor_from_dom(&mut doc, editor_id, &paras);
                                 let spans = syntax_spans();
                                 let cursor_offset = doc.cursor.read().offset;
                                 let selection = *doc.selection.read();
@@ -1282,448 +1318,430 @@ fn MarkdownEditorInner(
                                     &paras,
                                 );
                             }
-                        }
-                    },
+                        },
 
-                    onselect: {
-                        let mut doc = document.clone();
-                        move |_evt| {
-                            tracing::trace!("onselect fired");
-                            let paras = cached_paragraphs();
-                            sync_cursor_from_dom(&mut doc, editor_id, &paras);
-                            let spans = syntax_spans();
-                            let cursor_offset = doc.cursor.read().offset;
-                            let selection = *doc.selection.read();
-                            update_syntax_visibility(
-                                cursor_offset,
-                                selection.as_ref(),
-                                &spans,
-                                &paras,
-                            );
-                        }
-                    },
+                        onselectstart: {
+                            let mut doc = document.clone();
+                            move |_evt| {
+                                tracing::trace!("onselectstart fired");
+                                let paras = cached_paragraphs();
+                                sync_cursor_from_dom(&mut doc, editor_id, &paras);
+                                let spans = syntax_spans();
+                                let cursor_offset = doc.cursor.read().offset;
+                                let selection = *doc.selection.read();
+                                update_syntax_visibility(
+                                    cursor_offset,
+                                    selection.as_ref(),
+                                    &spans,
+                                    &paras,
+                                );
+                            }
+                        },
 
-                    onselectstart: {
-                        let mut doc = document.clone();
-                        move |_evt| {
-                            tracing::trace!("onselectstart fired");
-                            let paras = cached_paragraphs();
-                            sync_cursor_from_dom(&mut doc, editor_id, &paras);
-                            let spans = syntax_spans();
-                            let cursor_offset = doc.cursor.read().offset;
-                            let selection = *doc.selection.read();
-                            update_syntax_visibility(
-                                cursor_offset,
-                                selection.as_ref(),
-                                &spans,
-                                &paras,
-                            );
-                        }
-                    },
+                        onselectionchange: {
+                            let mut doc = document.clone();
+                            move |_evt| {
+                                tracing::trace!("onselectionchange fired");
+                                let paras = cached_paragraphs();
+                                sync_cursor_from_dom(&mut doc, editor_id, &paras);
+                                let spans = syntax_spans();
+                                let cursor_offset = doc.cursor.read().offset;
+                                let selection = *doc.selection.read();
+                                update_syntax_visibility(
+                                    cursor_offset,
+                                    selection.as_ref(),
+                                    &spans,
+                                    &paras,
+                                );
+                            }
+                        },
 
-                    onselectionchange: {
-                        let mut doc = document.clone();
-                        move |_evt| {
-                            tracing::trace!("onselectionchange fired");
-                            let paras = cached_paragraphs();
-                            sync_cursor_from_dom(&mut doc, editor_id, &paras);
-                            let spans = syntax_spans();
-                            let cursor_offset = doc.cursor.read().offset;
-                            let selection = *doc.selection.read();
-                            update_syntax_visibility(
-                                cursor_offset,
-                                selection.as_ref(),
-                                &spans,
-                                &paras,
-                            );
-                        }
-                    },
+                        onclick: {
+                            let mut doc = document.clone();
+                            move |evt| {
+                                tracing::trace!("onclick fired");
+                                let paras = cached_paragraphs();
 
-                    onclick: {
-                        let mut doc = document.clone();
-                        move |evt| {
-                            tracing::trace!("onclick fired");
-                            let paras = cached_paragraphs();
+                                // Check if click target is a math-clickable element
+                                #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                                {
+                                    use dioxus::web::WebEventExt;
+                                    use wasm_bindgen::JsCast;
 
-                            // Check if click target is a math-clickable element
-                            #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-                            {
-                                use dioxus::web::WebEventExt;
-                                use wasm_bindgen::JsCast;
-
-                                let web_evt = evt.as_web_event();
-                                if let Some(target) = web_evt.target() {
-                                    if let Some(element) = target.dyn_ref::<web_sys::Element>() {
-                                        // Check element or ancestors for math-clickable
-                                        if let Ok(Some(math_el)) = element.closest(".math-clickable") {
-                                            if let Some(char_target) = math_el.get_attribute("data-char-target") {
-                                                if let Ok(offset) = char_target.parse::<usize>() {
-                                                    tracing::debug!("math-clickable clicked, moving cursor to {}", offset);
-                                                    doc.cursor.write().offset = offset;
-                                                    *doc.selection.write() = None;
-                                                    // Update visibility FIRST so math-source is visible
-                                                    let spans = syntax_spans();
-                                                    update_syntax_visibility(offset, None, &spans, &paras);
-                                                    // Then set DOM selection
-                                                    let map = offset_map();
-                                                    let _ = crate::components::editor::cursor::restore_cursor_position(
-                                                        offset,
-                                                        &map,
-                                                        editor_id,
-                                                        None,
-                                                    );
-                                                    return;
+                                    let web_evt = evt.as_web_event();
+                                    if let Some(target) = web_evt.target() {
+                                        if let Some(element) = target.dyn_ref::<web_sys::Element>() {
+                                            // Check element or ancestors for math-clickable
+                                            if let Ok(Some(math_el)) = element.closest(".math-clickable") {
+                                                if let Some(char_target) = math_el.get_attribute("data-char-target") {
+                                                    if let Ok(offset) = char_target.parse::<usize>() {
+                                                        tracing::debug!("math-clickable clicked, moving cursor to {}", offset);
+                                                        doc.cursor.write().offset = offset;
+                                                        *doc.selection.write() = None;
+                                                        // Update visibility FIRST so math-source is visible
+                                                        let spans = syntax_spans();
+                                                        update_syntax_visibility(offset, None, &spans, &paras);
+                                                        // Then set DOM selection
+                                                        let map = offset_map();
+                                                        let _ = crate::components::editor::cursor::restore_cursor_position(
+                                                            offset,
+                                                            &map,
+                                                            editor_id,
+                                                            None,
+                                                        );
+                                                        return;
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            }
 
-                            sync_cursor_from_dom(&mut doc, editor_id, &paras);
-                            let spans = syntax_spans();
-                            let cursor_offset = doc.cursor.read().offset;
-                            let selection = *doc.selection.read();
-                            update_syntax_visibility(
-                                cursor_offset,
-                                selection.as_ref(),
-                                &spans,
-                                &paras,
-                            );
-                        }
-                    },
-
-                    // Android workaround: Handle Enter in keypress instead of keydown.
-                    // Chrome Android fires confused composition events on Enter in keydown,
-                    // but keypress fires after composition state settles.
-                    onkeypress: {
-                        let mut doc = document.clone();
-                        move |evt| {
-                            use dioxus::prelude::keyboard_types::Key;
-
-                            let plat = platform::platform();
-                            if plat.android && evt.key() == Key::Enter {
-                                tracing::debug!("Android: handling Enter in keypress");
-                                evt.prevent_default();
-
-                                // Get current range
-                                let range = if let Some(sel) = *doc.selection.read() {
-                                    Range::new(sel.anchor.min(sel.head), sel.anchor.max(sel.head))
-                                } else {
-                                    Range::caret(doc.cursor.read().offset)
-                                };
-
-                                let action = EditorAction::InsertParagraph { range };
-                                execute_action(&mut doc, &action);
-                            }
-                        }
-                    },
-
-                    onpaste: {
-                        let mut doc = document.clone();
-                        move |evt| {
-                            handle_paste(evt, &mut doc);
-                        }
-                    },
-
-                    oncut: {
-                        let mut doc = document.clone();
-                        move |evt| {
-                            handle_cut(evt, &mut doc);
-                        }
-                    },
-
-                    oncopy: {
-                        let doc = document.clone();
-                        move |evt| {
-                            handle_copy(evt, &doc);
-                        }
-                    },
-
-                    onblur: {
-                        let mut doc = document.clone();
-                        move |_| {
-                            // Cancel any in-progress IME composition on focus loss
-                            let had_composition = doc.composition.read().is_some();
-                            if had_composition {
-                                tracing::debug!("onblur: clearing active composition");
-                            }
-                            doc.composition.set(None);
-                        }
-                    },
-
-                    oncompositionstart: {
-                        let mut doc = document.clone();
-                        move |evt: CompositionEvent| {
-                            let data = evt.data().data();
-                            tracing::trace!(
-                                data = %data,
-                                "compositionstart"
-                            );
-                            // Delete selection if present (composition replaces it)
-                            let sel = doc.selection.write().take();
-                            if let Some(sel) = sel {
-                                let (start, end) =
-                                    (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                                tracing::trace!(
-                                    start,
-                                    end,
-                                    "compositionstart: deleting selection"
+                                sync_cursor_from_dom(&mut doc, editor_id, &paras);
+                                let spans = syntax_spans();
+                                let cursor_offset = doc.cursor.read().offset;
+                                let selection = *doc.selection.read();
+                                update_syntax_visibility(
+                                    cursor_offset,
+                                    selection.as_ref(),
+                                    &spans,
+                                    &paras,
                                 );
-                                let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                                doc.cursor.write().offset = start;
-                            }
-
-                            let cursor_offset = doc.cursor.read().offset;
-                            tracing::trace!(
-                                cursor = cursor_offset,
-                                "compositionstart: setting composition state"
-                            );
-                            doc.composition.set(Some(CompositionState {
-                                start_offset: cursor_offset,
-                                text: data,
-                            }));
-                        }
-                    },
-
-                    oncompositionupdate: {
-                        let mut doc = document.clone();
-                        move |evt: CompositionEvent| {
-                            let data = evt.data().data();
-                            tracing::trace!(
-                                data = %data,
-                                "compositionupdate"
-                            );
-                            let mut comp_guard = doc.composition.write();
-                            if let Some(ref mut comp) = *comp_guard {
-                                comp.text = data;
-                            } else {
-                                tracing::debug!("compositionupdate without active composition state");
-                            }
-                        }
-                    },
-
-                    oncompositionend: {
-                        let mut doc = document.clone();
-                        move |evt: CompositionEvent| {
-                            let final_text = evt.data().data();
-                            tracing::trace!(
-                                data = %final_text,
-                                "compositionend"
-                            );
-                            // Record when composition ended for Safari timing workaround
-                            doc.composition_ended_at.set(Some(web_time::Instant::now()));
-
-                            let comp = doc.composition.write().take();
-                            if let Some(comp) = comp {
-                                tracing::debug!(
-                                    start_offset = comp.start_offset,
-                                    final_text = %final_text,
-                                    chars = final_text.chars().count(),
-                                    "compositionend: inserting text"
-                                );
-
-                                if !final_text.is_empty() {
-                                    let mut delete_start = comp.start_offset;
-                                    while delete_start > 0 {
-                                        match get_char_at(doc.loro_text(), delete_start - 1) {
-                                            Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
-                                            _ => break,
-                                        }
-                                    }
-
-                                    let cursor_offset = doc.cursor.read().offset;
-                                    let zw_count = cursor_offset - delete_start;
-                                    if zw_count > 0 {
-                                        // Splice: delete zero-width chars and insert new char in one op
-                                        let _ = doc.replace_tracked(delete_start, zw_count, &final_text);
-                                        doc.cursor.write().offset = delete_start + final_text.chars().count();
-                                    } else if cursor_offset == doc.len_chars() {
-                                        // Fast path: append at end
-                                        let _ = doc.push_tracked(&final_text);
-                                        doc.cursor.write().offset = comp.start_offset + final_text.chars().count();
-                                    } else {
-                                        let _ = doc.insert_tracked(cursor_offset, &final_text);
-                                        doc.cursor.write().offset = comp.start_offset + final_text.chars().count();
-                                    }
-                                }
-                            } else {
-                                tracing::debug!("compositionend without active composition state");
-                            }
-                        }
-                    },
-                    }
-                    div { class: "editor-debug",
-                        div { "Cursor: {document.cursor.read().offset}, Chars: {document.len_chars()}" },
-                        // Collab debug info
-                        {
-                            if let Some(debug_state) = crate::collab_context::try_use_collab_debug() {
-                                let ds = debug_state.read();
-                                rsx! {
-                                    div { class: "collab-debug",
-                                        if let Some(ref node_id) = ds.node_id {
-                                            span { title: "{node_id}", "Node: {&node_id[..8.min(node_id.len())]}…" }
-                                        }
-                                        if ds.is_joined {
-                                            span { class: "joined", "✓ Joined" }
-                                        }
-                                        span { "Peers: {ds.discovered_peers}" }
-                                        if let Some(ref err) = ds.last_error {
-                                            span { class: "error", title: "{err}", "⚠" }
-                                        }
-                                    }
-                                }
-                            } else {
-                                rsx! {}
                             }
                         },
-                        ReportButton {
-                            email: "editor-bugs@weaver.sh".to_string(),
-                            editor_id: "markdown-editor".to_string(),
+
+                        // Android workaround: Handle Enter in keypress instead of keydown.
+                        // Chrome Android fires confused composition events on Enter in keydown,
+                        // but keypress fires after composition state settles.
+                        onkeypress: {
+                            let mut doc = document.clone();
+                            move |evt| {
+                                use dioxus::prelude::keyboard_types::Key;
+
+                                let plat = platform::platform();
+                                if plat.android && evt.key() == Key::Enter {
+                                    tracing::debug!("Android: handling Enter in keypress");
+                                    evt.prevent_default();
+
+                                    // Get current range
+                                    let range = if let Some(sel) = *doc.selection.read() {
+                                        Range::new(sel.anchor.min(sel.head), sel.anchor.max(sel.head))
+                                    } else {
+                                        Range::caret(doc.cursor.read().offset)
+                                    };
+
+                                    let action = EditorAction::InsertParagraph { range };
+                                    execute_action(&mut doc, &action);
+                                }
+                            }
+                        },
+
+                        onpaste: {
+                            let mut doc = document.clone();
+                            move |evt| {
+                                handle_paste(evt, &mut doc);
+                            }
+                        },
+
+                        oncut: {
+                            let mut doc = document.clone();
+                            move |evt| {
+                                handle_cut(evt, &mut doc);
+                            }
+                        },
+
+                        oncopy: {
+                            let doc = document.clone();
+                            move |evt| {
+                                handle_copy(evt, &doc);
+                            }
+                        },
+
+                        onblur: {
+                            let mut doc = document.clone();
+                            move |_| {
+                                // Cancel any in-progress IME composition on focus loss
+                                let had_composition = doc.composition.read().is_some();
+                                if had_composition {
+                                    tracing::debug!("onblur: clearing active composition");
+                                }
+                                doc.composition.set(None);
+                            }
+                        },
+
+                        oncompositionstart: {
+                            let mut doc = document.clone();
+                            move |evt: CompositionEvent| {
+                                let data = evt.data().data();
+                                tracing::trace!(
+                                    data = %data,
+                                    "compositionstart"
+                                );
+                                // Delete selection if present (composition replaces it)
+                                let sel = doc.selection.write().take();
+                                if let Some(sel) = sel {
+                                    let (start, end) =
+                                        (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+                                    tracing::trace!(
+                                        start,
+                                        end,
+                                        "compositionstart: deleting selection"
+                                    );
+                                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
+                                    doc.cursor.write().offset = start;
+                                }
+
+                                let cursor_offset = doc.cursor.read().offset;
+                                tracing::trace!(
+                                    cursor = cursor_offset,
+                                    "compositionstart: setting composition state"
+                                );
+                                doc.composition.set(Some(CompositionState {
+                                    start_offset: cursor_offset,
+                                    text: data,
+                                }));
+                            }
+                        },
+
+                        oncompositionupdate: {
+                            let mut doc = document.clone();
+                            move |evt: CompositionEvent| {
+                                let data = evt.data().data();
+                                tracing::trace!(
+                                    data = %data,
+                                    "compositionupdate"
+                                );
+                                let mut comp_guard = doc.composition.write();
+                                if let Some(ref mut comp) = *comp_guard {
+                                    comp.text = data;
+                                } else {
+                                    tracing::debug!("compositionupdate without active composition state");
+                                }
+                            }
+                        },
+
+                        oncompositionend: {
+                            let mut doc = document.clone();
+                            move |evt: CompositionEvent| {
+                                let final_text = evt.data().data();
+                                tracing::trace!(
+                                    data = %final_text,
+                                    "compositionend"
+                                );
+                                // Record when composition ended for Safari timing workaround
+                                doc.composition_ended_at.set(Some(web_time::Instant::now()));
+
+                                let comp = doc.composition.write().take();
+                                if let Some(comp) = comp {
+                                    tracing::debug!(
+                                        start_offset = comp.start_offset,
+                                        final_text = %final_text,
+                                        chars = final_text.chars().count(),
+                                        "compositionend: inserting text"
+                                    );
+
+                                    if !final_text.is_empty() {
+                                        let mut delete_start = comp.start_offset;
+                                        while delete_start > 0 {
+                                            match get_char_at(doc.loro_text(), delete_start - 1) {
+                                                Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
+                                                _ => break,
+                                            }
+                                        }
+
+                                        let cursor_offset = doc.cursor.read().offset;
+                                        let zw_count = cursor_offset - delete_start;
+                                        if zw_count > 0 {
+                                            // Splice: delete zero-width chars and insert new char in one op
+                                            let _ = doc.replace_tracked(delete_start, zw_count, &final_text);
+                                            doc.cursor.write().offset = delete_start + final_text.chars().count();
+                                        } else if cursor_offset == doc.len_chars() {
+                                            // Fast path: append at end
+                                            let _ = doc.push_tracked(&final_text);
+                                            doc.cursor.write().offset = comp.start_offset + final_text.chars().count();
+                                        } else {
+                                            let _ = doc.insert_tracked(cursor_offset, &final_text);
+                                            doc.cursor.write().offset = comp.start_offset + final_text.chars().count();
+                                        }
+                                    }
+                                } else {
+                                    tracing::debug!("compositionend without active composition state");
+                                }
+                            }
+                        },
                         }
-                    }
-                }
-
-            EditorToolbar {
-                on_format: {
-                    let mut doc = document.clone();
-                    move |action| {
-                        formatting::apply_formatting(&mut doc, action);
-                    }
-                },
-                on_image: {
-                    let mut doc = document.clone();
-                    move |uploaded: super::image_upload::UploadedImage| {
-                        // Build data URL for immediate preview
-                        use base64::{Engine, engine::general_purpose::STANDARD};
-                        let data_url = format!(
-                            "data:{};base64,{}",
-                            uploaded.mime_type,
-                            STANDARD.encode(&uploaded.data)
-                        );
-
-                        // Add to resolver for immediate display
-                        let name = uploaded.name.clone();
-                        image_resolver.with_mut(|resolver| {
-                            resolver.add_pending(name.clone(), data_url);
-                        });
-
-                        // Insert markdown image syntax at cursor
-                        let alt_text = if uploaded.alt.is_empty() {
-                            name.clone()
-                        } else {
-                            uploaded.alt.clone()
-                        };
-
-                        // Check if authenticated and get DID for draft path
-                        let auth = auth_state.read();
-                        let did_for_path = auth.did.clone();
-                        let is_authenticated = auth.is_authenticated();
-                        drop(auth);
-
-                        // Pre-generate TID for the blob rkey (used in draft path and upload)
-                        let blob_tid = jacquard::types::tid::Ticker::new().next(None);
-
-                        // Build markdown with proper draft path if authenticated
-                        let markdown = if let Some(ref did) = did_for_path {
-                            format!("![{}](/image/{}/draft/{}/{})", alt_text, did, blob_tid.as_str(), name)
-                        } else {
-                            // Fallback for unauthenticated - simple path (won't be publishable anyway)
-                            format!("![{}](/image/{})", alt_text, name)
-                        };
-
-                        let pos = doc.cursor.read().offset;
-                        let _ = doc.insert_tracked(pos, &markdown);
-                        doc.cursor.write().offset = pos + markdown.chars().count();
-
-                        // Upload to PDS in background if authenticated
-                        if is_authenticated {
-                            let fetcher = fetcher.clone();
-                            let name_for_upload = name.clone();
-                            let alt_for_upload = alt_text.clone();
-                            let data = uploaded.data.clone();
-                            let mut doc_for_spawn = doc.clone();
-
-                            spawn(async move {
-                                let client = fetcher.get_client();
-
-                                // Clone data for cache pre-warming
-                                let data_for_cache = data.clone();
-
-                                // Use pre-generated TID as rkey for the blob record
-                                let rkey = jacquard::types::recordkey::RecordKey::any(blob_tid.as_str())
-                                    .expect("TID is valid record key");
-
-                                // Upload blob and create temporary PublishedBlob record
-                                match client.publish_blob(data, &name_for_upload, Some(rkey)).await {
-                                    Ok((strong_ref, published_blob)) => {
-                                        // Get DID from fetcher
-                                        let did = match fetcher.current_did().await {
-                                            Some(d) => d,
-                                            None => {
-                                                tracing::warn!("No DID available");
-                                                return;
+                        div { class: "editor-debug",
+                            div { "Cursor: {document.cursor.read().offset}, Chars: {document.len_chars()}" },
+                            // Collab debug info
+                            {
+                                if let Some(debug_state) = crate::collab_context::try_use_collab_debug() {
+                                    let ds = debug_state.read();
+                                    rsx! {
+                                        div { class: "collab-debug",
+                                            if let Some(ref node_id) = ds.node_id {
+                                                span { title: "{node_id}", "Node: {&node_id[..8.min(node_id.len())]}…" }
                                             }
-                                        };
-
-                                        // Extract rkey from the AT-URI
-                                        let blob_rkey = match strong_ref.uri.rkey() {
-                                            Some(rkey) => rkey.0.clone().into_static(),
-                                            None => {
-                                                tracing::warn!("No rkey in PublishedBlob URI");
-                                                return;
+                                            if ds.is_joined {
+                                                span { class: "joined", "✓ Joined" }
                                             }
-                                        };
-
-                                        let cid = published_blob.upload.blob().cid().clone().into_static();
-
-                                        let name_for_resolver = name_for_upload.clone();
-                                        let image = Image::new()
-                                            .alt(alt_for_upload.to_cowstr())
-                                            .image(published_blob.upload)
-                                            .name(name_for_upload.to_cowstr())
-                                            .build();
-                                        doc_for_spawn.add_image(&image, Some(&strong_ref.uri));
-
-                                        // Promote from pending to uploaded in resolver
-                                        let ident = AtIdentifier::Did(did);
-                                        image_resolver.with_mut(|resolver| {
-                                            resolver.promote_to_uploaded(
-                                                &name_for_resolver,
-                                                blob_rkey,
-                                                ident,
-                                            );
-                                        });
-
-                                        tracing::info!(name = %name_for_resolver, "Image uploaded to PDS");
-
-                                        // Pre-warm server cache with blob bytes
-                                        #[cfg(feature = "fullstack-server")]
-                                        {
-                                            use jacquard::smol_str::ToSmolStr;
-                                            if let Err(e) = crate::data::cache_blob_bytes(
-                                                cid.to_smolstr(),
-                                                Some(name_for_resolver.into()),
-                                                None,
-                                                data_for_cache.into(),
-                                            ).await {
-                                                tracing::warn!(error = %e, "Failed to pre-warm blob cache");
+                                            span { "Peers: {ds.discovered_peers}" }
+                                            if let Some(ref err) = ds.last_error {
+                                                span { class: "error", title: "{err}", "⚠" }
                                             }
                                         }
                                     }
-                                    Err(e) => {
-                                        tracing::error!(error = %e, "Failed to upload image");
-                                        // Image stays as data URL - will work for preview but not publish
-                                    }
+                                } else {
+                                    rsx! {}
                                 }
-                            });
-                        } else {
-                            tracing::debug!(name = %name, "Image added with data URL (not authenticated)");
+                            },
+                            ReportButton {
+                                email: "editor-bugs@weaver.sh".to_string(),
+                                editor_id: "markdown-editor".to_string(),
+                            }
                         }
                     }
-                },
-            }
 
+                EditorToolbar {
+                    on_format: {
+                        let mut doc = document.clone();
+                        move |action| {
+                            formatting::apply_formatting(&mut doc, action);
+                        }
+                    },
+                    on_image: {
+                        let mut doc = document.clone();
+                        move |uploaded: super::image_upload::UploadedImage| {
+                            // Build data URL for immediate preview
+                            use base64::{Engine, engine::general_purpose::STANDARD};
+                            let data_url = format!(
+                                "data:{};base64,{}",
+                                uploaded.mime_type,
+                                STANDARD.encode(&uploaded.data)
+                            );
+
+                            // Add to resolver for immediate display
+                            let name = uploaded.name.clone();
+                            image_resolver.with_mut(|resolver| {
+                                resolver.add_pending(name.clone(), data_url);
+                            });
+
+                            // Insert markdown image syntax at cursor
+                            let alt_text = if uploaded.alt.is_empty() {
+                                name.clone()
+                            } else {
+                                uploaded.alt.clone()
+                            };
+
+                            // Check if authenticated and get DID for draft path
+                            let auth = auth_state.read();
+                            let did_for_path = auth.did.clone();
+                            let is_authenticated = auth.is_authenticated();
+                            drop(auth);
+
+                            // Pre-generate TID for the blob rkey (used in draft path and upload)
+                            let blob_tid = jacquard::types::tid::Ticker::new().next(None);
+
+                            // Build markdown with proper draft path if authenticated
+                            let markdown = if let Some(ref did) = did_for_path {
+                                format!("![{}](/image/{}/draft/{}/{})", alt_text, did, blob_tid.as_str(), name)
+                            } else {
+                                // Fallback for unauthenticated - simple path (won't be publishable anyway)
+                                format!("![{}](/image/{})", alt_text, name)
+                            };
+
+                            let pos = doc.cursor.read().offset;
+                            let _ = doc.insert_tracked(pos, &markdown);
+                            doc.cursor.write().offset = pos + markdown.chars().count();
+
+                            // Upload to PDS in background if authenticated
+                            if is_authenticated {
+                                let fetcher = fetcher.clone();
+                                let name_for_upload = name.clone();
+                                let alt_for_upload = alt_text.clone();
+                                let data = uploaded.data.clone();
+                                let mut doc_for_spawn = doc.clone();
+
+                                spawn(async move {
+                                    let client = fetcher.get_client();
+
+                                    // Clone data for cache pre-warming
+                                    let data_for_cache = data.clone();
+
+                                    // Use pre-generated TID as rkey for the blob record
+                                    let rkey = jacquard::types::recordkey::RecordKey::any(blob_tid.as_str())
+                                        .expect("TID is valid record key");
+
+                                    // Upload blob and create temporary PublishedBlob record
+                                    match client.publish_blob(data, &name_for_upload, Some(rkey)).await {
+                                        Ok((strong_ref, published_blob)) => {
+                                            // Get DID from fetcher
+                                            let did = match fetcher.current_did().await {
+                                                Some(d) => d,
+                                                None => {
+                                                    tracing::warn!("No DID available");
+                                                    return;
+                                                }
+                                            };
+
+                                            // Extract rkey from the AT-URI
+                                            let blob_rkey = match strong_ref.uri.rkey() {
+                                                Some(rkey) => rkey.0.clone().into_static(),
+                                                None => {
+                                                    tracing::warn!("No rkey in PublishedBlob URI");
+                                                    return;
+                                                }
+                                            };
+
+                                            let cid = published_blob.upload.blob().cid().clone().into_static();
+
+                                            let name_for_resolver = name_for_upload.clone();
+                                            let image = Image::new()
+                                                .alt(alt_for_upload.to_cowstr())
+                                                .image(published_blob.upload)
+                                                .name(name_for_upload.to_cowstr())
+                                                .build();
+                                            doc_for_spawn.add_image(&image, Some(&strong_ref.uri));
+
+                                            // Promote from pending to uploaded in resolver
+                                            let ident = AtIdentifier::Did(did);
+                                            image_resolver.with_mut(|resolver| {
+                                                resolver.promote_to_uploaded(
+                                                    &name_for_resolver,
+                                                    blob_rkey,
+                                                    ident,
+                                                );
+                                            });
+
+                                            tracing::info!(name = %name_for_resolver, "Image uploaded to PDS");
+
+                                            // Pre-warm server cache with blob bytes
+                                            #[cfg(feature = "fullstack-server")]
+                                            {
+                                                use jacquard::smol_str::ToSmolStr;
+                                                if let Err(e) = crate::data::cache_blob_bytes(
+                                                    cid.to_smolstr(),
+                                                    Some(name_for_resolver.into()),
+                                                    None,
+                                                    data_for_cache.into(),
+                                                ).await {
+                                                    tracing::warn!(error = %e, "Failed to pre-warm blob cache");
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(error = %e, "Failed to upload image");
+                                            // Image stays as data URL - will work for preview but not publish
+                                        }
+                                    }
+                                });
+                            } else {
+                                tracing::debug!(name = %name, "Image added with data URL (not authenticated)");
+                            }
+                        }
+                    },
+                }
+
+            }
         }
     }
 }
@@ -1734,15 +1752,19 @@ fn MarkdownEditorInner(
 /// Uses the same offset mapping as local cursor restoration.
 #[component]
 fn RemoteCursors(
-    presence: Signal<weaver_common::transport::PresenceTracker>,
+    presence: Signal<weaver_common::transport::PresenceSnapshot>,
     document: EditorDocument,
     render_cache: Signal<render::RenderCache>,
 ) -> Element {
     let presence_read = presence.read();
-    let cursor_count = presence_read.len();
+    let cursor_count = presence_read.collaborators.len();
     let cursors: Vec<_> = presence_read
-        .cursors()
-        .map(|(c, cur)| (c.display_name.clone(), c.color, cur.position, cur.selection))
+        .collaborators
+        .iter()
+        .filter_map(|c| {
+            c.cursor_position
+                .map(|pos| (c.display_name.clone(), c.color, pos, c.selection))
+        })
         .collect();
 
     if cursor_count > 0 {

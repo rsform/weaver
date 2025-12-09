@@ -11527,6 +11527,7 @@ dependencies = [
  "dioxus-sdk",
  "dotenvy",
  "fontdb",
+ "futures-util",
  "getrandom 0.3.4",
  "gloo-storage",
  "gloo-timers",

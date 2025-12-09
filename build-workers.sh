@@ -5,7 +5,7 @@ echo "==> Building worker WASMs"
 export RUSTFLAGS='--cfg getrandom_backend="wasm_js"'
 cargo build -p weaver-app --bin editor_worker --bin embed_worker \
     --target wasm32-unknown-unknown --release \
-    --no-default-features --features "web"
+    --no-default-features --features "web","collab-worker"
 
 echo "==> Running wasm-bindgen"
 wasm-bindgen target/wasm32-unknown-unknown/release/editor_worker.wasm \

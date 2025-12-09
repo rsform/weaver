@@ -10,6 +10,9 @@ pub mod worker_rt;
 // Re-export jacquard for convenience
 pub use agent::{SessionPeer, WeaverExt};
 pub use error::WeaverError;
+
+// Re-export blake3 for topic hashing
+pub use blake3;
 pub use resolve::{EntryIndex, ExtractedRef, RefCollector, ResolvedContent, ResolvedEntry};
 
 pub use jacquard;

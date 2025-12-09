@@ -75,6 +75,7 @@ web-time = "1.1"
 urlencoding = "2.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry"] }
 dioxus-sdk = { version = "0.7", features = ["time"] }
+futures-util = "0.3"
 
 # OG image generation (server-only)
 resvg = { version = "0.44", optional = true }
@@ -99,7 +100,7 @@ mini-moka = { git = "https://github.com/moka-rs/mini-moka", rev = "da864e849f5d0
 chrono = { version = "0.4", features = ["wasmbind"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorker", "ServiceWorkerRegistration", "RegistrationOptions", "Window", "Navigator", "MessageEvent", "console", "Document", "Element", "HtmlImageElement", "Selection", "Range", "Node", "HtmlElement", "TreeWalker", "NodeFilter", "DomTokenList", "Clipboard", "ClipboardItem", "Blob", "BlobPropertyBag", "EventTarget", "InputEvent", "AddEventListenerOptions", "DomRect", "DomRectList"] }
+web-sys = { version = "0.3", features = ["ServiceWorkerContainer", "ServiceWorker", "ServiceWorkerRegistration", "RegistrationOptions", "Window", "Navigator", "MessageEvent", "console", "Document", "Element", "HtmlImageElement", "Selection", "Range", "Node", "HtmlElement", "TreeWalker", "NodeFilter", "DomTokenList", "Clipboard", "ClipboardItem", "Blob", "BlobPropertyBag", "EventTarget", "InputEvent", "AddEventListenerOptions", "DomRect", "DomRectList", "Performance"] }
 js-sys = "0.3"
 gloo-storage = "0.3"
 gloo-timers = "0.3"

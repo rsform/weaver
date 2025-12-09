@@ -92,12 +92,20 @@ impl CollabSession {
         }
 
         // Subscribe to the gossip topic
-        let (sender, receiver) = node
-            .gossip()
-            .subscribe_and_join(topic, bootstrap_peers)
-            .await
-            .map_err(|e| SessionError::Subscribe(Box::new(e)))?
-            .split();
+        // Use subscribe (non-blocking) if no bootstrap peers, otherwise subscribe_and_join
+        let (sender, receiver) = if bootstrap_peers.is_empty() {
+            node.gossip()
+                .subscribe(topic, vec![])
+                .await
+                .map_err(|e| SessionError::Subscribe(Box::new(e)))?
+                .split()
+        } else {
+            node.gossip()
+                .subscribe_and_join(topic, bootstrap_peers)
+                .await
+                .map_err(|e| SessionError::Subscribe(Box::new(e)))?
+                .split()
+        };
 
         tracing::info!("CollabSession: subscribed to gossip topic");
 

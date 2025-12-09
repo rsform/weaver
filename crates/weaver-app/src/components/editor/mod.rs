@@ -6,6 +6,7 @@
 
 mod actions;
 mod beforeinput;
+mod collab;
 mod component;
 mod cursor;
 mod document;
@@ -36,7 +37,9 @@ pub use component::MarkdownEditor;
 
 // Document types
 #[allow(unused_imports)]
-pub use document::{Affinity, CompositionState, CursorState, EditorDocument, LoadedDocState, Selection};
+pub use document::{
+    Affinity, CompositionState, CursorState, EditorDocument, LoadedDocState, Selection,
+};
 
 // Formatting
 #[allow(unused_imports)]
@@ -62,9 +65,8 @@ pub use storage::{
 // Sync
 #[allow(unused_imports)]
 pub use sync::{
+    PdsEditState, RemoteDraft, SyncState, SyncStatus, list_drafts_from_pds,
     load_and_merge_document, load_edit_state_from_pds, sync_to_pds,
-    list_drafts_from_pds, RemoteDraft,
-    PdsEditState, SyncState, SyncStatus,
 };
 
 // UI components
@@ -85,5 +87,9 @@ pub use log_buffer::LogCaptureLayer;
 // Worker
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub use worker::{
-    EditorWorker, EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput, WorkerInput, WorkerOutput,
+    EditorReactor, EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput, WorkerInput, WorkerOutput,
 };
+
+// Collab coordinator
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub use collab::CollabCoordinator;

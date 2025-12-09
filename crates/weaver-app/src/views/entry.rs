@@ -34,6 +34,7 @@ pub fn StandaloneEntry(
                 .map(|t| t.as_ref())
                 .unwrap_or("Untitled");
 
+            tracing::info!("Entry: {title}");
             let author_handle = entry_view
                 .authors
                 .first()
@@ -176,6 +177,8 @@ pub fn NotebookEntryByRkey(
                 .as_ref()
                 .map(|p| p.as_ref().to_string())
                 .unwrap_or_else(|| title.to_string());
+
+            tracing::info!("Entry: {entry_path} - {title}");
 
             let author_handle = entry_view
                 .authors
