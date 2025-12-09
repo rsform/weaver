@@ -402,7 +402,8 @@ pub fn FeedEntryCard(
     #[props(default = false)] is_pinned: bool,
     #[props(default = true)] show_author: bool,
     /// Profile identity for context-aware author visibility (hides single author on their own profile)
-    #[props(default)] profile_ident: Option<AtIdentifier<'static>>,
+    #[props(default)]
+    profile_ident: Option<AtIdentifier<'static>>,
     #[props(default)] on_pinned_changed: Option<EventHandler<bool>>,
 ) -> Element {
     use crate::Route;
@@ -597,7 +598,7 @@ pub fn EntryMetadata(
                         // TODO: Parse tags structure
                         span { class: "meta-label", "Tags:" }
                         for tag in tags.iter() {
-                            span { class: "meta-label", "{tag}" }
+                            span { class: "entry-tag", "{tag}" }
                         }
                     }
                 }
