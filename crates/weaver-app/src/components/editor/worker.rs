@@ -18,6 +18,8 @@ use weaver_common::transport::PresenceSnapshot;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use jacquard::smol_str::format_smolstr;
 
+use jacquard::smol_str::SmolStr;
+
 /// Input messages to the editor worker.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WorkerInput {
@@ -26,7 +28,7 @@ pub enum WorkerInput {
         /// Full Loro snapshot bytes
         snapshot: Vec<u8>,
         /// Draft key for storage
-        draft_key: String,
+        draft_key: SmolStr,
     },
     /// Apply incremental Loro updates to the shadow document.
     ApplyUpdates {
@@ -38,16 +40,16 @@ pub enum WorkerInput {
         /// Current cursor position (for snapshot metadata)
         cursor_offset: usize,
         /// Editing URI if editing existing entry
-        editing_uri: Option<String>,
+        editing_uri: Option<SmolStr>,
         /// Editing CID if editing existing entry
-        editing_cid: Option<String>,
+        editing_cid: Option<SmolStr>,
     },
     /// Start collab session (worker will spawn CollabNode)
     StartCollab {
         /// blake3 hash of resource URI (32 bytes)
         topic: [u8; 32],
         /// Bootstrap peer node IDs (z-base32 strings)
-        bootstrap_peers: Vec<String>,
+        bootstrap_peers: Vec<SmolStr>,
     },
     /// Loro updates from local edits (forward to gossip)
     BroadcastUpdate {
@@ -57,14 +59,14 @@ pub enum WorkerInput {
     /// New peers discovered by main thread
     AddPeers {
         /// Node ID strings
-        peers: Vec<String>,
+        peers: Vec<SmolStr>,
     },
     /// Announce ourselves to peers (sent after AddPeers)
     BroadcastJoin {
         /// Our DID
-        did: String,
+        did: SmolStr,
         /// Our display name
-        display_name: String,
+        display_name: SmolStr,
     },
     /// Local cursor position changed
     BroadcastCursor {
@@ -85,32 +87,32 @@ pub enum WorkerOutput {
     /// Snapshot export completed.
     Snapshot {
         /// Draft key for storage
-        draft_key: String,
+        draft_key: SmolStr,
         /// Base64-encoded Loro snapshot
         b64_snapshot: String,
         /// Human-readable content (for debugging)
         content: String,
         /// Entry title
-        title: String,
+        title: SmolStr,
         /// Cursor offset
         cursor_offset: usize,
         /// Editing URI
-        editing_uri: Option<String>,
+        editing_uri: Option<SmolStr>,
         /// Editing CID
-        editing_cid: Option<String>,
+        editing_cid: Option<SmolStr>,
         /// Export timing in ms
         export_ms: f64,
         /// Encode timing in ms
         encode_ms: f64,
     },
     /// Error occurred.
-    Error { message: String },
+    Error { message: SmolStr },
     /// Collab node ready, here's info for session record
     CollabReady {
         /// Node ID (z-base32 string)
-        node_id: String,
+        node_id: SmolStr,
         /// Relay URL for browser connectivity
-        relay_url: Option<String>,
+        relay_url: Option<SmolStr>,
     },
     /// Collab session joined successfully
     CollabJoined,
@@ -132,9 +134,11 @@ mod worker_impl {
     use super::*;
     use futures_util::sink::SinkExt;
     use futures_util::stream::StreamExt;
-    use gloo_worker::reactor::{reactor, ReactorScope};
+    use gloo_worker::reactor::{ReactorScope, reactor};
     use weaver_common::transport::CollaboratorInfo;
 
+    #[cfg(feature = "collab-worker")]
+    use jacquard::smol_str::ToSmolStr;
     #[cfg(feature = "collab-worker")]
     use std::sync::Arc;
     #[cfg(feature = "collab-worker")]
@@ -155,7 +159,7 @@ mod worker_impl {
     #[reactor]
     pub async fn EditorReactor(mut scope: ReactorScope<WorkerInput, WorkerOutput>) {
         let mut doc: Option<loro::LoroDoc> = None;
-        let mut draft_key = String::new();
+        let mut draft_key = SmolStr::default();
 
         // Collab state (only used when collab-worker feature enabled)
         #[cfg(feature = "collab-worker")]
@@ -196,8 +200,11 @@ mod worker_impl {
                             }
                         }
                         CollabEvent::PresenceChanged(snapshot) => {
-                            if let Err(e) = scope.send(WorkerOutput::PresenceUpdate(snapshot)).await {
-                                tracing::error!("Failed to send PresenceUpdate to coordinator: {e}");
+                            if let Err(e) = scope.send(WorkerOutput::PresenceUpdate(snapshot)).await
+                            {
+                                tracing::error!(
+                                    "Failed to send PresenceUpdate to coordinator: {e}"
+                                );
                             }
                         }
                         CollabEvent::PeerConnected => {
@@ -218,286 +225,355 @@ mod worker_impl {
                     // Fall through to message handling below
                     tracing::debug!(?msg, "Worker: received message");
                     match msg {
-                WorkerInput::Init {
-                    snapshot,
-                    draft_key: key,
-                } => {
-                    let new_doc = loro::LoroDoc::new();
-                    if !snapshot.is_empty() {
-                        if let Err(e) = new_doc.import(&snapshot) {
-                            if let Err(send_err) = scope
-                                .send(WorkerOutput::Error {
-                                    message: format_smolstr!("Failed to import snapshot: {e}").to_string(),
-                                })
-                                .await
-                            {
-                                tracing::error!("Failed to send Error to coordinator: {send_err}");
+                        WorkerInput::Init {
+                            snapshot,
+                            draft_key: key,
+                        } => {
+                            let new_doc = loro::LoroDoc::new();
+                            if !snapshot.is_empty() {
+                                if let Err(e) = new_doc.import(&snapshot) {
+                                    if let Err(send_err) = scope
+                                        .send(WorkerOutput::Error {
+                                            message: format_smolstr!(
+                                                "Failed to import snapshot: {e}"
+                                            ),
+                                        })
+                                        .await
+                                    {
+                                        tracing::error!(
+                                            "Failed to send Error to coordinator: {send_err}"
+                                        );
+                                    }
+                                    continue;
+                                }
                             }
-                            continue;
-                        }
-                    }
-                    doc = Some(new_doc);
-                    draft_key = key;
-                    if let Err(e) = scope.send(WorkerOutput::Ready).await {
-                        tracing::error!("Failed to send Ready to coordinator: {e}");
-                    }
-                }
-
-                WorkerInput::ApplyUpdates { updates } => {
-                    if let Some(ref doc) = doc {
-                        if let Err(e) = doc.import(&updates) {
-                            tracing::warn!("Worker failed to import updates: {e}");
-                        }
-                    }
-                }
-
-                WorkerInput::ExportSnapshot {
-                    cursor_offset,
-                    editing_uri,
-                    editing_cid,
-                } => {
-                    let Some(ref doc) = doc else {
-                        if let Err(e) = scope
-                            .send(WorkerOutput::Error {
-                                message: "No document initialized".into(),
-                            })
-                            .await
-                        {
-                            tracing::error!("Failed to send Error to coordinator: {e}");
-                        }
-                        continue;
-                    };
-
-                    let export_start = crate::perf::now();
-                    let snapshot_bytes = match doc.export(loro::ExportMode::Snapshot) {
-                        Ok(bytes) => bytes,
-                        Err(e) => {
-                            if let Err(send_err) = scope
-                                .send(WorkerOutput::Error {
-                                    message: format_smolstr!("Export failed: {e}").to_string(),
-                                })
-                                .await
-                            {
-                                tracing::error!("Failed to send Error to coordinator: {send_err}");
+                            doc = Some(new_doc);
+                            draft_key = key;
+                            if let Err(e) = scope.send(WorkerOutput::Ready).await {
+                                tracing::error!("Failed to send Ready to coordinator: {e}");
                             }
-                            continue;
                         }
-                    };
-                    let export_ms = crate::perf::now() - export_start;
 
-                    let encode_start = crate::perf::now();
-                    let b64_snapshot = BASE64.encode(&snapshot_bytes);
-                    let encode_ms = crate::perf::now() - encode_start;
+                        WorkerInput::ApplyUpdates { updates } => {
+                            if let Some(ref doc) = doc {
+                                if let Err(e) = doc.import(&updates) {
+                                    tracing::warn!("Worker failed to import updates: {e}");
+                                }
+                            }
+                        }
 
-                    let content = doc.get_text("content").to_string();
-                    let title = doc.get_text("title").to_string();
-
-                    if let Err(e) = scope
-                        .send(WorkerOutput::Snapshot {
-                            draft_key: draft_key.clone(),
-                            b64_snapshot,
-                            content,
-                            title,
+                        WorkerInput::ExportSnapshot {
                             cursor_offset,
                             editing_uri,
                             editing_cid,
-                            export_ms,
-                            encode_ms,
-                        })
-                        .await
-                    {
-                        tracing::error!("Failed to send Snapshot to coordinator: {e}");
-                    }
-                }
+                        } => {
+                            let Some(ref doc) = doc else {
+                                if let Err(e) = scope
+                                    .send(WorkerOutput::Error {
+                                        message: "No document initialized".into(),
+                                    })
+                                    .await
+                                {
+                                    tracing::error!("Failed to send Error to coordinator: {e}");
+                                }
+                                continue;
+                            };
 
-                // ============================================================
-                // Collab handlers - full impl when collab-worker feature enabled
-                // ============================================================
-                #[cfg(feature = "collab-worker")]
-                WorkerInput::StartCollab {
-                    topic,
-                    bootstrap_peers,
-                } => {
-                    // Spawn CollabNode
-                    let node = match CollabNode::spawn(None).await {
-                        Ok(n) => n,
-                        Err(e) => {
-                            if let Err(send_err) = scope
-                                .send(WorkerOutput::Error {
-                                    message: format_smolstr!("Failed to spawn CollabNode: {e}").to_string(),
+                            let export_start = crate::perf::now();
+                            let snapshot_bytes = match doc.export(loro::ExportMode::Snapshot) {
+                                Ok(bytes) => bytes,
+                                Err(e) => {
+                                    if let Err(send_err) = scope
+                                        .send(WorkerOutput::Error {
+                                            message: format_smolstr!("Export failed: {e}"),
+                                        })
+                                        .await
+                                    {
+                                        tracing::error!(
+                                            "Failed to send Error to coordinator: {send_err}"
+                                        );
+                                    }
+                                    continue;
+                                }
+                            };
+                            let export_ms = crate::perf::now() - export_start;
+
+                            let encode_start = crate::perf::now();
+                            let b64_snapshot = BASE64.encode(&snapshot_bytes);
+                            let encode_ms = crate::perf::now() - encode_start;
+
+                            let content = doc.get_text("content").to_string();
+                            let title: SmolStr = doc.get_text("title").to_string().into();
+
+                            if let Err(e) = scope
+                                .send(WorkerOutput::Snapshot {
+                                    draft_key: draft_key.clone(),
+                                    b64_snapshot,
+                                    content,
+                                    title,
+                                    cursor_offset,
+                                    editing_uri,
+                                    editing_cid,
+                                    export_ms,
+                                    encode_ms,
                                 })
                                 .await
                             {
-                                tracing::error!("Failed to send Error to coordinator: {send_err}");
+                                tracing::error!("Failed to send Snapshot to coordinator: {e}");
                             }
-                            continue;
                         }
-                    };
 
-                    // Wait for relay connection
-                    let relay_url = node.wait_for_relay().await;
-                    let node_id = node.node_id_string();
+                        // ============================================================
+                        // Collab handlers - full impl when collab-worker feature enabled
+                        // ============================================================
+                        #[cfg(feature = "collab-worker")]
+                        WorkerInput::StartCollab {
+                            topic,
+                            bootstrap_peers,
+                        } => {
+                            // Spawn CollabNode
+                            let node = match CollabNode::spawn(None).await {
+                                Ok(n) => n,
+                                Err(e) => {
+                                    if let Err(send_err) = scope
+                                        .send(WorkerOutput::Error {
+                                            message: format_smolstr!(
+                                                "Failed to spawn CollabNode: {e}"
+                                            ),
+                                        })
+                                        .await
+                                    {
+                                        tracing::error!(
+                                            "Failed to send Error to coordinator: {send_err}"
+                                        );
+                                    }
+                                    continue;
+                                }
+                            };
 
-                    // Send ready so main thread can create session record
-                    if let Err(e) = scope
-                        .send(WorkerOutput::CollabReady {
-                            node_id,
-                            relay_url: Some(relay_url),
-                        })
-                        .await
-                    {
-                        tracing::error!("Failed to send CollabReady to coordinator: {e}");
-                    }
+                            // Wait for relay connection
+                            let relay_url = node.wait_for_relay().await;
+                            let node_id = node.node_id_string();
 
-                    collab_node = Some(node.clone());
-
-                    // Parse bootstrap peers
-                    let peers: Vec<_> = bootstrap_peers
-                        .iter()
-                        .filter_map(|s| parse_node_id(s).ok())
-                        .collect();
-
-                    // Join gossip session
-                    let topic_id = TopicId::from_bytes(topic);
-                    match CollabSession::join(node, topic_id, peers).await {
-                        Ok((session, mut events)) => {
-                            let session = Arc::new(session);
-                            collab_session = Some(session.clone());
-                            if let Err(e) = scope.send(WorkerOutput::CollabJoined).await {
-                                tracing::error!("Failed to send CollabJoined to coordinator: {e}");
+                            // Send ready so main thread can create session record
+                            if let Err(e) = scope
+                                .send(WorkerOutput::CollabReady {
+                                    node_id,
+                                    relay_url: Some(relay_url),
+                                })
+                                .await
+                            {
+                                tracing::error!("Failed to send CollabReady to coordinator: {e}");
                             }
 
-                            // NOTE: Don't broadcast Join here - wait for BroadcastJoin message
-                            // after peers have been added via AddPeers
+                            collab_node = Some(node.clone());
 
-                            // Create channel for events from spawned task
-                            let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
-                            collab_event_rx = Some(event_rx);
+                            // Parse bootstrap peers
+                            let peers: Vec<_> = bootstrap_peers
+                                .iter()
+                                .filter_map(|s| parse_node_id(s).ok())
+                                .collect();
 
-                            // Spawn event handler task that sends via channel
-                            wasm_bindgen_futures::spawn_local(async move {
-                                let mut presence = PresenceTracker::new();
+                            // Join gossip session
+                            let topic_id = TopicId::from_bytes(topic);
+                            match CollabSession::join(node, topic_id, peers).await {
+                                Ok((session, mut events)) => {
+                                    let session = Arc::new(session);
+                                    collab_session = Some(session.clone());
+                                    if let Err(e) = scope.send(WorkerOutput::CollabJoined).await {
+                                        tracing::error!(
+                                            "Failed to send CollabJoined to coordinator: {e}"
+                                        );
+                                    }
 
-                                while let Some(Ok(event)) = events.next().await {
-                                    match event {
-                                        SessionEvent::Message { from, message } => {
-                                            match message {
-                                                CollabMessage::LoroUpdate { data, .. } => {
-                                                    if event_tx.send(CollabEvent::RemoteUpdates { data }).is_err() {
-                                                        tracing::warn!("Collab event channel closed");
+                                    // NOTE: Don't broadcast Join here - wait for BroadcastJoin message
+                                    // after peers have been added via AddPeers
+
+                                    // Create channel for events from spawned task
+                                    let (event_tx, event_rx) =
+                                        tokio::sync::mpsc::unbounded_channel();
+                                    collab_event_rx = Some(event_rx);
+
+                                    // Spawn event handler task that sends via channel
+                                    wasm_bindgen_futures::spawn_local(async move {
+                                        let mut presence = PresenceTracker::new();
+
+                                        while let Some(Ok(event)) = events.next().await {
+                                            match event {
+                                                SessionEvent::Message { from, message } => {
+                                                    match message {
+                                                        CollabMessage::LoroUpdate {
+                                                            data, ..
+                                                        } => {
+                                                            if event_tx
+                                                                .send(CollabEvent::RemoteUpdates {
+                                                                    data,
+                                                                })
+                                                                .is_err()
+                                                            {
+                                                                tracing::warn!(
+                                                                    "Collab event channel closed"
+                                                                );
+                                                                return;
+                                                            }
+                                                        }
+                                                        CollabMessage::Join {
+                                                            did,
+                                                            display_name,
+                                                        } => {
+                                                            tracing::info!(%from, %did, %display_name, "Received Join message");
+                                                            presence.add_collaborator(
+                                                                from,
+                                                                did,
+                                                                display_name,
+                                                            );
+                                                            if event_tx
+                                                                .send(CollabEvent::PresenceChanged(
+                                                                    presence_to_snapshot(&presence),
+                                                                ))
+                                                                .is_err()
+                                                            {
+                                                                tracing::warn!(
+                                                                    "Collab event channel closed"
+                                                                );
+                                                                return;
+                                                            }
+                                                        }
+                                                        CollabMessage::Leave { .. } => {
+                                                            presence.remove_collaborator(&from);
+                                                            if event_tx
+                                                                .send(CollabEvent::PresenceChanged(
+                                                                    presence_to_snapshot(&presence),
+                                                                ))
+                                                                .is_err()
+                                                            {
+                                                                tracing::warn!(
+                                                                    "Collab event channel closed"
+                                                                );
+                                                                return;
+                                                            }
+                                                        }
+                                                        CollabMessage::Cursor {
+                                                            position,
+                                                            selection,
+                                                            ..
+                                                        } => {
+                                                            // Note: cursor updates require the collaborator to exist
+                                                            // (added via Join message)
+                                                            let exists = presence.contains(&from);
+                                                            tracing::debug!(%from, position, ?selection, exists, "Received Cursor message");
+                                                            presence.update_cursor(
+                                                                &from, position, selection,
+                                                            );
+                                                            if event_tx
+                                                                .send(CollabEvent::PresenceChanged(
+                                                                    presence_to_snapshot(&presence),
+                                                                ))
+                                                                .is_err()
+                                                            {
+                                                                tracing::warn!(
+                                                                    "Collab event channel closed"
+                                                                );
+                                                                return;
+                                                            }
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                }
+                                                SessionEvent::PeerJoined(peer) => {
+                                                    tracing::info!(%peer, "PeerJoined - notifying coordinator");
+                                                    // Notify coordinator so it can send BroadcastJoin
+                                                    // Don't add to presence yet - wait for their Join message
+                                                    if event_tx
+                                                        .send(CollabEvent::PeerConnected)
+                                                        .is_err()
+                                                    {
+                                                        tracing::warn!(
+                                                            "Collab event channel closed"
+                                                        );
                                                         return;
                                                     }
                                                 }
-                                                CollabMessage::Join { did, display_name } => {
-                                                    tracing::info!(%from, %did, %display_name, "Received Join message");
-                                                    presence.add_collaborator(from, did, display_name);
-                                                    if event_tx.send(CollabEvent::PresenceChanged(
-                                                        presence_to_snapshot(&presence),
-                                                    )).is_err() {
-                                                        tracing::warn!("Collab event channel closed");
+                                                SessionEvent::PeerLeft(peer) => {
+                                                    presence.remove_collaborator(&peer);
+                                                    if event_tx
+                                                        .send(CollabEvent::PresenceChanged(
+                                                            presence_to_snapshot(&presence),
+                                                        ))
+                                                        .is_err()
+                                                    {
+                                                        tracing::warn!(
+                                                            "Collab event channel closed"
+                                                        );
                                                         return;
                                                     }
                                                 }
-                                                CollabMessage::Leave { .. } => {
-                                                    presence.remove_collaborator(&from);
-                                                    if event_tx.send(CollabEvent::PresenceChanged(
-                                                        presence_to_snapshot(&presence),
-                                                    )).is_err() {
-                                                        tracing::warn!("Collab event channel closed");
-                                                        return;
-                                                    }
-                                                }
-                                                CollabMessage::Cursor {
-                                                    position,
-                                                    selection,
-                                                    ..
-                                                } => {
-                                                    // Note: cursor updates require the collaborator to exist
-                                                    // (added via Join message)
-                                                    let exists = presence.contains(&from);
-                                                    tracing::debug!(%from, position, ?selection, exists, "Received Cursor message");
-                                                    presence.update_cursor(&from, position, selection);
-                                                    if event_tx.send(CollabEvent::PresenceChanged(
-                                                        presence_to_snapshot(&presence),
-                                                    )).is_err() {
-                                                        tracing::warn!("Collab event channel closed");
-                                                        return;
-                                                    }
-                                                }
-                                                _ => {}
+                                                SessionEvent::Joined => {}
                                             }
                                         }
-                                        SessionEvent::PeerJoined(peer) => {
-                                            tracing::info!(%peer, "PeerJoined - notifying coordinator");
-                                            // Notify coordinator so it can send BroadcastJoin
-                                            // Don't add to presence yet - wait for their Join message
-                                            if event_tx.send(CollabEvent::PeerConnected).is_err() {
-                                                tracing::warn!("Collab event channel closed");
-                                                return;
-                                            }
-                                        }
-                                        SessionEvent::PeerLeft(peer) => {
-                                            presence.remove_collaborator(&peer);
-                                            if event_tx.send(CollabEvent::PresenceChanged(
-                                                presence_to_snapshot(&presence),
-                                            )).is_err() {
-                                                tracing::warn!("Collab event channel closed");
-                                                return;
-                                            }
-                                        }
-                                        SessionEvent::Joined => {}
+                                    });
+                                }
+                                Err(e) => {
+                                    if let Err(send_err) = scope
+                                        .send(WorkerOutput::Error {
+                                            message: format_smolstr!("Failed to join session: {e}"),
+                                        })
+                                        .await
+                                    {
+                                        tracing::error!(
+                                            "Failed to send Error to coordinator: {send_err}"
+                                        );
                                     }
                                 }
-                            });
-                        }
-                        Err(e) => {
-                            if let Err(send_err) = scope
-                                .send(WorkerOutput::Error {
-                                    message: format_smolstr!("Failed to join session: {e}").to_string(),
-                                })
-                                .await
-                            {
-                                tracing::error!("Failed to send Error to coordinator: {send_err}");
                             }
                         }
-                    }
-                }
 
-                #[cfg(feature = "collab-worker")]
-                WorkerInput::BroadcastUpdate { data } => {
-                    if let Some(ref session) = collab_session {
-                        let msg = CollabMessage::LoroUpdate {
-                            data,
-                            version: vec![],
-                        };
-                        if let Err(e) = session.broadcast(&msg).await {
-                            tracing::warn!("Broadcast failed: {e}");
+                        #[cfg(feature = "collab-worker")]
+                        WorkerInput::BroadcastUpdate { data } => {
+                            if let Some(ref session) = collab_session {
+                                let msg = CollabMessage::LoroUpdate {
+                                    data,
+                                    version: vec![],
+                                };
+                                if let Err(e) = session.broadcast(&msg).await {
+                                    tracing::warn!("Broadcast failed: {e}");
+                                }
+                            }
                         }
-                    }
-                }
 
-                #[cfg(feature = "collab-worker")]
-                WorkerInput::BroadcastCursor { position, selection } => {
-                    if let Some(ref session) = collab_session {
-                        tracing::debug!(position, ?selection, "Worker: broadcasting cursor");
-                        let msg = CollabMessage::Cursor {
+                        #[cfg(feature = "collab-worker")]
+                        WorkerInput::BroadcastCursor {
                             position,
                             selection,
-                            color: OUR_COLOR,
-                        };
-                        if let Err(e) = session.broadcast(&msg).await {
-                            tracing::warn!("Cursor broadcast failed: {e}");
+                        } => {
+                            if let Some(ref session) = collab_session {
+                                tracing::debug!(
+                                    position,
+                                    ?selection,
+                                    "Worker: broadcasting cursor"
+                                );
+                                let msg = CollabMessage::Cursor {
+                                    position,
+                                    selection,
+                                    color: OUR_COLOR,
+                                };
+                                if let Err(e) = session.broadcast(&msg).await {
+                                    tracing::warn!("Cursor broadcast failed: {e}");
+                                }
+                            } else {
+                                tracing::debug!(
+                                    position,
+                                    ?selection,
+                                    "Worker: BroadcastCursor but no session"
+                                );
+                            }
                         }
-                    } else {
-                        tracing::debug!(position, ?selection, "Worker: BroadcastCursor but no session");
-                    }
-                }
 
-                #[cfg(feature = "collab-worker")]
-                WorkerInput::AddPeers { peers } => {
-                    tracing::info!(count = peers.len(), "Worker: received AddPeers");
-                    if let Some(ref session) = collab_session {
-                        let peer_ids: Vec<_> = peers
+                        #[cfg(feature = "collab-worker")]
+                        WorkerInput::AddPeers { peers } => {
+                            tracing::info!(count = peers.len(), "Worker: received AddPeers");
+                            if let Some(ref session) = collab_session {
+                                let peer_ids: Vec<_> = peers
                             .iter()
                             .filter_map(|s| {
                                 match parse_node_id(s) {
@@ -509,35 +585,37 @@ mod worker_impl {
                                 }
                             })
                             .collect();
-                        tracing::info!(parsed_count = peer_ids.len(), "Worker: joining peers");
-                        if let Err(e) = session.join_peers(peer_ids).await {
-                            tracing::warn!("Failed to add peers: {e}");
+                                tracing::info!(
+                                    parsed_count = peer_ids.len(),
+                                    "Worker: joining peers"
+                                );
+                                if let Err(e) = session.join_peers(peer_ids).await {
+                                    tracing::warn!("Failed to add peers: {e}");
+                                }
+                            } else {
+                                tracing::warn!("Worker: AddPeers but no collab_session");
+                            }
                         }
-                    } else {
-                        tracing::warn!("Worker: AddPeers but no collab_session");
-                    }
-                }
 
-                #[cfg(feature = "collab-worker")]
-                WorkerInput::BroadcastJoin { did, display_name } => {
-                    if let Some(ref session) = collab_session {
-                        let join_msg = CollabMessage::Join { did, display_name };
-                        if let Err(e) = session.broadcast(&join_msg).await {
-                            tracing::warn!("Failed to broadcast Join: {e}");
+                        #[cfg(feature = "collab-worker")]
+                        WorkerInput::BroadcastJoin { did, display_name } => {
+                            if let Some(ref session) = collab_session {
+                                let join_msg = CollabMessage::Join { did, display_name };
+                                if let Err(e) = session.broadcast(&join_msg).await {
+                                    tracing::warn!("Failed to broadcast Join: {e}");
+                                }
+                            }
                         }
-                    }
-                }
 
-                #[cfg(feature = "collab-worker")]
-                WorkerInput::StopCollab => {
-                    collab_session = None;
-                    collab_node = None;
-                    collab_event_rx = None;
-                    if let Err(e) = scope.send(WorkerOutput::CollabStopped).await {
-                        tracing::error!("Failed to send CollabStopped to coordinator: {e}");
-                    }
-                }
-
+                        #[cfg(feature = "collab-worker")]
+                        WorkerInput::StopCollab => {
+                            collab_session = None;
+                            collab_node = None;
+                            collab_event_rx = None;
+                            if let Err(e) = scope.send(WorkerOutput::CollabStopped).await {
+                                tracing::error!("Failed to send CollabStopped to coordinator: {e}");
+                            }
+                        }
                     } // end match msg
                 } // end RaceResult::CoordinatorMsg(Some(msg))
             } // end match race_result
@@ -548,17 +626,22 @@ mod worker_impl {
                 let Some(msg) = scope.next().await else { break };
                 tracing::debug!(?msg, "Worker: received message");
                 match msg {
-                    WorkerInput::Init { snapshot, draft_key: key } => {
+                    WorkerInput::Init {
+                        snapshot,
+                        draft_key: key,
+                    } => {
                         let new_doc = loro::LoroDoc::new();
                         if !snapshot.is_empty() {
                             if let Err(e) = new_doc.import(&snapshot) {
                                 if let Err(send_err) = scope
                                     .send(WorkerOutput::Error {
-                                        message: format_smolstr!("Failed to import snapshot: {e}").to_string(),
+                                        message: format_smolstr!("Failed to import snapshot: {e}"),
                                     })
                                     .await
                                 {
-                                    tracing::error!("Failed to send Error to coordinator: {send_err}");
+                                    tracing::error!(
+                                        "Failed to send Error to coordinator: {send_err}"
+                                    );
                                 }
                                 continue;
                             }
@@ -576,9 +659,18 @@ mod worker_impl {
                             }
                         }
                     }
-                    WorkerInput::ExportSnapshot { cursor_offset, editing_uri, editing_cid } => {
+                    WorkerInput::ExportSnapshot {
+                        cursor_offset,
+                        editing_uri,
+                        editing_cid,
+                    } => {
                         let Some(ref doc) = doc else {
-                            if let Err(e) = scope.send(WorkerOutput::Error { message: "No document initialized".into() }).await {
+                            if let Err(e) = scope
+                                .send(WorkerOutput::Error {
+                                    message: "No document initialized".into(),
+                                })
+                                .await
+                            {
                                 tracing::error!("Failed to send Error to coordinator: {e}");
                             }
                             continue;
@@ -587,8 +679,15 @@ mod worker_impl {
                         let snapshot_bytes = match doc.export(loro::ExportMode::Snapshot) {
                             Ok(bytes) => bytes,
                             Err(e) => {
-                                if let Err(send_err) = scope.send(WorkerOutput::Error { message: format_smolstr!("Export failed: {e}").to_string() }).await {
-                                    tracing::error!("Failed to send Error to coordinator: {send_err}");
+                                if let Err(send_err) = scope
+                                    .send(WorkerOutput::Error {
+                                        message: format_smolstr!("Export failed: {e}"),
+                                    })
+                                    .await
+                                {
+                                    tracing::error!(
+                                        "Failed to send Error to coordinator: {send_err}"
+                                    );
                                 }
                                 continue;
                             }
@@ -598,17 +697,32 @@ mod worker_impl {
                         let b64_snapshot = BASE64.encode(&snapshot_bytes);
                         let encode_ms = crate::perf::now() - encode_start;
                         let content = doc.get_text("content").to_string();
-                        let title = doc.get_text("title").to_string();
-                        if let Err(e) = scope.send(WorkerOutput::Snapshot {
-                            draft_key: draft_key.clone(), b64_snapshot, content, title,
-                            cursor_offset, editing_uri, editing_cid, export_ms, encode_ms,
-                        }).await {
+                        let title: SmolStr = doc.get_text("title").to_string().into();
+                        if let Err(e) = scope
+                            .send(WorkerOutput::Snapshot {
+                                draft_key: draft_key.clone(),
+                                b64_snapshot,
+                                content,
+                                title,
+                                cursor_offset,
+                                editing_uri,
+                                editing_cid,
+                                export_ms,
+                                encode_ms,
+                            })
+                            .await
+                        {
                             tracing::error!("Failed to send Snapshot to coordinator: {e}");
                         }
                     }
                     // Collab stubs for non-collab-worker build
                     WorkerInput::StartCollab { .. } => {
-                        if let Err(e) = scope.send(WorkerOutput::Error { message: "Collab not enabled".into() }).await {
+                        if let Err(e) = scope
+                            .send(WorkerOutput::Error {
+                                message: "Collab not enabled".into(),
+                            })
+                            .await
+                        {
                             tracing::error!("Failed to send Error to coordinator: {e}");
                         }
                     }
@@ -632,7 +746,7 @@ mod worker_impl {
         let collaborators = tracker
             .collaborators()
             .map(|c| CollaboratorInfo {
-                node_id: c.node_id.to_string(),
+                node_id: c.node_id.to_smolstr(),
                 did: c.did.clone(),
                 display_name: c.display_name.clone(),
                 color: c.color,
@@ -689,11 +803,11 @@ mod embed_worker_impl {
     use super::*;
     use crate::cache_impl;
     use gloo_worker::{HandlerId, Worker, WorkerScope};
+    use jacquard::IntoStatic;
     use jacquard::client::UnauthenticatedSession;
     use jacquard::identity::JacquardResolver;
     use jacquard::prelude::*;
     use jacquard::types::string::AtUri;
-    use jacquard::IntoStatic;
     use std::time::Duration;
 
     /// Embed worker with persistent cache.
@@ -731,7 +845,7 @@ mod embed_worker_impl {
                         let at_uri = match AtUri::new_owned(uri_str.clone()) {
                             Ok(u) => u,
                             Err(e) => {
-                                errors.insert(uri_str, format_smolstr!("Invalid AT URI: {e}").to_string());
+                                errors.insert(uri_str, format!("Invalid AT URI: {e}"));
                                 continue;
                             }
                         };
@@ -773,7 +887,7 @@ mod embed_worker_impl {
                                     results.insert(uri_str, html);
                                 }
                                 Err(e) => {
-                                    errors.insert(uri_str, format_smolstr!("{:?}", e).to_string());
+                                    errors.insert(uri_str, format!("{:?}", e));
                                 }
                             }
                         }

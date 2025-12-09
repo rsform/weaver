@@ -1,15 +1,16 @@
 //! Presence types for main thread rendering.
 //!
-//! These types use String node IDs instead of EndpointId,
+//! These types use SmolStr node IDs instead of EndpointId,
 //! allowing them to be used without the iroh feature.
 
+use jacquard::smol_str::SmolStr;
 use serde::{Deserialize, Serialize};
 
 /// A remote collaborator's cursor for rendering.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoteCursorInfo {
     /// Node ID as string (z-base32 encoded)
-    pub node_id: String,
+    pub node_id: SmolStr,
     /// Character offset in the document
     pub position: usize,
     /// Selection range (anchor, head) if any
@@ -22,11 +23,11 @@ pub struct RemoteCursorInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CollaboratorInfo {
     /// Node ID as string
-    pub node_id: String,
+    pub node_id: SmolStr,
     /// The collaborator's DID
-    pub did: String,
+    pub did: SmolStr,
     /// Display name for UI
-    pub display_name: String,
+    pub display_name: SmolStr,
     /// Assigned colour (RGBA)
     pub color: u32,
     /// Current cursor position (if known)

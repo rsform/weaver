@@ -6,6 +6,7 @@ use iroh::Endpoint;
 use iroh::EndpointId;
 use iroh::SecretKey;
 use iroh_gossip::net::{GOSSIP_ALPN, Gossip};
+use jacquard::smol_str::{SmolStr, ToSmolStr};
 use miette::Diagnostic;
 use std::sync::Arc;
 
@@ -80,8 +81,8 @@ impl CollabNode {
     }
 
     /// Get the node ID as a z-base32 string for storage in AT Protocol records.
-    pub fn node_id_string(&self) -> String {
-        self.endpoint.id().to_string()
+    pub fn node_id_string(&self) -> SmolStr {
+        self.endpoint.id().to_smolstr()
     }
 
     /// Get a reference to the gossip handler for joining topics.
@@ -103,12 +104,12 @@ impl CollabNode {
     ///
     /// This should be published in session records so other peers can connect
     /// via relay (essential for browser-to-browser connections).
-    pub fn relay_url(&self) -> Option<String> {
+    pub fn relay_url(&self) -> Option<SmolStr> {
         self.endpoint
             .addr()
             .relay_urls()
             .next()
-            .map(|url| url.to_string())
+            .map(|url| url.to_smolstr())
     }
 
     /// Get the full node address including relay info.
@@ -131,7 +132,7 @@ impl CollabNode {
     ///
     /// Waits indefinitely for relay - browser clients require relay URLs
     /// for peer discovery. Returns the relay URL once connected.
-    pub async fn wait_for_relay(&self) -> String {
+    pub async fn wait_for_relay(&self) -> SmolStr {
         self.endpoint.online().await;
         // After online(), relay_url should always be Some for browser clients
         self.relay_url()

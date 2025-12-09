@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use jacquard::IntoStatic;
 use jacquard::cowstr::ToCowStr;
 use jacquard::identity::resolver::IdentityResolver;
-use jacquard::smol_str::SmolStr;
+use jacquard::smol_str::{SmolStr, ToSmolStr};
 use jacquard::types::aturi::AtUri;
 use jacquard::types::blob::BlobRef;
 use jacquard::types::ident::AtIdentifier;
@@ -790,7 +790,7 @@ fn MarkdownEditorInner(
                     let _ = sink
                         .send(WorkerInput::Init {
                             snapshot,
-                            draft_key,
+                            draft_key: draft_key.into(),
                         })
                         .await;
                 }
@@ -846,8 +846,8 @@ fn MarkdownEditorInner(
                     };
 
                     let cursor_offset = doc.cursor.read().offset;
-                    let editing_uri = doc.entry_ref().map(|r| r.uri.to_string());
-                    let editing_cid = doc.entry_ref().map(|r| r.cid.to_string());
+                    let editing_uri = doc.entry_ref().map(|r| r.uri.to_smolstr());
+                    let editing_cid = doc.entry_ref().map(|r| r.cid.to_smolstr());
 
                     let sink_clone = worker_sink.clone();
 

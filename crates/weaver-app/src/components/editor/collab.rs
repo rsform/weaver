@@ -16,6 +16,8 @@ use super::document::EditorDocument;
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
+use jacquard::smol_str::{format_smolstr, SmolStr};
+#[cfg(target_arch = "wasm32")]
 use jacquard::types::string::AtUri;
 
 use weaver_common::transport::PresenceSnapshot;
@@ -53,13 +55,13 @@ enum CoordinatorState {
     Initializing,
     /// Creating session record on PDS
     CreatingSession {
-        node_id: String,
-        relay_url: Option<String>,
+        node_id: SmolStr,
+        relay_url: Option<SmolStr>,
     },
     /// Active collab session
     Active { session_uri: AtUri<'static> },
     /// Error state
-    Error(String),
+    Error(SmolStr),
 }
 
 /// Coordinator component that bridges worker and PDS.
@@ -147,7 +149,7 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
 
             // Initialize worker with current document snapshot
             let snapshot = doc.export_snapshot();
-            let draft_key = resource_uri.clone(); // Use resource URI as the key
+            let draft_key: SmolStr = resource_uri.clone().into(); // Use resource URI as the key
             spawn(async move {
                 if let Some(ref mut sink) = *worker_sink.write() {
                     if let Err(e) = sink
@@ -227,7 +229,7 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                                 let uri = match AtUri::new(&resource_uri) {
                                     Ok(u) => u.into_static(),
                                     Err(e) => {
-                                        let err = format!("Invalid resource URI: {e}");
+                                        let err = format_smolstr!("Invalid resource URI: {e}");
                                         debug_state
                                             .with_mut(|ds| ds.last_error = Some(err.clone()));
                                         state.set(CoordinatorState::Error(err));
@@ -239,7 +241,7 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                                 let strong_ref = match fetcher.confirm_record_ref(&uri).await {
                                     Ok(r) => r,
                                     Err(e) => {
-                                        let err = format!("Failed to get resource ref: {e}");
+                                        let err = format_smolstr!("Failed to get resource ref: {e}");
                                         debug_state
                                             .with_mut(|ds| ds.last_error = Some(err.clone()));
                                         state.set(CoordinatorState::Error(err));
@@ -322,7 +324,7 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                                         });
                                     }
                                     Err(e) => {
-                                        let err = format!("Failed to create session: {e}");
+                                        let err = format_smolstr!("Failed to create session: {e}");
                                         debug_state
                                             .with_mut(|ds| ds.last_error = Some(err.clone()));
                                         state.set(CoordinatorState::Error(err));
@@ -367,30 +369,30 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                             let fetcher = fetcher.clone();
 
                             // Get our profile info and send BroadcastJoin
-                            let (our_did, our_display_name) = match fetcher.current_did().await {
+                            let (our_did, our_display_name): (SmolStr, SmolStr) = match fetcher.current_did().await {
                                 Some(did) => {
-                                    let display_name = match fetcher.fetch_profile(&did.clone().into()).await {
+                                    let display_name: SmolStr = match fetcher.fetch_profile(&did.clone().into()).await {
                                         Ok(profile) => {
                                             match &profile.inner {
                                                 ProfileDataViewInner::ProfileView(p) => {
-                                                    p.display_name.as_ref().map(|s| s.to_string()).unwrap_or_else(|| did.to_string())
+                                                    p.display_name.as_ref().map(|s| s.as_ref().into()).unwrap_or_else(|| did.as_ref().into())
                                                 }
                                                 ProfileDataViewInner::ProfileViewDetailed(p) => {
-                                                    p.display_name.as_ref().map(|s| s.to_string()).unwrap_or_else(|| did.to_string())
+                                                    p.display_name.as_ref().map(|s| s.as_ref().into()).unwrap_or_else(|| did.as_ref().into())
                                                 }
                                                 ProfileDataViewInner::TangledProfileView(p) => {
-                                                    p.handle.to_string()
+                                                    p.handle.as_ref().into()
                                                 }
-                                                _ => did.to_string(),
+                                                _ => did.as_ref().into(),
                                             }
                                         }
-                                        Err(_) => did.to_string(),
+                                        Err(_) => did.as_ref().into(),
                                     };
-                                    (did.to_string(), display_name)
+                                    (did.as_ref().into(), display_name)
                                 }
                                 None => {
                                     tracing::warn!("CollabCoordinator: no current DID for Join message");
-                                    ("unknown".to_string(), "Anonymous".to_string())
+                                    ("unknown".into(), "Anonymous".into())
                                 }
                             };
 
@@ -471,7 +473,7 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                         Ok(peers) => {
                             debug_state.with_mut(|ds| ds.discovered_peers = peers.len());
                             if !peers.is_empty() {
-                                let peer_ids: Vec<String> =
+                                let peer_ids: Vec<SmolStr> =
                                     peers.into_iter().map(|p| p.node_id).collect();
 
                                 if let Some(ref mut s) = *worker_sink.write() {

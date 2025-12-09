@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use iroh::EndpointId;
+use jacquard::smol_str::SmolStr;
 use web_time::Instant;
 
 /// A remote collaborator's cursor state.
@@ -26,9 +27,9 @@ pub struct RemoteCursor {
 #[derive(Debug, Clone)]
 pub struct Collaborator {
     /// The collaborator's DID.
-    pub did: String,
+    pub did: SmolStr,
     /// Display name for UI.
-    pub display_name: String,
+    pub display_name: SmolStr,
     /// Assigned colour (RGBA).
     pub color: u32,
     /// Current cursor state.
@@ -65,13 +66,18 @@ impl PresenceTracker {
     }
 
     /// Add a collaborator when they join.
-    pub fn add_collaborator(&mut self, node_id: EndpointId, did: String, display_name: String) {
+    pub fn add_collaborator(
+        &mut self,
+        node_id: EndpointId,
+        did: impl Into<SmolStr>,
+        display_name: impl Into<SmolStr>,
+    ) {
         let color = self.assign_color();
         self.collaborators.insert(
             node_id,
             Collaborator {
-                did,
-                display_name,
+                did: did.into(),
+                display_name: display_name.into(),
                 color,
                 cursor: None,
                 node_id,

@@ -239,20 +239,6 @@ fn build_doc_ref(
     }
 }
 
-/// Extract (authority, rkey) from a canonical draft key (synthetic AT-URI).
-///
-/// Parses `at://{authority}/sh.weaver.edit.draft/{rkey}` and returns the components.
-/// Authority can be a DID or handle.
-#[allow(dead_code)]
-pub fn parse_draft_key(
-    draft_key: &str,
-) -> Option<(jacquard::types::ident::AtIdentifier<'static>, String)> {
-    let uri = AtUri::new(draft_key).ok()?;
-    let authority = uri.authority().clone().into_static();
-    let rkey = uri.rkey()?.0.as_str().to_string();
-    Some((authority, rkey))
-}
-
 /// Result of a sync operation.
 #[derive(Clone, Debug)]
 pub enum SyncResult {
@@ -268,40 +254,6 @@ pub enum SyncResult {
     },
     /// No changes to sync
     NoChanges,
-}
-
-/// Find the edit root for an entry using constellation backlinks.
-///
-/// Queries constellation for `sh.weaver.edit.root` records that reference
-/// the given entry URI via the `.doc.value.entry.uri` path.
-#[allow(dead_code)]
-pub async fn find_edit_root_for_entry(
-    fetcher: &Fetcher,
-    entry_uri: &AtUri<'_>,
-) -> Result<Option<RecordId<'static>>, WeaverError> {
-    let constellation_url = Url::parse(CONSTELLATION_URL)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
-
-    let query = GetBacklinksQuery {
-        subject: Uri::At(entry_uri.clone().into_static()),
-        source: format_smolstr!("{}:doc.value.entry.uri", ROOT_NSID).into(),
-        cursor: None,
-        did: vec![],
-        limit: 1,
-    };
-
-    let response = fetcher
-        .client
-        .xrpc(constellation_url)
-        .send(&query)
-        .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Constellation query failed: {}", e)))?;
-
-    let output = response.into_output().map_err(|e| {
-        WeaverError::InvalidNotebook(format!("Failed to parse constellation response: {}", e))
-    })?;
-
-    Ok(output.records.into_iter().next().map(|r| r.into_static()))
 }
 
 /// Find ALL edit.root records across collaborators for an entry.
@@ -551,7 +503,6 @@ pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>,
 }
 
 /// Find all diffs for a root record using constellation backlinks.
-#[allow(dead_code)]
 pub async fn find_diffs_for_root(
     fetcher: &Fetcher,
     root_uri: &AtUri<'_>,
@@ -916,8 +867,12 @@ pub async fn load_edit_state_from_pds(
     fetcher: &Fetcher,
     entry_uri: &AtUri<'_>,
 ) -> Result<Option<PdsEditState>, WeaverError> {
-    // Find the edit root for this entry
-    let root_id = match find_edit_root_for_entry(fetcher, entry_uri).await? {
+    // Find the edit root for this entry (take first if multiple exist)
+    let root_id = match find_all_edit_roots_for_entry(fetcher, entry_uri)
+        .await?
+        .into_iter()
+        .next()
+    {
         Some(id) => id,
         None => return Ok(None),
     };

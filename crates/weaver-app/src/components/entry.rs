@@ -23,17 +23,6 @@ use jacquard::{
 use std::sync::Arc;
 use weaver_api::sh_weaver::notebook::{BookEntryView, EntryView, entry};
 
-// #[component]
-// pub fn EntryPage(
-//     ident: ReadSignal<AtIdentifier<'static>>,
-//     book_title: ReadSignal<SmolStr>,
-//     title: ReadSignal<SmolStr>,
-// ) -> Element {
-//     rsx! {
-//         {std::iter::once(rsx! {Entry {ident, book_title, title}})}
-//     }
-// }
-
 #[component]
 pub fn EntryPage(
     ident: ReadSignal<AtIdentifier<'static>>,
@@ -81,31 +70,6 @@ pub fn EntryPage(
     // Use read() instead of read_unchecked() for proper reactive tracking
     match &*entry.read() {
         Some((book_entry_view, entry_record)) => {
-            if let Some(embeds) = &entry_record.embeds {
-                if let Some(_images) = &embeds.images {
-                    // Register blob mappings with service worker (client-side only)
-                    // #[cfg(all(
-                    //     target_family = "wasm",
-                    //     target_os = "unknown",
-                    //     not(feature = "fullstack-server")
-                    // ))]
-                    // {
-                    //     let fetcher = fetcher.clone();
-                    //     let images = _images.clone().into_static();
-                    //     spawn(async move {
-                    //         let images = images.clone();
-                    //         let fetcher = fetcher.clone();
-                    //         let _ = crate::service_worker::register_entry_blobs(
-                    //             &ident(),
-                    //             book_title().as_str(),
-                    //             &_images,
-                    //             &fetcher,
-                    //         )
-                    //         .await;
-                    //     });
-                    // }
-                }
-            }
             rsx! { EntryPageView {
                 book_entry_view: book_entry_view.clone(),
                 entry_record: entry_record.clone(),
@@ -149,61 +113,6 @@ pub fn extract_preview(content: &str, max_len: usize) -> String {
         let truncated: String = cleaned.chars().take(max_len - 3).collect();
         format!("{}...", truncated)
     }
-}
-
-/// Truncate markdown content for preview (preserves markdown syntax)
-/// Takes first few paragraphs up to max_chars, truncating at paragraph boundary
-fn truncate_markdown_preview(content: &str, max_chars: usize, max_paragraphs: usize) -> String {
-    let mut result = String::new();
-    let mut char_count = 0;
-    let mut para_count = 0;
-    let mut in_code_block = false;
-
-    for line in content.lines() {
-        // Track code blocks to avoid breaking them
-        if line.trim().starts_with("```") {
-            in_code_block = !in_code_block;
-            // Skip code blocks in preview entirely
-            if in_code_block {
-                continue;
-            }
-        }
-
-        if in_code_block {
-            continue;
-        }
-
-        // Skip headings, images in preview
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') || trimmed.starts_with('!') {
-            continue;
-        }
-
-        // Empty line = paragraph boundary
-        if trimmed.is_empty() {
-            if !result.is_empty() && !result.ends_with("\n\n") {
-                para_count += 1;
-                if para_count >= max_paragraphs || char_count >= max_chars {
-                    break;
-                }
-                result.push_str("\n\n");
-            }
-            continue;
-        }
-
-        // Check if adding this line would exceed limit
-        if char_count + line.len() > max_chars && !result.is_empty() {
-            break;
-        }
-
-        if !result.is_empty() && !result.ends_with('\n') {
-            result.push('\n');
-        }
-        result.push_str(line);
-        char_count += line.len();
-    }
-
-    result.trim().to_string()
 }
 
 /// OpenGraph and Twitter Card meta tags for entries

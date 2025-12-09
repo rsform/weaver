@@ -1,5 +1,6 @@
 //! Wire protocol for collaborative editing messages.
 
+use jacquard::smol_str::SmolStr;
 use serde::{Deserialize, Serialize};
 
 /// Messages exchanged between collaborators over gossip.
@@ -26,15 +27,15 @@ pub enum CollabMessage {
     /// Collaborator joined the session
     Join {
         /// DID of the joining user
-        did: String,
+        did: SmolStr,
         /// Display name for presence UI
-        display_name: String,
+        display_name: SmolStr,
     },
 
     /// Collaborator left the session
     Leave {
         /// DID of the leaving user
-        did: String,
+        did: SmolStr,
     },
 
     /// Request sync from peers (late joiner)
@@ -183,8 +184,8 @@ mod tests {
     #[test]
     fn test_roundtrip_join() {
         let msg = CollabMessage::Join {
-            did: "did:plc:abc123".to_string(),
-            display_name: "Alice".to_string(),
+            did: "did:plc:abc123".into(),
+            display_name: "Alice".into(),
         };
         let bytes = msg.to_bytes().unwrap();
         let decoded = CollabMessage::from_bytes(&bytes).unwrap();

@@ -4,14 +4,15 @@
 //! the CollabCoordinator component for display in the editor debug panel.
 
 use dioxus::prelude::*;
+use jacquard::smol_str::SmolStr;
 
 /// Debug state for the collab session, displayed in editor debug panel.
 #[derive(Clone, Default)]
 pub struct CollabDebugState {
     /// Our node ID
-    pub node_id: Option<String>,
+    pub node_id: Option<SmolStr>,
     /// Our relay URL
-    pub relay_url: Option<String>,
+    pub relay_url: Option<SmolStr>,
     /// URI of our published session record
     pub session_record_uri: Option<String>,
     /// Number of discovered peers
@@ -21,7 +22,7 @@ pub struct CollabDebugState {
     /// Whether we've joined the gossip swarm
     pub is_joined: bool,
     /// Last error message
-    pub last_error: Option<String>,
+    pub last_error: Option<SmolStr>,
 }
 
 /// Hook to get the collab debug state signal.

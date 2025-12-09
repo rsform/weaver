@@ -20,6 +20,7 @@ use dioxus::prelude::*;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use gloo_storage::{LocalStorage, Storage};
 use jacquard::IntoStatic;
+use jacquard::smol_str::{SmolStr, ToSmolStr};
 use jacquard::types::string::{AtUri, Cid};
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use loro::cursor::Cursor;
@@ -49,7 +50,7 @@ pub struct EditorSnapshot {
 
     /// Entry title (for debugging/display in drafts list)
     #[serde(default)]
-    pub title: String,
+    pub title: SmolStr,
 
     /// Base64-encoded CRDT snapshot (contains ALL fields including embeds)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,11 +66,11 @@ pub struct EditorSnapshot {
 
     /// AT-URI if editing an existing entry (None for new entries)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub editing_uri: Option<String>,
+    pub editing_uri: Option<SmolStr>,
 
     /// CID of the entry if editing an existing entry
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub editing_cid: Option<String>,
+    pub editing_cid: Option<SmolStr>,
 }
 
 /// Build the full storage key from a draft key.
@@ -97,12 +98,12 @@ pub fn save_to_storage(
 
     let snapshot = EditorSnapshot {
         content: doc.content(),
-        title: doc.title(),
+        title: doc.title().into(),
         snapshot: snapshot_b64,
         cursor: doc.loro_cursor().cloned(),
         cursor_offset: doc.cursor.read().offset,
-        editing_uri: doc.entry_ref().map(|r| r.uri.to_string()),
-        editing_cid: doc.entry_ref().map(|r| r.cid.to_string()),
+        editing_uri: doc.entry_ref().map(|r| r.uri.to_smolstr()),
+        editing_cid: doc.entry_ref().map(|r| r.cid.to_smolstr()),
     };
 
     let write_start = crate::perf::now();
@@ -235,7 +236,11 @@ pub fn list_drafts() -> Vec<(String, String, Option<String>)> {
                     // Try to load just the metadata
                     if let Ok(snapshot) = LocalStorage::get::<EditorSnapshot>(&key) {
                         let draft_key = key.strip_prefix(DRAFT_KEY_PREFIX).unwrap_or(&key);
-                        drafts.push((draft_key.to_string(), snapshot.title, snapshot.editing_uri));
+                        drafts.push((
+                            draft_key.to_string(),
+                            snapshot.title.to_string(),
+                            snapshot.editing_uri.map(|s| s.to_string()),
+                        ));
                     }
                 }
             }

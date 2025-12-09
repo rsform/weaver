@@ -5,8 +5,7 @@ pub mod server;
 
 use crate::cache_impl::{Cache, new_cache};
 use askama::Template;
-use jacquard::smol_str::SmolStr;
-use jacquard::smol_str::format_smolstr;
+use jacquard::smol_str::{SmolStr, ToSmolStr, format_smolstr};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -40,9 +39,9 @@ pub fn cache_image(key: SmolStr, image: Vec<u8>) {
 #[derive(Debug)]
 pub enum OgError {
     NotFound,
-    FetchError(String),
-    RenderError(String),
-    TemplateError(String),
+    FetchError(SmolStr),
+    RenderError(SmolStr),
+    TemplateError(SmolStr),
 }
 
 impl std::fmt::Display for OgError {
@@ -77,8 +76,8 @@ mod colors {
 pub struct TextOnlyTemplate {
     pub title_lines: Vec<String>,
     pub content_lines: Vec<String>,
-    pub notebook_title: String,
-    pub author_handle: String,
+    pub notebook_title: SmolStr,
+    pub author_handle: SmolStr,
 }
 
 /// Hero image template (full-bleed image with overlay)
@@ -87,8 +86,8 @@ pub struct TextOnlyTemplate {
 pub struct HeroImageTemplate {
     pub hero_image_data: String,
     pub title_lines: Vec<String>,
-    pub notebook_title: String,
-    pub author_handle: String,
+    pub notebook_title: SmolStr,
+    pub author_handle: SmolStr,
 }
 
 /// Notebook index template
@@ -96,7 +95,7 @@ pub struct HeroImageTemplate {
 #[template(path = "og_notebook.svg", escape = "none")]
 pub struct NotebookTemplate {
     pub title_lines: Vec<String>,
-    pub author_handle: String,
+    pub author_handle: SmolStr,
     pub entry_count: usize,
     pub entry_titles: Vec<String>,
 }
@@ -107,7 +106,7 @@ pub struct NotebookTemplate {
 pub struct ProfileTemplate {
     pub avatar_data: Option<String>,
     pub display_name_lines: Vec<String>,
-    pub handle: String,
+    pub handle: SmolStr,
     pub bio_lines: Vec<String>,
     pub notebook_count: usize,
 }
@@ -119,7 +118,7 @@ pub struct ProfileBannerTemplate {
     pub banner_image_data: String,
     pub avatar_data: Option<String>,
     pub display_name_lines: Vec<String>,
-    pub handle: String,
+    pub handle: SmolStr,
     pub bio_lines: Vec<String>,
     pub notebook_count: usize,
 }
@@ -166,16 +165,16 @@ pub fn render_svg_to_png(svg: &str) -> Result<Vec<u8>, OgError> {
     };
 
     let tree = usvg::Tree::from_str(svg, &options)
-        .map_err(|e| OgError::RenderError(format!("Failed to parse SVG: {}", e)))?;
+        .map_err(|e| OgError::RenderError(format_smolstr!("Failed to parse SVG: {}", e)))?;
 
     let mut pixmap = tiny_skia::Pixmap::new(OG_WIDTH, OG_HEIGHT)
-        .ok_or_else(|| OgError::RenderError("Failed to create pixmap".to_string()))?;
+        .ok_or_else(|| OgError::RenderError("Failed to create pixmap".to_smolstr()))?;
 
     resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
 
     pixmap
         .encode_png()
-        .map_err(|e| OgError::RenderError(format!("Failed to encode PNG: {}", e)))
+        .map_err(|e| OgError::RenderError(format_smolstr!("Failed to encode PNG: {}", e)))
 }
 
 /// Generate a text-only OG image
@@ -191,13 +190,13 @@ pub fn generate_text_only(
     let template = TextOnlyTemplate {
         title_lines,
         content_lines,
-        notebook_title: notebook_title.to_string(),
-        author_handle: author_handle.to_string(),
+        notebook_title: notebook_title.to_smolstr(),
+        author_handle: author_handle.to_smolstr(),
     };
 
     let svg = template
         .render()
-        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+        .map_err(|e| OgError::TemplateError(e.to_smolstr()))?;
 
     render_svg_to_png(&svg)
 }
@@ -214,13 +213,13 @@ pub fn generate_hero_image(
     let template = HeroImageTemplate {
         hero_image_data: hero_image_data.to_string(),
         title_lines,
-        notebook_title: notebook_title.to_string(),
-        author_handle: author_handle.to_string(),
+        notebook_title: notebook_title.to_smolstr(),
+        author_handle: author_handle.to_smolstr(),
     };
 
     let svg = template
         .render()
-        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+        .map_err(|e| OgError::TemplateError(e.to_smolstr()))?;
 
     render_svg_to_png(&svg)
 }
@@ -258,14 +257,14 @@ pub fn generate_notebook_og(
 
     let template = NotebookTemplate {
         title_lines,
-        author_handle: author_handle.to_string(),
+        author_handle: author_handle.to_smolstr(),
         entry_count,
         entry_titles,
     };
 
     let svg = template
         .render()
-        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+        .map_err(|e| OgError::TemplateError(e.to_smolstr()))?;
 
     render_svg_to_png(&svg)
 }
@@ -284,14 +283,14 @@ pub fn generate_profile_og(
     let template = ProfileTemplate {
         avatar_data,
         display_name_lines,
-        handle: handle.to_string(),
+        handle: handle.to_smolstr(),
         bio_lines,
         notebook_count,
     };
 
     let svg = template
         .render()
-        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+        .map_err(|e| OgError::TemplateError(e.to_smolstr()))?;
 
     render_svg_to_png(&svg)
 }
@@ -312,14 +311,14 @@ pub fn generate_profile_banner_og(
         banner_image_data,
         avatar_data,
         display_name_lines,
-        handle: handle.to_string(),
+        handle: handle.to_smolstr(),
         bio_lines,
         notebook_count,
     };
 
     let svg = template
         .render()
-        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+        .map_err(|e| OgError::TemplateError(e.to_smolstr()))?;
 
     render_svg_to_png(&svg)
 }
@@ -330,7 +329,7 @@ pub fn generate_site_og() -> Result<Vec<u8>, OgError> {
 
     let svg = template
         .render()
-        .map_err(|e| OgError::TemplateError(e.to_string()))?;
+        .map_err(|e| OgError::TemplateError(e.to_smolstr()))?;
 
     render_svg_to_png(&svg)
 }

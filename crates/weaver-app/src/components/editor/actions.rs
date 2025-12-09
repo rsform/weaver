@@ -727,12 +727,6 @@ impl KeybindingConfig {
             .map(|a| a.with_range(range))
     }
 
-    /// Look up an action for the given key and modifiers, with the current range applied.
-    #[allow(dead_code)]
-    pub fn lookup_key(&self, key: Key, modifiers: Modifiers, range: Range) -> Option<EditorAction> {
-        self.lookup(KeyCombo::with_modifiers(key, modifiers), range)
-    }
-
     /// Add or replace a keybinding.
     #[allow(dead_code)]
     pub fn bind(&mut self, combo: KeyCombo, action: EditorAction) {

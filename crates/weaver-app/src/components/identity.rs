@@ -107,22 +107,26 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     });
 
     // Extract pinned URIs from profile (only Weaver ProfileView has pinned)
+    // Returns (Vec for ordering, HashSet for O(1) lookups)
     let pinned_uris = use_memo(move || {
         use jacquard::IntoStatic;
-        use jacquard::types::aturi::AtUri;
         use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 
         let Some(prof) = profile.read().as_ref().cloned() else {
-            return Vec::<AtUri<'static>>::new();
+            return (Vec::<String>::new(), HashSet::<String>::new());
         };
 
         match &prof.inner {
-            ProfileDataViewInner::ProfileView(p) => p
-                .pinned
-                .as_ref()
-                .map(|pins| pins.iter().map(|r| r.uri.clone().into_static()).collect())
-                .unwrap_or_default(),
-            _ => Vec::new(),
+            ProfileDataViewInner::ProfileView(p) => {
+                let uris: Vec<String> = p
+                    .pinned
+                    .as_ref()
+                    .map(|pins| pins.iter().map(|r| r.uri.as_ref().to_string()).collect())
+                    .unwrap_or_default();
+                let set: HashSet<String> = uris.iter().cloned().collect();
+                (uris, set)
+            }
+            _ => (Vec::new(), HashSet::new()),
         }
     });
 
@@ -149,8 +153,8 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     });
 
     // Helper to check if a URI is pinned
-    fn is_pinned(uri: &str, pinned: &[jacquard::types::aturi::AtUri<'static>]) -> bool {
-        pinned.iter().any(|p| p.as_ref() == uri)
+    fn is_pinned(uri: &str, pinned_set: &HashSet<String>) -> bool {
+        pinned_set.contains(uri)
     }
 
     // Build pinned items (matching notebooks/entries against pinned URIs)
@@ -158,7 +162,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
         let nbs = notebooks.read();
         let standalone = standalone_entries.read();
         let ents = all_entries.read();
-        let pinned = pinned_uris.read();
+        let (pinned_vec, pinned_set) = &*pinned_uris.read();
 
         let mut items: Vec<ProfileTimelineItem> = Vec::new();
 
@@ -166,7 +170,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
         if let Some(nbs) = nbs.as_ref() {
             if let Some(all_ents) = ents.as_ref() {
                 for (notebook, entry_refs) in nbs {
-                    if is_pinned(notebook.uri.as_ref(), &pinned) {
+                    if is_pinned(notebook.uri.as_ref(), pinned_set) {
                         let sort_date = entry_refs
                             .iter()
                             .filter_map(|r| {
@@ -190,7 +194,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
         // Check standalone entries
         for (view, entry) in standalone.iter() {
-            if is_pinned(view.uri.as_ref(), &pinned) {
+            if is_pinned(view.uri.as_ref(), pinned_set) {
                 items.push(ProfileTimelineItem::StandaloneEntry {
                     entry_view: view.clone(),
                     entry: entry.clone(),
@@ -204,9 +208,9 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                 ProfileTimelineItem::Notebook { notebook, .. } => notebook.uri.as_ref(),
                 ProfileTimelineItem::StandaloneEntry { entry_view, .. } => entry_view.uri.as_ref(),
             };
-            pinned
+            pinned_vec
                 .iter()
-                .position(|p| p.as_ref() == uri)
+                .position(|p| p == uri)
                 .unwrap_or(usize::MAX)
         });
 
@@ -218,7 +222,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
         let nbs = notebooks.read();
         let standalone = standalone_entries.read();
         let ents = all_entries.read();
-        let pinned = pinned_uris.read();
+        let (_pinned_vec, pinned_set) = &*pinned_uris.read();
 
         let mut items: Vec<ProfileTimelineItem> = Vec::new();
 
@@ -226,7 +230,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
         if let Some(nbs) = nbs.as_ref() {
             if let Some(all_ents) = ents.as_ref() {
                 for (notebook, entry_refs) in nbs {
-                    if !is_pinned(notebook.uri.as_ref(), &pinned) {
+                    if !is_pinned(notebook.uri.as_ref(), pinned_set) {
                         let sort_date = entry_refs
                             .iter()
                             .filter_map(|r| {
@@ -250,7 +254,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
         // Add standalone entries (excluding pinned)
         for (view, entry) in standalone.iter() {
-            if !is_pinned(view.uri.as_ref(), &pinned) {
+            if !is_pinned(view.uri.as_ref(), pinned_set) {
                 items.push(ProfileTimelineItem::StandaloneEntry {
                     entry_view: view.clone(),
                     entry: entry.clone(),
@@ -443,6 +447,86 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 }
 
 #[component]
+fn NotebookEntryPreview(
+    book_entry_view: weaver_api::sh_weaver::notebook::BookEntryView<'static>,
+    ident: AtIdentifier<'static>,
+    book_title: SmolStr,
+    #[props(default)] extra_class: Option<&'static str>,
+) -> Element {
+    use jacquard::{IntoStatic, from_data};
+    use weaver_api::sh_weaver::notebook::entry::Entry;
+
+    let entry_view = &book_entry_view.entry;
+
+    let entry_title = entry_view.title.as_ref()
+        .map(|t| t.as_ref())
+        .unwrap_or("Untitled");
+
+    let entry_path = entry_view.path
+        .as_ref()
+        .map(|p| p.as_ref().to_string())
+        .unwrap_or_else(|| entry_title.to_string());
+
+    let parsed_entry = from_data::<Entry>(&entry_view.record).ok();
+
+    let preview_html = parsed_entry.as_ref().map(|entry| {
+        let parser = markdown_weaver::Parser::new(&entry.content);
+        let mut html_buf = String::new();
+        markdown_weaver::html::push_html(&mut html_buf, parser);
+        html_buf
+    });
+
+    let created_at = parsed_entry.as_ref()
+        .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
+
+    let entry_uri = entry_view.uri.clone().into_static();
+
+    let class_name = if let Some(extra) = extra_class {
+        format!("notebook-entry-preview {}", extra)
+    } else {
+        "notebook-entry-preview".to_string()
+    };
+
+    rsx! {
+        div { class: "{class_name}",
+            div { class: "entry-preview-header",
+                Link {
+                    to: Route::EntryPage {
+                        ident: ident.clone(),
+                        book_title: book_title.clone(),
+                        title: entry_path.clone().into()
+                    },
+                    class: "entry-preview-title-link",
+                    div { class: "entry-preview-title", "{entry_title}" }
+                }
+                if let Some(ref date) = created_at {
+                    div { class: "entry-preview-date", "{date}" }
+                }
+                crate::components::EntryActions {
+                    entry_uri,
+                    entry_cid: entry_view.cid.clone().into_static(),
+                    entry_title: entry_title.to_string(),
+                    in_notebook: true,
+                    notebook_title: Some(book_title.clone()),
+                    permissions: entry_view.permissions.clone()
+                }
+            }
+            if let Some(ref html) = preview_html {
+                Link {
+                    to: Route::EntryPage {
+                        ident: ident.clone(),
+                        book_title: book_title.clone(),
+                        title: entry_path.clone().into()
+                    },
+                    class: "entry-preview-content-link",
+                    div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
+                }
+            }
+        }
+    }
+}
+
+#[component]
 pub fn NotebookCard(
     notebook: NotebookView<'static>,
     entry_refs: Vec<StrongRef<'static>>,
@@ -567,71 +651,11 @@ pub fn NotebookCard(
                             if entry_list.len() <= 5 {
                                 // Show all entries if 5 or fewer
                                 rsx! {
-                                    for  entry_view in entry_list.iter() {
-                                        {
-                                            let entry_title = entry_view.entry.title.as_ref()
-                                                .map(|t| t.as_ref())
-                                                .unwrap_or("Untitled");
-
-                                            // Get path from view, fallback to title
-                                            let entry_path = entry_view.entry.path
-                                                .as_ref()
-                                                .map(|p| p.as_ref().to_string())
-                                                .unwrap_or_else(|| entry_title.to_string());
-
-                                            // Parse entry for created_at and preview
-                                            let parsed_entry = from_data::<Entry>(&entry_view.entry.record).ok();
-
-                                            let preview_html = parsed_entry.as_ref().map(|entry| {
-                                                let parser = markdown_weaver::Parser::new(&entry.content);
-                                                let mut html_buf = String::new();
-                                                markdown_weaver::html::push_html(&mut html_buf, parser);
-                                                html_buf
-                                            });
-
-                                            let created_at = parsed_entry.as_ref()
-                                                .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
-
-                                            let entry_uri = entry_view.entry.uri.clone().into_static();
-
-                                            rsx! {
-                                                div { class: "notebook-entry-preview",
-                                                    div { class: "entry-preview-header",
-                                                        Link {
-                                                            to: Route::EntryPage {
-                                                                ident: ident.clone(),
-                                                                book_title: book_title.clone(),
-                                                                title: entry_path.clone().into()
-                                                            },
-                                                            class: "entry-preview-title-link",
-                                                            div { class: "entry-preview-title", "{entry_title}" }
-                                                        }
-                                                        if let Some(ref date) = created_at {
-                                                            div { class: "entry-preview-date", "{date}" }
-                                                        }
-                                                        // EntryActions handles visibility via permissions
-                                                        crate::components::EntryActions {
-                                                            entry_uri,
-                                                            entry_cid: entry_view.entry.cid.clone().into_static(),
-                                                            entry_title: entry_title.to_string(),
-                                                            in_notebook: true,
-                                                            notebook_title: Some(book_title.clone()),
-                                                            permissions: entry_view.entry.permissions.clone()
-                                                        }
-                                                    }
-                                                    if let Some(ref html) = preview_html {
-                                                        Link {
-                                                            to: Route::EntryPage {
-                                                                ident: ident.clone(),
-                                                                book_title: book_title.clone(),
-                                                                title: entry_path.clone().into()
-                                                            },
-                                                            class: "entry-preview-content-link",
-                                                            div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                    for entry_view in entry_list.iter() {
+                                        NotebookEntryPreview {
+                                            book_entry_view: entry_view.clone(),
+                                            ident: ident.clone(),
+                                            book_title: book_title.clone(),
                                         }
                                     }
                                 }
@@ -639,70 +663,11 @@ pub fn NotebookCard(
                                 // Show first, interstitial, and last
                                 rsx! {
                                     if let Some(first_entry) = entry_list.first() {
-                                        {
-                                            let entry_title = first_entry.entry.title.as_ref()
-                                                .map(|t| t.as_ref())
-                                                .unwrap_or("Untitled");
-
-                                            // Get path from view, fallback to title
-                                            let entry_path = first_entry.entry.path
-                                                .as_ref()
-                                                .map(|p| p.as_ref().to_string())
-                                                .unwrap_or_else(|| entry_title.to_string());
-
-                                            // Parse entry for created_at and preview
-                                            let parsed_entry = from_data::<Entry>(&first_entry.entry.record).ok();
-
-                                            let preview_html = parsed_entry.as_ref().map(|entry| {
-                                                let parser = markdown_weaver::Parser::new(&entry.content);
-                                                let mut html_buf = String::new();
-                                                markdown_weaver::html::push_html(&mut html_buf, parser);
-                                                html_buf
-                                            });
-
-                                            let created_at = parsed_entry.as_ref()
-                                                .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
-
-                                            let entry_uri = first_entry.entry.uri.clone().into_static();
-
-                                            rsx! {
-                                                div { class: "notebook-entry-preview notebook-entry-preview-first",
-                                                    div { class: "entry-preview-header",
-                                                        Link {
-                                                            to: Route::EntryPage {
-                                                                ident: ident.clone(),
-                                                                book_title: book_title.clone(),
-                                                                title: entry_path.clone().into()
-                                                            },
-                                                            class: "entry-preview-title-link",
-                                                            div { class: "entry-preview-title", "{entry_title}" }
-                                                        }
-                                                        if let Some(ref date) = created_at {
-                                                            div { class: "entry-preview-date", "{date}" }
-                                                        }
-                                                        // EntryActions handles visibility via permissions
-                                                        crate::components::EntryActions {
-                                                            entry_uri,
-                                                            entry_cid: first_entry.entry.cid.clone().into_static(),
-                                                            entry_title: entry_title.to_string(),
-                                                            in_notebook: true,
-                                                            notebook_title: Some(book_title.clone()),
-                                                            permissions: first_entry.entry.permissions.clone()
-                                                        }
-                                                    }
-                                                    if let Some(ref html) = preview_html {
-                                                        Link {
-                                                            to: Route::EntryPage {
-                                                                ident: ident.clone(),
-                                                                book_title: book_title.clone(),
-                                                                title: entry_path.clone().into()
-                                                            },
-                                                            class: "entry-preview-content-link",
-                                                            div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                        NotebookEntryPreview {
+                                            book_entry_view: first_entry.clone(),
+                                            ident: ident.clone(),
+                                            book_title: book_title.clone(),
+                                            extra_class: "notebook-entry-preview-first",
                                         }
                                     }
 
@@ -719,70 +684,11 @@ pub fn NotebookCard(
                                     }
 
                                     if let Some(last_entry) = entry_list.last() {
-                                        {
-                                            let entry_title = last_entry.entry.title.as_ref()
-                                                .map(|t| t.as_ref())
-                                                .unwrap_or("Untitled");
-
-                                            // Get path from view, fallback to title
-                                            let entry_path = last_entry.entry.path
-                                                .as_ref()
-                                                .map(|p| p.as_ref().to_string())
-                                                .unwrap_or_else(|| entry_title.to_string());
-
-                                            // Parse entry for created_at and preview
-                                            let parsed_entry = from_data::<Entry>(&last_entry.entry.record).ok();
-
-                                            let preview_html = parsed_entry.as_ref().map(|entry| {
-                                                let parser = markdown_weaver::Parser::new(&entry.content);
-                                                let mut html_buf = String::new();
-                                                markdown_weaver::html::push_html(&mut html_buf, parser);
-                                                html_buf
-                                            });
-
-                                            let created_at = parsed_entry.as_ref()
-                                                .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
-
-                                            let entry_uri = last_entry.entry.uri.clone().into_static();
-
-                                            rsx! {
-                                                div { class: "notebook-entry-preview notebook-entry-preview-last",
-                                                    div { class: "entry-preview-header",
-                                                        Link {
-                                                            to: Route::EntryPage {
-                                                                ident: ident.clone(),
-                                                                book_title: book_title.clone(),
-                                                                title: entry_path.clone().into()
-                                                            },
-                                                            class: "entry-preview-title-link",
-                                                            div { class: "entry-preview-title", "{entry_title}" }
-                                                        }
-                                                        if let Some(ref date) = created_at {
-                                                            div { class: "entry-preview-date", "{date}" }
-                                                        }
-                                                        // EntryActions handles visibility via permissions
-                                                        crate::components::EntryActions {
-                                                            entry_uri,
-                                                            entry_cid: last_entry.entry.cid.clone().into_static(),
-                                                            entry_title: entry_title.to_string(),
-                                                            in_notebook: true,
-                                                            notebook_title: Some(book_title.clone()),
-                                                            permissions: last_entry.entry.permissions.clone()
-                                                        }
-                                                    }
-                                                    if let Some(ref html) = preview_html {
-                                                        Link {
-                                                            to: Route::EntryPage {
-                                                                ident: ident.clone(),
-                                                                book_title: book_title.clone(),
-                                                                title: entry_path.clone().into()
-                                                            },
-                                                            class: "entry-preview-content-link",
-                                                            div { class: "entry-preview-content", dangerous_inner_html: "{html}" }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                        NotebookEntryPreview {
+                                            book_entry_view: last_entry.clone(),
+                                            ident: ident.clone(),
+                                            book_title: book_title.clone(),
+                                            extra_class: "notebook-entry-preview-last",
                                         }
                                     }
                                 }

@@ -16,6 +16,7 @@ use jacquard::types::blob::{BlobRef, MimeType};
 use jacquard::types::string::{AtUri, Did, RecordKey, Rkey};
 use jacquard::types::tid::Tid;
 use jacquard::types::uri::Uri;
+use jacquard::smol_str::SmolStr;
 use jacquard::url::Url;
 use jacquard::{CowStr, IntoStatic};
 use mime_sniffer::MimeTypeSniffer;
@@ -2180,11 +2181,11 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
 
                 peers.push(SessionPeer {
                     did: record_id.did.into_static(),
-                    node_id: session_record.value.node_id.to_string(),
+                    node_id: session_record.value.node_id.as_ref().into(),
                     relay_url: session_record
                         .value
                         .relay_url
-                        .map(|u| u.as_str().to_string()),
+                        .map(|u| u.as_ref().into()),
                     created_at: session_record.value.created_at,
                     expires_at: session_record.value.expires_at,
                 });
@@ -2301,9 +2302,9 @@ pub struct SessionPeer<'a> {
     /// The peer's DID.
     pub did: Did<'a>,
     /// The peer's iroh NodeId (z-base32 encoded).
-    pub node_id: String,
+    pub node_id: SmolStr,
     /// Optional relay URL for browser clients.
-    pub relay_url: Option<String>,
+    pub relay_url: Option<SmolStr>,
     /// When the session was created.
     pub created_at: jacquard::types::string::Datetime,
     /// When the session expires (if set).

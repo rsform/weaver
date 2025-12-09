@@ -906,18 +906,6 @@ pub fn use_entries_from_ufos() -> (
                                         .await
                                         .ok();
                                     }
-                                    #[cfg(all(target_family = "wasm", target_os = "unknown",))]
-                                    {
-                                        tracing::info!("Registering standalone entry blobs");
-                                        let _ =
-                                            crate::service_worker::register_standalone_entry_blobs(
-                                                &ident,
-                                                at_uri.rkey().unwrap().0.as_str(),
-                                                images,
-                                                &fetcher,
-                                            )
-                                            .await;
-                                    }
                                 }
                             }
                         }
