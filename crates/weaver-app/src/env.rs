@@ -15,6 +15,8 @@ pub const WEAVER_CLIENT_NAME: &'static str = "Weaver";
 #[allow(unused)]
 pub const WEAVER_LOGO_URI: &'static str = "https://alpha.weaver.sh/favicon.ico";
 #[allow(unused)]
-pub const WEAVER_TOS_URI: &'static str = "";
+pub const WEAVER_TOS_URI: &'static str = "https://alpha.weaver.sh/tos";
 #[allow(unused)]
-pub const WEAVER_PRIVACY_POLICY_URI: &'static str = "";
+pub const WEAVER_PRIVACY_POLICY_URI: &'static str = "https://alpha.weaver.sh/privacy";
+#[allow(unused)]
+pub const WEAVER_OWNER_DID: &'static str = "did:plc:yfvwmnlztr4dwkb7hwz55r2g";

@@ -16,6 +16,7 @@ grant_proposal.md
 
 **/.claude/settings.local.json
 .workspaces/
+**/**.wasm
 **/.obsidian
 **/.trash
 **/bug_notes.md

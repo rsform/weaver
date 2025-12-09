@@ -35,9 +35,9 @@ use components::{EntryPage, Repository, RepositoryIndex};
 use config::{Config, OAuthConfig};
 #[allow(unused)]
 use views::{
-    Callback, DraftEdit, DraftsList, Editor, Home, InvitesPage, Navbar, NewDraft, Notebook,
-    NotebookEntryByRkey, NotebookEntryEdit, NotebookIndex, NotebookPage, RecordIndex, RecordPage,
-    StandaloneEntry, StandaloneEntryEdit,
+    AboutPage, Callback, DraftEdit, DraftsList, Editor, Home, InvitesPage, Navbar, NewDraft,
+    Notebook, NotebookEntryByRkey, NotebookEntryEdit, NotebookIndex, NotebookPage, PrivacyPage,
+    RecordIndex, RecordPage, StandaloneEntry, StandaloneEntryEdit, TermsPage,
 };
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -48,6 +48,12 @@ pub enum Route {
         Home {},
         #[route("/editor?:entry")]
         Editor { entry: Option<String> },
+        #[route("/about")]
+        AboutPage {},
+        #[route("/tos")]
+        TermsPage {},
+        #[route("/privacy")]
+        PrivacyPage {},
         #[layout(ErrorLayout)]
         #[nest("/record")]
           #[layout(RecordIndex)]

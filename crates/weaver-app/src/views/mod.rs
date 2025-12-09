@@ -37,3 +37,9 @@ pub use entry::{NotebookEntryByRkey, StandaloneEntry};
 
 mod invites;
 pub use invites::InvitesPage;
+
+mod footer;
+pub use footer::Footer;
+
+mod static_page;
+pub use static_page::{AboutPage, PrivacyPage, TermsPage};

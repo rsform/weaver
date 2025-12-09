@@ -6,6 +6,16 @@ body {
     font-family: var(--font-ui);
 }
 
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.app-main {
+    flex: 1;
+}
+
 a {
     color: var(--color-link);
     text-decoration: none;
