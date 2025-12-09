@@ -145,7 +145,9 @@ pub fn extract_preview(content: &str, max_len: usize) -> String {
     if cleaned.len() <= max_len {
         cleaned
     } else {
-        format!("{}...", &cleaned[..max_len - 3])
+        // Use char boundary-safe truncation to avoid panic on multibyte chars
+        let truncated: String = cleaned.chars().take(max_len - 3).collect();
+        format!("{}...", truncated)
     }
 }
 

@@ -24,7 +24,7 @@ use jacquard::types::string::Handle;
 use jacquard::types::string::Nsid;
 use jacquard::xrpc::XrpcResponse;
 use jacquard::xrpc::*;
-use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
+use jacquard::{smol_str::{SmolStr, format_smolstr}, types::ident::AtIdentifier};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::{sync::Arc, time::Duration};
@@ -528,12 +528,12 @@ impl Fetcher {
 
         for ufos_record in records {
             // Construct URI
-            let uri_str = format!(
+            let uri_str = format_smolstr!(
                 "at://{}/{}/{}",
                 ufos_record.did, ufos_record.collection, ufos_record.rkey
             );
             let uri = AtUri::new_owned(uri_str)
-                .map_err(|e| dioxus::CapturedError::from_display(format!("Invalid URI: {}", e)))?;
+                .map_err(|e| dioxus::CapturedError::from_display(format_smolstr!("Invalid URI: {}", e).as_str()))?;
             match client.view_notebook(&uri).await {
                 Ok((notebook, entries)) => {
                     let ident = uri.authority().clone().into_static();
@@ -922,7 +922,7 @@ impl Fetcher {
         // Try to find notebook context via constellation
         let entry_uri = entry_view.uri.clone();
         let at_uri = AtUri::new(entry_uri.as_ref()).map_err(|e| {
-            dioxus::CapturedError::from_display(format!("Invalid entry URI: {}", e))
+            dioxus::CapturedError::from_display(format_smolstr!("Invalid entry URI: {}", e).as_str())
         })?;
 
         let (total, first_notebook) = client
@@ -934,14 +934,14 @@ impl Fetcher {
         let notebook_context = if total == 1 {
             if let Some(notebook_id) = first_notebook {
                 // Construct notebook URI from RecordId
-                let notebook_uri_str = format!(
+                let notebook_uri_str = format_smolstr!(
                     "at://{}/{}/{}",
                     notebook_id.did.as_str(),
                     notebook_id.collection.as_str(),
                     notebook_id.rkey.0.as_str()
                 );
                 let notebook_uri = AtUri::new_owned(notebook_uri_str).map_err(|e| {
-                    dioxus::CapturedError::from_display(format!("Invalid notebook URI: {}", e))
+                    dioxus::CapturedError::from_display(format_smolstr!("Invalid notebook URI: {}", e).as_str())
                 })?;
 
                 // Fetch notebook and find entry position
@@ -1032,7 +1032,7 @@ impl Fetcher {
         // Check if entry is in multiple notebooks - if so, clear prev/next
         let entry_uri = book_entry_view.entry.uri.clone();
         let at_uri = AtUri::new(entry_uri.as_ref()).map_err(|e| {
-            dioxus::CapturedError::from_display(format!("Invalid entry URI: {}", e))
+            dioxus::CapturedError::from_display(format_smolstr!("Invalid entry URI: {}", e).as_str())
         })?;
 
         let (total, _) = client

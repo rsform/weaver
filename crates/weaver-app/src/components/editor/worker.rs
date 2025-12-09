@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use weaver_common::transport::PresenceSnapshot;
 
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use jacquard::smol_str::format_smolstr;
+
 /// Input messages to the editor worker.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WorkerInput {
@@ -224,7 +227,7 @@ mod worker_impl {
                         if let Err(e) = new_doc.import(&snapshot) {
                             if let Err(send_err) = scope
                                 .send(WorkerOutput::Error {
-                                    message: format!("Failed to import snapshot: {e}"),
+                                    message: format_smolstr!("Failed to import snapshot: {e}").to_string(),
                                 })
                                 .await
                             {
@@ -271,7 +274,7 @@ mod worker_impl {
                         Err(e) => {
                             if let Err(send_err) = scope
                                 .send(WorkerOutput::Error {
-                                    message: format!("Export failed: {e}"),
+                                    message: format_smolstr!("Export failed: {e}").to_string(),
                                 })
                                 .await
                             {
@@ -321,7 +324,7 @@ mod worker_impl {
                         Err(e) => {
                             if let Err(send_err) = scope
                                 .send(WorkerOutput::Error {
-                                    message: format!("Failed to spawn CollabNode: {e}"),
+                                    message: format_smolstr!("Failed to spawn CollabNode: {e}").to_string(),
                                 })
                                 .await
                             {
@@ -450,7 +453,7 @@ mod worker_impl {
                         Err(e) => {
                             if let Err(send_err) = scope
                                 .send(WorkerOutput::Error {
-                                    message: format!("Failed to join session: {e}"),
+                                    message: format_smolstr!("Failed to join session: {e}").to_string(),
                                 })
                                 .await
                             {
@@ -551,7 +554,7 @@ mod worker_impl {
                             if let Err(e) = new_doc.import(&snapshot) {
                                 if let Err(send_err) = scope
                                     .send(WorkerOutput::Error {
-                                        message: format!("Failed to import snapshot: {e}"),
+                                        message: format_smolstr!("Failed to import snapshot: {e}").to_string(),
                                     })
                                     .await
                                 {
@@ -584,7 +587,7 @@ mod worker_impl {
                         let snapshot_bytes = match doc.export(loro::ExportMode::Snapshot) {
                             Ok(bytes) => bytes,
                             Err(e) => {
-                                if let Err(send_err) = scope.send(WorkerOutput::Error { message: format!("Export failed: {e}") }).await {
+                                if let Err(send_err) = scope.send(WorkerOutput::Error { message: format_smolstr!("Export failed: {e}").to_string() }).await {
                                     tracing::error!("Failed to send Error to coordinator: {send_err}");
                                 }
                                 continue;
@@ -728,7 +731,7 @@ mod embed_worker_impl {
                         let at_uri = match AtUri::new_owned(uri_str.clone()) {
                             Ok(u) => u,
                             Err(e) => {
-                                errors.insert(uri_str, format!("Invalid AT URI: {e}"));
+                                errors.insert(uri_str, format_smolstr!("Invalid AT URI: {e}").to_string());
                                 continue;
                             }
                         };
@@ -770,7 +773,7 @@ mod embed_worker_impl {
                                     results.insert(uri_str, html);
                                 }
                                 Err(e) => {
-                                    errors.insert(uri_str, format!("{:?}", e));
+                                    errors.insert(uri_str, format_smolstr!("{:?}", e).to_string());
                                 }
                             }
                         }

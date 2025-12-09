@@ -1350,7 +1350,8 @@ pub fn EditableRecordContent(
                             if let Some(new_collection_str) = data.type_discriminator() {
                                 let new_collection = Nsid::new(new_collection_str).ok();
                                 if let Some(new_collection) = new_collection {
-                                    // Create new record
+                                    // Create new record first - if this fails, user keeps their old record
+                                    // If delete fails after, user has duplicates (recoverable) rather than data loss
                                     let create_req = CreateRecord::new()
                                         .repo(AtIdentifier::Did(did.clone()))
                                         .collection(new_collection)
@@ -1360,7 +1361,7 @@ pub fn EditableRecordContent(
                                     match fetcher.send(create_req).await {
                                         Ok(response) => {
                                             if let Ok(create_output) = response.into_output() {
-                                                // Delete old record
+                                                // Delete old record after successful create
                                                 if let (Some(old_collection_str), Some(old_rkey)) = (uri.collection(), uri.rkey()) {
                                                     let old_collection = Nsid::new(old_collection_str.as_str()).ok();
                                                     if let Some(old_collection) = old_collection {

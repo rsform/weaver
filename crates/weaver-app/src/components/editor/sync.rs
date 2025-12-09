@@ -23,6 +23,7 @@ use crate::fetch::Fetcher;
 use jacquard::bytes::Bytes;
 use jacquard::cowstr::ToCowStr;
 use jacquard::prelude::*;
+use jacquard::smol_str::format_smolstr;
 use jacquard::types::blob::MimeType;
 use jacquard::types::collection::Collection;
 use jacquard::types::ident::AtIdentifier;
@@ -225,7 +226,7 @@ fn build_doc_ref(
             };
 
             // Build AT-URI pointing to actual draft record: at://{did}/sh.weaver.edit.draft/{rkey}
-            let canonical_uri = format!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
+            let canonical_uri = format_smolstr!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
 
             DocRef {
                 value: DocRefValue::DraftRef(Box::new(DraftRef {
@@ -283,7 +284,7 @@ pub async fn find_edit_root_for_entry(
 
     let query = GetBacklinksQuery {
         subject: Uri::At(entry_uri.clone().into_static()),
-        source: format!("{}:doc.value.entry.uri", ROOT_NSID).into(),
+        source: format_smolstr!("{}:doc.value.entry.uri", ROOT_NSID).into(),
         cursor: None,
         did: vec![],
         limit: 1,
@@ -342,7 +343,7 @@ pub async fn find_all_edit_roots_for_entry(
     // Query for edit.root records from this DID that reference entry_uri
     let query = GetBacklinksQuery {
         subject: Uri::At(entry_uri.clone().into_static()),
-        source: format!("{}:doc.value.entry.uri", ROOT_NSID).into(),
+        source: format_smolstr!("{}:doc.value.entry.uri", ROOT_NSID).into(),
         cursor: None,
         did: all_dids.clone(),
         limit: 10,
@@ -388,7 +389,7 @@ pub async fn find_edit_root_for_draft(
 
     let query = GetBacklinksQuery {
         subject: Uri::At(draft_uri.clone().into_static()),
-        source: format!("{}:doc.value.draft_key", ROOT_NSID).into(),
+        source: format_smolstr!("{}:doc.value.draft_key", ROOT_NSID).into(),
         cursor: None,
         did: vec![],
         limit: 1,
@@ -421,7 +422,7 @@ pub fn build_draft_uri(did: &Did<'_>, draft_key: &str) -> AtUri<'static> {
         draft_key.to_string()
     };
 
-    let uri_str = format!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
+    let uri_str = format_smolstr!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
     // Safe to unwrap: we're constructing a valid AT-URI
     AtUri::new(&uri_str).unwrap().into_static()
 }
@@ -564,7 +565,7 @@ pub async fn find_diffs_for_root(
     loop {
         let query = GetBacklinksQuery {
             subject: Uri::At(root_uri.clone().into_static()),
-            source: format!("{}:root.uri", DIFF_NSID).into(),
+            source: format_smolstr!("{}:root.uri", DIFF_NSID).into(),
             cursor: cursor.map(Into::into),
             did: vec![],
             limit: 100,
@@ -977,7 +978,7 @@ pub async fn load_all_edit_states_from_pds(
         let root_did = root_id.did.clone();
 
         // Build root URI to look up last seen diff
-        let root_uri = AtUri::new(&format!(
+        let root_uri = AtUri::new(&format_smolstr!(
             "at://{}/{}/{}",
             root_id.did,
             ROOT_NSID,
@@ -1063,7 +1064,7 @@ async fn load_edit_state_from_root_id(
     after_rkey: Option<&str>,
 ) -> Result<Option<PdsEditState>, WeaverError> {
     // Build root URI
-    let root_uri = AtUri::new(&format!(
+    let root_uri = AtUri::new(&format_smolstr!(
         "at://{}/{}/{}",
         root_id.did,
         ROOT_NSID,
@@ -1131,7 +1132,7 @@ async fn load_edit_state_from_root_id(
             }
         }
 
-        let diff_uri = AtUri::new(&format!("at://{}/{}/{}", diff_id.did, DIFF_NSID, rkey_str))
+        let diff_uri = AtUri::new(&format_smolstr!("at://{}/{}/{}", diff_id.did, DIFF_NSID, rkey_str))
             .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid diff URI: {}", e)))?
             .into_static();
 

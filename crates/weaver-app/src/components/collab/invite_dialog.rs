@@ -5,6 +5,7 @@ use crate::components::dialog::{DialogContent, DialogDescription, DialogRoot, Di
 use crate::components::input::Input;
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
+use jacquard::smol_str::format_smolstr;
 use jacquard::types::string::{AtUri, Cid, Handle};
 use jacquard::{IntoStatic, prelude::*};
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
@@ -56,7 +57,7 @@ pub fn InviteDialog(props: InviteDialogProps) -> Element {
             let handle = match Handle::new(&handle) {
                 Ok(h) => h,
                 Err(e) => {
-                    error.set(Some(format!("Invalid handle: {}", e)));
+                    error.set(Some(format_smolstr!("Invalid handle: {}", e).into()));
                     is_sending.set(false);
                     return;
                 }
@@ -65,7 +66,7 @@ pub fn InviteDialog(props: InviteDialogProps) -> Element {
             let invitee_did = match fetcher.resolve_handle(&handle).await {
                 Ok(did) => did,
                 Err(e) => {
-                    error.set(Some(format!("Could not resolve handle: {}", e)));
+                    error.set(Some(format_smolstr!("Could not resolve handle: {}", e).into()));
                     is_sending.set(false);
                     return;
                 }
@@ -75,7 +76,7 @@ pub fn InviteDialog(props: InviteDialogProps) -> Element {
             let cid = match Cid::new(resource_cid.as_bytes()) {
                 Ok(c) => c.into_static(),
                 Err(e) => {
-                    error.set(Some(format!("Invalid CID: {}", e)));
+                    error.set(Some(format_smolstr!("Invalid CID: {}", e).into()));
                     is_sending.set(false);
                     return;
                 }
@@ -104,7 +105,7 @@ pub fn InviteDialog(props: InviteDialogProps) -> Element {
                     on_close.call(());
                 }
                 Err(e) => {
-                    error.set(Some(format!("Failed to send invite: {}", e)));
+                    error.set(Some(format_smolstr!("Failed to send invite: {}", e).into()));
                 }
             }
 

@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use jacquard::bytes::Bytes;
 use jacquard::common::{Data, IntoStatic};
+use jacquard::smol_str::{SmolStr, format_smolstr};
 use jacquard::types::LexiconStringType;
 use jacquard::types::string::AtprotoStr;
 use jacquard_lexicon::validation::{
@@ -158,37 +159,37 @@ pub fn try_parse_as_type(
     match string_type {
         LexiconStringType::Datetime => Datetime::from_str(text)
             .map(AtprotoStr::Datetime)
-            .map_err(|e| format!("Invalid datetime: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid datetime: {}", e).to_string()),
         LexiconStringType::Did => Did::new(text)
             .map(|v| AtprotoStr::Did(v.into_static()))
-            .map_err(|e| format!("Invalid DID: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid DID: {}", e).to_string()),
         LexiconStringType::Handle => Handle::new(text)
             .map(|v| AtprotoStr::Handle(v.into_static()))
-            .map_err(|e| format!("Invalid handle: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid handle: {}", e).to_string()),
         LexiconStringType::AtUri => AtUri::new(text)
             .map(|v| AtprotoStr::AtUri(v.into_static()))
-            .map_err(|e| format!("Invalid AT-URI: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid AT-URI: {}", e).to_string()),
         LexiconStringType::AtIdentifier => AtIdentifier::new(text)
             .map(|v| AtprotoStr::AtIdentifier(v.into_static()))
-            .map_err(|e| format!("Invalid identifier: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid identifier: {}", e).to_string()),
         LexiconStringType::Nsid => Nsid::new(text)
             .map(|v| AtprotoStr::Nsid(v.into_static()))
-            .map_err(|e| format!("Invalid NSID: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid NSID: {}", e).to_string()),
         LexiconStringType::Tid => Tid::new(text)
             .map(|v| AtprotoStr::Tid(v.into_static()))
-            .map_err(|e| format!("Invalid TID: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid TID: {}", e).to_string()),
         LexiconStringType::RecordKey => Rkey::new(text)
             .map(|rk| AtprotoStr::RecordKey(RecordKey::from(rk)))
-            .map_err(|e| format!("Invalid record key: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid record key: {}", e).to_string()),
         LexiconStringType::Cid => Cid::new(text.as_bytes())
             .map(|v| AtprotoStr::Cid(v.into_static()))
-            .map_err(|_| "Invalid CID".to_string()),
+            .map_err(|_| SmolStr::new_inline("Invalid CID").to_string()),
         LexiconStringType::Language => Language::new(text)
             .map(AtprotoStr::Language)
-            .map_err(|e| format!("Invalid language: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid language: {}", e).to_string()),
         LexiconStringType::Uri(_) => Uri::new(text)
             .map(|u| AtprotoStr::Uri(u.into_static()))
-            .map_err(|e| format!("Invalid URI: {}", e)),
+            .map_err(|e| format_smolstr!("Invalid URI: {}", e).to_string()),
         LexiconStringType::String => {
             // Plain strings: use smart inference
             use jacquard::types::value::parsing;

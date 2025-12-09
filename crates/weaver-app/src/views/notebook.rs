@@ -7,7 +7,7 @@ use crate::{
 };
 use dioxus::prelude::*;
 use jacquard::{
-    smol_str::{SmolStr, ToSmolStr},
+    smol_str::{SmolStr, ToSmolStr, format_smolstr},
     types::ident::AtIdentifier,
 };
 
@@ -114,32 +114,32 @@ pub fn NotebookIndex(
                     use weaver_api::sh_weaver::actor::ProfileDataViewInner;
                     notebook_view.authors.first()
                         .map(|a| match &a.record.inner {
-                            ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
-                            ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
-                            ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_string(),
-                            _ => "unknown".to_string(),
+                            ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_smolstr(),
+                            ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_smolstr(),
+                            ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_smolstr(),
+                            _ => "unknown".into(),
                         })
-                        .unwrap_or_else(|| "unknown".to_string())
+                        .unwrap_or_else(|| "unknown".into())
                 };
 
                 // NotebookView doesn't expose description directly, use empty for now
                 let og_description = String::new();
 
                 let base = if crate::env::WEAVER_APP_ENV == "dev" {
-                    format!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
+                    format_smolstr!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
                 } else {
-                    crate::env::WEAVER_APP_HOST.to_string()
+                    SmolStr::new_static(crate::env::WEAVER_APP_HOST)
                 };
-                let og_image_url = format!("{}/og/notebook/{}/{}.png", base, ident(), book_title());
-                let canonical_url = format!("{}/{}/{}", base, ident(), book_title());
+                let og_image_url = format_smolstr!("{}/og/notebook/{}/{}.png", base, ident(), book_title());
+                let canonical_url = format_smolstr!("{}/{}/{}", base, ident(), book_title());
 
                 rsx! {
                     NotebookOgMeta {
                         title: og_title,
                         description: og_description,
-                        image_url: og_image_url,
-                        canonical_url,
-                        author_handle: og_author,
+                        image_url: og_image_url.to_string(),
+                        canonical_url: canonical_url.to_string(),
+                        author_handle: og_author.to_string(),
                         entry_count: entries.len(),
                     }
                     div { class: "notebook-layout",

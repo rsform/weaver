@@ -8,7 +8,7 @@ use crate::components::editor::{list_drafts_from_pds, RemoteDraft};
 use crate::components::editor::{delete_draft, list_drafts};
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
-use jacquard::smol_str::SmolStr;
+use jacquard::smol_str::{SmolStr, format_smolstr};
 use jacquard::types::ident::AtIdentifier;
 use std::collections::HashSet;
 
@@ -161,7 +161,7 @@ pub fn DraftsList(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                 div { class: "drafts-list",
                     for draft in merged_drafts() {
                         {
-                            let key_for_delete = format!("new:{}", draft.rkey);
+                            let key_for_delete = format_smolstr!("new:{}", draft.rkey).to_string();
                             let is_edit_draft = draft.editing_uri.is_some();
                             let display_title = if draft.title.is_empty() {
                                 "Untitled".to_string()
@@ -296,7 +296,7 @@ pub fn StandaloneEntryEdit(
 
     // Construct AT-URI for the entry
     let entry_uri =
-        use_memo(move || format!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey()));
+        use_memo(move || format_smolstr!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey()).to_string());
 
     rsx! {
         EditorCss {}
@@ -320,7 +320,7 @@ pub fn NotebookEntryEdit(
 
     // Construct AT-URI for the entry
     let entry_uri =
-        use_memo(move || format!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey()));
+        use_memo(move || format_smolstr!("at://{}/sh.weaver.notebook.entry/{}", ident(), rkey()).to_string());
 
     // Fetch notebook entries for wikilink validation
     let (_entries_resource, entries_memo) = use_notebook_entries(ident, book_title);
@@ -337,7 +337,7 @@ pub fn NotebookEntryEdit(
                 let path = book_entry.entry.path.as_ref().map(|p| p.as_str()).unwrap_or("");
                 if !title.is_empty() || !path.is_empty() {
                     // Build canonical URL: /{ident}/{book}/{path}
-                    let canonical_url = format!("/{}/{}/{}", ident_str, book, path);
+                    let canonical_url = format_smolstr!("/{}/{}/{}", ident_str, book, path).to_string();
                     index.add_entry(title, path, canonical_url);
                 }
             }

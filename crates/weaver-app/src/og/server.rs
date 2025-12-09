@@ -13,6 +13,9 @@ use jacquard::types::string::AtIdentifier;
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 use std::sync::Arc;
 
+#[cfg(all(feature = "fullstack-server", feature = "server"))]
+use jacquard::smol_str::ToSmolStr;
+
 // Route: /og/{ident}/{book_title}/{entry_title} - OpenGraph image for entry
 #[cfg(all(feature = "fullstack-server", feature = "server"))]
 #[get("/og/{ident}/{book_title}/{entry_title}", fetcher: Extension<Arc<fetch::Fetcher>>)]
@@ -74,19 +77,19 @@ pub async fn og_image(
 
     // Use book_title from URL - it's the notebook slug/title
     // TODO: Could fetch actual notebook record to get display title
-    let notebook_title_str: String = book_title.to_string();
+    let notebook_title_str: &str = book_title.as_ref();
 
     let author_handle = book_entry
         .entry
         .authors
         .first()
         .map(|a| match &a.record.inner {
-            ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
-            ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
-            ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_string(),
-            _ => "unknown".to_string(),
+            ProfileDataViewInner::ProfileView(p) => p.handle.as_ref(),
+            ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref(),
+            ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref(),
+            _ => "unknown",
         })
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or("unknown");
 
     // Check for hero image in embeds
     let hero_image_data = if let Some(ref embeds) = entry.embeds {
@@ -266,12 +269,12 @@ pub async fn og_notebook_image(
         .authors
         .first()
         .map(|a| match &a.record.inner {
-            ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
-            ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
-            ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_string(),
-            _ => "unknown".to_string(),
+            ProfileDataViewInner::ProfileView(p) => p.handle.as_ref(),
+            ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref(),
+            ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref(),
+            _ => "unknown",
         })
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or("unknown");
 
     // Fetch entries to get entry titles and count
     let entries_result = fetcher
@@ -362,39 +365,34 @@ pub async fn og_profile_image(ident: SmolStr) -> Result<axum::response::Response
         ProfileDataViewInner::ProfileView(p) => (
             p.display_name
                 .as_ref()
-                .map(|n| n.as_ref().to_string())
+                .map(|n| n.as_ref())
                 .unwrap_or_default(),
-            p.handle.as_ref().to_string(),
+            p.handle.as_ref(),
             p.description
                 .as_ref()
-                .map(|d| d.as_ref().to_string())
+                .map(|d| d.as_ref())
                 .unwrap_or_default(),
-            p.avatar.as_ref().map(|u| u.as_ref().to_string()),
-            None::<String>,
-            p.did.as_ref().to_string(),
+            p.avatar.as_ref().map(|u| u.as_ref()),
+            None::<&str>,
+            p.did.as_ref(),
         ),
         ProfileDataViewInner::ProfileViewDetailed(p) => (
             p.display_name
                 .as_ref()
-                .map(|n| n.as_ref().to_string())
+                .map(|n| n.as_ref())
                 .unwrap_or_default(),
-            p.handle.as_ref().to_string(),
+            p.handle.as_ref(),
             p.description
                 .as_ref()
-                .map(|d| d.as_ref().to_string())
+                .map(|d| d.as_ref())
                 .unwrap_or_default(),
-            p.avatar.as_ref().map(|u| u.as_ref().to_string()),
-            p.banner.as_ref().map(|u| u.as_ref().to_string()),
-            p.did.as_ref().to_string(),
+            p.avatar.as_ref().map(|u| u.as_ref()),
+            p.banner.as_ref().map(|u| u.as_ref()),
+            p.did.as_ref(),
         ),
-        ProfileDataViewInner::TangledProfileView(p) => (
-            String::new(),
-            p.handle.as_ref().to_string(),
-            String::new(),
-            None,
-            None,
-            p.did.as_ref().to_string(),
-        ),
+        ProfileDataViewInner::TangledProfileView(p) => {
+            ("", p.handle.as_ref(), "", None, None, p.did.as_ref())
+        }
         _ => return Ok((StatusCode::NOT_FOUND, "Profile type not supported").into_response()),
     };
 
@@ -418,7 +416,7 @@ pub async fn og_profile_image(ident: SmolStr) -> Result<axum::response::Response
     let notebook_count = notebooks_result.map(|n| n.len()).unwrap_or(0);
 
     // Fetch avatar as base64 if available
-    let avatar_data = if let Some(ref url) = avatar_url {
+    let avatar_data = if let Some(url) = avatar_url {
         match reqwest::get(url).await {
             Ok(response) if response.status().is_success() => {
                 let content_type = response
@@ -426,7 +424,7 @@ pub async fn og_profile_image(ident: SmolStr) -> Result<axum::response::Response
                     .get("content-type")
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("image/jpeg")
-                    .to_string();
+                    .to_smolstr();
                 match response.bytes().await {
                     Ok(bytes) => {
                         use base64::Engine;
@@ -443,7 +441,7 @@ pub async fn og_profile_image(ident: SmolStr) -> Result<axum::response::Response
     };
 
     // Check for banner and generate appropriate template
-    let png_bytes = if let Some(ref banner_url) = banner_url {
+    let png_bytes = if let Some(banner_url) = banner_url {
         // Fetch banner image
         let banner_data = match reqwest::get(banner_url).await {
             Ok(response) if response.status().is_success() => {
@@ -452,7 +450,7 @@ pub async fn og_profile_image(ident: SmolStr) -> Result<axum::response::Response
                     .get("content-type")
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("image/jpeg")
-                    .to_string();
+                    .to_smolstr();
                 match response.bytes().await {
                     Ok(bytes) => {
                         use base64::Engine;

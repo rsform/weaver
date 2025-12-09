@@ -3,7 +3,7 @@ use crate::{
     data,
 };
 use dioxus::prelude::*;
-use jacquard::smol_str::SmolStr;
+use jacquard::smol_str::{SmolStr, format_smolstr};
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::string::Did;
 
@@ -40,14 +40,14 @@ fn pinned_items() -> Vec<PinnedItem> {
 #[component]
 pub fn SiteOgMeta() -> Element {
     let base = if crate::env::WEAVER_APP_ENV == "dev" {
-        format!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
+        format_smolstr!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
     } else {
-        crate::env::WEAVER_APP_HOST.to_string()
+        SmolStr::new_static(crate::env::WEAVER_APP_HOST)
     };
 
     let title = "Weaver";
     let description = "Share your words, your way.";
-    let image_url = format!("{}/og/site.png", base);
+    let image_url = format_smolstr!("{}/og/site.png", base);
     let canonical_url = base;
 
     rsx! {

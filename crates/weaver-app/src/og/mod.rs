@@ -5,14 +5,16 @@ pub mod server;
 
 use crate::cache_impl::{Cache, new_cache};
 use askama::Template;
+use jacquard::smol_str::SmolStr;
+use jacquard::smol_str::format_smolstr;
 use std::sync::OnceLock;
 use std::time::Duration;
 
 /// Cache for generated OG images
 /// Key: "{ident}/{book}/{entry}/{cid}" - includes CID for invalidation
-static OG_CACHE: OnceLock<Cache<String, Vec<u8>>> = OnceLock::new();
+static OG_CACHE: OnceLock<Cache<SmolStr, Vec<u8>>> = OnceLock::new();
 
-fn get_cache() -> &'static Cache<String, Vec<u8>> {
+fn get_cache() -> &'static Cache<SmolStr, Vec<u8>> {
     OG_CACHE.get_or_init(|| {
         // Cache up to 1000 images for 1 hour
         new_cache(1000, Duration::from_secs(3600))
@@ -20,17 +22,17 @@ fn get_cache() -> &'static Cache<String, Vec<u8>> {
 }
 
 /// Generate cache key from entry identifiers
-pub fn cache_key(ident: &str, book: &str, entry: &str, cid: &str) -> String {
-    format!("{}/{}/{}/{}", ident, book, entry, cid)
+pub fn cache_key(ident: &str, book: &str, entry: &str, cid: &str) -> SmolStr {
+    format_smolstr!("{}/{}/{}/{}", ident, book, entry, cid)
 }
 
 /// Try to get a cached OG image
-pub fn get_cached(key: &str) -> Option<Vec<u8>> {
-    get_cache().get(&key.to_string())
+pub fn get_cached(key: &SmolStr) -> Option<Vec<u8>> {
+    get_cache().get(key)
 }
 
 /// Store an OG image in the cache
-pub fn cache_image(key: String, image: Vec<u8>) {
+pub fn cache_image(key: SmolStr, image: Vec<u8>) {
     get_cache().insert(key, image);
 }
 
@@ -224,13 +226,13 @@ pub fn generate_hero_image(
 }
 
 /// Generate cache key for notebook OG images
-pub fn notebook_cache_key(ident: &str, book: &str, cid: &str) -> String {
-    format!("notebook/{}/{}/{}", ident, book, cid)
+pub fn notebook_cache_key(ident: &str, book: &str, cid: &str) -> SmolStr {
+    format_smolstr!("notebook/{}/{}/{}", ident, book, cid)
 }
 
 /// Generate cache key for profile OG images
-pub fn profile_cache_key(ident: &str, cid: &str) -> String {
-    format!("profile/{}/{}", ident, cid)
+pub fn profile_cache_key(ident: &str, cid: &str) -> SmolStr {
+    format_smolstr!("profile/{}/{}", ident, cid)
 }
 
 /// Generate a notebook index OG image

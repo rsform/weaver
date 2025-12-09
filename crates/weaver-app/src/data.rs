@@ -18,7 +18,7 @@ use jacquard::{
 #[allow(unused_imports)]
 use jacquard::{
     prelude::IdentityResolver,
-    smol_str::SmolStr,
+    smol_str::{SmolStr, format_smolstr},
     types::{cid::Cid, string::AtIdentifier},
 };
 #[allow(unused_imports)]
@@ -1521,7 +1521,7 @@ pub async fn cache_blob_bytes(
 ) -> Result<()> {
     let cid = Cid::new_owned(cid.as_bytes())?;
     let cache_key = match (&notebook, &name) {
-        (Some(nb), Some(n)) => Some(SmolStr::new(format!("{}_{}", nb, n))),
+        (Some(nb), Some(n)) => Some(format_smolstr!("{}_{}", nb, n)),
         (None, Some(n)) => Some(n.clone()),
         _ => None,
     };

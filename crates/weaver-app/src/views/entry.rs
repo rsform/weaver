@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use dioxus::prelude::*;
-use jacquard::smol_str::{SmolStr, ToSmolStr};
+use jacquard::smol_str::{SmolStr, ToSmolStr, format_smolstr};
 use jacquard::types::string::AtIdentifier;
 
 use crate::components::NotebookCss;
@@ -39,19 +39,19 @@ pub fn StandaloneEntry(
                 .authors
                 .first()
                 .map(|a| match &a.record.inner {
-                    ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
-                    ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
-                    ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_string(),
-                    _ => "unknown".to_string(),
+                    ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_smolstr(),
+                    ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_smolstr(),
+                    ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_smolstr(),
+                    _ => "unknown".into(),
                 })
-                .unwrap_or_else(|| "unknown".to_string());
+                .unwrap_or_else(|| "unknown".into());
 
             let base = if crate::env::WEAVER_APP_ENV == "dev" {
-                format!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
+                format_smolstr!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
             } else {
-                crate::env::WEAVER_APP_HOST.to_string()
+                SmolStr::new_static(crate::env::WEAVER_APP_HOST)
             };
-            let canonical_url = format!("{}/{}/e/{}", base, ident(), rkey());
+            let canonical_url = format_smolstr!("{}/{}/e/{}", base, ident(), rkey());
             let description = extract_preview(&entry_record.content, 160);
 
             let entry_signal = use_signal(|| data.entry.clone());
@@ -70,8 +70,8 @@ pub fn StandaloneEntry(
                         title: title.to_string(),
                         description: description.clone(),
                         image_url: String::new(),
-                        canonical_url: canonical_url.clone(),
-                        author_handle: author_handle.clone(),
+                        canonical_url: canonical_url.to_string(),
+                        author_handle: author_handle.to_string(),
                         book_title: Some(book_title.to_string()),
                     }
                     document::Link { rel: "stylesheet", href: ENTRY_CSS }
@@ -119,8 +119,8 @@ pub fn StandaloneEntry(
                         title: title.to_string(),
                         description: description.clone(),
                         image_url: String::new(),
-                        canonical_url: canonical_url.clone(),
-                        author_handle: author_handle.clone(),
+                        canonical_url: canonical_url.to_string(),
+                        author_handle: author_handle.to_string(),
                     }
                     document::Link { rel: "stylesheet", href: ENTRY_CSS }
                     DefaultNotebookCss {}
@@ -175,8 +175,8 @@ pub fn NotebookEntryByRkey(
             let entry_path = entry_view
                 .path
                 .as_ref()
-                .map(|p| p.as_ref().to_string())
-                .unwrap_or_else(|| title.to_string());
+                .map(|p| p.as_ref().to_smolstr())
+                .unwrap_or_else(|| title.into());
 
             tracing::info!("Entry: {entry_path} - {title}");
 
@@ -184,20 +184,20 @@ pub fn NotebookEntryByRkey(
                 .authors
                 .first()
                 .map(|a| match &a.record.inner {
-                    ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_string(),
-                    ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_string(),
-                    ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_string(),
-                    _ => "unknown".to_string(),
+                    ProfileDataViewInner::ProfileView(p) => p.handle.as_ref().to_smolstr(),
+                    ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref().to_smolstr(),
+                    ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref().to_smolstr(),
+                    _ => "unknown".into(),
                 })
-                .unwrap_or_else(|| "unknown".to_string());
+                .unwrap_or_else(|| "unknown".into());
 
             let base = if crate::env::WEAVER_APP_ENV == "dev" {
-                format!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
+                format_smolstr!("http://127.0.0.1:{}", crate::env::WEAVER_PORT)
             } else {
-                crate::env::WEAVER_APP_HOST.to_string()
+                SmolStr::new_static(crate::env::WEAVER_APP_HOST)
             };
-            let canonical_url = format!("{}/{}/{}/e/{}", base, ident(), book_title(), rkey());
-            let og_image_url = format!(
+            let canonical_url = format_smolstr!("{}/{}/{}/e/{}", base, ident(), book_title(), rkey());
+            let og_image_url = format_smolstr!(
                 "{}/og/{}/{}/{}.png",
                 base,
                 ident(),
@@ -212,9 +212,9 @@ pub fn NotebookEntryByRkey(
                 EntryOgMeta {
                     title: title.to_string(),
                     description: description,
-                    image_url: og_image_url,
-                    canonical_url: canonical_url,
-                    author_handle: author_handle,
+                    image_url: og_image_url.to_string(),
+                    canonical_url: canonical_url.to_string(),
+                    author_handle: author_handle.to_string(),
                     book_title: Some(book_title().to_string()),
                 }
                 document::Link { rel: "stylesheet", href: ENTRY_CSS }

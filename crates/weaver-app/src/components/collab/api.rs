@@ -3,19 +3,19 @@
 use crate::fetch::Fetcher;
 use jacquard::IntoStatic;
 use jacquard::prelude::*;
-use jacquard::types::collection::Collection;
-use jacquard::types::string::{AtUri, Cid, Datetime, Did, Nsid, RecordKey};
+use jacquard::smol_str::format_smolstr;
+use jacquard::types::string::{AtUri, Cid, Datetime, Did, Nsid};
 use jacquard::types::uri::Uri;
 use reqwest::Url;
 use std::collections::HashSet;
 use weaver_api::com_atproto::repo::list_records::ListRecords;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::collab::{accept::Accept, invite::Invite};
-use weaver_api::sh_weaver::notebook::entry::Entry;
 use weaver_common::WeaverError;
 use weaver_common::constellation::GetBacklinksQuery;
 
 const ACCEPT_NSID: &str = "sh.weaver.collab.accept";
+const INVITE_NSID: &str = "sh.weaver.collab.invite";
 const CONSTELLATION_URL: &str = "https://constellation.microcosm.blue";
 
 /// An invite sent by the current user.
@@ -71,7 +71,7 @@ pub async fn create_invite(
     let output = fetcher
         .create_record(invite, None)
         .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to create invite: {}", e)))?;
+        .map_err(|e| WeaverError::InvalidNotebook(jacquard::smol_str::format_smolstr!("Failed to create invite: {}", e).into()))?;
 
     Ok(output.uri.into_static())
 }
@@ -91,7 +91,7 @@ pub async fn accept_invite(
     let output = fetcher
         .create_record(accept, None)
         .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to accept invite: {}", e)))?;
+        .map_err(|e| WeaverError::InvalidNotebook(jacquard::smol_str::format_smolstr!("Failed to accept invite: {}", e).into()))?;
 
     Ok(output.uri.into_static())
 }
@@ -105,17 +105,17 @@ pub async fn fetch_sent_invites(fetcher: &Fetcher) -> Result<Vec<SentInvite>, We
 
     let request = ListRecords::new()
         .repo(did)
-        .collection(Nsid::raw(Invite::NSID))
+        .collection(Nsid::raw(INVITE_NSID))
         .limit(100)
         .build();
 
     let response = fetcher
         .send(request)
         .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to list invites: {}", e)))?;
+        .map_err(|e| WeaverError::InvalidNotebook(jacquard::smol_str::format_smolstr!("Failed to list invites: {}", e).into()))?;
 
     let output = response.into_output().map_err(|e| {
-        WeaverError::InvalidNotebook(format!("Failed to parse list response: {}", e))
+        WeaverError::InvalidNotebook(jacquard::smol_str::format_smolstr!("Failed to parse list response: {}", e).into())
     })?;
 
     let mut invites = Vec::new();
@@ -147,7 +147,7 @@ async fn check_invite_accepted(fetcher: &Fetcher, invite_uri: &AtUri<'_>) -> boo
     // Query for sh.weaver.collab.accept records that reference this invite via .invite.uri
     let query = GetBacklinksQuery {
         subject: Uri::At(invite_uri.clone().into_static()),
-        source: format!("{}:invite.uri", ACCEPT_NSID).into(),
+        source: jacquard::smol_str::format_smolstr!("{}:invite.uri", ACCEPT_NSID).into(),
         cursor: None,
         did: vec![],
         limit: 1,
@@ -176,12 +176,12 @@ pub async fn fetch_received_invites(fetcher: &Fetcher) -> Result<Vec<ReceivedInv
         .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
 
     let constellation_url = Url::parse(CONSTELLATION_URL)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
+        .map_err(|e| WeaverError::InvalidNotebook(jacquard::smol_str::format_smolstr!("Invalid constellation URL: {}", e).into()))?;
 
     // Query for sh.weaver.collab.invite records where .invitee = current user's DID
     let query = GetBacklinksQuery {
         subject: Uri::Did(did.clone()),
-        source: format!("{}:invitee", Invite::NSID).into(),
+        source: jacquard::smol_str::format_smolstr!("{}:invitee", INVITE_NSID).into(),
         cursor: None,
         did: vec![],
         limit: 100,
@@ -192,10 +192,10 @@ pub async fn fetch_received_invites(fetcher: &Fetcher) -> Result<Vec<ReceivedInv
         .xrpc(constellation_url)
         .send(&query)
         .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Constellation query failed: {}", e)))?;
+        .map_err(|e| WeaverError::InvalidNotebook(jacquard::smol_str::format_smolstr!("Constellation query failed: {}", e).into()))?;
 
     let output = response.into_output().map_err(|e| {
-        WeaverError::InvalidNotebook(format!("Failed to parse constellation response: {}", e))
+        WeaverError::InvalidNotebook(jacquard::smol_str::format_smolstr!("Failed to parse constellation response: {}", e).into())
     })?;
 
     // For each RecordId, fetch the actual record from the inviter's PDS
@@ -205,10 +205,10 @@ pub async fn fetch_received_invites(fetcher: &Fetcher) -> Result<Vec<ReceivedInv
         let inviter_did = record_id.did.into_static();
 
         // Build the AT-URI for the invite record
-        let uri_string = format!(
+        let uri_string = jacquard::smol_str::format_smolstr!(
             "at://{}/{}/{}",
             inviter_did,
-            Invite::NSID,
+            INVITE_NSID,
             record_id.rkey.as_ref()
         );
         let Ok(invite_uri) = AtUri::new(&uri_string) else {
@@ -259,14 +259,14 @@ pub async fn find_all_participants(
     };
 
     let constellation_url = Url::parse(CONSTELLATION_URL)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
+        .map_err(|e| WeaverError::InvalidNotebook(jacquard::smol_str::format_smolstr!("Invalid constellation URL: {}", e).into()))?;
 
     // Query for all invite records that reference entries with this rkey
     // We search for invites where resource.uri contains the rkey
     // The source pattern matches the JSON path in the invite record
     let query = GetBacklinksQuery {
         subject: Uri::At(resource_uri.clone().into_static()),
-        source: format!("{}:resource.uri", Invite::NSID).into(),
+        source: jacquard::smol_str::format_smolstr!("{}:resource.uri", INVITE_NSID).into(),
         cursor: None,
         did: vec![],
         limit: 100,
@@ -282,10 +282,10 @@ pub async fn find_all_participants(
                 participants.insert(record_id.did.clone().into_static());
 
                 // Now we need to fetch the invite to get the invitee
-                let uri_string = format!(
+                let uri_string = jacquard::smol_str::format_smolstr!(
                     "at://{}/{}/{}",
                     record_id.did,
-                    Invite::NSID,
+                    INVITE_NSID,
                     record_id.rkey.as_ref()
                 );
                 if let Ok(invite_uri) = AtUri::new(&uri_string) {

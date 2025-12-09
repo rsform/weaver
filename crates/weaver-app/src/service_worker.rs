@@ -6,6 +6,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use web_sys::{RegistrationOptions, ServiceWorkerContainer, Window};
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use jacquard::smol_str::format_smolstr;
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub async fn register_service_worker() -> Result<(), JsValue> {
@@ -54,7 +56,7 @@ pub async fn register_entry_blobs(
             let cid = image.image.blob().cid();
 
             if let Some(name) = &image.name {
-                let blob_url = format!(
+                let blob_url = format_smolstr!(
                     "{}xrpc/com.atproto.sync.getBlob?did={}&cid={}",
                     pds_url.as_str(),
                     did.as_ref(),
@@ -108,7 +110,7 @@ pub async fn register_standalone_entry_blobs(
             let cid = image.image.blob().cid();
 
             if let Some(name) = &image.name {
-                let blob_url = format!(
+                let blob_url = format_smolstr!(
                     "{}xrpc/com.atproto.sync.getBlob?did={}&cid={}",
                     pds_url.as_str(),
                     did.as_ref(),
@@ -131,7 +133,7 @@ pub async fn register_standalone_entry_blobs(
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 fn send_blob_mappings(
     notebook: &str,
-    mappings: std::collections::HashMap<String, String>,
+    mappings: std::collections::HashMap<String, jacquard::smol_str::SmolStr>,
 ) -> Result<(), JsValue> {
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let navigator = window.navigator();
@@ -150,7 +152,7 @@ fn send_blob_mappings(
     // Convert HashMap to JS Object
     let blobs_obj = js_sys::Object::new();
     for (name, url) in mappings {
-        js_sys::Reflect::set(&blobs_obj, &name.into(), &url.into())?;
+        js_sys::Reflect::set(&blobs_obj, &name.into(), &url.as_str().into())?;
     }
     js_sys::Reflect::set(&msg, &"blobs".into(), &blobs_obj)?;
 
@@ -164,7 +166,7 @@ fn send_blob_mappings(
 fn send_blob_rkey_mappings(
     rkey: &str,
     ident: &str,
-    mappings: std::collections::HashMap<String, String>,
+    mappings: std::collections::HashMap<String, jacquard::smol_str::SmolStr>,
 ) -> Result<(), JsValue> {
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let navigator = window.navigator();
@@ -184,7 +186,7 @@ fn send_blob_rkey_mappings(
     // Convert HashMap to JS Object
     let blobs_obj = js_sys::Object::new();
     for (name, url) in mappings {
-        js_sys::Reflect::set(&blobs_obj, &name.into(), &url.into())?;
+        js_sys::Reflect::set(&blobs_obj, &name.into(), &url.as_str().into())?;
     }
     js_sys::Reflect::set(&msg, &"blobs".into(), &blobs_obj)?;
 
@@ -204,7 +206,7 @@ pub async fn register_service_worker() -> Result<(), String> {
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 pub fn send_blob_mappings(
     _notebook: &str,
-    _mappings: std::collections::HashMap<String, String>,
+    _mappings: std::collections::HashMap<String, jacquard::smol_str::SmolStr>,
 ) -> Result<(), String> {
     Ok(())
 }
