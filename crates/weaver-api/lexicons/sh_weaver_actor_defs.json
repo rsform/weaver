@@ -32,6 +32,18 @@
         "inner"
       ],
       "properties": {
+        "collaborationCount": {
+          "type": "integer"
+        },
+        "entryCount": {
+          "type": "integer"
+        },
+        "followerCount": {
+          "type": "integer"
+        },
+        "followingCount": {
+          "type": "integer"
+        },
         "inner": {
           "type": "union",
           "refs": [
@@ -39,6 +51,13 @@
             "app.bsky.actor.defs#profileViewDetailed",
             "#tangledProfileView"
           ]
+        },
+        "notebookCount": {
+          "type": "integer"
+        },
+        "viewer": {
+          "type": "ref",
+          "ref": "#viewerState"
         }
       }
     },
@@ -48,6 +67,12 @@
         "inner"
       ],
       "properties": {
+        "followerCount": {
+          "type": "integer"
+        },
+        "followingCount": {
+          "type": "integer"
+        },
         "inner": {
           "type": "union",
           "refs": [
@@ -55,6 +80,10 @@
             "app.bsky.actor.defs#profileViewBasic",
             "#tangledProfileView"
           ]
+        },
+        "viewer": {
+          "type": "ref",
+          "ref": "#viewerStateBasic"
         }
       }
     },
@@ -218,6 +247,25 @@
       },
       "maxLength": 5
     },
+    "subscribedNotebook": {
+      "type": "object",
+      "description": "A notebook the viewer subscribes to without a global follow.",
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string",
+          "format": "at-uri"
+        }
+      }
+    },
     "tangledProfileView": {
       "type": "object",
       "required": [
@@ -286,6 +334,82 @@
           },
           "minLength": 0,
           "maxLength": 2
+        }
+      }
+    },
+    "viewerState": {
+      "type": "object",
+      "description": "Viewer's relationship state with an actor (detailed version).",
+      "properties": {
+        "blocked": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "blockedBy": {
+          "type": "boolean"
+        },
+        "followRequested": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "followRequestedBy": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "followedBy": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "following": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "muted": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "subscribedNotebooks": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#subscribedNotebook"
+          }
+        }
+      }
+    },
+    "viewerStateBasic": {
+      "type": "object",
+      "description": "Viewer's relationship state with an actor (basic version).",
+      "properties": {
+        "blocked": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "blockedBy": {
+          "type": "boolean"
+        },
+        "followRequested": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "followRequestedBy": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "followedBy": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "following": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "muted": {
+          "type": "string",
+          "format": "at-uri"
+        },
+        "subscribedNotebookCount": {
+          "type": "integer"
         }
       }
     }

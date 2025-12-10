@@ -24,6 +24,11 @@ pub struct Entry<'a> {
     /// The content of the notebook entry. This should be some flavor of Markdown.
     #[serde(borrow)]
     pub content: jacquard_common::CowStr<'a>,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub content_warnings: std::option::Option<
+        crate::sh_weaver::notebook::ContentWarnings<'a>,
+    >,
     /// Client-declared timestamp when this was originally created.
     pub created_at: jacquard_common::types::string::Datetime,
     /// The set of images and records, if any, embedded in the notebook entry.
@@ -32,6 +37,9 @@ pub struct Entry<'a> {
     pub embeds: std::option::Option<EntryEmbeds<'a>>,
     #[serde(borrow)]
     pub path: crate::sh_weaver::notebook::Path<'a>,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub rating: std::option::Option<crate::sh_weaver::notebook::ContentRating<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub tags: std::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
@@ -52,67 +60,67 @@ pub mod entry_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Path;
-        type Title;
-        type CreatedAt;
         type Content;
+        type Title;
+        type Path;
+        type CreatedAt;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Path = Unset;
-        type Title = Unset;
-        type CreatedAt = Unset;
         type Content = Unset;
-    }
-    ///State transition - sets the `path` field to Set
-    pub struct SetPath<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetPath<S> {}
-    impl<S: State> State for SetPath<S> {
-        type Path = Set<members::path>;
-        type Title = S::Title;
-        type CreatedAt = S::CreatedAt;
-        type Content = S::Content;
-    }
-    ///State transition - sets the `title` field to Set
-    pub struct SetTitle<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetTitle<S> {}
-    impl<S: State> State for SetTitle<S> {
-        type Path = S::Path;
-        type Title = Set<members::title>;
-        type CreatedAt = S::CreatedAt;
-        type Content = S::Content;
-    }
-    ///State transition - sets the `created_at` field to Set
-    pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
-    impl<S: State> State for SetCreatedAt<S> {
-        type Path = S::Path;
-        type Title = S::Title;
-        type CreatedAt = Set<members::created_at>;
-        type Content = S::Content;
+        type Title = Unset;
+        type Path = Unset;
+        type CreatedAt = Unset;
     }
     ///State transition - sets the `content` field to Set
     pub struct SetContent<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetContent<S> {}
     impl<S: State> State for SetContent<S> {
-        type Path = S::Path;
-        type Title = S::Title;
-        type CreatedAt = S::CreatedAt;
         type Content = Set<members::content>;
+        type Title = S::Title;
+        type Path = S::Path;
+        type CreatedAt = S::CreatedAt;
+    }
+    ///State transition - sets the `title` field to Set
+    pub struct SetTitle<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetTitle<S> {}
+    impl<S: State> State for SetTitle<S> {
+        type Content = S::Content;
+        type Title = Set<members::title>;
+        type Path = S::Path;
+        type CreatedAt = S::CreatedAt;
+    }
+    ///State transition - sets the `path` field to Set
+    pub struct SetPath<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetPath<S> {}
+    impl<S: State> State for SetPath<S> {
+        type Content = S::Content;
+        type Title = S::Title;
+        type Path = Set<members::path>;
+        type CreatedAt = S::CreatedAt;
+    }
+    ///State transition - sets the `created_at` field to Set
+    pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
+    impl<S: State> State for SetCreatedAt<S> {
+        type Content = S::Content;
+        type Title = S::Title;
+        type Path = S::Path;
+        type CreatedAt = Set<members::created_at>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `path` field
-        pub struct path(());
-        ///Marker type for the `title` field
-        pub struct title(());
-        ///Marker type for the `created_at` field
-        pub struct created_at(());
         ///Marker type for the `content` field
         pub struct content(());
+        ///Marker type for the `title` field
+        pub struct title(());
+        ///Marker type for the `path` field
+        pub struct path(());
+        ///Marker type for the `created_at` field
+        pub struct created_at(());
     }
 }
 
@@ -122,9 +130,11 @@ pub struct EntryBuilder<'a, S: entry_state::State> {
     __unsafe_private_named: (
         ::core::option::Option<Vec<crate::sh_weaver::actor::Author<'a>>>,
         ::core::option::Option<jacquard_common::CowStr<'a>>,
+        ::core::option::Option<crate::sh_weaver::notebook::ContentWarnings<'a>>,
         ::core::option::Option<jacquard_common::types::string::Datetime>,
         ::core::option::Option<EntryEmbeds<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Path<'a>>,
+        ::core::option::Option<crate::sh_weaver::notebook::ContentRating<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Title<'a>>,
         ::core::option::Option<jacquard_common::types::string::Datetime>,
@@ -144,7 +154,18 @@ impl<'a> EntryBuilder<'a, entry_state::Empty> {
     pub fn new() -> Self {
         EntryBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None, None, None, None),
+            __unsafe_private_named: (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -188,6 +209,25 @@ where
     }
 }
 
+impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
+    /// Set the `contentWarnings` field (optional)
+    pub fn content_warnings(
+        mut self,
+        value: impl Into<Option<crate::sh_weaver::notebook::ContentWarnings<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.2 = value.into();
+        self
+    }
+    /// Set the `contentWarnings` field to an Option value (optional)
+    pub fn maybe_content_warnings(
+        mut self,
+        value: Option<crate::sh_weaver::notebook::ContentWarnings<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.2 = value;
+        self
+    }
+}
+
 impl<'a, S> EntryBuilder<'a, S>
 where
     S: entry_state::State,
@@ -198,7 +238,7 @@ where
         mut self,
         value: impl Into<jacquard_common::types::string::Datetime>,
     ) -> EntryBuilder<'a, entry_state::SetCreatedAt<S>> {
-        self.__unsafe_private_named.2 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
         EntryBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -210,12 +250,12 @@ where
 impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
     /// Set the `embeds` field (optional)
     pub fn embeds(mut self, value: impl Into<Option<EntryEmbeds<'a>>>) -> Self {
-        self.__unsafe_private_named.3 = value.into();
+        self.__unsafe_private_named.4 = value.into();
         self
     }
     /// Set the `embeds` field to an Option value (optional)
     pub fn maybe_embeds(mut self, value: Option<EntryEmbeds<'a>>) -> Self {
-        self.__unsafe_private_named.3 = value;
+        self.__unsafe_private_named.4 = value;
         self
     }
 }
@@ -230,7 +270,7 @@ where
         mut self,
         value: impl Into<crate::sh_weaver::notebook::Path<'a>>,
     ) -> EntryBuilder<'a, entry_state::SetPath<S>> {
-        self.__unsafe_private_named.4 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.5 = ::core::option::Option::Some(value.into());
         EntryBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -240,12 +280,31 @@ where
 }
 
 impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
+    /// Set the `rating` field (optional)
+    pub fn rating(
+        mut self,
+        value: impl Into<Option<crate::sh_weaver::notebook::ContentRating<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.6 = value.into();
+        self
+    }
+    /// Set the `rating` field to an Option value (optional)
+    pub fn maybe_rating(
+        mut self,
+        value: Option<crate::sh_weaver::notebook::ContentRating<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.6 = value;
+        self
+    }
+}
+
+impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
     /// Set the `tags` field (optional)
     pub fn tags(
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Tags<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value.into();
+        self.__unsafe_private_named.7 = value.into();
         self
     }
     /// Set the `tags` field to an Option value (optional)
@@ -253,7 +312,7 @@ impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Tags<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value;
+        self.__unsafe_private_named.7 = value;
         self
     }
 }
@@ -268,7 +327,7 @@ where
         mut self,
         value: impl Into<crate::sh_weaver::notebook::Title<'a>>,
     ) -> EntryBuilder<'a, entry_state::SetTitle<S>> {
-        self.__unsafe_private_named.6 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.8 = ::core::option::Option::Some(value.into());
         EntryBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -283,7 +342,7 @@ impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::types::string::Datetime>>,
     ) -> Self {
-        self.__unsafe_private_named.7 = value.into();
+        self.__unsafe_private_named.9 = value.into();
         self
     }
     /// Set the `updatedAt` field to an Option value (optional)
@@ -291,7 +350,7 @@ impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::types::string::Datetime>,
     ) -> Self {
-        self.__unsafe_private_named.7 = value;
+        self.__unsafe_private_named.9 = value;
         self
     }
 }
@@ -299,22 +358,24 @@ impl<'a, S: entry_state::State> EntryBuilder<'a, S> {
 impl<'a, S> EntryBuilder<'a, S>
 where
     S: entry_state::State,
-    S::Path: entry_state::IsSet,
-    S::Title: entry_state::IsSet,
-    S::CreatedAt: entry_state::IsSet,
     S::Content: entry_state::IsSet,
+    S::Title: entry_state::IsSet,
+    S::Path: entry_state::IsSet,
+    S::CreatedAt: entry_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Entry<'a> {
         Entry {
             authors: self.__unsafe_private_named.0,
             content: self.__unsafe_private_named.1.unwrap(),
-            created_at: self.__unsafe_private_named.2.unwrap(),
-            embeds: self.__unsafe_private_named.3,
-            path: self.__unsafe_private_named.4.unwrap(),
-            tags: self.__unsafe_private_named.5,
-            title: self.__unsafe_private_named.6.unwrap(),
-            updated_at: self.__unsafe_private_named.7,
+            content_warnings: self.__unsafe_private_named.2,
+            created_at: self.__unsafe_private_named.3.unwrap(),
+            embeds: self.__unsafe_private_named.4,
+            path: self.__unsafe_private_named.5.unwrap(),
+            rating: self.__unsafe_private_named.6,
+            tags: self.__unsafe_private_named.7,
+            title: self.__unsafe_private_named.8.unwrap(),
+            updated_at: self.__unsafe_private_named.9,
             extra_data: Default::default(),
         }
     }
@@ -329,12 +390,14 @@ where
         Entry {
             authors: self.__unsafe_private_named.0,
             content: self.__unsafe_private_named.1.unwrap(),
-            created_at: self.__unsafe_private_named.2.unwrap(),
-            embeds: self.__unsafe_private_named.3,
-            path: self.__unsafe_private_named.4.unwrap(),
-            tags: self.__unsafe_private_named.5,
-            title: self.__unsafe_private_named.6.unwrap(),
-            updated_at: self.__unsafe_private_named.7,
+            content_warnings: self.__unsafe_private_named.2,
+            created_at: self.__unsafe_private_named.3.unwrap(),
+            embeds: self.__unsafe_private_named.4,
+            path: self.__unsafe_private_named.5.unwrap(),
+            rating: self.__unsafe_private_named.6,
+            tags: self.__unsafe_private_named.7,
+            title: self.__unsafe_private_named.8.unwrap(),
+            updated_at: self.__unsafe_private_named.9,
             extra_data: Some(extra_data),
         }
     }
@@ -452,6 +515,17 @@ fn lexicon_doc_sh_weaver_notebook_entry() -> ::jacquard_lexicon::lexicon::Lexico
                             );
                             map.insert(
                                 ::jacquard_common::smol_str::SmolStr::new_static(
+                                    "contentWarnings",
+                                ),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                    description: None,
+                                    r#ref: ::jacquard_common::CowStr::new_static(
+                                        "sh.weaver.notebook.defs#contentWarnings",
+                                    ),
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static(
                                     "createdAt",
                                 ),
                                 ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
@@ -550,6 +624,15 @@ fn lexicon_doc_sh_weaver_notebook_entry() -> ::jacquard_lexicon::lexicon::Lexico
                                     description: None,
                                     r#ref: ::jacquard_common::CowStr::new_static(
                                         "sh.weaver.notebook.defs#path",
+                                    ),
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static("rating"),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                    description: None,
+                                    r#ref: ::jacquard_common::CowStr::new_static(
+                                        "sh.weaver.notebook.defs#contentRating",
                                     ),
                                 }),
                             );

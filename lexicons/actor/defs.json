@@ -97,6 +97,47 @@
         }
       }
     },
+    "subscribedNotebook": {
+      "type": "object",
+      "description": "A notebook the viewer subscribes to without a global follow.",
+      "required": ["uri"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "title": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "viewerState": {
+      "type": "object",
+      "description": "Viewer's relationship state with an actor (detailed version).",
+      "properties": {
+        "following": { "type": "string", "format": "at-uri" },
+        "followedBy": { "type": "string", "format": "at-uri" },
+        "followRequested": { "type": "string", "format": "at-uri" },
+        "followRequestedBy": { "type": "string", "format": "at-uri" },
+        "subscribedNotebooks": {
+          "type": "array",
+          "items": { "type": "ref", "ref": "#subscribedNotebook" }
+        },
+        "muted": { "type": "string", "format": "at-uri" },
+        "blocked": { "type": "string", "format": "at-uri" },
+        "blockedBy": { "type": "boolean" }
+      }
+    },
+    "viewerStateBasic": {
+      "type": "object",
+      "description": "Viewer's relationship state with an actor (basic version).",
+      "properties": {
+        "following": { "type": "string", "format": "at-uri" },
+        "followedBy": { "type": "string", "format": "at-uri" },
+        "followRequested": { "type": "string", "format": "at-uri" },
+        "followRequestedBy": { "type": "string", "format": "at-uri" },
+        "subscribedNotebookCount": { "type": "integer" },
+        "muted": { "type": "string", "format": "at-uri" },
+        "blocked": { "type": "string", "format": "at-uri" },
+        "blockedBy": { "type": "boolean" }
+      }
+    },
     "profileDataView": {
       "type": "object",
       "required": ["inner"],
@@ -104,7 +145,13 @@
         "inner": {
           "type": "union",
           "refs": ["#profileView", "app.bsky.actor.defs#profileViewDetailed", "#tangledProfileView"]
-        }
+        },
+        "viewer": { "type": "ref", "ref": "#viewerState" },
+        "notebookCount": { "type": "integer" },
+        "entryCount": { "type": "integer" },
+        "collaborationCount": { "type": "integer" },
+        "followerCount": { "type": "integer" },
+        "followingCount": { "type": "integer" }
       }
     },
     "profileDataViewBasic": {
@@ -114,7 +161,10 @@
         "inner": {
           "type": "union",
           "refs": ["#profileViewBasic", "app.bsky.actor.defs#profileViewBasic", "#tangledProfileView"]
-        }
+        },
+        "viewer": { "type": "ref", "ref": "#viewerStateBasic" },
+        "followerCount": { "type": "integer" },
+        "followingCount": { "type": "integer" }
       }
     },
     "author": {

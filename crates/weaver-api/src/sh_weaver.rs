@@ -9,4 +9,5 @@ pub mod edit;
 pub mod embed;
 pub mod graph;
 pub mod notebook;
+pub mod notification;
 pub mod publish;

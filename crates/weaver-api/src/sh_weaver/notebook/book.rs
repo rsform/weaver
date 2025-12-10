@@ -20,6 +20,11 @@
 pub struct Book<'a> {
     #[serde(borrow)]
     pub authors: Vec<crate::sh_weaver::actor::Author<'a>>,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub content_warnings: std::option::Option<
+        crate::sh_weaver::notebook::ContentWarnings<'a>,
+    >,
     /// Client-declared timestamp when this was originally created.
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     pub created_at: std::option::Option<jacquard_common::types::string::Datetime>,
@@ -28,6 +33,12 @@ pub struct Book<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub path: std::option::Option<crate::sh_weaver::notebook::Path<'a>>,
+    /// Notebook opts into accessiblity by path only without identity scoping. Path must be globally unique.
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    pub publish_global: std::option::Option<bool>,
+    #[serde(skip_serializing_if = "std::option::Option::is_none")]
+    #[serde(borrow)]
+    pub rating: std::option::Option<crate::sh_weaver::notebook::ContentRating<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub tags: std::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
@@ -91,9 +102,12 @@ pub struct BookBuilder<'a, S: book_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
         ::core::option::Option<Vec<crate::sh_weaver::actor::Author<'a>>>,
+        ::core::option::Option<crate::sh_weaver::notebook::ContentWarnings<'a>>,
         ::core::option::Option<jacquard_common::types::string::Datetime>,
         ::core::option::Option<Vec<crate::com_atproto::repo::strong_ref::StrongRef<'a>>>,
         ::core::option::Option<crate::sh_weaver::notebook::Path<'a>>,
+        ::core::option::Option<bool>,
+        ::core::option::Option<crate::sh_weaver::notebook::ContentRating<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Tags<'a>>,
         ::core::option::Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
         ::core::option::Option<crate::sh_weaver::notebook::Title<'a>>,
@@ -114,7 +128,19 @@ impl<'a> BookBuilder<'a, book_state::Empty> {
     pub fn new() -> Self {
         BookBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None, None, None, None, None, None, None),
+            __unsafe_private_named: (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
             _phantom: ::core::marker::PhantomData,
         }
     }
@@ -140,12 +166,31 @@ where
 }
 
 impl<'a, S: book_state::State> BookBuilder<'a, S> {
+    /// Set the `contentWarnings` field (optional)
+    pub fn content_warnings(
+        mut self,
+        value: impl Into<Option<crate::sh_weaver::notebook::ContentWarnings<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.1 = value.into();
+        self
+    }
+    /// Set the `contentWarnings` field to an Option value (optional)
+    pub fn maybe_content_warnings(
+        mut self,
+        value: Option<crate::sh_weaver::notebook::ContentWarnings<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.1 = value;
+        self
+    }
+}
+
+impl<'a, S: book_state::State> BookBuilder<'a, S> {
     /// Set the `createdAt` field (optional)
     pub fn created_at(
         mut self,
         value: impl Into<Option<jacquard_common::types::string::Datetime>>,
     ) -> Self {
-        self.__unsafe_private_named.1 = value.into();
+        self.__unsafe_private_named.2 = value.into();
         self
     }
     /// Set the `createdAt` field to an Option value (optional)
@@ -153,7 +198,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::types::string::Datetime>,
     ) -> Self {
-        self.__unsafe_private_named.1 = value;
+        self.__unsafe_private_named.2 = value;
         self
     }
 }
@@ -168,7 +213,7 @@ where
         mut self,
         value: impl Into<Vec<crate::com_atproto::repo::strong_ref::StrongRef<'a>>>,
     ) -> BookBuilder<'a, book_state::SetEntryList<S>> {
-        self.__unsafe_private_named.2 = ::core::option::Option::Some(value.into());
+        self.__unsafe_private_named.3 = ::core::option::Option::Some(value.into());
         BookBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -183,7 +228,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Path<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.3 = value.into();
+        self.__unsafe_private_named.4 = value.into();
         self
     }
     /// Set the `path` field to an Option value (optional)
@@ -191,7 +236,39 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Path<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.3 = value;
+        self.__unsafe_private_named.4 = value;
+        self
+    }
+}
+
+impl<'a, S: book_state::State> BookBuilder<'a, S> {
+    /// Set the `publishGlobal` field (optional)
+    pub fn publish_global(mut self, value: impl Into<Option<bool>>) -> Self {
+        self.__unsafe_private_named.5 = value.into();
+        self
+    }
+    /// Set the `publishGlobal` field to an Option value (optional)
+    pub fn maybe_publish_global(mut self, value: Option<bool>) -> Self {
+        self.__unsafe_private_named.5 = value;
+        self
+    }
+}
+
+impl<'a, S: book_state::State> BookBuilder<'a, S> {
+    /// Set the `rating` field (optional)
+    pub fn rating(
+        mut self,
+        value: impl Into<Option<crate::sh_weaver::notebook::ContentRating<'a>>>,
+    ) -> Self {
+        self.__unsafe_private_named.6 = value.into();
+        self
+    }
+    /// Set the `rating` field to an Option value (optional)
+    pub fn maybe_rating(
+        mut self,
+        value: Option<crate::sh_weaver::notebook::ContentRating<'a>>,
+    ) -> Self {
+        self.__unsafe_private_named.6 = value;
         self
     }
 }
@@ -202,7 +279,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Tags<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value.into();
+        self.__unsafe_private_named.7 = value.into();
         self
     }
     /// Set the `tags` field to an Option value (optional)
@@ -210,7 +287,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Tags<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.4 = value;
+        self.__unsafe_private_named.7 = value;
         self
     }
 }
@@ -221,7 +298,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value.into();
+        self.__unsafe_private_named.8 = value.into();
         self
     }
     /// Set the `theme` field to an Option value (optional)
@@ -229,7 +306,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<crate::com_atproto::repo::strong_ref::StrongRef<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.5 = value;
+        self.__unsafe_private_named.8 = value;
         self
     }
 }
@@ -240,7 +317,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: impl Into<Option<crate::sh_weaver::notebook::Title<'a>>>,
     ) -> Self {
-        self.__unsafe_private_named.6 = value.into();
+        self.__unsafe_private_named.9 = value.into();
         self
     }
     /// Set the `title` field to an Option value (optional)
@@ -248,7 +325,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<crate::sh_weaver::notebook::Title<'a>>,
     ) -> Self {
-        self.__unsafe_private_named.6 = value;
+        self.__unsafe_private_named.9 = value;
         self
     }
 }
@@ -259,7 +336,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: impl Into<Option<jacquard_common::types::string::Datetime>>,
     ) -> Self {
-        self.__unsafe_private_named.7 = value.into();
+        self.__unsafe_private_named.10 = value.into();
         self
     }
     /// Set the `updatedAt` field to an Option value (optional)
@@ -267,7 +344,7 @@ impl<'a, S: book_state::State> BookBuilder<'a, S> {
         mut self,
         value: Option<jacquard_common::types::string::Datetime>,
     ) -> Self {
-        self.__unsafe_private_named.7 = value;
+        self.__unsafe_private_named.10 = value;
         self
     }
 }
@@ -282,13 +359,16 @@ where
     pub fn build(self) -> Book<'a> {
         Book {
             authors: self.__unsafe_private_named.0.unwrap(),
-            created_at: self.__unsafe_private_named.1,
-            entry_list: self.__unsafe_private_named.2.unwrap(),
-            path: self.__unsafe_private_named.3,
-            tags: self.__unsafe_private_named.4,
-            theme: self.__unsafe_private_named.5,
-            title: self.__unsafe_private_named.6,
-            updated_at: self.__unsafe_private_named.7,
+            content_warnings: self.__unsafe_private_named.1,
+            created_at: self.__unsafe_private_named.2,
+            entry_list: self.__unsafe_private_named.3.unwrap(),
+            path: self.__unsafe_private_named.4,
+            publish_global: self.__unsafe_private_named.5,
+            rating: self.__unsafe_private_named.6,
+            tags: self.__unsafe_private_named.7,
+            theme: self.__unsafe_private_named.8,
+            title: self.__unsafe_private_named.9,
+            updated_at: self.__unsafe_private_named.10,
             extra_data: Default::default(),
         }
     }
@@ -302,13 +382,16 @@ where
     ) -> Book<'a> {
         Book {
             authors: self.__unsafe_private_named.0.unwrap(),
-            created_at: self.__unsafe_private_named.1,
-            entry_list: self.__unsafe_private_named.2.unwrap(),
-            path: self.__unsafe_private_named.3,
-            tags: self.__unsafe_private_named.4,
-            theme: self.__unsafe_private_named.5,
-            title: self.__unsafe_private_named.6,
-            updated_at: self.__unsafe_private_named.7,
+            content_warnings: self.__unsafe_private_named.1,
+            created_at: self.__unsafe_private_named.2,
+            entry_list: self.__unsafe_private_named.3.unwrap(),
+            path: self.__unsafe_private_named.4,
+            publish_global: self.__unsafe_private_named.5,
+            rating: self.__unsafe_private_named.6,
+            tags: self.__unsafe_private_named.7,
+            theme: self.__unsafe_private_named.8,
+            title: self.__unsafe_private_named.9,
+            updated_at: self.__unsafe_private_named.10,
             extra_data: Some(extra_data),
         }
     }
@@ -439,6 +522,17 @@ fn lexicon_doc_sh_weaver_notebook_book() -> ::jacquard_lexicon::lexicon::Lexicon
                             );
                             map.insert(
                                 ::jacquard_common::smol_str::SmolStr::new_static(
+                                    "contentWarnings",
+                                ),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                    description: None,
+                                    r#ref: ::jacquard_common::CowStr::new_static(
+                                        "sh.weaver.notebook.defs#contentWarnings",
+                                    ),
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static(
                                     "createdAt",
                                 ),
                                 ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
@@ -482,6 +576,25 @@ fn lexicon_doc_sh_weaver_notebook_book() -> ::jacquard_lexicon::lexicon::Lexicon
                                     description: None,
                                     r#ref: ::jacquard_common::CowStr::new_static(
                                         "sh.weaver.notebook.defs#path",
+                                    ),
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static(
+                                    "publishGlobal",
+                                ),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::Boolean(::jacquard_lexicon::lexicon::LexBoolean {
+                                    description: None,
+                                    default: None,
+                                    r#const: None,
+                                }),
+                            );
+                            map.insert(
+                                ::jacquard_common::smol_str::SmolStr::new_static("rating"),
+                                ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
+                                    description: None,
+                                    r#ref: ::jacquard_common::CowStr::new_static(
+                                        "sh.weaver.notebook.defs#contentRating",
                                     ),
                                 }),
                             );

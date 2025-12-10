@@ -42,7 +42,11 @@
             "description": "Client-declared timestamp of last modification. Used for canonicality tiebreaking in multi-author scenarios."
           },
           "contentWarnings": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentWarnings" },
-          "rating": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentRating" }
+          "rating": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentRating" },
+          "publishGlobal": {
+            "type": "boolean",
+            "description": "Notebook opts into accessiblity by path only without identity scoping. Path must be globally unique."
+          }
         }
       }
     }

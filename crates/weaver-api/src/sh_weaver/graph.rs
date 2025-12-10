@@ -9,11 +9,27 @@ pub mod bookmark;
 pub mod follow;
 pub mod follow_accept;
 pub mod follow_gate;
+pub mod get_actor_bookmarks;
+pub mod get_actor_likes;
+pub mod get_actor_lists;
+pub mod get_actor_subscriptions;
+pub mod get_bookmarked_by;
+pub mod get_followers;
+pub mod get_following;
+pub mod get_liked_by;
+pub mod get_list;
+pub mod get_popular_tags;
+pub mod get_resource_tags;
+pub mod get_subscribers;
+pub mod get_tag_suggestions;
+pub mod get_tagged_resources;
+pub mod get_trending_tags;
 pub mod like;
 pub mod list;
 pub mod listitem;
 pub mod subscribe;
 pub mod subscribe_accept;
+pub mod tag;
 
 /// A curated collection of notebooks/entries for sharing.
 #[derive(

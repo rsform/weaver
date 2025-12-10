@@ -26,6 +26,10 @@
             "type": "string",
             "description": "The content of the notebook entry. This should be some flavor of Markdown."
           },
+          "contentWarnings": {
+            "type": "ref",
+            "ref": "sh.weaver.notebook.defs#contentWarnings"
+          },
           "createdAt": {
             "type": "string",
             "description": "Client-declared timestamp when this was originally created.",
@@ -63,6 +67,10 @@
           "path": {
             "type": "ref",
             "ref": "sh.weaver.notebook.defs#path"
+          },
+          "rating": {
+            "type": "ref",
+            "ref": "sh.weaver.notebook.defs#contentRating"
           },
           "tags": {
             "type": "ref",
