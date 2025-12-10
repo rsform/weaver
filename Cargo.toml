@@ -47,6 +47,7 @@ jacquard-common = { path = "../jacquard/crates/jacquard-common" }
 jacquard-axum = {path = "../jacquard/crates/jacquard-axum" }
 jacquard-derive = { path = "../jacquard/crates/jacquard-derive" }
 jacquard-lexicon = { path = "../jacquard/crates/jacquard-lexicon", default-features = false }
+jacquard-repo = { path = "../jacquard/crates/jacquard-repo" }
 
 # jacquard = { path = "../jacquard-facet/crates/jacquard", default-features = false, features = ["derive", "api_bluesky", "tracing", "serde"] }
 # jacquard-identity = { path = "../jacquard-facet/crates/jacquard-identity", features = ["cache"] }

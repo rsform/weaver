@@ -1,61 +1,102 @@
-use miette::miette;
-use serde::{Deserialize, Serialize};
-use std::{env, fs};
+use crate::error::{ConfigError, IndexError};
+use url::Url;
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct OauthConfig {
-    pub jwks: Vec<jose_jwk::Jwk>,
+/// ClickHouse connection configuration
+#[derive(Debug, Clone)]
+pub struct ClickHouseConfig {
+    pub url: Url,
+    pub database: String,
+    pub user: String,
+    pub password: String,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct JetstreamConfig {
-    pub endpoint: String,
-}
+impl ClickHouseConfig {
+    /// Load configuration from environment variables.
+    ///
+    /// Required env vars:
+    /// - `CLICKHOUSE_URL`: Full URL including protocol (e.g., `https://xyz.clickhouse.cloud:8443`)
+    /// - `CLICKHOUSE_DATABASE`: Database name
+    /// - `CLICKHOUSE_USER`: Username
+    /// - `CLICKHOUSE_PASSWORD`: Password
+    pub fn from_env() -> Result<Self, IndexError> {
+        let url_str = std::env::var("CLICKHOUSE_URL").map_err(|_| ConfigError::MissingEnv {
+            var: "CLICKHOUSE_URL",
+        })?;
 
-impl Default for JetstreamConfig {
-    fn default() -> Self {
-        Self {
-            endpoint: "wss://jetstream1.us-east.bsky.network/subscribe".into(),
-        }
+        let url = Url::parse(&url_str).map_err(|e| ConfigError::UrlParse {
+            url: url_str,
+            message: e.to_string(),
+        })?;
+
+        let database =
+            std::env::var("CLICKHOUSE_DATABASE").map_err(|_| ConfigError::MissingEnv {
+                var: "CLICKHOUSE_DATABASE",
+            })?;
+
+        let user = std::env::var("CLICKHOUSE_USER").map_err(|_| ConfigError::MissingEnv {
+            var: "CLICKHOUSE_USER",
+        })?;
+
+        let password =
+            std::env::var("CLICKHOUSE_PASSWORD").map_err(|_| ConfigError::MissingEnv {
+                var: "CLICKHOUSE_PASSWORD",
+            })?;
+
+        Ok(Self {
+            url,
+            database,
+            user,
+            password,
+        })
     }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct CoreConfig {
-    pub db_path: String,
-    pub listen_addr: String,
-    pub appview_host: String,
-    pub cookie_secret: String,
+/// Firehose relay configuration
+#[derive(Debug, Clone)]
+pub struct FirehoseConfig {
+    pub relay_url: Url,
+    pub cursor: Option<i64>,
 }
 
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            db_path: "postgres://postgres:@localhost/weaver_appview".into(),
-            listen_addr: "0.0.0.0:4000".into(),
-            appview_host: "https://appview.weaver.sh".into(),
-            cookie_secret: "00000000000000000000000000000000".into(),
-        }
+impl FirehoseConfig {
+    /// Default relay URL (Bluesky network)
+    pub const DEFAULT_RELAY: &'static str = "wss://bsky.network";
+
+    /// Load configuration from environment variables.
+    ///
+    /// Optional env vars:
+    /// - `FIREHOSE_RELAY_URL`: Relay WebSocket URL (default: wss://bsky.network)
+    /// - `FIREHOSE_CURSOR`: Starting cursor position (default: none, starts from live)
+    pub fn from_env() -> Result<Self, IndexError> {
+        let relay_str =
+            std::env::var("FIREHOSE_RELAY_URL").unwrap_or_else(|_| Self::DEFAULT_RELAY.to_string());
+
+        let relay_url = Url::parse(&relay_str).map_err(|e| ConfigError::UrlParse {
+            url: relay_str,
+            message: e.to_string(),
+        })?;
+
+        let cursor = std::env::var("FIREHOSE_CURSOR")
+            .ok()
+            .and_then(|s| s.parse().ok());
+
+        Ok(Self { relay_url, cursor })
     }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+/// Combined configuration for the indexer
+#[derive(Debug, Clone)]
 pub struct Config {
-    pub oauth: OauthConfig,
-    pub jetstream: JetstreamConfig,
-    pub core: CoreConfig,
+    pub clickhouse: ClickHouseConfig,
+    pub firehose: FirehoseConfig,
 }
 
 impl Config {
-    pub fn load(config_file: &str) -> miette::Result<Config> {
-        let mut config_string = fs::read_to_string(config_file)
-            .map_err(|e| miette!("error reading config file {}", e))?;
-        // substitute environment variables in config file
-        for (k, v) in env::vars() {
-            config_string = config_string.replace(&format!("${}", k), &v);
-        }
-
-        Ok(toml::from_str(&config_string)
-            .map_err(|e| miette!("error parsing config file {}", e))?)
+    /// Load all configuration from environment variables.
+    pub fn from_env() -> Result<Self, IndexError> {
+        Ok(Self {
+            clickhouse: ClickHouseConfig::from_env()?,
+            firehose: FirehoseConfig::from_env()?,
+        })
     }
 }

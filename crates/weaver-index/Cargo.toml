@@ -4,75 +4,63 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
+default-run = "indexer"
 
 [features]
 default = []
-embedded-db = ["diesel/sqlite", "diesel-async/sync-connection-wrapper"]
+
+[[bin]]
+name = "storage-benchmark"
+path = "src/bin/storage_benchmark.rs"
+
+[[bin]]
+name = "indexer"
+path = "src/bin/weaver_indexer.rs"
+
 
 [dependencies]
-weaver-common = { path = "../weaver-common", default-features = false }
-clap = { version = "4.5", features = ["derive", "env", "cargo", "unicode"] }
-dotenvy = "0.15"
+# Internal
+weaver-api = { path = "../weaver-api", features = ["streaming"] }
 
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["json", "env-filter"] }
-tracing-appender = { version = "0.2.3", features = ["parking_lot"] }
-
-chrono = "0.4.41"
-serde = { version = "1.0.210", features = ["derive"] }
-serde_json = "1.0.128"
-uuid = { version = "1.8.0", features = ["v7", "serde"] }
-
+# AT Protocol / Jacquard
 jacquard = { workspace = true, features = ["websocket", "zstd"] }
-jacquard-axum = { workspace = true }
+jacquard-common = { workspace = true }
+jacquard-repo = { workspace = true }
 
-axum = "0.8"
-hyper = "1.4.1"
-tower = { version = "0.5", features = [] }
-tower-cookies = "0.11"
-tower-http = { version = "0.6", features = [
-"fs",
-    "trace",
-    "timeout",
-    "request-id",
-    "cors",
-    "normalize-path",
-] }
+# ClickHouse
+clickhouse = { version = "0.14", features = ["inserter", "chrono", "rustls-tls-ring", "rustls-tls-webpki-roots"] }
 
-reqwest = { version = "0.12.7", default-features = false, features = [
-    "json",
-    "rustls-tls",
-] }
+# Serialization
+serde = { workspace = true }
+serde_json = "1.0"
+serde_ipld_dagcbor = "0.6"
+ciborium = "0.2"
 
+# Async runtime
 tokio = { version = "1.44", features = ["full"] }
+n0-future = { workspace = true }
 
-miette = { workspace = true, features = ["fancy", "syntect-highlighter"] }
+# Error handling
+miette = { workspace = true, features = ["fancy"] }
 thiserror = { workspace = true }
 
-diesel =  { version = "2.3.0", features = ["sqlite", "serde_json", "chrono", "returning_clauses_for_sqlite_3_35"] }
-diesel-async = { version = "0.7", features = ["sqlite", "deadpool"] }
-diesel_migrations = "2.3.0"
+# Config / CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+dotenvy = "0.15"
 
-libsqlite3-sys = {version = ">=0.30.1,<0.36.0", features = ["bundled"] }
+# Tracing
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-toml = { version = "0.8.22", features = ["preserve_order"] }
-jose = { version = "0.0.2", features = ["crypto-rustcrypto"] }
-jose-jwk = "0.1.2"
+# Data types
+bytes = { workspace = true }
 url = "2"
+chrono = { version = "0.4", features = ["serde"] }
+smol_str = "0.3"
 
-minijinja = { version = "2.9.0" }
-minijinja-contrib = { version = "2.9.0" }
-dashmap = "6.1.0"
+# CID handling (for CAR block lookups)
+cid = "0.11"
 
-
-# wasm-in-browser dependencies
-[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
-futures-util = "0.3"
-js-sys = "0.3"
-pin-project = "1"
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
-web-time = "1"
-send_wrapper = "0.6"
-wasmworker = "0.1"
-wasmworker-proc-macro = "0.1"
+# Utilities
+humansize = "2.0"
+base64 = "0.22"
