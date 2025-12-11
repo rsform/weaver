@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS raw_records (
     -- Content identifier from the record
     cid String,
 
+    -- Repository revision (TID) - monotonically increasing per DID, used for dedup/ordering
+    rev String,
+
     -- Full record as native JSON (schema-flexible, queryable with record.field.subfield)
     record JSON,
 
@@ -28,8 +31,20 @@ CREATE TABLE IF NOT EXISTS raw_records (
     -- When we indexed this record
     indexed_at DateTime64(3) DEFAULT now64(3),
 
+    -- Validation state: 'unchecked', 'valid', 'invalid_rev', 'invalid_gap', 'invalid_account'
+    -- Populated by async batch validation, not in hot path
+    validation_state LowCardinality(String) DEFAULT 'unchecked',
+
     -- Materialized AT URI for convenience
-    uri String MATERIALIZED concat('at://', did, '/', collection, '/', rkey)
+    uri String MATERIALIZED concat('at://', did, '/', collection, '/', rkey),
+
+    -- Projection for fast delete lookups by (did, cid)
+    -- Delete events include CID, so we can O(1) lookup the original record
+    -- to know what to decrement (e.g., which notebook's like count)
+    PROJECTION by_did_cid (
+        SELECT * ORDER BY (did, cid)
+    )
 )
 ENGINE = ReplacingMergeTree(indexed_at)
-ORDER BY (collection, did, rkey, indexed_at);
+ORDER BY (collection, did, rkey, event_time)
+SETTINGS deduplicate_merge_projection_mode = 'drop';

@@ -1,5 +1,6 @@
 use crate::error::{CarError, IndexError};
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use jacquard_repo::car::reader::parse_car_bytes;
 use smol_str::{SmolStr, ToSmolStr};
 
@@ -15,15 +16,17 @@ pub struct ExtractedRecord {
     /// Record key within the collection
     pub rkey: SmolStr,
     /// Content identifier
-    pub cid: String,
+    pub cid: SmolStr,
+    /// Repository revision (TID) - monotonically increasing per DID
+    pub rev: SmolStr,
     /// Operation type: "create", "update", or "delete"
     pub operation: SmolStr,
     /// Raw DAG-CBOR bytes of the record (None for deletes)
     pub cbor_bytes: Option<Bytes>,
     /// Sequence number from the firehose event
     pub seq: i64,
-    /// Event timestamp (milliseconds since epoch)
-    pub event_time_ms: i64,
+    /// Event timestamp
+    pub event_time: DateTime<Utc>,
 }
 
 impl ExtractedRecord {
@@ -61,7 +64,7 @@ pub async fn extract_records(commit: &Commit<'_>) -> Result<Vec<ExtractedRecord>
             message: e.to_string(),
         })?;
 
-    let event_time_ms = commit.time.as_ref().timestamp_millis();
+    let event_time = commit.time.as_ref().with_timezone(&Utc);
     let mut records = Vec::with_capacity(commit.ops.len());
 
     for op in &commit.ops {
@@ -77,7 +80,7 @@ pub async fn extract_records(commit: &Commit<'_>) -> Result<Vec<ExtractedRecord>
         };
 
         let operation = op.action.to_smolstr();
-        let cid_str = op.cid.as_ref().map(|c| c.to_string()).unwrap_or_default();
+        let cid_str = op.cid.as_ref().map(|c| c.to_smolstr()).unwrap_or_default();
 
         // For creates/updates, look up the record in the CAR blocks
         let cbor_bytes = if let Some(cid_link) = &op.cid {
@@ -97,10 +100,11 @@ pub async fn extract_records(commit: &Commit<'_>) -> Result<Vec<ExtractedRecord>
             collection,
             rkey,
             cid: cid_str,
+            rev: commit.rev.to_smolstr(),
             operation,
             cbor_bytes,
             seq: commit.seq,
-            event_time_ms,
+            event_time,
         });
     }
 

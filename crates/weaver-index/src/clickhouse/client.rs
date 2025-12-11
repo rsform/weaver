@@ -15,7 +15,11 @@ impl Client {
             .with_url(config.url.as_str())
             .with_database(&config.database)
             .with_user(&config.user)
-            .with_password(&config.password);
+            .with_password(&config.password)
+            // Enable JSON type support (treated as string at transport level)
+            .with_option("allow_experimental_json_type", "1")
+            .with_option("input_format_binary_read_json_as_string", "1")
+            .with_option("output_format_binary_write_json_as_string", "1");
 
         Ok(Self { inner })
     }

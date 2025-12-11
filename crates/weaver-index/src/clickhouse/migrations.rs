@@ -1,35 +1,11 @@
 use crate::error::{ClickHouseError, IndexError};
+use include_dir::{Dir, include_dir};
 use tracing::info;
 
 use super::Client;
 
-/// Embedded migrations - compiled into the binary
-const MIGRATIONS: &[(&str, &str)] = &[
-    (
-        "000_migrations.sql",
-        include_str!("../../migrations/clickhouse/000_migrations.sql"),
-    ),
-    (
-        "001_raw_records.sql",
-        include_str!("../../migrations/clickhouse/001_raw_records.sql"),
-    ),
-    (
-        "002_identity_events.sql",
-        include_str!("../../migrations/clickhouse/002_identity_events.sql"),
-    ),
-    (
-        "003_account_events.sql",
-        include_str!("../../migrations/clickhouse/003_account_events.sql"),
-    ),
-    (
-        "004_events_dlq.sql",
-        include_str!("../../migrations/clickhouse/004_events_dlq.sql"),
-    ),
-    (
-        "005_firehose_cursor.sql",
-        include_str!("../../migrations/clickhouse/005_firehose_cursor.sql"),
-    ),
-];
+/// Embedded migrations directory - compiled into the binary
+static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations/clickhouse");
 
 /// Migration runner for ClickHouse
 pub struct Migrator<'a> {
@@ -39,6 +15,21 @@ pub struct Migrator<'a> {
 impl<'a> Migrator<'a> {
     pub fn new(client: &'a Client) -> Self {
         Self { client }
+    }
+
+    /// Get sorted list of migration files from embedded directory
+    fn migrations() -> Vec<(&'static str, &'static str)> {
+        let mut files: Vec<_> = MIGRATIONS_DIR
+            .files()
+            .filter(|f| f.path().extension().is_some_and(|ext| ext == "sql"))
+            .filter_map(|f| {
+                let name = f.path().file_name()?.to_str()?;
+                let contents = f.contents_utf8()?;
+                Some((name, contents))
+            })
+            .collect();
+        files.sort_by_key(|(name, _)| *name);
+        files
     }
 
     /// Run all pending migrations
@@ -52,10 +43,9 @@ impl<'a> Migrator<'a> {
         let mut applied_count = 0;
         let mut skipped_count = 0;
 
-        for (name, sql) in MIGRATIONS {
+        for (name, sql) in Self::migrations() {
             // Skip the bootstrap migration after first run
-            if *name == "000_migrations.sql" && applied.contains(&"000_migrations.sql".to_string())
-            {
+            if name == "000_migrations.sql" && applied.contains(&"000_migrations.sql".to_string()) {
                 skipped_count += 1;
                 continue;
             }
@@ -86,8 +76,8 @@ impl<'a> Migrator<'a> {
             Err(_) => vec![],
         };
 
-        let pending: Vec<String> = MIGRATIONS
-            .iter()
+        let pending: Vec<String> = Self::migrations()
+            .into_iter()
             .filter(|(name, _)| !applied.contains(&name.to_string()))
             .map(|(name, _)| name.to_string())
             .collect();
@@ -97,8 +87,8 @@ impl<'a> Migrator<'a> {
 
     async fn ensure_migrations_table(&self) -> Result<(), IndexError> {
         // Run the bootstrap migration directly
-        let (_, sql) = MIGRATIONS
-            .iter()
+        let (_, sql) = Self::migrations()
+            .into_iter()
             .find(|(name, _)| *name == "000_migrations.sql")
             .expect("bootstrap migration must exist");
 

@@ -305,18 +305,17 @@ async fn main() -> miette::Result<()> {
                 }
             };
 
-            let event_time = DateTime::from_timestamp_millis(record.event_time_ms).unwrap();
             // Insert JSON record
             json_inserter
                 .write(&RawRecordJson {
                     did: record.did.clone(),
                     collection: record.collection.clone(),
                     rkey: record.rkey.clone(),
-                    cid: record.cid.clone(),
+                    cid: record.cid.to_string(),
                     record: json_str,
                     operation: record.operation.clone(),
                     seq: record.seq as u64,
-                    event_time: event_time.clone(),
+                    event_time: record.event_time,
                 })
                 .await
                 .map_err(|e| weaver_index::error::ClickHouseError::Insert {
@@ -330,11 +329,11 @@ async fn main() -> miette::Result<()> {
                     did: record.did,
                     collection: record.collection,
                     rkey: record.rkey,
-                    cid: record.cid,
+                    cid: record.cid.to_string(),
                     record: cbor_bytes.clone(),
                     operation: record.operation,
                     seq: record.seq as u64,
-                    event_time,
+                    event_time: record.event_time,
                 })
                 .await
                 .map_err(|e| weaver_index::error::ClickHouseError::Insert {

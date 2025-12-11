@@ -2,6 +2,6 @@ mod consumer;
 mod records;
 
 pub use consumer::{
-    FirehoseConsumer, MessageStream, SubscribeReposMessage, Commit, Identity, Account, Sync,
+    Account, Commit, FirehoseConsumer, Identity, MessageStream, SubscribeReposMessage, Sync,
 };
-pub use records::{extract_records, ExtractedRecord};
+pub use records::{ExtractedRecord, extract_records};

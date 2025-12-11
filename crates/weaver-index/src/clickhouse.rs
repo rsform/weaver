@@ -5,5 +5,6 @@ mod schema;
 pub use client::{Client, TableSize};
 pub use migrations::{MigrationResult, Migrator};
 pub use schema::{
-    FirehoseCursor, RawAccountEvent, RawEventDlq, RawIdentityEvent, RawRecord, Tables,
+    AccountRevState, FirehoseCursor, RawAccountEvent, RawEventDlq, RawIdentityEvent,
+    RawRecordInsert, Tables,
 };

@@ -64,3 +64,5 @@ cid = "0.11"
 # Utilities
 humansize = "2.0"
 base64 = "0.22"
+dashmap = "6"
+include_dir = "0.7.4"
