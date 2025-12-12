@@ -96,6 +96,11 @@ pub async fn get_record(
         })?;
 
     if let Some(row) = cached {
+        // Check if record was deleted
+        if row.operation == "delete" {
+            return Err(XrpcErrorResponse::not_found("Record not found"));
+        }
+
         // Cache hit - return from ClickHouse
         let value: Data<'_> = serde_json::from_str(&row.record).map_err(|e| {
             tracing::error!("Failed to parse record JSON: {}", e);
@@ -103,7 +108,7 @@ pub async fn get_record(
         })?;
 
         let uri_str = format!("at://{}/{}/{}", did, collection, rkey);
-        let uri = AtUri::new_owned(uri_str).map_err(|e| {
+        let uri = AtUri::new_owned(uri_str.clone()).map_err(|e| {
             tracing::error!("Failed to construct AT URI: {}", e);
             XrpcErrorResponse::internal_error("Failed to construct URI")
         })?;
@@ -112,6 +117,50 @@ pub async fn get_record(
             tracing::error!("Invalid CID in database: {}", e);
             XrpcErrorResponse::internal_error("Invalid CID stored")
         })?;
+
+        // Stale-while-revalidate: check freshness in background
+        let cached_cid = row.cid.clone();
+        let clickhouse = state.clickhouse.clone();
+        let resolver = state.resolver.clone();
+        let did_str = did.as_str().to_string();
+        let collection_str = collection.to_string();
+        let rkey_str = rkey.to_string();
+
+        tokio::spawn(async move {
+            let uri = match AtUri::new_owned(uri_str) {
+                Ok(u) => u,
+                Err(_) => return,
+            };
+
+            let upstream = match resolver.fetch_record_slingshot(&uri).await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::debug!("Background revalidation fetch failed: {}", e);
+                    return;
+                }
+            };
+
+            // Check if CID changed
+            let upstream_cid = upstream
+                .cid
+                .as_ref()
+                .map(|c| c.as_str())
+                .unwrap_or_default();
+
+            if upstream_cid != cached_cid && !upstream_cid.is_empty() {
+                let record_json = serde_json::to_string(&upstream.value).unwrap_or_default();
+                if !record_json.is_empty() {
+                    if let Err(e) = clickhouse
+                        .insert_record(&did_str, &collection_str, &rkey_str, upstream_cid, &record_json)
+                        .await
+                    {
+                        tracing::warn!("Failed to update stale cache entry: {}", e);
+                    } else {
+                        tracing::debug!("Updated stale cache entry for {}", uri);
+                    }
+                }
+            }
+        });
 
         return Ok(Json(
             GetRecordOutput {

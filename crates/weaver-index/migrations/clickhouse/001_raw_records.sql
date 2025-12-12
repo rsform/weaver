@@ -50,5 +50,5 @@ CREATE TABLE IF NOT EXISTS raw_records (
     )
 )
 ENGINE = ReplacingMergeTree(indexed_at)
-ORDER BY (collection, did, rkey, event_time)
+ORDER BY (collection, did, rkey, event_time, indexed_at)
 SETTINGS deduplicate_merge_projection_mode = 'drop';

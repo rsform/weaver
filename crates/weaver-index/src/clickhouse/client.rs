@@ -107,14 +107,15 @@ impl Client {
         rkey: &str,
     ) -> Result<Option<RecordRow>, IndexError> {
         // FINAL ensures ReplacingMergeTree deduplication is applied
+        // Order by event_time first (firehose data wins), then indexed_at as tiebreaker
+        // Include deletes so we can return not-found for deleted records
         let query = r#"
-            SELECT cid, record
+            SELECT cid, record, operation
             FROM raw_records FINAL
             WHERE did = ?
               AND collection = ?
               AND rkey = ?
-              AND operation != 'delete'
-            ORDER BY event_time DESC
+            ORDER BY event_time DESC, indexed_at DESC
             LIMIT 1
         "#;
 
@@ -283,6 +284,7 @@ impl TableSize {
 pub struct RecordRow {
     pub cid: String,
     pub record: String, // JSON string
+    pub operation: String,
 }
 
 /// Record with rkey from raw_records (for listRecords)
