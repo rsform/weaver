@@ -1,0 +1,64 @@
+services:
+  # Tap - AT Protocol sync utility
+  # Build from local indigo checkout, or use pre-built image
+  tap:
+    container_name: weaver-tap
+    build:
+      # Build from local indigo checkout on sync-tool branch
+      # git clone https://github.com/bluesky-social/indigo.git && git checkout sync-tool
+      context: ../../Git_Repos/indigo
+      dockerfile: cmd/tap/Dockerfile
+    ports:
+      - "2480:2480"
+    volumes:
+      - tap_data:/data/tap
+    environment:
+      TAP_DATABASE_URL: sqlite:///data/tap/tap.db
+      TAP_BIND: ":2480"
+      TAP_DISABLE_ACKS: "false"
+      TAP_LOG_LEVEL: info
+      # Filter to weaver collections only
+      TAP_SIGNAL_COLLECTION: sh.weaver.edit.root
+      TAP_COLLECTION_FILTERS: "sh.weaver.*,app.bsky.actor.profile"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2480/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+  # Weaver indexer - consumes from tap or direct firehose
+  indexer:
+    container_name: weaver-indexer
+    build:
+      context: .
+      dockerfile: crates/weaver-index/Dockerfile
+    command: ["run"]
+    ports:
+      - "3000:3000"
+    environment:
+      RUST_LOG: debug,weaver_index=debug
+      # ClickHouse connection (set these for your cloud/homelab instance)
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-weaver}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      # Source mode: "firehose" or "tap"
+      INDEXER_SOURCE: tap
+      # Tap connection (when INDEXER_SOURCE=tap)
+      TAP_URL: ws://tap:2480/channel
+      TAP_SEND_ACKS: "true"
+      # Firehose connection (when INDEXER_SOURCE=firehose)
+      FIREHOSE_RELAY_URL: wss://bsky.network
+      # Collection filters
+      INDEXER_COLLECTIONS: "sh.weaver.*,app.bsky.actor.profile"
+    depends_on:
+      tap:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2480/xrpc/_health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  tap_data:

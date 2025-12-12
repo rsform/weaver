@@ -30,10 +30,15 @@ impl Tables {
 
 /// Validation states for records
 pub mod validation {
+    #[allow(dead_code)]
     pub const UNCHECKED: &str = "unchecked";
+    #[allow(dead_code)]
     pub const VALID: &str = "valid";
+    #[allow(dead_code)]
     pub const INVALID_REV: &str = "invalid_rev";
+    #[allow(dead_code)]
     pub const INVALID_GAP: &str = "invalid_gap";
+    #[allow(dead_code)]
     pub const INVALID_ACCOUNT: &str = "invalid_account";
 }
 
@@ -51,6 +56,8 @@ pub struct RawRecordInsert {
     pub seq: u64,
     #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub event_time: DateTime<Utc>,
+    /// Whether this came from live firehose (true) or backfill (false)
+    pub is_live: bool,
     // Note: indexed_at has DEFAULT now64(3), omit from insert
     // Note: validation_state has DEFAULT 'unchecked', omit from insert
 }

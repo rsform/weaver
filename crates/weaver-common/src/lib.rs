@@ -4,6 +4,8 @@ pub mod agent;
 pub mod constellation;
 pub mod error;
 pub mod resolve;
+#[cfg(feature = "telemetry")]
+pub mod telemetry;
 pub mod transport;
 pub mod worker_rt;
 

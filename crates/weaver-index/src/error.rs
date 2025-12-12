@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use miette::Diagnostic;
 use thiserror::Error;
 
@@ -19,6 +21,73 @@ pub enum IndexError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     Config(#[from] ConfigError),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Server(#[from] ServerError),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Sqlite(#[from] SqliteError),
+}
+
+/// HTTP server errors
+#[derive(Debug, Error, Diagnostic)]
+pub enum ServerError {
+    #[error("failed to bind to {addr}")]
+    #[diagnostic(code(server::bind))]
+    Bind {
+        addr: std::net::SocketAddr,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("server terminated unexpectedly")]
+    #[diagnostic(code(server::serve))]
+    Serve {
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+/// SQLite shard errors
+#[derive(Debug, Error, Diagnostic)]
+pub enum SqliteError {
+    #[error("failed to open database at {}", path.display())]
+    #[diagnostic(code(sqlite::open))]
+    Open {
+        path: PathBuf,
+        #[source]
+        source: rusqlite::Error,
+    },
+
+    #[error("failed to create directory {}", path.display())]
+    #[diagnostic(code(sqlite::io))]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("failed to set pragma {pragma}")]
+    #[diagnostic(code(sqlite::pragma))]
+    Pragma {
+        pragma: &'static str,
+        #[source]
+        source: rusqlite::Error,
+    },
+
+    #[error("migration failed: {message}")]
+    #[diagnostic(code(sqlite::migration))]
+    Migration { message: String },
+
+    #[error("query failed: {message}")]
+    #[diagnostic(code(sqlite::query))]
+    Query { message: String },
+
+    #[error("shard lock poisoned")]
+    #[diagnostic(code(sqlite::lock))]
+    LockPoisoned,
 }
 
 /// ClickHouse database errors

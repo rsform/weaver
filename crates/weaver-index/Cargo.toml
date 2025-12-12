@@ -21,11 +21,13 @@ path = "src/bin/weaver_indexer.rs"
 [dependencies]
 # Internal
 weaver-api = { path = "../weaver-api", features = ["streaming"] }
+weaver-common = { path = "../weaver-common", features = ["telemetry"] }
 
 # AT Protocol / Jacquard
-jacquard = { workspace = true, features = ["websocket", "zstd"] }
+jacquard = { workspace = true, features = ["websocket", "zstd", "dns", "cache"] }
 jacquard-common = { workspace = true }
 jacquard-repo = { workspace = true }
+jacquard-axum = { workspace = true }
 
 # ClickHouse
 clickhouse = { version = "0.14", features = ["inserter", "chrono", "rustls-tls-ring", "rustls-tls-webpki-roots"] }
@@ -66,3 +68,16 @@ humansize = "2.0"
 base64 = "0.22"
 dashmap = "6"
 include_dir = "0.7.4"
+
+# WebSocket (for tap consumer)
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+futures-util = "0.3"
+
+# HTTP server
+axum = { version = "0.8.7", features = ["macros"] }
+tower = "0.5.2"
+tower-http = { version = "0.6.7", features = ["trace", "cors"] }
+
+# SQLite (shard storage)
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+rusqlite_migration = { version = "2.1.0", features = ["from-directory"] }

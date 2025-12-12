@@ -5,7 +5,7 @@ use chrono::Utc;
 use dashmap::DashMap;
 use n0_future::StreamExt;
 use smol_str::{SmolStr, ToSmolStr};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use chrono::DateTime;
 
@@ -13,11 +13,13 @@ use crate::clickhouse::{
     AccountRevState, Client, FirehoseCursor, RawAccountEvent, RawIdentityEvent, RawRecordInsert,
 };
 use crate::config::IndexerConfig;
-use crate::error::{IndexError, Result};
+use crate::config::TapConfig;
+use crate::error::{ClickHouseError, IndexError, Result};
 use crate::firehose::{
     Account, Commit, ExtractedRecord, FirehoseConsumer, Identity, MessageStream,
     SubscribeReposMessage, extract_records,
 };
+use crate::tap::{TapConfig as TapConsumerConfig, TapConsumer, TapEvent};
 
 /// Default consumer ID for cursor tracking
 const CONSUMER_ID: &str = "main";
@@ -160,16 +162,16 @@ pub async fn load_cursor(client: &Client) -> Result<Option<i64>> {
     }
 }
 
-/// Main indexer that consumes firehose and writes to ClickHouse
-pub struct Indexer {
+/// Firehose indexer that consumes AT Protocol firehose and writes to ClickHouse
+pub struct FirehoseIndexer {
     client: Arc<Client>,
     consumer: FirehoseConsumer,
     rev_cache: RevCache,
     config: IndexerConfig,
 }
 
-impl Indexer {
-    /// Create a new indexer
+impl FirehoseIndexer {
+    /// Create a new firehose indexer
     pub async fn new(
         client: Client,
         consumer: FirehoseConsumer,
@@ -226,7 +228,45 @@ impl Indexer {
 
         info!("starting indexer loop");
 
-        while let Some(result) = stream.next().await {
+        loop {
+            // Get time until next required flush - must commit before socket timeout (30s)
+            let records_time = records.time_left().unwrap_or(Duration::from_secs(10));
+            let identities_time = identities.time_left().unwrap_or(Duration::from_secs(10));
+            let accounts_time = accounts.time_left().unwrap_or(Duration::from_secs(10));
+            let time_left = records_time.min(identities_time).min(accounts_time);
+
+            let result =
+                match tokio::time::timeout(time_left, stream.next()).await {
+                    Ok(Some(result)) => result,
+                    Ok(None) => {
+                        // Stream ended
+                        break;
+                    }
+                    Err(_) => {
+                        // Timeout - flush inserters to keep INSERT alive
+                        debug!("flush timeout, committing inserters");
+                        records.commit().await.map_err(|e| {
+                            crate::error::ClickHouseError::Query {
+                                message: "periodic records commit failed".into(),
+                                source: e,
+                            }
+                        })?;
+                        identities.commit().await.map_err(|e| {
+                            crate::error::ClickHouseError::Query {
+                                message: "periodic identities commit failed".into(),
+                                source: e,
+                            }
+                        })?;
+                        accounts.commit().await.map_err(|e| {
+                            crate::error::ClickHouseError::Query {
+                                message: "periodic accounts commit failed".into(),
+                                source: e,
+                            }
+                        })?;
+                        continue;
+                    }
+                };
+
             let msg = match result {
                 Ok(msg) => msg,
                 Err(e) => {
@@ -381,6 +421,7 @@ impl Indexer {
                     operation: record.operation.clone(),
                     seq: record.seq as u64,
                     event_time: record.event_time,
+                    is_live: true,
                 })
                 .await
                 .map_err(|e| crate::error::ClickHouseError::Query {
@@ -455,9 +496,13 @@ async fn write_account(
 /// Minimal struct for delete lookups - just the fields we need to process the delete
 #[derive(Debug, Clone, clickhouse::Row, serde::Deserialize)]
 struct LookupRawRecord {
+    #[allow(dead_code)]
     did: SmolStr,
+    #[allow(dead_code)]
     collection: SmolStr,
+    #[allow(dead_code)]
     rkey: SmolStr,
+    #[allow(dead_code)]
     record: SmolStr, // JSON string of the original record
 }
 
@@ -508,5 +553,208 @@ async fn handle_delete(client: &Client, record: ExtractedRecord) -> Result<()> {
         }
 
         tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+// ============================================================================
+// TapIndexer - consumes from tap websocket
+// ============================================================================
+
+/// Consumer ID for tap cursor tracking
+const TAP_CONSUMER_ID: &str = "tap";
+
+/// Tap indexer that consumes from tap websocket and writes to ClickHouse
+pub struct TapIndexer {
+    client: Arc<Client>,
+    tap_config: TapConfig,
+    config: IndexerConfig,
+}
+
+impl TapIndexer {
+    /// Create a new tap indexer
+    pub fn new(client: Client, tap_config: TapConfig, config: IndexerConfig) -> Self {
+        Self {
+            client: Arc::new(client),
+            tap_config,
+            config,
+        }
+    }
+
+    /// Save tap cursor to ClickHouse for visibility
+    async fn save_cursor(&self, seq: u64) -> Result<()> {
+        let query = format!(
+            "INSERT INTO firehose_cursor (consumer_id, seq, event_time) VALUES ('{}', {}, now64(3))",
+            TAP_CONSUMER_ID, seq
+        );
+
+        self.client.execute(&query).await?;
+        debug!(seq, "saved tap cursor");
+        Ok(())
+    }
+
+    /// Run the tap indexer loop
+    pub async fn run(&self) -> Result<()> {
+        info!(url = %self.tap_config.url, "connecting to tap...");
+
+        let consumer_config = TapConsumerConfig::new(self.tap_config.url.clone())
+            .with_acks(self.tap_config.send_acks);
+        let consumer = TapConsumer::new(consumer_config);
+
+        let (mut events, ack_tx) = consumer.connect().await?;
+
+        let mut records = self.client.inserter::<RawRecordInsert>("raw_records");
+        let mut identities = self
+            .client
+            .inserter::<RawIdentityEvent>("raw_identity_events");
+
+        let mut processed: u64 = 0;
+        let mut last_seq: u64 = 0;
+        let mut last_stats = Instant::now();
+        let mut last_cursor_save = Instant::now();
+
+        info!("starting tap indexer loop");
+
+        loop {
+            // Get time until next required flush - must commit before socket timeout (30s)
+            let records_time = records.time_left().unwrap_or(Duration::from_secs(10));
+            let identities_time = identities.time_left().unwrap_or(Duration::from_secs(10));
+            let time_left = records_time.min(identities_time);
+
+            let event = match tokio::time::timeout(time_left, events.recv()).await {
+                Ok(Some(event)) => event,
+                Ok(None) => {
+                    // Channel closed, exit loop
+                    break;
+                }
+                Err(_) => {
+                    // Timeout - flush inserters to keep INSERT alive
+                    trace!("flush timeout, committing inserters");
+                    records.commit().await.map_err(|e| ClickHouseError::Query {
+                        message: "periodic records commit failed".into(),
+                        source: e,
+                    })?;
+                    identities
+                        .commit()
+                        .await
+                        .map_err(|e| ClickHouseError::Query {
+                            message: "periodic identities commit failed".into(),
+                            source: e,
+                        })?;
+                    continue;
+                }
+            };
+
+            let event_id = event.id();
+            last_seq = event_id;
+
+            match event {
+                TapEvent::Record(envelope) => {
+                    let record = &envelope.record;
+
+                    // Collection filter
+                    if !self.config.collections.matches(&record.collection) {
+                        // Still ack even if filtered
+                        let _ = ack_tx.send(event_id).await;
+                        continue;
+                    }
+
+                    let json = record
+                        .record
+                        .as_ref()
+                        .map(|v| serde_json::to_string(v).unwrap_or_default())
+                        .unwrap_or_default();
+
+                    debug!(
+                        op = record.action.as_str(),
+                        id = event_id,
+                        len = json.len(),
+                        "writing record"
+                    );
+
+                    records
+                        .write(&RawRecordInsert {
+                            did: record.did.clone(),
+                            collection: record.collection.clone(),
+                            rkey: record.rkey.clone(),
+                            cid: record.cid.clone(),
+                            rev: record.rev.clone(),
+                            record: json.to_smolstr(),
+                            operation: record.action.as_str().to_smolstr(),
+                            seq: event_id,
+                            event_time: Utc::now(),
+                            is_live: record.live,
+                        })
+                        .await
+                        .map_err(|e| ClickHouseError::Query {
+                            message: "record write failed".into(),
+                            source: e,
+                        })?;
+                    records.commit().await.map_err(|e| ClickHouseError::Query {
+                        message: format!("record commit failed for id {}", event_id),
+                        source: e,
+                    })?;
+
+                    processed += 1;
+                }
+                TapEvent::Identity(envelope) => {
+                    let identity = &envelope.identity;
+
+                    identities
+                        .write(&RawIdentityEvent {
+                            did: identity.did.clone(),
+                            handle: identity.handle.clone(),
+                            seq: event_id,
+                            event_time: Utc::now(),
+                        })
+                        .await
+                        .map_err(|e| ClickHouseError::Query {
+                            message: "identity write failed".into(),
+                            source: e,
+                        })?;
+                    identities
+                        .commit()
+                        .await
+                        .map_err(|e| ClickHouseError::Query {
+                            message: "identity commit failed".into(),
+                            source: e,
+                        })?;
+                }
+            }
+
+            // Send ack after successful write+commit
+            let _ = ack_tx.send(event_id).await;
+
+            // Periodic stats
+            if last_stats.elapsed() >= Duration::from_secs(10) {
+                info!(processed, last_seq, "tap indexer stats");
+                last_stats = Instant::now();
+            }
+
+            // Save cursor every 30s for visibility
+            if last_cursor_save.elapsed() >= Duration::from_secs(30) && last_seq > 0 {
+                if let Err(e) = self.save_cursor(last_seq).await {
+                    warn!(error = ?e, "failed to save tap cursor");
+                }
+                last_cursor_save = Instant::now();
+            }
+        }
+
+        // Final flush
+        records.end().await.map_err(|e| ClickHouseError::Query {
+            message: "final records flush failed".into(),
+            source: e,
+        })?;
+        identities.end().await.map_err(|e| ClickHouseError::Query {
+            message: "final identities flush failed".into(),
+            source: e,
+        })?;
+
+        // Final cursor save
+        if last_seq > 0 {
+            self.save_cursor(last_seq).await?;
+        }
+
+        info!(last_seq, "tap stream ended");
+        Ok(())
     }
 }

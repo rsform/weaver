@@ -202,12 +202,94 @@ impl IndexerConfig {
     }
 }
 
+/// Tap connection configuration
+#[derive(Debug, Clone)]
+pub struct TapConfig {
+    pub url: Url,
+    pub send_acks: bool,
+}
+
+impl TapConfig {
+    /// Default tap URL (local)
+    pub const DEFAULT_URL: &'static str = "ws://localhost:2480/channel";
+
+    /// Load configuration from environment variables.
+    ///
+    /// Optional env vars:
+    /// - `TAP_URL`: Tap WebSocket URL (default: ws://localhost:2480/channel)
+    /// - `TAP_SEND_ACKS`: Whether to send acks (default: true)
+    pub fn from_env() -> Result<Self, IndexError> {
+        let url_str = std::env::var("TAP_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string());
+
+        let url = Url::parse(&url_str).map_err(|e| ConfigError::UrlParse {
+            url: url_str,
+            message: e.to_string(),
+        })?;
+
+        let send_acks = std::env::var("TAP_SEND_ACKS")
+            .map(|s| s.to_lowercase() != "false")
+            .unwrap_or(true);
+
+        Ok(Self { url, send_acks })
+    }
+}
+
+/// Source mode for the indexer
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SourceMode {
+    /// Direct firehose connection
+    #[default]
+    Firehose,
+    /// Consume from tap
+    Tap,
+}
+
+impl SourceMode {
+    pub fn from_env() -> Self {
+        match std::env::var("INDEXER_SOURCE").as_deref() {
+            Ok("tap") => SourceMode::Tap,
+            _ => SourceMode::Firehose,
+        }
+    }
+}
+
+/// SQLite shard configuration
+#[derive(Debug, Clone)]
+pub struct ShardConfig {
+    pub base_path: std::path::PathBuf,
+}
+
+impl Default for ShardConfig {
+    fn default() -> Self {
+        Self {
+            base_path: std::path::PathBuf::from("./shards"),
+        }
+    }
+}
+
+impl ShardConfig {
+    /// Load configuration from environment variables.
+    ///
+    /// Optional env vars:
+    /// - `SHARD_BASE_PATH`: Base directory for SQLite shards (default: ./shards)
+    pub fn from_env() -> Self {
+        let base_path = std::env::var("SHARD_BASE_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("./shards"));
+
+        Self { base_path }
+    }
+}
+
 /// Combined configuration for the indexer
 #[derive(Debug, Clone)]
 pub struct Config {
     pub clickhouse: ClickHouseConfig,
     pub firehose: FirehoseConfig,
+    pub tap: TapConfig,
     pub indexer: IndexerConfig,
+    pub shard: ShardConfig,
+    pub source: SourceMode,
 }
 
 impl Config {
@@ -216,7 +298,10 @@ impl Config {
         Ok(Self {
             clickhouse: ClickHouseConfig::from_env()?,
             firehose: FirehoseConfig::from_env()?,
+            tap: TapConfig::from_env()?,
             indexer: IndexerConfig::from_env(),
+            shard: ShardConfig::from_env(),
+            source: SourceMode::from_env(),
         })
     }
 }

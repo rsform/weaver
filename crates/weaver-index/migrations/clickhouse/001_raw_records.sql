@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS raw_records (
     -- Populated by async batch validation, not in hot path
     validation_state LowCardinality(String) DEFAULT 'unchecked',
 
+    -- Whether this came from live firehose (true) or backfill (false)
+    -- Backfill events may not reflect current state until repo is fully synced
+    is_live Bool DEFAULT true,
+
     -- Materialized AT URI for convenience
     uri String MATERIALIZED concat('at://', did, '/', collection, '/', rkey),
 

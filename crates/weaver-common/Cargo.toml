@@ -10,6 +10,7 @@ default = ["dev"]
 dev = []
 native = ["jacquard/dns"]
 iroh = ["dep:iroh", "dep:iroh-gossip", "dep:iroh-tickets"]
+telemetry = ["dep:metrics", "dep:metrics-exporter-prometheus", "dep:tracing-subscriber", "dep:tracing-loki"]
 
 [dependencies]
 n0-future = { workspace = true }
@@ -42,6 +43,12 @@ web-time = "1"
 iroh = { version = "0.95", default-features = false, optional = true }
 iroh-gossip = { version = "0.95", default-features = false, features = ["net"], optional = true }
 iroh-tickets = { version = "0.2", optional = true }
+
+# Telemetry (optional, native-only)
+metrics = { version = "0.24.2", optional = true }
+metrics-exporter-prometheus = { version = "0.17.2", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
+tracing-loki = { version = "0.2", optional = true }
 
 getrandom = { version = "0.3", features = [] }
 ring = { version = "0.17", default-features = false }

@@ -1,11 +1,12 @@
 use clap::{Parser, Subcommand};
-use miette::IntoDiagnostic;
-use tracing::{Level, info, warn};
-use tracing_subscriber::EnvFilter;
+use tracing::{error, info, warn};
 use weaver_index::clickhouse::{Client, Migrator, Tables};
-use weaver_index::config::{ClickHouseConfig, FirehoseConfig, IndexerConfig};
+use weaver_index::config::{
+    ClickHouseConfig, FirehoseConfig, IndexerConfig, ShardConfig, SourceMode, TapConfig,
+};
 use weaver_index::firehose::FirehoseConsumer;
-use weaver_index::{Indexer, load_cursor};
+use weaver_index::server::{AppState, ServerConfig, TelemetryConfig, telemetry};
+use weaver_index::{FirehoseIndexer, TapIndexer, load_cursor};
 
 #[derive(Parser)]
 #[command(name = "indexer")]
@@ -31,35 +32,32 @@ enum Command {
     /// Check database connectivity
     Health,
 
-    /// Start the indexer service (not yet implemented)
+    /// Start the full service (indexer + HTTP server)
     Run,
+
+    /// Start only the HTTP server (no indexing)
+    Serve,
+
+    /// Start only the indexer (no HTTP server)
+    Index,
 }
 
 #[tokio::main]
 async fn main() -> miette::Result<()> {
     dotenvy::dotenv().ok();
 
-    let console_level = if cfg!(debug_assertions) {
-        Level::DEBUG
-    } else {
-        Level::INFO
-    };
-
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::builder()
-                .from_env_lossy()
-                .add_directive(console_level.into())
-                .add_directive("hyper_util=info".parse().into_diagnostic()?),
-        )
-        .init();
+    // Initialize telemetry (metrics + tracing with optional Loki)
+    let telemetry_config = TelemetryConfig::from_env("weaver-index");
+    telemetry::init(telemetry_config).await;
 
     let args = Args::parse();
 
     match args.command {
         Command::Migrate { dry_run, reset } => run_migrate(dry_run, reset).await,
         Command::Health => run_health().await,
-        Command::Run => run_indexer().await,
+        Command::Run => run_full().await,
+        Command::Serve => run_server_only().await,
+        Command::Index => run_indexer_only().await,
     }
 }
 
@@ -126,16 +124,93 @@ async fn run_health() -> miette::Result<()> {
     Ok(())
 }
 
-async fn run_indexer() -> miette::Result<()> {
+/// Run both indexer and HTTP server concurrently (production mode)
+async fn run_full() -> miette::Result<()> {
     let ch_config = ClickHouseConfig::from_env()?;
-    let mut firehose_config = FirehoseConfig::from_env()?;
+    let shard_config = ShardConfig::from_env();
+    let server_config = ServerConfig::from_env();
     let indexer_config = IndexerConfig::from_env();
+    let source_mode = SourceMode::from_env();
+
+    info!(
+        "Connecting to ClickHouse at {} (database: {})",
+        ch_config.url, ch_config.database
+    );
+    info!("SQLite shards at {}", shard_config.base_path.display());
+
+    // Create separate clients for indexer and server
+    let indexer_client = Client::new(&ch_config)?;
+    let server_client = Client::new(&ch_config)?;
+
+    // Build AppState for server
+    let state = AppState::new(server_client, shard_config);
+
+    // Spawn the indexer task
+    let indexer_handle = match source_mode {
+        SourceMode::Firehose => {
+            let mut firehose_config = FirehoseConfig::from_env()?;
+            if firehose_config.cursor.is_none() {
+                if let Some(cursor) = load_cursor(&indexer_client).await? {
+                    firehose_config.cursor = Some(cursor);
+                }
+            }
+            info!(
+                "Connecting to firehose at {} (cursor: {:?})",
+                firehose_config.relay_url, firehose_config.cursor
+            );
+            let consumer = FirehoseConsumer::new(firehose_config);
+            let indexer = FirehoseIndexer::new(indexer_client, consumer, indexer_config).await?;
+            info!("Starting firehose indexer");
+            tokio::spawn(async move { indexer.run().await })
+        }
+        SourceMode::Tap => {
+            let tap_config = TapConfig::from_env()?;
+            let indexer = TapIndexer::new(indexer_client, tap_config, indexer_config);
+            info!("Starting tap indexer");
+            tokio::spawn(async move { indexer.run().await })
+        }
+    };
+
+    // Run server, monitoring indexer health
+    tokio::select! {
+        result = weaver_index::server::run(state, server_config) => {
+            result?;
+        }
+        result = indexer_handle => {
+            match result {
+                Ok(Ok(())) => info!("Indexer completed"),
+                Ok(Err(e)) => error!("Indexer failed: {}", e),
+                Err(e) => error!("Indexer task panicked: {}", e),
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Run only the indexer (no HTTP server)
+async fn run_indexer_only() -> miette::Result<()> {
+    let ch_config = ClickHouseConfig::from_env()?;
+    let indexer_config = IndexerConfig::from_env();
+    let source_mode = SourceMode::from_env();
 
     info!(
         "Connecting to ClickHouse at {} (database: {})",
         ch_config.url, ch_config.database
     );
     let client = Client::new(&ch_config)?;
+
+    match source_mode {
+        SourceMode::Firehose => run_firehose_indexer(client, indexer_config).await,
+        SourceMode::Tap => {
+            let tap_config = TapConfig::from_env()?;
+            run_tap_indexer(client, tap_config, indexer_config).await
+        }
+    }
+}
+
+async fn run_firehose_indexer(client: Client, indexer_config: IndexerConfig) -> miette::Result<()> {
+    let mut firehose_config = FirehoseConfig::from_env()?;
 
     // Load cursor from ClickHouse if not overridden by env var
     if firehose_config.cursor.is_none() {
@@ -150,10 +225,42 @@ async fn run_indexer() -> miette::Result<()> {
     );
     let consumer = FirehoseConsumer::new(firehose_config);
 
-    let indexer = Indexer::new(client, consumer, indexer_config).await?;
+    let indexer = FirehoseIndexer::new(client, consumer, indexer_config).await?;
 
-    info!("Starting indexer");
+    info!("Starting firehose indexer");
     indexer.run().await?;
+
+    Ok(())
+}
+
+async fn run_tap_indexer(
+    client: Client,
+    tap_config: TapConfig,
+    indexer_config: IndexerConfig,
+) -> miette::Result<()> {
+    let indexer = TapIndexer::new(client, tap_config, indexer_config);
+
+    info!("Starting tap indexer");
+    indexer.run().await?;
+
+    Ok(())
+}
+
+async fn run_server_only() -> miette::Result<()> {
+    let ch_config = ClickHouseConfig::from_env()?;
+    let shard_config = ShardConfig::from_env();
+    let server_config = ServerConfig::from_env();
+
+    info!(
+        "Connecting to ClickHouse at {} (database: {})",
+        ch_config.url, ch_config.database
+    );
+    info!("SQLite shards at {}", shard_config.base_path.display());
+
+    let client = Client::new(&ch_config)?;
+
+    let state = AppState::new(client, shard_config);
+    weaver_index::server::run(state, server_config).await?;
 
     Ok(())
 }

@@ -178,7 +178,7 @@ async fn main() -> miette::Result<()> {
     let firehose_config = FirehoseConfig::from_env()?;
 
     info!(
-        "Connecting to ClickHouse at {} (database: {})",
+        "Connecting to ClickHouse at:\n{} (database: {})",
         ch_config.url, ch_config.database
     );
     let client = Client::new(&ch_config)?;
@@ -189,16 +189,13 @@ async fn main() -> miette::Result<()> {
         drop_benchmark_tables(&client).await?;
     }
 
-    // Create tables
     info!("Creating benchmark tables...");
     create_benchmark_tables(&client).await?;
 
-    // Create inserters
     let mut json_inserter = client.inserter::<RawRecordJson>(TABLE_JSON);
     let mut cbor_inserter = client.inserter::<RawRecordCbor>(TABLE_CBOR);
 
-    // Connect to firehose
-    info!("Connecting to firehose at {}", firehose_config.relay_url);
+    info!("Connecting to firehose at:\n {}", firehose_config.relay_url);
     let consumer = FirehoseConsumer::new(firehose_config);
     let mut stream = consumer.connect().await?;
 
@@ -353,7 +350,6 @@ async fn main() -> miette::Result<()> {
         }
     }
 
-    // Final flush
     info!("Flushing remaining records...");
     json_inserter
         .end()
@@ -370,7 +366,6 @@ async fn main() -> miette::Result<()> {
             source: e,
         })?;
 
-    // Final report
     info!("\n========== FINAL RESULTS ==========");
     report_progress(
         &client,
@@ -453,7 +448,6 @@ async fn report_progress(
         errors
     );
 
-    // Lag info - critical for detecting if we're falling behind
     if lag.sample_count > 0 {
         info!(
             "  Lag: current={:.1}s, min={:.1}s, max={:.1}s (window)",
