@@ -1,7 +1,8 @@
 -- Raw records from firehose/jetstream
 -- Core table for all AT Protocol records before denormalization
 --
--- Uses ReplacingMergeTree to deduplicate on (collection, did, rkey) keeping latest indexed_at
+-- Append-only log using plain MergeTree - all versions preserved for audit/rollback.
+-- Query-time deduplication via ORDER BY + LIMIT or window functions.
 -- JSON column stores full record, extract fields only when needed for ORDER BY/WHERE/JOINs
 
 CREATE TABLE IF NOT EXISTS raw_records (
@@ -10,16 +11,16 @@ CREATE TABLE IF NOT EXISTS raw_records (
     collection LowCardinality(String),
     rkey String,
 
-    -- Content identifier from the record
+    -- Content identifier from the record (content-addressed hash)
     cid String,
 
-    -- Repository revision (TID) - monotonically increasing per DID, used for dedup/ordering
+    -- Repository revision (TID) - monotonically increasing per DID, used for ordering
     rev String,
 
     -- Full record as native JSON (schema-flexible, queryable with record.field.subfield)
     record JSON,
 
-    -- Operation: 'create', 'update', 'delete'
+    -- Operation: 'create', 'update', 'delete', 'cache' (fetched on-demand)
     operation LowCardinality(String),
 
     -- Firehose sequence number (metadata only, not for ordering - can jump on relay restart)
@@ -49,6 +50,5 @@ CREATE TABLE IF NOT EXISTS raw_records (
         SELECT * ORDER BY (did, cid)
     )
 )
-ENGINE = ReplacingMergeTree(indexed_at)
-ORDER BY (collection, did, rkey, event_time, indexed_at)
-SETTINGS deduplicate_merge_projection_mode = 'drop';
+ENGINE = MergeTree()
+ORDER BY (collection, did, rkey, event_time, indexed_at);

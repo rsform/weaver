@@ -106,12 +106,11 @@ impl Client {
         collection: &str,
         rkey: &str,
     ) -> Result<Option<RecordRow>, IndexError> {
-        // FINAL ensures ReplacingMergeTree deduplication is applied
         // Order by event_time first (firehose data wins), then indexed_at as tiebreaker
         // Include deletes so we can return not-found for deleted records
         let query = r#"
             SELECT cid, record, operation
-            FROM raw_records FINAL
+            FROM raw_records
             WHERE did = ?
               AND collection = ?
               AND rkey = ?
@@ -191,6 +190,7 @@ impl Client {
     /// List records for a repo+collection
     ///
     /// Returns non-deleted records ordered by rkey, with cursor-based pagination.
+    /// Uses window function to get latest operation per rkey and filter out deletes.
     pub async fn list_records(
         &self,
         did: &str,
@@ -202,16 +202,20 @@ impl Client {
         let order = if reverse { "DESC" } else { "ASC" };
         let cursor_op = if reverse { "<" } else { ">" };
 
-        // Build query with optional cursor
+        // Use window function to get latest version per rkey, then filter out deletes
         let query = if cursor.is_some() {
             format!(
                 r#"
                 SELECT rkey, cid, record
-                FROM raw_records FINAL
-                WHERE did = ?
-                  AND collection = ?
-                  AND rkey {cursor_op} ?
-                  AND operation != 'delete'
+                FROM (
+                    SELECT rkey, cid, record, operation,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY event_time DESC, indexed_at DESC) as rn
+                    FROM raw_records
+                    WHERE did = ?
+                      AND collection = ?
+                      AND rkey {cursor_op} ?
+                )
+                WHERE rn = 1 AND operation != 'delete'
                 ORDER BY rkey {order}
                 LIMIT ?
                 "#,
@@ -220,10 +224,14 @@ impl Client {
             format!(
                 r#"
                 SELECT rkey, cid, record
-                FROM raw_records FINAL
-                WHERE did = ?
-                  AND collection = ?
-                  AND operation != 'delete'
+                FROM (
+                    SELECT rkey, cid, record, operation,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY event_time DESC, indexed_at DESC) as rn
+                    FROM raw_records
+                    WHERE did = ?
+                      AND collection = ?
+                )
+                WHERE rn = 1 AND operation != 'delete'
                 ORDER BY rkey {order}
                 LIMIT ?
                 "#,

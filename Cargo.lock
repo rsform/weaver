@@ -11789,6 +11789,7 @@ dependencies = [
  "jacquard-repo",
  "miette 7.6.0",
  "n0-future 0.1.3",
+ "regex",
  "rusqlite",
  "rusqlite_migration",
  "serde",

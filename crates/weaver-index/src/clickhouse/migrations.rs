@@ -1,11 +1,39 @@
 use crate::error::{ClickHouseError, IndexError};
 use include_dir::{Dir, include_dir};
+use regex::Regex;
 use tracing::info;
 
 use super::Client;
 
 /// Embedded migrations directory - compiled into the binary
 static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations/clickhouse");
+
+/// Type of database object
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectType {
+    Table,
+    MaterializedView,
+    View,
+}
+
+/// A database object (table or view) extracted from migrations
+#[derive(Debug, Clone)]
+pub struct DbObject {
+    pub name: String,
+    pub object_type: ObjectType,
+}
+
+impl DbObject {
+    /// Get the DROP statement for this object
+    pub fn drop_statement(&self) -> String {
+        match self.object_type {
+            ObjectType::Table => format!("DROP TABLE IF EXISTS {}", self.name),
+            ObjectType::MaterializedView | ObjectType::View => {
+                format!("DROP VIEW IF EXISTS {}", self.name)
+            }
+        }
+    }
+}
 
 /// Migration runner for ClickHouse
 pub struct Migrator<'a> {
@@ -30,6 +58,51 @@ impl<'a> Migrator<'a> {
             .collect();
         files.sort_by_key(|(name, _)| *name);
         files
+    }
+
+    /// Extract all database objects (tables, views) from migrations
+    /// Returns them in reverse order for safe dropping (MVs before their source tables)
+    pub fn all_objects() -> Vec<DbObject> {
+        let table_re =
+            Regex::new(r"(?i)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)").unwrap();
+        let mv_re =
+            Regex::new(r"(?i)CREATE\s+MATERIALIZED\s+VIEW\s+IF\s+NOT\s+EXISTS\s+(\w+)").unwrap();
+        let view_re =
+            Regex::new(r"(?i)CREATE\s+VIEW\s+IF\s+NOT\s+EXISTS\s+(\w+)").unwrap();
+
+        let mut objects = Vec::new();
+
+        for (_, sql) in Self::migrations() {
+            // Find all materialized views
+            for caps in mv_re.captures_iter(sql) {
+                objects.push(DbObject {
+                    name: caps[1].to_string(),
+                    object_type: ObjectType::MaterializedView,
+                });
+            }
+            // Find all regular views (excluding MVs already matched)
+            for caps in view_re.captures_iter(sql) {
+                let name = caps[1].to_string();
+                // Skip if already added as MV
+                if !objects.iter().any(|o| o.name == name) {
+                    objects.push(DbObject {
+                        name,
+                        object_type: ObjectType::View,
+                    });
+                }
+            }
+            // Find all tables
+            for caps in table_re.captures_iter(sql) {
+                objects.push(DbObject {
+                    name: caps[1].to_string(),
+                    object_type: ObjectType::Table,
+                });
+            }
+        }
+
+        // Reverse so MVs/views come before their source tables
+        objects.reverse();
+        objects
     }
 
     /// Run all pending migrations
@@ -57,7 +130,12 @@ impl<'a> Migrator<'a> {
             }
 
             info!(migration = %name, "applying migration");
-            self.client.execute(sql).await?;
+
+            // Split by semicolons and execute each statement
+            for statement in Self::split_statements(sql) {
+                self.client.execute(statement).await?;
+            }
+
             self.record_migration(name).await?;
             applied_count += 1;
         }
@@ -66,6 +144,14 @@ impl<'a> Migrator<'a> {
             applied: applied_count,
             skipped: skipped_count,
         })
+    }
+
+    /// Split SQL into individual statements
+    fn split_statements(sql: &str) -> Vec<&str> {
+        sql.split(';')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect()
     }
 
     /// Check which migrations would be applied without running them

@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
-use weaver_index::clickhouse::{Client, Migrator, Tables};
+use weaver_index::clickhouse::{Client, Migrator};
 use weaver_index::config::{
     ClickHouseConfig, FirehoseConfig, IndexerConfig, ShardConfig, SourceMode, TapConfig,
 };
@@ -71,18 +71,19 @@ async fn run_migrate(dry_run: bool, reset: bool) -> miette::Result<()> {
     let client = Client::new(&config)?;
 
     if reset {
+        let objects = Migrator::all_objects();
         if dry_run {
-            info!("Would drop tables:");
-            for table in Tables::ALL {
-                info!("  - {}", table);
+            info!("Would drop {} objects:", objects.len());
+            for obj in &objects {
+                info!("  - {} ({:?})", obj.name, obj.object_type);
             }
         } else {
-            info!("Dropping all tables...");
-            for table in Tables::ALL {
-                let query = format!("DROP TABLE IF EXISTS {}", table);
+            info!("Dropping all tables and views...");
+            for obj in &objects {
+                let query = obj.drop_statement();
                 match client.execute(&query).await {
-                    Ok(_) => info!("  dropped {}", table),
-                    Err(e) => warn!("  failed to drop {}: {}", table, e),
+                    Ok(_) => info!("  dropped {} ({:?})", obj.name, obj.object_type),
+                    Err(e) => warn!("  failed to drop {}: {}", obj.name, e),
                 }
             }
         }

@@ -93,7 +93,7 @@ pub enum SqliteError {
 /// ClickHouse database errors
 #[derive(Debug, Error, Diagnostic)]
 pub enum ClickHouseError {
-    #[error("failed to connect to ClickHouse: {message}")]
+    #[error("failed to connect to ClickHouse: {message}: {source}")]
     #[diagnostic(code(clickhouse::connection))]
     Connection {
         message: String,
@@ -101,7 +101,7 @@ pub enum ClickHouseError {
         source: clickhouse::error::Error,
     },
 
-    #[error("ClickHouse query failed: {message}")]
+    #[error("ClickHouse query failed: {message}: {source}")]
     #[diagnostic(code(clickhouse::query))]
     Query {
         message: String,
@@ -109,7 +109,7 @@ pub enum ClickHouseError {
         source: clickhouse::error::Error,
     },
 
-    #[error("failed to insert batch: {message}")]
+    #[error("failed to insert batch: {message}: {source}")]
     #[diagnostic(code(clickhouse::insert))]
     Insert {
         message: String,
