@@ -513,7 +513,6 @@ fn extract_failing_row(error: &clickhouse::error::Error) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_extract_failing_row() {

@@ -207,17 +207,21 @@ impl IndexerConfig {
 pub struct TapConfig {
     pub url: Url,
     pub send_acks: bool,
+    pub num_workers: usize,
 }
 
 impl TapConfig {
     /// Default tap URL (local)
     pub const DEFAULT_URL: &'static str = "ws://localhost:2480/channel";
+    /// Default number of parallel workers
+    pub const DEFAULT_WORKERS: usize = 4;
 
     /// Load configuration from environment variables.
     ///
     /// Optional env vars:
     /// - `TAP_URL`: Tap WebSocket URL (default: ws://localhost:2480/channel)
     /// - `TAP_SEND_ACKS`: Whether to send acks (default: true)
+    /// - `TAP_WORKERS`: Number of parallel workers (default: 4)
     pub fn from_env() -> Result<Self, IndexError> {
         let url_str = std::env::var("TAP_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string());
 
@@ -230,7 +234,16 @@ impl TapConfig {
             .map(|s| s.to_lowercase() != "false")
             .unwrap_or(true);
 
-        Ok(Self { url, send_acks })
+        let num_workers = std::env::var("TAP_WORKERS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(Self::DEFAULT_WORKERS);
+
+        Ok(Self {
+            url,
+            send_acks,
+            num_workers,
+        })
     }
 }
 

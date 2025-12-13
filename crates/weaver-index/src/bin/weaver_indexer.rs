@@ -6,6 +6,7 @@ use weaver_index::config::{
 };
 use weaver_index::firehose::FirehoseConsumer;
 use weaver_index::server::{AppState, ServerConfig, TelemetryConfig, telemetry};
+use weaver_index::clickhouse::InserterConfig;
 use weaver_index::{FirehoseIndexer, TapIndexer, load_cursor};
 
 #[derive(Parser)]
@@ -166,8 +167,15 @@ async fn run_full() -> miette::Result<()> {
         }
         SourceMode::Tap => {
             let tap_config = TapConfig::from_env()?;
-            let indexer = TapIndexer::new(indexer_client, tap_config, indexer_config);
-            info!("Starting tap indexer");
+            let num_workers = tap_config.num_workers;
+            let indexer = TapIndexer::new(
+                indexer_client,
+                tap_config,
+                InserterConfig::default(),
+                indexer_config,
+                num_workers,
+            );
+            info!("Starting tap indexer with {} workers", num_workers);
             tokio::spawn(async move { indexer.run().await })
         }
     };
@@ -239,9 +247,16 @@ async fn run_tap_indexer(
     tap_config: TapConfig,
     indexer_config: IndexerConfig,
 ) -> miette::Result<()> {
-    let indexer = TapIndexer::new(client, tap_config, indexer_config);
+    let num_workers = tap_config.num_workers;
+    let indexer = TapIndexer::new(
+        client,
+        tap_config,
+        InserterConfig::default(),
+        indexer_config,
+        num_workers,
+    );
 
-    info!("Starting tap indexer");
+    info!("Starting tap indexer with {} workers", num_workers);
     indexer.run().await?;
 
     Ok(())
