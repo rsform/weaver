@@ -60,7 +60,7 @@ SELECT
     if(length(toString(record.inlineDiff)) > 0, 1, 0) as has_inline_diff,
     if(toString(record.snapshot.ref.`$link`) != '', 1, 0) as has_snapshot,
 
-    coalesce(toDateTime64(record.createdAt, 3), event_time) as created_at,
+    coalesce(parseDateTime64BestEffortOrNull(toString(record.createdAt), 3), event_time) as created_at,
     event_time,
     now64(3) as indexed_at,
     if(operation = 'delete', event_time, toDateTime64(0, 3)) as deleted_at

@@ -100,8 +100,8 @@
 
 /* Entry metadata header */
 .entry-metadata {
-    margin-bottom: calc(2rem * var(--spacing-scale, 1.5));
-    padding-bottom: calc(1rem * var(--spacing-scale, 1.5));
+    margin-bottom: calc(1rem * var(--spacing-scale, 1.5));
+    padding-bottom: calc(0.5rem * var(--spacing-scale, 1.5));
     border-bottom: 2px solid var(--color-border);
 }
 
@@ -122,23 +122,36 @@
 .entry-meta-info {
     display: flex;
     flex-wrap: wrap;
-    gap: calc(1.5rem * var(--spacing-scale, 1.5));
+    gap: calc(0.25rem * var(--spacing-scale, 1.5)) calc(1rem * var(--spacing-scale, 1.5));
     font-size: 0.95rem;
     color: var(--color-subtle);
 }
 
 .entry-authors,
 .entry-date,
-.entry-tags {
+.entry-tags,
+.entry-reading-stats {
     display: flex;
     align-items: center;
     font-family: var(--font-ui);
     gap: 0.5rem;
 }
 
+.entry-reading-stats {
+    color: var(--color-subtle);
+    margin-left: auto;
+    margin-top: 0.25rem;
+}
+
+.entry-reading-stats .word-count::after {
+    content: "·";
+    margin-left: 0.5rem;
+}
+
 .entry-date {
     margin-left: auto;
     font-weight: 400;
+    align-items: last baseline;
     color: var(--color-subtle);
 }
 
@@ -157,6 +170,14 @@
 .author-name:hover {
     color: var(--color-emphasis);
     text-decoration: underline;
+}
+
+.entry-meta-secondary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    flex-basis: 100%;
 }
 
 .entry-tags {

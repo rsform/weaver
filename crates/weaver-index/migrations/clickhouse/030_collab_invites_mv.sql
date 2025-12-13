@@ -14,8 +14,8 @@ SELECT
     toString(record.invitee) as invitee_did,
     coalesce(toString(record.scope), '') as scope,
     coalesce(toString(record.message), '') as message,
-    coalesce(toDateTime64(record.expiresAt, 3), toDateTime64(0, 3)) as expires_at,
-    coalesce(toDateTime64(record.createdAt, 3), event_time) as created_at,
+    parseDateTime64BestEffortOrZero(toString(record.expiresAt), 3) as expires_at,
+    coalesce(parseDateTime64BestEffortOrNull(toString(record.createdAt), 3), event_time) as created_at,
     event_time,
     now64(3) as indexed_at,
     if(operation = 'delete', event_time, toDateTime64(0, 3)) as deleted_at

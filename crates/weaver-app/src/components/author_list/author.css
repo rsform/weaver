@@ -35,6 +35,10 @@
     color: inherit;
 }
 
+.author-block .embed-author {
+    padding-bottom: 0px !important;
+}
+
 .author-block:hover .embed-author-name {
     color: var(--color-secondary);
 }

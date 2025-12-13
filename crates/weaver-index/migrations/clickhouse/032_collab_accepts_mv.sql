@@ -16,7 +16,7 @@ SELECT
     splitByChar('/', replaceOne(toString(record.resource), 'at://', ''))[2] as resource_collection,
     splitByChar('/', replaceOne(toString(record.resource), 'at://', ''))[3] as resource_rkey,
 
-    coalesce(toDateTime64(record.createdAt, 3), event_time) as created_at,
+    coalesce(parseDateTime64BestEffortOrNull(toString(record.createdAt), 3), event_time) as created_at,
     event_time,
     now64(3) as indexed_at,
     if(operation = 'delete', event_time, toDateTime64(0, 3)) as deleted_at

@@ -111,10 +111,24 @@
     margin-left: auto;
 }
 
+.entry-card-stats {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    margin-top: 0.5rem;
+}
+
+.entry-card-stats .word-count::after {
+    content: "·";
+    margin-left: 0.5rem;
+}
+
 .entry-card-tags {
     display: flex;
     gap: 0.4rem;
     flex-wrap: wrap;
+    margin-top: 0.5rem;
 }
 
 .entry-card-tag {

@@ -14,7 +14,7 @@ pub fn StandaloneEntry(
     rkey: ReadSignal<SmolStr>,
 ) -> Element {
     use crate::components::{
-        ENTRY_CSS, EntryMarkdown, EntryMetadata, EntryOgMeta, NavButton, extract_preview,
+        ENTRY_CSS, EntryMarkdown, EntryMetadata, EntryOgMeta, NavButton, calculate_reading_stats, extract_preview,
     };
     use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 
@@ -90,12 +90,19 @@ pub fn StandaloneEntry(
                         }
 
                         div { class: "entry-content-main notebook-content",
-                            EntryMetadata {
-                                entry_view: entry_view.clone(),
-                                created_at: entry_record.created_at.clone(),
-                                entry_uri: entry_view.uri.clone(),
-                                book_title: Some(book_title.clone()),
-                                ident: ident()
+                            {
+                                let (word_count, reading_time_mins) = calculate_reading_stats(&entry_record.content);
+                                rsx! {
+                                    EntryMetadata {
+                                        entry_view: entry_view.clone(),
+                                        created_at: entry_record.created_at.clone(),
+                                        entry_uri: entry_view.uri.clone(),
+                                        book_title: Some(book_title.clone()),
+                                        ident: ident(),
+                                        word_count: Some(word_count),
+                                        reading_time_mins: Some(reading_time_mins)
+                                    }
+                                }
                             }
                             EntryMarkdown { content: entry_signal, ident }
                         }
@@ -128,12 +135,19 @@ pub fn StandaloneEntry(
 
                     div { class: "entry-page-layout",
                         div { class: "entry-content-main notebook-content",
-                            EntryMetadata {
-                                entry_view: entry_view.clone(),
-                                created_at: entry_record.created_at.clone(),
-                                entry_uri: entry_view.uri.clone(),
-                                book_title: None,
-                                ident: ident()
+                            {
+                                let (word_count, reading_time_mins) = calculate_reading_stats(&entry_record.content);
+                                rsx! {
+                                    EntryMetadata {
+                                        entry_view: entry_view.clone(),
+                                        created_at: entry_record.created_at.clone(),
+                                        entry_uri: entry_view.uri.clone(),
+                                        book_title: None,
+                                        ident: ident(),
+                                        word_count: Some(word_count),
+                                        reading_time_mins: Some(reading_time_mins)
+                                    }
+                                }
                             }
                             EntryMarkdown { content: entry_signal, ident }
                         }
@@ -153,7 +167,7 @@ pub fn NotebookEntryByRkey(
     rkey: ReadSignal<SmolStr>,
 ) -> Element {
     use crate::components::{
-        ENTRY_CSS, EntryMarkdown, EntryMetadata, EntryOgMeta, NavButton, extract_preview,
+        ENTRY_CSS, EntryMarkdown, EntryMetadata, EntryOgMeta, NavButton, calculate_reading_stats, extract_preview,
     };
     use weaver_api::sh_weaver::actor::ProfileDataViewInner;
 
@@ -233,12 +247,19 @@ pub fn NotebookEntryByRkey(
                     }
 
                     div { class: "entry-content-main notebook-content",
-                        EntryMetadata {
-                            entry_view: entry_view.clone(),
-                            created_at: entry_record.created_at.clone(),
-                            entry_uri: entry_view.uri.clone(),
-                            book_title: Some(book_title()),
-                            ident: ident()
+                        {
+                            let (word_count, reading_time_mins) = calculate_reading_stats(&entry_record.content);
+                            rsx! {
+                                EntryMetadata {
+                                    entry_view: entry_view.clone(),
+                                    created_at: entry_record.created_at.clone(),
+                                    entry_uri: entry_view.uri.clone(),
+                                    book_title: Some(book_title()),
+                                    ident: ident(),
+                                    word_count: Some(word_count),
+                                    reading_time_mins: Some(reading_time_mins)
+                                }
+                            }
                         }
                         EntryMarkdown { content: entry_signal, ident }
                     }

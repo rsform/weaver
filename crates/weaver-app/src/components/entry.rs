@@ -81,6 +81,13 @@ pub fn EntryPage(
     }
 }
 
+/// Calculate word count and estimated reading time (in minutes) for content
+pub fn calculate_reading_stats(content: &str) -> (usize, usize) {
+    let word_count = content.split_whitespace().count();
+    let reading_time_mins = (word_count + 199) / 200; // ~200 wpm, rounded up
+    (word_count, reading_time_mins.max(1))
+}
+
 /// Extract a plain-text preview from markdown content (first ~160 chars)
 pub fn extract_preview(content: &str, max_len: usize) -> String {
     // Simple extraction: skip markdown syntax, get plain text
@@ -232,12 +239,19 @@ fn EntryPageView(
             // Main content area
             div { class: "entry-content-main notebook-content",
                 // Metadata header
-                EntryMetadata {
-                    entry_view: entry_view.clone(),
-                    created_at: entry_record().created_at.clone(),
-                    entry_uri: entry_view.uri.clone().into_static(),
-                    book_title: Some(book_title()),
-                    ident: ident()
+                {
+                    let (word_count, reading_time_mins) = calculate_reading_stats(&entry_record().content);
+                    rsx! {
+                        EntryMetadata {
+                            entry_view: entry_view.clone(),
+                            created_at: entry_record().created_at.clone(),
+                            entry_uri: entry_view.uri.clone().into_static(),
+                            book_title: Some(book_title()),
+                            ident: ident(),
+                            word_count: Some(word_count),
+                            reading_time_mins: Some(reading_time_mins)
+                        }
+                    }
                 }
 
                 // Rendered markdown
@@ -339,6 +353,11 @@ pub fn EntryCard(
         html_buf
     });
 
+    // Calculate reading stats
+    let reading_stats = parsed_entry
+        .as_ref()
+        .map(|entry| calculate_reading_stats(&entry.content));
+
     rsx! {
         div { class: "entry-card",
             div { class: "entry-card-meta",
@@ -386,6 +405,12 @@ pub fn EntryCard(
                             span { class: "entry-card-tag", "{tag}" }
                         }
                     }
+                }
+            }
+            if let Some((words, mins)) = reading_stats {
+                div { class: "entry-card-stats",
+                    span { class: "word-count", "{words} words" }
+                    span { class: "reading-time", "{mins} min read" }
                 }
             }
         }
@@ -463,6 +488,9 @@ pub fn FeedEntryCard(
         html_buf
     };
 
+    // Calculate reading stats
+    let (word_count, reading_time_mins) = calculate_reading_stats(&entry.content);
+
     rsx! {
         div { class: "entry-card feed-entry-card",
             // Header: title (and date if no author)
@@ -519,11 +547,15 @@ pub fn FeedEntryCard(
                     }
                 }
             }
+            div { class: "entry-card-stats",
+                span { class: "word-count", "{word_count} words" }
+                span { class: "reading-time", "{reading_time_mins} min read" }
+            }
         }
     }
 }
 
-/// Metadata header showing title, authors, date, tags
+/// Metadata header showing title, authors, date, tags, reading stats
 #[component]
 pub fn EntryMetadata(
     entry_view: EntryView<'static>,
@@ -531,6 +563,8 @@ pub fn EntryMetadata(
     entry_uri: AtUri<'static>,
     book_title: Option<SmolStr>,
     ident: AtIdentifier<'static>,
+    #[props(default)] word_count: Option<usize>,
+    #[props(default)] reading_time_mins: Option<usize>,
 ) -> Element {
     let navigator = use_navigator();
 
@@ -592,13 +626,21 @@ pub fn EntryMetadata(
                     }
                 }
 
-                // Tags
-                if let Some(ref tags) = entry_view.tags {
-                    div { class: "entry-tags",
-                        // TODO: Parse tags structure
-                        span { class: "meta-label", "Tags:" }
-                        for tag in tags.iter() {
-                            span { class: "entry-tag", "{tag}" }
+                // Tags and reading stats on their own line
+                div { class: "entry-meta-secondary",
+                    if let Some(ref tags) = entry_view.tags {
+                        div { class: "entry-tags",
+                            span { class: "meta-label", "Tags:" }
+                            for tag in tags.iter() {
+                                span { class: "entry-tag", "{tag}" }
+                            }
+                        }
+                    }
+
+                    if let (Some(words), Some(mins)) = (word_count, reading_time_mins) {
+                        div { class: "entry-reading-stats",
+                            span { class: "word-count", "{words} words" }
+                            span { class: "reading-time", "{mins} min read" }
                         }
                     }
                 }

@@ -9,7 +9,7 @@ mod entry;
 #[allow(unused_imports)]
 pub use entry::{
     ENTRY_CSS, EntryCard, EntryMarkdown, EntryMetadata, EntryOgMeta, EntryPage, FeedEntryCard,
-    NavButton, extract_preview,
+    NavButton, calculate_reading_stats, extract_preview,
 };
 
 pub mod identity;

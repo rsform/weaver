@@ -690,7 +690,7 @@ impl TapIndexer {
                             source: e,
                         })?;
                     records.commit().await.map_err(|e| ClickHouseError::Query {
-                        message: format!("record commit failed for id {}", event_id),
+                        message: format!("record commit failed for id {}:\n{}", event_id, json),
                         source: e,
                     })?;
 

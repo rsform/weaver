@@ -13,8 +13,8 @@ SELECT
 
     toString(record.nodeId) as node_id,
     coalesce(toString(record.relayUrl), '') as relay_url,
-    coalesce(toDateTime64(record.createdAt, 3), event_time) as created_at,
-    coalesce(toDateTime64(record.expiresAt, 3), toDateTime64(0, 3)) as expires_at,
+    coalesce(parseDateTime64BestEffortOrNull(toString(record.createdAt), 3), event_time) as created_at,
+    parseDateTime64BestEffortOrZero(toString(record.expiresAt), 3) as expires_at,
     event_time,
     now64(3) as indexed_at,
     if(operation = 'delete', event_time, toDateTime64(0, 3)) as deleted_at
