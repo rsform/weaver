@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
@@ -7,9 +7,8 @@ use smol_str::{SmolStr, ToSmolStr};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::clickhouse::migrations::Migrator;
 use crate::clickhouse::{
-    Client, InserterConfig, RawIdentityEvent, RawRecordInsert, ResilientRecordInserter,
+    Client, InserterConfig, Migrator, RawIdentityEvent, RawRecordInsert, ResilientRecordInserter,
 };
 use crate::config::{IndexerConfig, TapConfig};
 use crate::error::{ClickHouseError, Result};
@@ -239,10 +238,7 @@ async fn run_tap_worker(
                         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                         .is_ok()
                 {
-                    info!(
-                        worker_id,
-                        "first live event received, scheduling backfill"
-                    );
+                    info!(worker_id, "first live event received, scheduling backfill");
                     let backfill_client = client.clone();
                     tokio::spawn(async move {
                         run_backfill(backfill_client).await;
@@ -310,7 +306,10 @@ async fn run_backfill(client: Arc<Client>) {
         return;
     }
 
-    info!(count = mvs.len(), "backfill: starting incremental MV backfill");
+    info!(
+        count = mvs.len(),
+        "backfill: starting incremental MV backfill"
+    );
 
     for mv in mvs {
         info!(
