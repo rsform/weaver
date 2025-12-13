@@ -33,7 +33,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      RUST_LOG: debug,weaver_index=debug
+      RUST_LOG: debug,weaver_index=debug,hyper_util::client::legacy::pool=info
       # ClickHouse connection (set these for your cloud/homelab instance)
       CLICKHOUSE_URL: ${CLICKHOUSE_URL}
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-weaver}

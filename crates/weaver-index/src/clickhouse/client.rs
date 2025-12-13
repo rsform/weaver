@@ -50,8 +50,8 @@ impl Client {
             .inserter(table)
             .with_max_rows(1000)
             .with_period_bias(0.1)
-            .with_period(Some(Duration::from_secs(1)))
-            .with_max_bytes(1_048_576)
+            .with_period(Some(Duration::from_secs(2)))
+            .with_max_bytes(1_048_576 * 2)
     }
 
     /// Query table sizes from system.parts

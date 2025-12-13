@@ -10,14 +10,15 @@ use tracing::{debug, info, trace, warn};
 use chrono::DateTime;
 
 use crate::clickhouse::{
-    AccountRevState, Client, FirehoseCursor, RawAccountEvent, RawIdentityEvent, RawRecordInsert,
+    AccountRevState, Client, FirehoseCursor, InserterConfig, RawAccountEvent, RawIdentityEvent,
+    RawRecordInsert, ResilientRecordInserter,
 };
 use crate::config::IndexerConfig;
 use crate::config::TapConfig;
 use crate::error::{ClickHouseError, IndexError, Result};
 use crate::firehose::{
-    Account, Commit, ExtractedRecord, FirehoseConsumer, Identity, MessageStream,
-    SubscribeReposMessage, extract_records,
+    Account, ExtractedRecord, FirehoseConsumer, Identity, MessageStream, SubscribeReposMessage,
+    extract_records,
 };
 use crate::tap::{TapConfig as TapConsumerConfig, TapConsumer, TapEvent};
 
@@ -210,7 +211,9 @@ impl FirehoseIndexer {
         let mut stream: MessageStream = self.consumer.connect().await?;
 
         // Inserters handle batching internally based on config
-        let mut records = self.client.inserter::<RawRecordInsert>("raw_records");
+        // Use resilient inserter for records since that's where untrusted JSON enters
+        let mut records =
+            ResilientRecordInserter::new(self.client.inner().clone(), InserterConfig::default());
         let mut identities = self
             .client
             .inserter::<RawIdentityEvent>("raw_identity_events");
@@ -235,37 +238,32 @@ impl FirehoseIndexer {
             let accounts_time = accounts.time_left().unwrap_or(Duration::from_secs(10));
             let time_left = records_time.min(identities_time).min(accounts_time);
 
-            let result =
-                match tokio::time::timeout(time_left, stream.next()).await {
-                    Ok(Some(result)) => result,
-                    Ok(None) => {
-                        // Stream ended
-                        break;
-                    }
-                    Err(_) => {
-                        // Timeout - flush inserters to keep INSERT alive
-                        debug!("flush timeout, committing inserters");
-                        records.commit().await.map_err(|e| {
-                            crate::error::ClickHouseError::Query {
-                                message: "periodic records commit failed".into(),
-                                source: e,
-                            }
+            let result = match tokio::time::timeout(time_left, stream.next()).await {
+                Ok(Some(result)) => result,
+                Ok(None) => {
+                    // Stream ended
+                    break;
+                }
+                Err(_) => {
+                    // Timeout - flush inserters to keep INSERT alive
+                    debug!("flush timeout, committing inserters");
+                    records.commit().await?;
+                    identities.commit().await.map_err(|e| {
+                        crate::error::ClickHouseError::Query {
+                            message: "periodic identities commit failed".into(),
+                            source: e,
+                        }
+                    })?;
+                    accounts
+                        .commit()
+                        .await
+                        .map_err(|e| crate::error::ClickHouseError::Query {
+                            message: "periodic accounts commit failed".into(),
+                            source: e,
                         })?;
-                        identities.commit().await.map_err(|e| {
-                            crate::error::ClickHouseError::Query {
-                                message: "periodic identities commit failed".into(),
-                                source: e,
-                            }
-                        })?;
-                        accounts.commit().await.map_err(|e| {
-                            crate::error::ClickHouseError::Query {
-                                message: "periodic accounts commit failed".into(),
-                                source: e,
-                            }
-                        })?;
-                        continue;
-                    }
-                };
+                    continue;
+                }
+            };
 
             let msg = match result {
                 Ok(msg) => msg,
@@ -294,12 +292,59 @@ impl FirehoseIndexer {
 
             match msg {
                 SubscribeReposMessage::Commit(commit) => {
-                    if self
-                        .process_commit(&commit, &mut records, &mut skipped)
-                        .await?
-                    {
-                        processed += 1;
+                    let did = commit.repo.as_ref();
+                    let rev = commit.rev.as_ref();
+
+                    // Dedup check
+                    if !self.rev_cache.should_process(did, rev) {
+                        skipped += 1;
+                        continue;
                     }
+
+                    // Extract and write records
+                    for record in extract_records(&commit).await? {
+                        // Collection filter - skip early before JSON conversion
+                        if !self.config.collections.matches(&record.collection) {
+                            continue;
+                        }
+
+                        let json = record.to_json()?.unwrap_or_else(|| "{}".to_string());
+
+                        // Fire and forget delete handling
+                        if record.operation == "delete" {
+                            let client = self.client.clone();
+                            let record_clone = record.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = handle_delete(&client, record_clone).await {
+                                    warn!(error = ?e, "delete handling failed");
+                                }
+                            });
+                        }
+
+                        records
+                            .write(RawRecordInsert {
+                                did: record.did.clone(),
+                                collection: record.collection.clone(),
+                                rkey: record.rkey.clone(),
+                                cid: record.cid.clone(),
+                                rev: record.rev.clone(),
+                                record: json.to_smolstr(),
+                                operation: record.operation.clone(),
+                                seq: record.seq as u64,
+                                event_time: record.event_time,
+                                is_live: true,
+                            })
+                            .await?;
+                    }
+
+                    // Update rev cache
+                    self.rev_cache.update(
+                        &SmolStr::new(did),
+                        &SmolStr::new(rev),
+                        &commit.commit.0.to_smolstr(),
+                    );
+
+                    processed += 1;
                 }
                 SubscribeReposMessage::Identity(identity) => {
                     write_identity(&identity, &mut identities).await?;
@@ -314,13 +359,7 @@ impl FirehoseIndexer {
             }
 
             // commit() flushes if internal thresholds met, otherwise no-op
-            records
-                .commit()
-                .await
-                .map_err(|e| crate::error::ClickHouseError::Query {
-                    message: "commit failed".into(),
-                    source: e,
-                })?;
+            records.commit().await?;
 
             // Periodic stats and cursor save (every 10s)
             if last_stats.elapsed() >= Duration::from_secs(10) {
@@ -344,13 +383,7 @@ impl FirehoseIndexer {
         }
 
         // Final flush
-        records
-            .end()
-            .await
-            .map_err(|e| crate::error::ClickHouseError::Query {
-                message: "final flush failed".into(),
-                source: e,
-            })?;
+        records.end().await?;
         identities
             .end()
             .await
@@ -373,71 +406,6 @@ impl FirehoseIndexer {
 
         info!(last_seq, "firehose stream ended");
         Ok(())
-    }
-
-    async fn process_commit(
-        &self,
-        commit: &Commit<'_>,
-        inserter: &mut clickhouse::inserter::Inserter<RawRecordInsert>,
-        skipped: &mut u64,
-    ) -> Result<bool> {
-        let did = commit.repo.as_ref();
-        let rev = commit.rev.as_ref();
-
-        // Dedup check
-        if !self.rev_cache.should_process(did, rev) {
-            *skipped += 1;
-            return Ok(false);
-        }
-
-        // Extract and write records
-        for record in extract_records(commit).await? {
-            // Collection filter - skip early before JSON conversion
-            if !self.config.collections.matches(&record.collection) {
-                continue;
-            }
-
-            let json = record.to_json()?.unwrap_or_else(|| "{}".to_string());
-
-            // Fire and forget delete handling
-            if record.operation == "delete" {
-                let client = self.client.clone();
-                let record_clone = record.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = handle_delete(&client, record_clone).await {
-                        warn!(error = ?e, "delete handling failed");
-                    }
-                });
-            }
-
-            inserter
-                .write(&RawRecordInsert {
-                    did: record.did.clone(),
-                    collection: record.collection.clone(),
-                    rkey: record.rkey.clone(),
-                    cid: record.cid.clone(),
-                    rev: record.rev.clone(),
-                    record: json.to_smolstr(),
-                    operation: record.operation.clone(),
-                    seq: record.seq as u64,
-                    event_time: record.event_time,
-                    is_live: true,
-                })
-                .await
-                .map_err(|e| crate::error::ClickHouseError::Query {
-                    message: "write failed".into(),
-                    source: e,
-                })?;
-        }
-
-        // Update rev cache
-        self.rev_cache.update(
-            &SmolStr::new(did),
-            &SmolStr::new(rev),
-            &commit.commit.0.to_smolstr(),
-        );
-
-        Ok(true)
     }
 }
 
@@ -602,7 +570,9 @@ impl TapIndexer {
 
         let (mut events, ack_tx) = consumer.connect().await?;
 
-        let mut records = self.client.inserter::<RawRecordInsert>("raw_records");
+        // Use resilient inserter for records since that's where untrusted JSON enters
+        let mut records =
+            ResilientRecordInserter::new(self.client.inner().clone(), InserterConfig::default());
         let mut identities = self
             .client
             .inserter::<RawIdentityEvent>("raw_identity_events");
@@ -629,10 +599,7 @@ impl TapIndexer {
                 Err(_) => {
                     // Timeout - flush inserters to keep INSERT alive
                     trace!("flush timeout, committing inserters");
-                    records.commit().await.map_err(|e| ClickHouseError::Query {
-                        message: "periodic records commit failed".into(),
-                        source: e,
-                    })?;
+                    records.commit().await?;
                     identities
                         .commit()
                         .await
@@ -658,11 +625,35 @@ impl TapIndexer {
                         continue;
                     }
 
-                    let json = record
-                        .record
-                        .as_ref()
-                        .map(|v| serde_json::to_string(v).unwrap_or_default())
-                        .unwrap_or_default();
+                    let json = match &record.record {
+                        Some(v) => match serde_json::to_string(v) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                warn!(
+                                    did = %record.did,
+                                    collection = %record.collection,
+                                    rkey = %record.rkey,
+                                    error = ?e,
+                                    "failed to serialize record, sending to DLQ"
+                                );
+                                let raw_data = format!(
+                                    r#"{{"did":"{}","collection":"{}","rkey":"{}","cid":"{}","error":"serialization_failed"}}"#,
+                                    record.did, record.collection, record.rkey, record.cid
+                                );
+                                records
+                                    .write_raw_to_dlq(
+                                        record.action.as_str().to_smolstr(),
+                                        raw_data,
+                                        e.to_string(),
+                                        event_id,
+                                    )
+                                    .await?;
+                                let _ = ack_tx.send(event_id).await;
+                                continue;
+                            }
+                        },
+                        None => "{}".to_string(),
+                    };
 
                     debug!(
                         op = record.action.as_str(),
@@ -672,7 +663,7 @@ impl TapIndexer {
                     );
 
                     records
-                        .write(&RawRecordInsert {
+                        .write(RawRecordInsert {
                             did: record.did.clone(),
                             collection: record.collection.clone(),
                             rkey: record.rkey.clone(),
@@ -684,15 +675,8 @@ impl TapIndexer {
                             event_time: Utc::now(),
                             is_live: record.live,
                         })
-                        .await
-                        .map_err(|e| ClickHouseError::Query {
-                            message: "record write failed".into(),
-                            source: e,
-                        })?;
-                    records.commit().await.map_err(|e| ClickHouseError::Query {
-                        message: format!("record commit failed for id {}:\n{}", event_id, json),
-                        source: e,
-                    })?;
+                        .await?;
+                    records.commit().await?;
 
                     processed += 1;
                 }
@@ -740,10 +724,7 @@ impl TapIndexer {
         }
 
         // Final flush
-        records.end().await.map_err(|e| ClickHouseError::Query {
-            message: "final records flush failed".into(),
-            source: e,
-        })?;
+        records.end().await?;
         identities.end().await.map_err(|e| ClickHouseError::Query {
             message: "final identities flush failed".into(),
             source: e,

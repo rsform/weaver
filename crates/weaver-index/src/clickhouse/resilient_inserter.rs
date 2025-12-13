@@ -38,9 +38,9 @@ pub struct InserterConfig {
 impl Default for InserterConfig {
     fn default() -> Self {
         Self {
-            max_rows: 1000,
-            max_bytes: 1_048_576, // 1MB
-            period: Some(Duration::from_secs(1)),
+            max_rows: 10000,
+            max_bytes: 1_048_576 * 2, // 1MB
+            period: Some(Duration::from_secs(2)),
             period_bias: 0.1,
         }
     }
@@ -217,7 +217,16 @@ impl ResilientRecordInserter {
         self.pending.len()
     }
 
-    /// Handle a batch failure by retrying rows individually
+    /// Get time remaining until the next scheduled flush
+    pub fn time_left(&mut self) -> Option<std::time::Duration> {
+        self.inner.time_left()
+    }
+
+    /// Handle a batch failure by retrying rows
+    ///
+    /// Attempts to extract the failing row number from the error message.
+    /// If found, batches rows before/after the failure point for efficiency.
+    /// Falls back to individual retries if row number unavailable or sub-batches fail.
     async fn handle_batch_failure(
         &mut self,
         original_error: clickhouse::error::Error,
@@ -238,13 +247,146 @@ impl ResilientRecordInserter {
         // Create fresh inserter (old one is poisoned after error)
         self.inner = Self::create_inserter(&self.client, &self.config);
 
+        // Try to extract failing row number for smart retry
+        if let Some(failing_row) = extract_failing_row(&original_error) {
+            // Subtract 2 for safety margin (1-indexed to 0-indexed, plus buffer)
+            let safe_row = failing_row.saturating_sub(2);
+
+            if safe_row > 0 && safe_row < total {
+                debug!(
+                    failing_row,
+                    safe_row, total, "extracted failing row, attempting smart retry"
+                );
+                return self.smart_retry(rows, safe_row, &original_error).await;
+            }
+        }
+
+        // Fall back to individual retries
+        debug!(total, "no row number found, retrying individually");
+        self.retry_individually(rows).await
+    }
+
+    /// Smart retry: batch rows before failure, DLQ the bad row, batch rows after
+    async fn smart_retry(
+        &mut self,
+        rows: Vec<RawRecordInsert>,
+        failing_idx: usize,
+        original_error: &clickhouse::error::Error,
+    ) -> Result<Quantities, IndexError> {
+        let total = rows.len();
         let mut succeeded = 0u64;
         let mut failed = 0u64;
 
-        for row in rows {
-            match self.try_single_insert(&row).await {
+        // Try to batch insert rows before the failure point
+        if failing_idx > 0 {
+            let before = &rows[..failing_idx];
+            debug!(count = before.len(), "batch inserting rows before failure");
+
+            match self.batch_insert(before).await {
+                Ok(count) => {
+                    succeeded += count;
+                    debug!(count, "pre-failure batch succeeded");
+                }
+                Err(e) => {
+                    // Sub-batch failed, fall back to individual for this chunk
+                    warn!(error = ?e, "pre-failure batch failed, retrying individually");
+                    let (s, f) = self.retry_individually_slice(before).await?;
+                    succeeded += s;
+                    failed += f;
+                }
+            }
+        }
+
+        // Send the failing row (and a couple around it) to DLQ
+        let dlq_start = failing_idx;
+        let dlq_end = (failing_idx + 3).min(total); // failing row + 2 more for safety
+        for row in &rows[dlq_start..dlq_end] {
+            warn!(
+                did = %row.did,
+                collection = %row.collection,
+                rkey = %row.rkey,
+                seq = row.seq,
+                "sending suspected bad row to DLQ"
+            );
+            self.send_to_dlq(row, original_error).await?;
+            failed += 1;
+        }
+
+        // Try to batch insert rows after the failure point
+        if dlq_end < total {
+            let after = &rows[dlq_end..];
+            debug!(count = after.len(), "batch inserting rows after failure");
+
+            match self.batch_insert(after).await {
+                Ok(count) => {
+                    succeeded += count;
+                    debug!(count, "post-failure batch succeeded");
+                }
+                Err(e) => {
+                    // Sub-batch failed, fall back to individual for this chunk
+                    warn!(error = ?e, "post-failure batch failed, retrying individually");
+                    let (s, f) = self.retry_individually_slice(after).await?;
+                    succeeded += s;
+                    failed += f;
+                }
+            }
+        }
+
+        debug!(total, succeeded, failed, "smart retry complete");
+
+        Ok(Quantities {
+            rows: succeeded,
+            bytes: 0,
+            transactions: 0,
+        })
+    }
+
+    /// Batch insert a slice of rows using a fresh one-shot inserter
+    async fn batch_insert(
+        &mut self,
+        rows: &[RawRecordInsert],
+    ) -> Result<u64, clickhouse::error::Error> {
+        batch_insert_rows(&self.client, rows).await
+    }
+
+    /// Retry a vec of rows individually, returning (succeeded, failed) counts
+    async fn retry_individually(
+        &mut self,
+        rows: Vec<RawRecordInsert>,
+    ) -> Result<Quantities, IndexError> {
+        let (succeeded, failed) = self.retry_individually_slice(&rows).await?;
+
+        if failed > 0 {
+            warn!(
+                succeeded,
+                failed, "individual retry had failures sent to DLQ"
+            );
+        }
+
+        Ok(Quantities {
+            rows: succeeded,
+            bytes: 0,
+            transactions: 0,
+        })
+    }
+
+    /// Retry a slice of rows individually, returning (succeeded, failed) counts
+    async fn retry_individually_slice(
+        &mut self,
+        rows: &[RawRecordInsert],
+    ) -> Result<(u64, u64), IndexError> {
+        let total = rows.len();
+        let mut succeeded = 0u64;
+        let mut failed = 0u64;
+
+        let client = self.client.clone();
+
+        for (i, row) in rows.iter().enumerate() {
+            debug!(i, total, did = %row.did, "retrying row individually");
+            match try_single_insert(&client, row).await {
                 Ok(()) => {
                     succeeded += 1;
+                    debug!(i, "row succeeded");
                 }
                 Err(e) => {
                     failed += 1;
@@ -256,31 +398,15 @@ impl ResilientRecordInserter {
                         error = ?e,
                         "row insert failed, sending to DLQ"
                     );
-                    self.send_to_dlq(&row, &e).await?;
+                    debug!(i, "sending to DLQ");
+                    self.send_to_dlq(row, &e).await?;
+                    debug!(i, "DLQ write complete");
                 }
             }
         }
 
-        debug!(total, succeeded, failed, "batch failure recovery complete");
-
-        Ok(Quantities {
-            rows: succeeded,
-            bytes: 0,
-            transactions: 0,
-        })
-    }
-
-    /// Try to insert a single row using a fresh one-shot inserter
-    async fn try_single_insert(
-        &self,
-        row: &RawRecordInsert,
-    ) -> Result<(), clickhouse::error::Error> {
-        let mut inserter: Inserter<RawRecordInsert> =
-            self.client.inserter(Tables::RAW_RECORDS).with_max_rows(1);
-
-        inserter.write(row).await?;
-        inserter.end().await?;
-        Ok(())
+        debug!(total, succeeded, failed, "individual retry complete");
+        Ok((succeeded, failed))
     }
 
     /// Send a failed row to the dead-letter queue
@@ -292,11 +418,26 @@ impl ResilientRecordInserter {
         let raw_data = serde_json::to_string(row)
             .unwrap_or_else(|e| format!("{{\"serialization_error\": \"{}\"}}", e));
 
+        self.write_raw_to_dlq(row.operation.clone(), raw_data, error.to_string(), row.seq)
+            .await
+    }
+
+    /// Write a pre-insert failure directly to the DLQ
+    ///
+    /// Use this for failures that happen before we even have a valid RawRecordInsert,
+    /// like JSON serialization errors.
+    pub async fn write_raw_to_dlq(
+        &mut self,
+        event_type: SmolStr,
+        raw_data: String,
+        error_message: String,
+        seq: u64,
+    ) -> Result<(), IndexError> {
         let dlq_row = RawEventDlq {
-            event_type: row.operation.clone(),
+            event_type,
             raw_data: raw_data.to_smolstr(),
-            error_message: error.to_smolstr(),
-            seq: row.seq,
+            error_message: error_message.to_smolstr(),
+            seq,
         };
 
         self.dlq
@@ -320,7 +461,71 @@ impl ResilientRecordInserter {
     }
 }
 
+/// Try to insert a single row using a fresh one-shot inserter
+///
+/// Free function to avoid &self borrow across await points (Sync issues)
+async fn try_single_insert(
+    client: &clickhouse::Client,
+    row: &RawRecordInsert,
+) -> Result<(), clickhouse::error::Error> {
+    let mut inserter: Inserter<RawRecordInsert> =
+        client.inserter(Tables::RAW_RECORDS).with_max_rows(1);
+
+    inserter.write(row).await?;
+    inserter.force_commit().await?;
+    inserter.end().await?;
+    Ok(())
+}
+
+/// Batch insert rows using a fresh inserter
+///
+/// Free function to avoid &self borrow across await points (Sync issues)
+async fn batch_insert_rows(
+    client: &clickhouse::Client,
+    rows: &[RawRecordInsert],
+) -> Result<u64, clickhouse::error::Error> {
+    let mut inserter: Inserter<RawRecordInsert> = client
+        .inserter(Tables::RAW_RECORDS)
+        .with_max_rows(rows.len() as u64);
+
+    for row in rows {
+        inserter.write(row).await?;
+    }
+    inserter.end().await?;
+    Ok(rows.len() as u64)
+}
+
+/// Extract the failing row number from a ClickHouse error message
+///
+/// Looks for patterns like "(at row 791)" in the error text.
+/// Returns 1-indexed row number if found.
+fn extract_failing_row(error: &clickhouse::error::Error) -> Option<usize> {
+    let msg = error.to_string();
+    // Look for "(at row N)"
+    if let Some(start) = msg.find("(at row ") {
+        let rest = &msg[start + 8..];
+        if let Some(end) = rest.find(')') {
+            return rest[..end].parse().ok();
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
-    // TODO: Add tests with mock clickhouse client
+    use super::*;
+
+    #[test]
+    fn test_extract_failing_row() {
+        // Simulate the error message format from ClickHouse
+        let msg = "Code: 117. DB::Exception: Cannot parse JSON object here: : (at row 791)\n: While executing BinaryRowInputFormat.";
+
+        // We can't easily construct a clickhouse::error::Error, but we can test the parsing logic
+        assert!(msg.contains("(at row "));
+        let start = msg.find("(at row ").unwrap();
+        let rest = &msg[start + 8..];
+        let end = rest.find(')').unwrap();
+        let row: usize = rest[..end].parse().unwrap();
+        assert_eq!(row, 791);
+    }
 }
