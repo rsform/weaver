@@ -16,11 +16,8 @@
 )]
 #[serde(rename_all = "camelCase")]
 pub struct GetEntry<'a> {
-    ///(default: 0, min: 0)
-    #[serde(skip_serializing_if = "std::option::Option::is_none")]
-    pub index: std::option::Option<i64>,
     #[serde(borrow)]
-    pub notebook: jacquard_common::types::string::AtUri<'a>,
+    pub uri: jacquard_common::types::string::AtUri<'a>,
 }
 
 pub mod get_entry_state {
@@ -33,25 +30,25 @@ pub mod get_entry_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Notebook;
+        type Uri;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Notebook = Unset;
+        type Uri = Unset;
     }
-    ///State transition - sets the `notebook` field to Set
-    pub struct SetNotebook<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetNotebook<S> {}
-    impl<S: State> State for SetNotebook<S> {
-        type Notebook = Set<members::notebook>;
+    ///State transition - sets the `uri` field to Set
+    pub struct SetUri<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetUri<S> {}
+    impl<S: State> State for SetUri<S> {
+        type Uri = Set<members::uri>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `notebook` field
-        pub struct notebook(());
+        ///Marker type for the `uri` field
+        pub struct uri(());
     }
 }
 
@@ -59,7 +56,6 @@ pub mod get_entry_state {
 pub struct GetEntryBuilder<'a, S: get_entry_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
-        ::core::option::Option<i64>,
         ::core::option::Option<jacquard_common::types::string::AtUri<'a>>,
     ),
     _phantom: ::core::marker::PhantomData<&'a ()>,
@@ -77,36 +73,23 @@ impl<'a> GetEntryBuilder<'a, get_entry_state::Empty> {
     pub fn new() -> Self {
         GetEntryBuilder {
             _phantom_state: ::core::marker::PhantomData,
-            __unsafe_private_named: (None, None),
+            __unsafe_private_named: (None,),
             _phantom: ::core::marker::PhantomData,
         }
-    }
-}
-
-impl<'a, S: get_entry_state::State> GetEntryBuilder<'a, S> {
-    /// Set the `index` field (optional)
-    pub fn index(mut self, value: impl Into<Option<i64>>) -> Self {
-        self.__unsafe_private_named.0 = value.into();
-        self
-    }
-    /// Set the `index` field to an Option value (optional)
-    pub fn maybe_index(mut self, value: Option<i64>) -> Self {
-        self.__unsafe_private_named.0 = value;
-        self
     }
 }
 
 impl<'a, S> GetEntryBuilder<'a, S>
 where
     S: get_entry_state::State,
-    S::Notebook: get_entry_state::IsUnset,
+    S::Uri: get_entry_state::IsUnset,
 {
-    /// Set the `notebook` field (required)
-    pub fn notebook(
+    /// Set the `uri` field (required)
+    pub fn uri(
         mut self,
         value: impl Into<jacquard_common::types::string::AtUri<'a>>,
-    ) -> GetEntryBuilder<'a, get_entry_state::SetNotebook<S>> {
-        self.__unsafe_private_named.1 = ::core::option::Option::Some(value.into());
+    ) -> GetEntryBuilder<'a, get_entry_state::SetUri<S>> {
+        self.__unsafe_private_named.0 = ::core::option::Option::Some(value.into());
         GetEntryBuilder {
             _phantom_state: ::core::marker::PhantomData,
             __unsafe_private_named: self.__unsafe_private_named,
@@ -118,13 +101,12 @@ where
 impl<'a, S> GetEntryBuilder<'a, S>
 where
     S: get_entry_state::State,
-    S::Notebook: get_entry_state::IsSet,
+    S::Uri: get_entry_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> GetEntry<'a> {
         GetEntry {
-            index: self.__unsafe_private_named.0,
-            notebook: self.__unsafe_private_named.1.unwrap(),
+            uri: self.__unsafe_private_named.0.unwrap(),
         }
     }
 }
@@ -143,7 +125,7 @@ where
 pub struct GetEntryOutput<'a> {
     #[serde(flatten)]
     #[serde(borrow)]
-    pub value: crate::sh_weaver::notebook::BookEntryView<'a>,
+    pub value: crate::sh_weaver::notebook::EntryView<'a>,
 }
 
 #[jacquard_derive::open_union]
@@ -161,8 +143,6 @@ pub struct GetEntryOutput<'a> {
 #[serde(tag = "error", content = "message")]
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum GetEntryError<'a> {
-    #[serde(rename = "NotebookNotFound")]
-    NotebookNotFound(std::option::Option<String>),
     #[serde(rename = "EntryNotFound")]
     EntryNotFound(std::option::Option<String>),
 }
@@ -170,13 +150,6 @@ pub enum GetEntryError<'a> {
 impl std::fmt::Display for GetEntryError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotebookNotFound(msg) => {
-                write!(f, "NotebookNotFound")?;
-                if let Some(msg) = msg {
-                    write!(f, ": {}", msg)?;
-                }
-                Ok(())
-            }
             Self::EntryNotFound(msg) => {
                 write!(f, "EntryNotFound")?;
                 if let Some(msg) = msg {

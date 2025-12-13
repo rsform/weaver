@@ -16,6 +16,25 @@ pub enum ObjectType {
     View,
 }
 
+/// Incremental MV that needs backfill after historical data load
+///
+/// These are MVs with `TO table` syntax that only trigger on new inserts,
+/// not on existing data. After backfill completes, we need to run the
+/// SELECT query as an INSERT to populate the target table.
+#[derive(Debug, Clone)]
+pub struct IncrementalMv {
+    pub name: String,
+    pub target_table: String,
+    pub select_query: String,
+}
+
+impl IncrementalMv {
+    /// Generate INSERT query for backfill
+    pub fn backfill_query(&self) -> String {
+        format!("INSERT INTO {} {}", self.target_table, self.select_query)
+    }
+}
+
 /// A database object (table or view) extracted from migrations
 #[derive(Debug, Clone)]
 pub struct DbObject {
@@ -63,12 +82,10 @@ impl<'a> Migrator<'a> {
     /// Extract all database objects (tables, views) from migrations
     /// Returns them in reverse order for safe dropping (MVs before their source tables)
     pub fn all_objects() -> Vec<DbObject> {
-        let table_re =
-            Regex::new(r"(?i)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)").unwrap();
+        let table_re = Regex::new(r"(?i)CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)").unwrap();
         let mv_re =
             Regex::new(r"(?i)CREATE\s+MATERIALIZED\s+VIEW\s+IF\s+NOT\s+EXISTS\s+(\w+)").unwrap();
-        let view_re =
-            Regex::new(r"(?i)CREATE\s+VIEW\s+IF\s+NOT\s+EXISTS\s+(\w+)").unwrap();
+        let view_re = Regex::new(r"(?i)CREATE\s+VIEW\s+IF\s+NOT\s+EXISTS\s+(\w+)").unwrap();
 
         let mut objects = Vec::new();
 
@@ -103,6 +120,33 @@ impl<'a> Migrator<'a> {
         // Reverse so MVs/views come before their source tables
         objects.reverse();
         objects
+    }
+
+    /// Extract incremental MVs (those with TO clause) for backfill
+    ///
+    /// These MVs write to a separate target table and only trigger on new inserts.
+    /// After loading historical data, we need to run their SELECT as an INSERT
+    /// to populate the target tables.
+    pub fn incremental_mvs() -> Vec<IncrementalMv> {
+        // Match: CREATE MATERIALIZED VIEW [IF NOT EXISTS] name TO target AS SELECT ...
+        // The (?s) flag makes . match newlines, (?i) for case insensitive
+        let mv_re = Regex::new(
+            r"(?is)CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s+TO\s+(\w+)\s+AS\s+(SELECT\s+.+?)(?:;|\z)"
+        ).unwrap();
+
+        let mut mvs = Vec::new();
+
+        for (_, sql) in Self::migrations() {
+            for caps in mv_re.captures_iter(sql) {
+                mvs.push(IncrementalMv {
+                    name: caps[1].to_string(),
+                    target_table: caps[2].to_string(),
+                    select_query: caps[3].trim().to_string(),
+                });
+            }
+        }
+
+        mvs
     }
 
     /// Run all pending migrations

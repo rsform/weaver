@@ -1,11 +1,13 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use smol_str::ToSmolStr;
+use smol_str::{SmolStr, ToSmolStr};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
 
+use crate::clickhouse::migrations::Migrator;
 use crate::clickhouse::{
     Client, InserterConfig, RawIdentityEvent, RawRecordInsert, ResilientRecordInserter,
 };
@@ -25,6 +27,8 @@ pub struct TapIndexer {
     inserter_config: InserterConfig,
     config: Arc<IndexerConfig>,
     num_workers: usize,
+    /// Tracks whether backfill has been triggered (first live event seen)
+    backfill_triggered: Arc<AtomicBool>,
 }
 
 impl TapIndexer {
@@ -41,6 +45,7 @@ impl TapIndexer {
             inserter_config,
             config: Arc::new(config),
             num_workers,
+            backfill_triggered: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -58,9 +63,18 @@ impl TapIndexer {
             let tap_config = self.tap_config.clone();
             let inserter_config = self.inserter_config.clone();
             let config = self.config.clone();
+            let backfill_triggered = self.backfill_triggered.clone();
 
             let handle = tokio::spawn(async move {
-                run_tap_worker(worker_id, client, tap_config, inserter_config, config).await
+                run_tap_worker(
+                    worker_id,
+                    client,
+                    tap_config,
+                    inserter_config,
+                    config,
+                    backfill_triggered,
+                )
+                .await
             });
 
             handles.push(handle);
@@ -97,6 +111,7 @@ async fn run_tap_worker(
     tap_config: TapConfig,
     inserter_config: InserterConfig,
     config: Arc<IndexerConfig>,
+    backfill_triggered: Arc<AtomicBool>,
 ) -> Result<()> {
     info!(worker_id, url = %tap_config.url, "tap worker starting");
 
@@ -206,6 +221,8 @@ async fn run_tap_worker(
                         seq: event_id,
                         event_time: Utc::now(),
                         is_live: record.live,
+                        // records from tap are pre-validated
+                        validation_state: SmolStr::new_static("valid"),
                     })
                     .await?;
                 records.commit().await?;
@@ -214,6 +231,23 @@ async fn run_tap_worker(
                 let _ = ack_tx.send(event_id).await;
 
                 processed += 1;
+
+                // Trigger backfill on first live event
+                // compare_exchange ensures only one worker triggers this
+                if record.live
+                    && backfill_triggered
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                {
+                    info!(
+                        worker_id,
+                        "first live event received, scheduling backfill"
+                    );
+                    let backfill_client = client.clone();
+                    tokio::spawn(async move {
+                        run_backfill(backfill_client).await;
+                    });
+                }
             }
             TapEvent::Identity(envelope) => {
                 let identity = &envelope.identity;
@@ -258,4 +292,45 @@ async fn run_tap_worker(
 
     info!(worker_id, processed, "tap worker finished");
     Ok(())
+}
+
+/// Run backfill queries for incremental MVs
+///
+/// Called once when the first live event is received, indicating historical
+/// data load is complete. Waits briefly to let in-flight inserts settle,
+/// then runs INSERT queries to populate target tables for incremental MVs.
+async fn run_backfill(client: Arc<Client>) {
+    // Wait for in-flight inserts to settle
+    info!("backfill: waiting 10s for in-flight inserts to settle");
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    let mvs = Migrator::incremental_mvs();
+    if mvs.is_empty() {
+        info!("backfill: no incremental MVs found, nothing to do");
+        return;
+    }
+
+    info!(count = mvs.len(), "backfill: starting incremental MV backfill");
+
+    for mv in mvs {
+        info!(
+            mv = %mv.name,
+            table = %mv.target_table,
+            "backfill: running backfill query"
+        );
+
+        let query = mv.backfill_query();
+        debug!(query = %query, "backfill query");
+
+        match client.execute(&query).await {
+            Ok(()) => {
+                info!(mv = %mv.name, "backfill: completed successfully");
+            }
+            Err(e) => {
+                error!(mv = %mv.name, error = ?e, "backfill: query failed");
+            }
+        }
+    }
+
+    info!("backfill: all incremental MVs processed");
 }

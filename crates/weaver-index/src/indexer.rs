@@ -331,6 +331,7 @@ impl FirehoseIndexer {
                                 seq: record.seq as u64,
                                 event_time: record.event_time,
                                 is_live: true,
+                                validation_state: SmolStr::new_static("unchecked"),
                             })
                             .await?;
                     }

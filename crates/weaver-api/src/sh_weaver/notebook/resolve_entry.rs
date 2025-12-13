@@ -34,49 +34,49 @@ pub mod resolve_entry_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Notebook;
         type Entry;
+        type Notebook;
         type Actor;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Notebook = Unset;
         type Entry = Unset;
+        type Notebook = Unset;
         type Actor = Unset;
-    }
-    ///State transition - sets the `notebook` field to Set
-    pub struct SetNotebook<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetNotebook<S> {}
-    impl<S: State> State for SetNotebook<S> {
-        type Notebook = Set<members::notebook>;
-        type Entry = S::Entry;
-        type Actor = S::Actor;
     }
     ///State transition - sets the `entry` field to Set
     pub struct SetEntry<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetEntry<S> {}
     impl<S: State> State for SetEntry<S> {
-        type Notebook = S::Notebook;
         type Entry = Set<members::entry>;
+        type Notebook = S::Notebook;
+        type Actor = S::Actor;
+    }
+    ///State transition - sets the `notebook` field to Set
+    pub struct SetNotebook<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetNotebook<S> {}
+    impl<S: State> State for SetNotebook<S> {
+        type Entry = S::Entry;
+        type Notebook = Set<members::notebook>;
         type Actor = S::Actor;
     }
     ///State transition - sets the `actor` field to Set
     pub struct SetActor<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetActor<S> {}
     impl<S: State> State for SetActor<S> {
-        type Notebook = S::Notebook;
         type Entry = S::Entry;
+        type Notebook = S::Notebook;
         type Actor = Set<members::actor>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `notebook` field
-        pub struct notebook(());
         ///Marker type for the `entry` field
         pub struct entry(());
+        ///Marker type for the `notebook` field
+        pub struct notebook(());
         ///Marker type for the `actor` field
         pub struct actor(());
     }
@@ -171,8 +171,8 @@ where
 impl<'a, S> ResolveEntryBuilder<'a, S>
 where
     S: resolve_entry_state::State,
-    S::Notebook: resolve_entry_state::IsSet,
     S::Entry: resolve_entry_state::IsSet,
+    S::Notebook: resolve_entry_state::IsSet,
     S::Actor: resolve_entry_state::IsSet,
 {
     /// Build the final struct

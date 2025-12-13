@@ -1743,103 +1743,103 @@ pub mod skeleton_trend_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Link;
         type Topic;
+        type Link;
         type DisplayName;
-        type Dids;
         type PostCount;
+        type Dids;
         type StartedAt;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Link = Unset;
         type Topic = Unset;
+        type Link = Unset;
         type DisplayName = Unset;
-        type Dids = Unset;
         type PostCount = Unset;
+        type Dids = Unset;
         type StartedAt = Unset;
-    }
-    ///State transition - sets the `link` field to Set
-    pub struct SetLink<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetLink<S> {}
-    impl<S: State> State for SetLink<S> {
-        type Link = Set<members::link>;
-        type Topic = S::Topic;
-        type DisplayName = S::DisplayName;
-        type Dids = S::Dids;
-        type PostCount = S::PostCount;
-        type StartedAt = S::StartedAt;
     }
     ///State transition - sets the `topic` field to Set
     pub struct SetTopic<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetTopic<S> {}
     impl<S: State> State for SetTopic<S> {
-        type Link = S::Link;
         type Topic = Set<members::topic>;
+        type Link = S::Link;
         type DisplayName = S::DisplayName;
-        type Dids = S::Dids;
         type PostCount = S::PostCount;
+        type Dids = S::Dids;
+        type StartedAt = S::StartedAt;
+    }
+    ///State transition - sets the `link` field to Set
+    pub struct SetLink<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetLink<S> {}
+    impl<S: State> State for SetLink<S> {
+        type Topic = S::Topic;
+        type Link = Set<members::link>;
+        type DisplayName = S::DisplayName;
+        type PostCount = S::PostCount;
+        type Dids = S::Dids;
         type StartedAt = S::StartedAt;
     }
     ///State transition - sets the `display_name` field to Set
     pub struct SetDisplayName<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetDisplayName<S> {}
     impl<S: State> State for SetDisplayName<S> {
-        type Link = S::Link;
         type Topic = S::Topic;
+        type Link = S::Link;
         type DisplayName = Set<members::display_name>;
+        type PostCount = S::PostCount;
         type Dids = S::Dids;
-        type PostCount = S::PostCount;
-        type StartedAt = S::StartedAt;
-    }
-    ///State transition - sets the `dids` field to Set
-    pub struct SetDids<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetDids<S> {}
-    impl<S: State> State for SetDids<S> {
-        type Link = S::Link;
-        type Topic = S::Topic;
-        type DisplayName = S::DisplayName;
-        type Dids = Set<members::dids>;
-        type PostCount = S::PostCount;
         type StartedAt = S::StartedAt;
     }
     ///State transition - sets the `post_count` field to Set
     pub struct SetPostCount<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetPostCount<S> {}
     impl<S: State> State for SetPostCount<S> {
-        type Link = S::Link;
         type Topic = S::Topic;
+        type Link = S::Link;
         type DisplayName = S::DisplayName;
-        type Dids = S::Dids;
         type PostCount = Set<members::post_count>;
+        type Dids = S::Dids;
+        type StartedAt = S::StartedAt;
+    }
+    ///State transition - sets the `dids` field to Set
+    pub struct SetDids<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetDids<S> {}
+    impl<S: State> State for SetDids<S> {
+        type Topic = S::Topic;
+        type Link = S::Link;
+        type DisplayName = S::DisplayName;
+        type PostCount = S::PostCount;
+        type Dids = Set<members::dids>;
         type StartedAt = S::StartedAt;
     }
     ///State transition - sets the `started_at` field to Set
     pub struct SetStartedAt<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetStartedAt<S> {}
     impl<S: State> State for SetStartedAt<S> {
-        type Link = S::Link;
         type Topic = S::Topic;
+        type Link = S::Link;
         type DisplayName = S::DisplayName;
-        type Dids = S::Dids;
         type PostCount = S::PostCount;
+        type Dids = S::Dids;
         type StartedAt = Set<members::started_at>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `link` field
-        pub struct link(());
         ///Marker type for the `topic` field
         pub struct topic(());
+        ///Marker type for the `link` field
+        pub struct link(());
         ///Marker type for the `display_name` field
         pub struct display_name(());
-        ///Marker type for the `dids` field
-        pub struct dids(());
         ///Marker type for the `post_count` field
         pub struct post_count(());
+        ///Marker type for the `dids` field
+        pub struct dids(());
         ///Marker type for the `started_at` field
         pub struct started_at(());
     }
@@ -2028,11 +2028,11 @@ where
 impl<'a, S> SkeletonTrendBuilder<'a, S>
 where
     S: skeleton_trend_state::State,
-    S::Link: skeleton_trend_state::IsSet,
     S::Topic: skeleton_trend_state::IsSet,
+    S::Link: skeleton_trend_state::IsSet,
     S::DisplayName: skeleton_trend_state::IsSet,
-    S::Dids: skeleton_trend_state::IsSet,
     S::PostCount: skeleton_trend_state::IsSet,
+    S::Dids: skeleton_trend_state::IsSet,
     S::StartedAt: skeleton_trend_state::IsSet,
 {
     /// Build the final struct
@@ -2322,105 +2322,105 @@ pub mod thread_item_post_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Post;
         type OpThread;
         type MoreReplies;
-        type HiddenByThreadgate;
         type MoreParents;
+        type HiddenByThreadgate;
         type MutedByViewer;
+        type Post;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Post = Unset;
         type OpThread = Unset;
         type MoreReplies = Unset;
-        type HiddenByThreadgate = Unset;
         type MoreParents = Unset;
+        type HiddenByThreadgate = Unset;
         type MutedByViewer = Unset;
-    }
-    ///State transition - sets the `post` field to Set
-    pub struct SetPost<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetPost<S> {}
-    impl<S: State> State for SetPost<S> {
-        type Post = Set<members::post>;
-        type OpThread = S::OpThread;
-        type MoreReplies = S::MoreReplies;
-        type HiddenByThreadgate = S::HiddenByThreadgate;
-        type MoreParents = S::MoreParents;
-        type MutedByViewer = S::MutedByViewer;
+        type Post = Unset;
     }
     ///State transition - sets the `op_thread` field to Set
     pub struct SetOpThread<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetOpThread<S> {}
     impl<S: State> State for SetOpThread<S> {
-        type Post = S::Post;
         type OpThread = Set<members::op_thread>;
         type MoreReplies = S::MoreReplies;
-        type HiddenByThreadgate = S::HiddenByThreadgate;
         type MoreParents = S::MoreParents;
+        type HiddenByThreadgate = S::HiddenByThreadgate;
         type MutedByViewer = S::MutedByViewer;
+        type Post = S::Post;
     }
     ///State transition - sets the `more_replies` field to Set
     pub struct SetMoreReplies<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetMoreReplies<S> {}
     impl<S: State> State for SetMoreReplies<S> {
-        type Post = S::Post;
         type OpThread = S::OpThread;
         type MoreReplies = Set<members::more_replies>;
+        type MoreParents = S::MoreParents;
         type HiddenByThreadgate = S::HiddenByThreadgate;
-        type MoreParents = S::MoreParents;
         type MutedByViewer = S::MutedByViewer;
-    }
-    ///State transition - sets the `hidden_by_threadgate` field to Set
-    pub struct SetHiddenByThreadgate<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetHiddenByThreadgate<S> {}
-    impl<S: State> State for SetHiddenByThreadgate<S> {
         type Post = S::Post;
-        type OpThread = S::OpThread;
-        type MoreReplies = S::MoreReplies;
-        type HiddenByThreadgate = Set<members::hidden_by_threadgate>;
-        type MoreParents = S::MoreParents;
-        type MutedByViewer = S::MutedByViewer;
     }
     ///State transition - sets the `more_parents` field to Set
     pub struct SetMoreParents<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetMoreParents<S> {}
     impl<S: State> State for SetMoreParents<S> {
-        type Post = S::Post;
         type OpThread = S::OpThread;
         type MoreReplies = S::MoreReplies;
-        type HiddenByThreadgate = S::HiddenByThreadgate;
         type MoreParents = Set<members::more_parents>;
+        type HiddenByThreadgate = S::HiddenByThreadgate;
         type MutedByViewer = S::MutedByViewer;
+        type Post = S::Post;
+    }
+    ///State transition - sets the `hidden_by_threadgate` field to Set
+    pub struct SetHiddenByThreadgate<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetHiddenByThreadgate<S> {}
+    impl<S: State> State for SetHiddenByThreadgate<S> {
+        type OpThread = S::OpThread;
+        type MoreReplies = S::MoreReplies;
+        type MoreParents = S::MoreParents;
+        type HiddenByThreadgate = Set<members::hidden_by_threadgate>;
+        type MutedByViewer = S::MutedByViewer;
+        type Post = S::Post;
     }
     ///State transition - sets the `muted_by_viewer` field to Set
     pub struct SetMutedByViewer<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetMutedByViewer<S> {}
     impl<S: State> State for SetMutedByViewer<S> {
-        type Post = S::Post;
         type OpThread = S::OpThread;
         type MoreReplies = S::MoreReplies;
-        type HiddenByThreadgate = S::HiddenByThreadgate;
         type MoreParents = S::MoreParents;
+        type HiddenByThreadgate = S::HiddenByThreadgate;
         type MutedByViewer = Set<members::muted_by_viewer>;
+        type Post = S::Post;
+    }
+    ///State transition - sets the `post` field to Set
+    pub struct SetPost<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetPost<S> {}
+    impl<S: State> State for SetPost<S> {
+        type OpThread = S::OpThread;
+        type MoreReplies = S::MoreReplies;
+        type MoreParents = S::MoreParents;
+        type HiddenByThreadgate = S::HiddenByThreadgate;
+        type MutedByViewer = S::MutedByViewer;
+        type Post = Set<members::post>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `post` field
-        pub struct post(());
         ///Marker type for the `op_thread` field
         pub struct op_thread(());
         ///Marker type for the `more_replies` field
         pub struct more_replies(());
-        ///Marker type for the `hidden_by_threadgate` field
-        pub struct hidden_by_threadgate(());
         ///Marker type for the `more_parents` field
         pub struct more_parents(());
+        ///Marker type for the `hidden_by_threadgate` field
+        pub struct hidden_by_threadgate(());
         ///Marker type for the `muted_by_viewer` field
         pub struct muted_by_viewer(());
+        ///Marker type for the `post` field
+        pub struct post(());
     }
 }
 
@@ -2573,12 +2573,12 @@ where
 impl<'a, S> ThreadItemPostBuilder<'a, S>
 where
     S: thread_item_post_state::State,
-    S::Post: thread_item_post_state::IsSet,
     S::OpThread: thread_item_post_state::IsSet,
     S::MoreReplies: thread_item_post_state::IsSet,
-    S::HiddenByThreadgate: thread_item_post_state::IsSet,
     S::MoreParents: thread_item_post_state::IsSet,
+    S::HiddenByThreadgate: thread_item_post_state::IsSet,
     S::MutedByViewer: thread_item_post_state::IsSet,
+    S::Post: thread_item_post_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> ThreadItemPost<'a> {

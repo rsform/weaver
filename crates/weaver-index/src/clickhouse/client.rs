@@ -160,6 +160,7 @@ impl Client {
             seq: 0,                                  // Not from firehose
             event_time: DateTime::UNIX_EPOCH,        // Sort behind canonical firehose data
             is_live: false,                          // Fetched on-demand, not from firehose
+            validation_state: SmolStr::new_static("unchecked"),
         };
 
         let mut insert = self

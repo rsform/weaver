@@ -5,6 +5,12 @@ use axum::{Json, Router, extract::State, http::StatusCode, response::IntoRespons
 use jacquard::api::com_atproto::repo::{
     get_record::GetRecordRequest, list_records::ListRecordsRequest,
 };
+use weaver_api::sh_weaver::actor::get_profile::GetProfileRequest;
+use weaver_api::sh_weaver::notebook::{
+    get_entry::GetEntryRequest,
+    resolve_entry::ResolveEntryRequest,
+    resolve_notebook::ResolveNotebookRequest,
+};
 use jacquard::client::UnauthenticatedSession;
 use jacquard::identity::JacquardResolver;
 use jacquard_axum::IntoRouter;
@@ -14,7 +20,7 @@ use tracing::info;
 
 use crate::clickhouse::Client;
 use crate::config::ShardConfig;
-use crate::endpoints::repo;
+use crate::endpoints::{actor, notebook, repo};
 use crate::error::{IndexError, ServerError};
 use crate::sqlite::ShardRouter;
 
@@ -49,6 +55,12 @@ pub fn router(state: AppState) -> Router {
         // com.atproto.repo.* endpoints (record cache)
         .merge(GetRecordRequest::into_router(repo::get_record))
         .merge(ListRecordsRequest::into_router(repo::list_records))
+        // sh.weaver.actor.* endpoints
+        .merge(GetProfileRequest::into_router(actor::get_profile))
+        // sh.weaver.notebook.* endpoints
+        .merge(ResolveNotebookRequest::into_router(notebook::resolve_notebook))
+        .merge(GetEntryRequest::into_router(notebook::get_entry))
+        .merge(ResolveEntryRequest::into_router(notebook::resolve_entry))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }

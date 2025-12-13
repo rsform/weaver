@@ -12,11 +12,11 @@ use jacquard::bytes::Bytes;
 use jacquard::client::{AgentError, AgentErrorKind, AgentSession, AgentSessionExt};
 use jacquard::error::ClientError;
 use jacquard::prelude::*;
+use jacquard::smol_str::SmolStr;
 use jacquard::types::blob::{BlobRef, MimeType};
 use jacquard::types::string::{AtUri, Did, RecordKey, Rkey};
 use jacquard::types::tid::Tid;
 use jacquard::types::uri::Uri;
-use jacquard::smol_str::SmolStr;
 use jacquard::url::Url;
 use jacquard::{CowStr, IntoStatic};
 use mime_sniffer::MimeTypeSniffer;
@@ -2014,9 +2014,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     /// Delete all expired session records for the current user.
     ///
     /// Called before creating a new session to clean up stale records.
-    fn cleanup_expired_sessions<'a>(
-        &'a self,
-    ) -> impl Future<Output = Result<u32, WeaverError>> + 'a
+    fn cleanup_expired_sessions<'a>(&'a self) -> impl Future<Output = Result<u32, WeaverError>> + 'a
     where
         Self: Sized,
     {
@@ -2182,10 +2180,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                 peers.push(SessionPeer {
                     did: record_id.did.into_static(),
                     node_id: session_record.value.node_id.as_ref().into(),
-                    relay_url: session_record
-                        .value
-                        .relay_url
-                        .map(|u| u.as_ref().into()),
+                    relay_url: session_record.value.relay_url.map(|u| u.as_ref().into()),
                     created_at: session_record.value.created_at,
                     expires_at: session_record.value.expires_at,
                 });

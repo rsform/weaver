@@ -58,6 +58,7 @@ pub struct RawRecordInsert {
     pub event_time: DateTime<Utc>,
     /// Whether this came from live firehose (true) or backfill (false)
     pub is_live: bool,
+    pub validation_state: SmolStr,
     // Note: indexed_at has DEFAULT now64(3), omit from insert
     // Note: validation_state has DEFAULT 'unchecked', omit from insert
 }

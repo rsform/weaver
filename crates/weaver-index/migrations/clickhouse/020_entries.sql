@@ -10,17 +10,11 @@ CREATE TABLE IF NOT EXISTS entries (
     -- Materialized URI for convenience
     uri String MATERIALIZED concat('at://', did, '/sh.weaver.notebook.entry/', rkey),
 
-    -- Extracted fields
+    -- Queryable fields
     title String DEFAULT '',
     path String DEFAULT '',
-    content String DEFAULT '',
     tags Array(String) DEFAULT [],
-
-    -- Authors array (DIDs)
     author_dids Array(String) DEFAULT [],
-
-    -- Content preview (first 500 chars for feeds)
-    content_preview String DEFAULT '',
 
     -- Timestamps
     created_at DateTime64(3) DEFAULT toDateTime64(0, 3),
@@ -29,7 +23,10 @@ CREATE TABLE IF NOT EXISTS entries (
     indexed_at DateTime64(3) DEFAULT now64(3),
 
     -- Soft delete (epoch = not deleted)
-    deleted_at DateTime64(3) DEFAULT toDateTime64(0, 3)
+    deleted_at DateTime64(3) DEFAULT toDateTime64(0, 3),
+
+    -- Full record JSON for hydration
+    record JSON DEFAULT '{}'
 )
 ENGINE = ReplacingMergeTree(indexed_at)
-ORDER BY (did, rkey)
+ORDER BY (did, rkey, event_time, cid)
