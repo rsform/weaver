@@ -7,6 +7,7 @@
 /alloy
 .direnv
 .env
+.env.prod
 .devenv
 CLAUDE.md
 AGENTS.md
