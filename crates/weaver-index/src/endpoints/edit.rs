@@ -21,8 +21,8 @@ use weaver_api::sh_weaver::edit::list_drafts::{DraftView, ListDraftsOutput, List
 use crate::clickhouse::{EditNodeRow, ProfileRow};
 use crate::endpoints::actor::{Viewer, resolve_actor};
 use crate::endpoints::collab::profile_to_view_basic;
-use crate::endpoints::resolve_uri;
 use crate::endpoints::repo::XrpcErrorResponse;
+use crate::endpoints::resolve_uri;
 use crate::server::AppState;
 
 /// Handle sh.weaver.edit.getEditHistory

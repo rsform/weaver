@@ -12,8 +12,10 @@ use self::actor::resolve_actor;
 use self::repo::XrpcErrorResponse;
 
 pub mod actor;
+pub mod bsky;
 pub mod collab;
 pub mod edit;
+pub mod identity;
 pub mod notebook;
 pub mod repo;
 

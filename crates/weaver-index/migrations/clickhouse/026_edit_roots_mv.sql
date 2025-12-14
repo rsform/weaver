@@ -16,23 +16,25 @@ SELECT
         ''
     ) as resource_type,
 
-    -- Extract resource DID (parse from URI or empty)
+    -- Extract resource DID
     multiIf(
         toString(record.doc.value.entry.uri) != '',
             splitByChar('/', replaceOne(toString(record.doc.value.entry.uri), 'at://', ''))[1],
         toString(record.doc.value.notebook.uri) != '',
             splitByChar('/', replaceOne(toString(record.doc.value.notebook.uri), 'at://', ''))[1],
+        toString(record.doc.value.draftKey) != '',
+            splitByChar('/', replaceOne(toString(record.doc.value.draftKey), 'at://', ''))[1],
         ''
     ) as resource_did,
 
-    -- Extract resource rkey (parse from URI or use draftKey)
+    -- Extract resource rkey
     multiIf(
         toString(record.doc.value.entry.uri) != '',
             splitByChar('/', replaceOne(toString(record.doc.value.entry.uri), 'at://', ''))[3],
         toString(record.doc.value.notebook.uri) != '',
             splitByChar('/', replaceOne(toString(record.doc.value.notebook.uri), 'at://', ''))[3],
         toString(record.doc.value.draftKey) != '',
-            toString(record.doc.value.draftKey),
+            splitByChar('/', replaceOne(toString(record.doc.value.draftKey), 'at://', ''))[3],
         ''
     ) as resource_rkey,
 

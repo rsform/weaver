@@ -12,22 +12,22 @@
   <image xlink:href="{{ avatar_data.as_ref().unwrap() }}" x="940" y="100" width="200" height="200" clip-path="url(#avatar-clip)" preserveAspectRatio="xMidYMid slice"/>
   {% endif %}
 
-  <!-- Display name (large) -->
+  <!-- Display name (large) - CMU Sans Serif -->
   {% for line in display_name_lines %}
-  <text x="60" y="{{ 180 + loop.index0 * 64 }}" fill="#c4a7e7" font-family="IBM Plex Sans, sans-serif" font-size="64" font-weight="900">{{ line }}</text>
+  <text x="60" y="{{ 160 + loop.index0 * 68 }}" fill="#c4a7e7" font-family="CMU Sans Serif, sans-serif" font-size="60" font-weight="bold">{{ line }}</text>
   {% endfor %}
 
-  <!-- Handle -->
-  <text x="60" y="260" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="36">@{{ handle }}</text>
+  <!-- Handle - flows after display name -->
+  <text x="60" y="{{ 160 + (display_name_lines.len() - 1) * 68 + 56 }}" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="36">@{{ handle }}</text>
 
-  <!-- Bio snippet -->
+  <!-- Bio snippet - Adobe Caslon Pro -->
   {% for line in bio_lines %}
-  <text x="60" y="{{ 340 + loop.index0 * 44 }}" fill="#e0def4" font-family="IBM Plex Sans, sans-serif" font-size="32" font-weight="400">{{ line }}</text>
+  <text x="60" y="{{ 160 + (display_name_lines.len() - 1) * 68 + 56 + 60 + loop.index0 * 44 }}" fill="#e0def4" font-family="Adobe Caslon Pro, Georgia, serif" font-size="32">{{ line }}</text>
   {% endfor %}
 
   <!-- Notebook count -->
-  <text x="60" y="540" fill="#908caa" font-family="IBM Plex Sans, sans-serif" font-size="32" font-weight="400">{{ notebook_count }} {% if notebook_count == 1 %}notebook{% else %}notebooks{% endif %}</text>
+  <text x="60" y="540" fill="#908caa" font-family="CMU Sans Serif, sans-serif" font-size="32">{{ notebook_count }} {% if notebook_count == 1 %}notebook{% else %}notebooks{% endif %}</text>
 
   <!-- Weaver branding -->
-  <text x="60" y="600" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="24">weaver.sh</text>
+  <text x="60" y="600" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="28">weaver.sh</text>
 </svg>

@@ -1,7 +1,4 @@
 -- Unified profiles view
--- Refreshable MV that merges weaver + bsky profiles with handle resolution
--- Queries are pure reads, no merge computation needed
-
 CREATE MATERIALIZED VIEW IF NOT EXISTS profiles
 REFRESH EVERY 1 MINUTE
 ENGINE = ReplacingMergeTree(indexed_at)
@@ -9,7 +6,6 @@ ORDER BY did
 AS SELECT
     if(w.did != '', w.did, b.did) as did,
 
-    -- Handle from handle_mappings (empty if not resolved yet)
     coalesce(h.handle, '') as handle,
 
     -- Raw profiles per source

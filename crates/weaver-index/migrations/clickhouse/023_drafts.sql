@@ -1,5 +1,4 @@
 -- Draft stub records
--- Anchors for unpublished content, enables draft discovery via queries
 
 CREATE TABLE IF NOT EXISTS drafts (
     -- Identity

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Weaver Index</title>
+        <style>
+            @font-face {
+                font-family: "Ioskeley Mono";
+                font-style: normal;
+                font-weight: normal;
+                src: url("/assets/IoskeleyMono-Regular.woff2") format("woff2");
+            }
+            :root {
+                --color-base: #faf4ed;
+                --color-surface: #fffaf3;
+                --color-text: #1f1d2e;
+                --color-muted: #635e74;
+                --color-subtle: #4a4560;
+                --color-primary: #907aa9;
+                --color-secondary: #56949f;
+                --color-link: #d7827e;
+                --color-border: #908caa;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --color-base: #191724;
+                    --color-surface: #1f1d2e;
+                    --color-text: #e0def4;
+                    --color-muted: #6e6a86;
+                    --color-subtle: #908caa;
+                    --color-primary: #c4a7e7;
+                    --color-secondary: #3e8fb0;
+                    --color-link: #ebbcba;
+                    --color-border: #403d52;
+                }
+            }
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                font-family: "Ioskeley Mono", "IBM Plex Mono", "Berkeley Mono", Consolas, monospace;
+                font-size: 14px;
+                line-height: 1.6;
+                color: var(--color-text);
+                background: var(--color-base);
+                max-width: 700px;
+                margin: 0 auto;
+                padding: 3rem 1.5rem;
+            }
+            pre {
+                font-size: 0.7rem;
+                line-height: 1.1;
+                color: var(--color-primary);
+                margin-bottom: 1.5rem;
+            }
+            h1 {
+                font-size: 1.25rem;
+                font-weight: 600;
+                color: var(--color-secondary);
+                margin-bottom: 0.25rem;
+            }
+            .subtitle {
+                color: var(--color-muted);
+                margin-bottom: 1.5rem;
+            }
+            p {
+                margin-bottom: 1rem;
+            }
+            a {
+                color: var(--color-link);
+                text-decoration: none;
+            }
+            a:hover {
+                text-decoration: underline;
+            }
+            code {
+                background: var(--color-surface);
+                padding: 0.125rem 0.375rem;
+                border-radius: 3px;
+                border: 1px solid var(--color-border);
+            }
+            ul {
+                list-style: none;
+                margin-top: 1.5rem;
+                padding-top: 1rem;
+                border-top: 1px solid var(--color-border);
+            }
+            li {
+                margin-bottom: 0.5rem;
+            }
+            li::before {
+                content: "→ ";
+                color: var(--color-muted);
+            }
+        </style>
+    </head>
+    <body>
+        <pre>
+
+    .dP'    db    `Yb                .dP'
+    dP'    db    db  88              dP'
+                88
+    `Yb d888b    'Yb     'Yb     88 d88b d88b     'Yb   `Yb    dP'
+    88P    88    88      88     88P   8Y   8b     88     Yb  dP
+    88     8P    88      88     88    8P   88     88      YbdP
+    88   .dP    .8P     .8P     88  .dP' .dP'    .8P      .8P
+    .88888888b.                  8888888888888b.         dP'  b
+                                        Y.  ,P
+                                            `""'</pre
+        >
+        <h1>Weaver Index</h1>
+        <p class="subtitle">AT Protocol Record Index</p>
+        <p>This is an AT Protocol record index serving the Weaver writing platform.</p>
+        <p>Most API endpoints are available under <code>/xrpc/</code>.</p>
+        <ul>
+            <li>Web App (alpha): <a href="https://alpha.weaver.sh">alpha.weaver.sh</a></li>
+            <li>
+                Source Code:
+                <a href="https://tangled.org/@nonbinary.computer/weaver">tangled.org/@nonbinary.computer/weaver</a>
+            </li>
+            <li><a href="https://atproto.com">AT Protocol</a></li>
+        </ul>
+    </body>
+</html>

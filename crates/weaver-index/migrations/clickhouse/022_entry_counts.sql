@@ -1,6 +1,4 @@
--- Entry engagement counts
--- Updated by MVs from likes, bookmarks (added later with graph tables)
--- Joined with entries at query time
+-- Entry engagement counts table stub
 
 CREATE TABLE IF NOT EXISTS entry_counts (
     did String,

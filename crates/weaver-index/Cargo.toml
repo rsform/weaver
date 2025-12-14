@@ -25,7 +25,7 @@ weaver-common = { path = "../weaver-common", features = ["telemetry"] }
 
 # AT Protocol / Jacquard
 jacquard = { workspace = true, features = ["websocket", "zstd", "dns", "cache"] }
-jacquard-common = { workspace = true, features = ["crypto-k256"] }
+jacquard-common = { workspace = true, features = ["service-auth","crypto-ed25519"] }
 jacquard-repo = { workspace = true }
 jacquard-axum = { workspace = true }
 

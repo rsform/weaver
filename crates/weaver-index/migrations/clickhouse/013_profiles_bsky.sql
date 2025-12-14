@@ -1,10 +1,8 @@
 -- Bluesky profile source table
--- Populated by MV from raw_records, merged into profiles by refreshable MV
 
 CREATE TABLE IF NOT EXISTS profiles_bsky (
     did String,
 
-    -- Raw profile JSON
     profile String,
 
     -- Extracted fields for coalescing

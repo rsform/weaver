@@ -16,23 +16,21 @@ CREATE TABLE IF NOT EXISTS edit_nodes (
     node_type LowCardinality(String),  -- 'root' or 'diff'
 
     -- Resource being edited (extracted from doc.value)
-    -- One of these will be populated depending on doc type
     resource_type LowCardinality(String) DEFAULT '',  -- 'entry', 'notebook', 'draft'
     resource_did String DEFAULT '',
     resource_rkey String DEFAULT '',
     resource_collection LowCardinality(String) DEFAULT '',
 
-    -- For diffs: reference to root (StrongRef)
+    -- For diffs: reference to root
     root_did String DEFAULT '',
     root_rkey String DEFAULT '',
     root_cid String DEFAULT '',
 
-    -- For diffs: reference to previous node (StrongRef)
+    -- For diffs: reference to previous node
     prev_did String DEFAULT '',
     prev_rkey String DEFAULT '',
     prev_cid String DEFAULT '',
 
-    -- Whether this has inline diff data vs blob snapshot
     has_inline_diff UInt8 DEFAULT 0,
     has_snapshot UInt8 DEFAULT 0,
 

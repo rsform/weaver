@@ -1,7 +1,13 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{StatusCode, header},
+    response::{Html, IntoResponse},
+    routing::get,
+};
 use jacquard::api::com_atproto::repo::{
     get_record::GetRecordRequest, list_records::ListRecordsRequest,
 };
@@ -16,6 +22,9 @@ use serde::Serialize;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
+use weaver_api::app_bsky::actor::get_profile::GetProfileRequest as BskyGetProfileRequest;
+use weaver_api::app_bsky::feed::get_posts::GetPostsRequest as BskyGetPostsRequest;
+use weaver_api::com_atproto::identity::resolve_handle::ResolveHandleRequest;
 use weaver_api::sh_weaver::actor::{
     get_actor_entries::GetActorEntriesRequest, get_actor_notebooks::GetActorNotebooksRequest,
     get_profile::GetProfileRequest,
@@ -35,7 +44,7 @@ use weaver_api::sh_weaver::notebook::{
 
 use crate::clickhouse::Client;
 use crate::config::ShardConfig;
-use crate::endpoints::{actor, collab, edit, notebook, repo};
+use crate::endpoints::{actor, bsky, collab, edit, identity, notebook, repo};
 use crate::error::{IndexError, ServerError};
 use crate::sqlite::ShardRouter;
 
@@ -59,7 +68,7 @@ impl AppState {
         Self {
             clickhouse: Arc::new(clickhouse),
             shards: Arc::new(ShardRouter::new(shard_config.base_path)),
-            resolver: UnauthenticatedSession::new_slingshot(),
+            resolver: UnauthenticatedSession::new_public(),
             service_did,
         }
     }
@@ -84,12 +93,26 @@ impl ServiceAuth for AppState {
 /// Build the axum router with all XRPC endpoints
 pub fn router(state: AppState, did_doc: DidDocument<'static>) -> Router {
     Router::new()
-        // did:web document
+        .route("/", get(landing))
+        .route(
+            "/assets/IoskeleyMono-Regular.woff2",
+            get(font_ioskeley_regular),
+        )
+        .route("/assets/IoskeleyMono-Bold.woff2", get(font_ioskeley_bold))
+        .route(
+            "/assets/IoskeleyMono-Italic.woff2",
+            get(font_ioskeley_italic),
+        )
         .route("/xrpc/_health", get(health))
         .route("/metrics", get(metrics))
+        // com.atproto.identity.* endpoints
+        .merge(ResolveHandleRequest::into_router(identity::resolve_handle))
         // com.atproto.repo.* endpoints (record cache)
         .merge(GetRecordRequest::into_router(repo::get_record))
         .merge(ListRecordsRequest::into_router(repo::list_records))
+        // app.bsky.* passthrough endpoints
+        .merge(BskyGetProfileRequest::into_router(bsky::get_profile))
+        .merge(BskyGetPostsRequest::into_router(bsky::get_posts))
         // sh.weaver.actor.* endpoints
         .merge(GetProfileRequest::into_router(actor::get_profile))
         .merge(GetActorNotebooksRequest::into_router(
@@ -136,6 +159,38 @@ pub fn router(state: AppState, did_doc: DidDocument<'static>) -> Router {
 /// Prometheus metrics endpoint
 async fn metrics() -> String {
     telemetry::render()
+}
+
+// Embedded font files
+const IOSKELEY_MONO_REGULAR: &[u8] =
+    include_bytes!("../../weaver-app/assets/fonts/ioskeley-mono/IoskeleyMono-Regular.woff2");
+const IOSKELEY_MONO_BOLD: &[u8] =
+    include_bytes!("../../weaver-app/assets/fonts/ioskeley-mono/IoskeleyMono-Bold.woff2");
+const IOSKELEY_MONO_ITALIC: &[u8] =
+    include_bytes!("../../weaver-app/assets/fonts/ioskeley-mono/IoskeleyMono-Italic.woff2");
+
+/// Serve the Ioskeley Mono Regular font
+async fn font_ioskeley_regular() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "font/woff2")],
+        IOSKELEY_MONO_REGULAR,
+    )
+}
+/// Serve the Ioskeley Mono Regular font
+async fn font_ioskeley_bold() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "font/woff2")], IOSKELEY_MONO_BOLD)
+}
+
+/// Serve the Ioskeley Mono Regular font
+async fn font_ioskeley_italic() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "font/woff2")], IOSKELEY_MONO_ITALIC)
+}
+
+const LANDING_HTML: &str = include_str!("./landing.html");
+
+/// Landing page
+async fn landing() -> Html<&'static str> {
+    Html(LANDING_HTML)
 }
 
 /// Health check response

@@ -2,21 +2,19 @@
   <!-- Background -->
   <rect width="1200" height="630" fill="#191724"/>
 
-  <!-- Entry title (large, wrapped) -->
+  <!-- Entry title (large, wrapped) - CMU Sans Serif -->
   {% for line in title_lines %}
-  <text x="60" y="{{ 140 + loop.index0 * 56 }}" fill="#c4a7e7" font-family="IBM Plex Sans, sans-serif" font-size="64" font-weight="800">{{ line }}</text>
+  <text x="60" y="{{ 120 + loop.index0 * 68 }}" fill="#c4a7e7" font-family="CMU Sans Serif, sans-serif" font-size="60" font-weight="bold">{{ line }}</text>
   {% endfor %}
 
-  <!-- Notebook title + Author -->
-  <text x="60" y="320" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
+  <!-- Notebook title + Author - flows after title -->
+  <text x="60" y="{{ 120 + (title_lines.len() - 1) * 68 + 60 }}" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
 
-  <!-- Content snippet -->
+  <!-- Content snippet - Adobe Caslon Pro -->
   {% for line in content_lines %}
-  <text x="60" y="{{ 380 + loop.index0 * 36 }}" fill="#e0def4" font-family="IBM Plex Sans, sans-serif" font-size="28">{{ line }}</text>
+  <text x="60" y="{{ 120 + (title_lines.len() - 1) * 68 + 60 + 56 + loop.index0 * 40 }}" fill="#e0def4" font-family="Adobe Caslon Pro, Georgia, serif" font-size="30">{{ line }}</text>
   {% endfor %}
-
-
 
   <!-- Weaver branding -->
-  <text x="60" y="590" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="24">weaver.sh</text>
+  <text x="60" y="590" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="28">weaver.sh</text>
 </svg>

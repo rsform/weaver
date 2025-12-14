@@ -113,10 +113,7 @@ impl SqliteShard {
     }
 
     pub fn last_accessed(&self) -> Instant {
-        self.last_accessed
-            .lock()
-            .map(|t| *t)
-            .unwrap_or_else(|_| Instant::now())
+        self.last_accessed.lock().map(|t| *t).expect("poisoned")
     }
 
     /// Execute a read operation on the shard

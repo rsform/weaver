@@ -19,7 +19,7 @@ pub const WEAVER_TOS_URI: &'static str = "";
 #[allow(unused)]
 pub const WEAVER_PRIVACY_POLICY_URI: &'static str = "";
 #[allow(unused)]
-pub const WEAVER_INDEXER_URL: &'static str = "http://localhost:3000";
+pub const WEAVER_INDEXER_URL: &'static str = "https://index.weaver.sh";
 #[allow(unused)]
 pub const WEAVER_INDEXER_DID: &'static str = "did:web:index.weaver.sh";
 #[allow(unused)]

@@ -56,7 +56,7 @@
     font-family: "Adobe Caslon Pro";
     font-style: normal;
     font-weight: bold;
-    src: url("/assets/AdobeCaslonPro-Semibold.ttf") format("truetype");
+    src: url("/assets/AdobeCaslonPro-Bold.ttf") format("truetype");
 }
 
 @font-face {

@@ -1,14 +1,9 @@
 -- Populate notebook_entries from notebooks
--- Extracts entry references from the entryList in notebook records
--- Incremental MV: triggers on INSERT to notebooks, writes to notebook_entries
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS notebook_entries_mv
 TO notebook_entries
 AS
 SELECT
-    -- Parse entry URI to extract did and rkey
-    -- URI format: at://did:plc:xxx/sh.weaver.notebook.entry/rkey
-    -- assumeNotNull is safe here because WHERE filters guarantee non-null
     assumeNotNull(extract(entry_uri, 'at://([^/]+)/')) as entry_did,
     assumeNotNull(extract(entry_uri, '/sh\\.weaver\\.notebook\\.entry/([^/]+)$')) as entry_rkey,
 

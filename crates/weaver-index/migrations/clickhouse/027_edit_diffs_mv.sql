@@ -22,6 +22,8 @@ SELECT
             splitByChar('/', replaceOne(toString(record.doc.value.entry.uri), 'at://', ''))[1],
         toString(record.doc.value.notebook.uri) != '',
             splitByChar('/', replaceOne(toString(record.doc.value.notebook.uri), 'at://', ''))[1],
+        toString(record.doc.value.draftKey) != '',
+            splitByChar('/', replaceOne(toString(record.doc.value.draftKey), 'at://', ''))[1],
         ''
     ) as resource_did,
 
@@ -32,7 +34,7 @@ SELECT
         toString(record.doc.value.notebook.uri) != '',
             splitByChar('/', replaceOne(toString(record.doc.value.notebook.uri), 'at://', ''))[3],
         toString(record.doc.value.draftKey) != '',
-            toString(record.doc.value.draftKey),
+            splitByChar('/', replaceOne(toString(record.doc.value.draftKey), 'at://', ''))[3],
         ''
     ) as resource_rkey,
 

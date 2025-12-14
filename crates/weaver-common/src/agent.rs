@@ -7,25 +7,28 @@ pub use weaver_api::sh_weaver::notebook::{
 // Re-export jacquard for convenience
 use crate::constellation::{GetBacklinksQuery, RecordId};
 use crate::error::WeaverError;
+#[allow(unused_imports)]
+use crate::{PublishResult, W_TICKER, normalize_title_path};
 pub use jacquard;
 use jacquard::bytes::Bytes;
+#[allow(unused_imports)]
 use jacquard::client::{AgentError, AgentErrorKind, AgentSession, AgentSessionExt};
 use jacquard::error::ClientError;
 use jacquard::prelude::*;
 use jacquard::smol_str::SmolStr;
 use jacquard::types::blob::{BlobRef, MimeType};
 use jacquard::types::string::{AtUri, Did, RecordKey, Rkey};
+#[allow(unused_imports)]
 use jacquard::types::tid::Tid;
 use jacquard::types::uri::Uri;
 use jacquard::url::Url;
 use jacquard::{CowStr, IntoStatic};
 use mime_sniffer::MimeTypeSniffer;
+#[allow(unused_imports)]
 use std::path::Path;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::notebook::entry;
 use weaver_api::sh_weaver::publish::blob::Blob as PublishedBlob;
-
-use crate::{PublishResult, W_TICKER, normalize_title_path};
 
 const CONSTELLATION_URL: &str = "https://constellation.microcosm.blue";
 
@@ -473,6 +476,36 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     }
 
     /// Fetch an entry and construct EntryView
+    #[cfg(feature = "use-index")]
+    fn fetch_entry_view<'a>(
+        &self,
+        _notebook: &NotebookView<'a>,
+        entry_ref: &StrongRef<'_>,
+    ) -> impl Future<Output = Result<EntryView<'a>, WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            use weaver_api::sh_weaver::notebook::get_entry::GetEntry;
+
+            let resp = self
+                .send(GetEntry::new().uri(entry_ref.uri.clone()).build())
+                .await
+                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+            let output = resp.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to get entry: {}",
+                    e
+                )))
+            })?;
+
+            Ok(output.value.into_static())
+        }
+    }
+
+    /// Fetch an entry and construct EntryView
+    #[cfg(not(feature = "use-index"))]
     fn fetch_entry_view<'a>(
         &self,
         notebook: &NotebookView<'a>,

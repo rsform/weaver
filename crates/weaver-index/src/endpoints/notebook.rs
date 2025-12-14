@@ -45,36 +45,32 @@ pub async fn resolve_notebook(
     let did_str = did.as_str();
     let name = args.name.as_ref();
 
-    // Fetch notebook and entries in parallel - both just need the DID
     let limit = args.entry_limit.unwrap_or(50).clamp(1, 100) as u32;
-    let cursor = args.entry_cursor.as_deref();
+    let cursor: Option<u32> = args
+        .entry_cursor
+        .as_deref()
+        .and_then(|c| c.parse().ok());
 
-    let (notebook_result, entries_result) = tokio::try_join!(
-        async {
-            state
-                .clickhouse
-                .resolve_notebook(did_str, name)
-                .await
-                .map_err(|e| {
-                    tracing::error!("Failed to resolve notebook: {}", e);
-                    XrpcErrorResponse::internal_error("Database query failed")
-                })
-        },
-        async {
-            state
-                .clickhouse
-                .list_notebook_entries(did_str, limit + 1, cursor)
-                .await
-                .map_err(|e| {
-                    tracing::error!("Failed to list entries: {}", e);
-                    XrpcErrorResponse::internal_error("Database query failed")
-                })
-        }
-    )?;
+    // Fetch notebook first to get its rkey
+    let notebook_row = state
+        .clickhouse
+        .resolve_notebook(did_str, name)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to resolve notebook: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?
+        .ok_or_else(|| XrpcErrorResponse::not_found("Notebook not found"))?;
 
-    let notebook_row =
-        notebook_result.ok_or_else(|| XrpcErrorResponse::not_found("Notebook not found"))?;
-    let entry_rows = entries_result;
+    // Now fetch entries using notebook's rkey
+    let entry_rows = state
+        .clickhouse
+        .list_notebook_entries(did_str, &notebook_row.rkey, limit + 1, cursor)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to list entries: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
 
     // Fetch notebook contributors (evidence-based)
     let notebook_contributors = state
@@ -183,9 +179,11 @@ pub async fn resolve_notebook(
         entries.push(book_entry);
     }
 
-    // Build cursor for pagination
+    // Build cursor for pagination (position-based)
     let next_cursor = if has_more {
-        entry_rows.last().map(|e| e.rkey.to_string().into())
+        // Position = cursor offset + number of entries returned
+        let last_position = cursor.unwrap_or(0) + entry_rows.len() as u32;
+        Some(last_position.to_string().into())
     } else {
         None
     };

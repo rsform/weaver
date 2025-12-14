@@ -133,63 +133,56 @@ impl Client {
         Ok(row)
     }
 
-    /// List entries for a notebook's author (did).
+    /// List entries for a specific notebook, ordered by position in the notebook.
     ///
-    /// Note: This is a simplified version. The full implementation would
-    /// need to join with notebook's entryList to get proper ordering.
-    /// For now, we just list entries by the same author, ordered by rkey (notebook order).
+    /// Uses notebook_entries table to get entries that belong to this notebook.
     pub async fn list_notebook_entries(
         &self,
-        did: &str,
+        notebook_did: &str,
+        notebook_rkey: &str,
         limit: u32,
-        cursor: Option<&str>,
+        cursor: Option<u32>,
     ) -> Result<Vec<EntryRow>, IndexError> {
-        // Note: rkey ordering is intentional here - it's the notebook's entry order
-        let query = if cursor.is_some() {
-            r#"
-                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
-                FROM (
-                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
-                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
-                    FROM entries FINAL
-                    WHERE did = ?
-                      AND deleted_at = toDateTime64(0, 3)
-                      AND rkey > ?
-                )
-                WHERE rn = 1
-                ORDER BY rkey ASC
-                LIMIT ?
-            "#
-        } else {
-            r#"
-                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
-                FROM (
-                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
-                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
-                    FROM entries FINAL
-                    WHERE did = ?
-                      AND deleted_at = toDateTime64(0, 3)
-                )
-                WHERE rn = 1
-                ORDER BY rkey ASC
-                LIMIT ?
-            "#
-        };
+        let query = r#"
+            SELECT
+                e.did AS did,
+                e.rkey AS rkey,
+                e.cid AS cid,
+                e.uri AS uri,
+                e.title AS title,
+                e.path AS path,
+                e.tags AS tags,
+                e.author_dids AS author_dids,
+                e.created_at AS created_at,
+                e.indexed_at AS indexed_at,
+                e.record AS record
+            FROM notebook_entries ne FINAL
+            INNER JOIN entries e ON
+                e.did = ne.entry_did
+                AND e.rkey = ne.entry_rkey
+                AND e.deleted_at = toDateTime64(0, 3)
+            WHERE ne.notebook_did = ?
+              AND ne.notebook_rkey = ?
+              AND ne.position > ?
+            ORDER BY ne.position ASC
+            LIMIT ?
+        "#;
 
-        let mut q = self.inner().query(query).bind(did);
+        let cursor_val = cursor.unwrap_or(0);
 
-        if let Some(c) = cursor {
-            q = q.bind(c);
-        }
-
-        let rows =
-            q.bind(limit)
-                .fetch_all::<EntryRow>()
-                .await
-                .map_err(|e| ClickHouseError::Query {
-                    message: "failed to list notebook entries".into(),
-                    source: e,
-                })?;
+        let rows = self
+            .inner()
+            .query(query)
+            .bind(notebook_did)
+            .bind(notebook_rkey)
+            .bind(cursor_val)
+            .bind(limit)
+            .fetch_all::<EntryRow>()
+            .await
+            .map_err(|e| ClickHouseError::Query {
+                message: "failed to list notebook entries".into(),
+                source: e,
+            })?;
 
         Ok(rows)
     }

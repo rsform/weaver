@@ -1,5 +1,4 @@
--- Incremental MV: fires on each insert to raw_records, maintains aggregate state
--- Must be created after both account_rev_state (target) and raw_records (source) exist
+
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS account_rev_state_mv TO account_rev_state AS
 SELECT

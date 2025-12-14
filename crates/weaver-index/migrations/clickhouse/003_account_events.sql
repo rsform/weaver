@@ -1,5 +1,4 @@
 -- Account events from firehose (#account messages)
--- Tracks account status changes: active, deactivated, deleted, suspended, takendown
 
 CREATE TABLE IF NOT EXISTS raw_account_events (
     -- The DID this account event is about

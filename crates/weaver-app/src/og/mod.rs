@@ -134,14 +134,24 @@ static FONTDB: OnceLock<fontdb::Database> = OnceLock::new();
 fn get_fontdb() -> &'static fontdb::Database {
     FONTDB.get_or_init(|| {
         let mut db = fontdb::Database::new();
-        // Load IBM Plex Sans from embedded bytes
-        let font_data = include_bytes!("../../assets/fonts/IBMPlexSans-VariableFont_wdth,wght.ttf");
-        db.load_font_data(font_data.to_vec());
-        // Load IBM Plex Sans Bold (static weight for proper bold rendering)
-        let font_data = include_bytes!("../../assets/fonts/IBMPlexSans-Bold.ttf");
-        db.load_font_data(font_data.to_vec());
-        let font_data = include_bytes!("../../assets/fonts/ioskeley-mono/IoskeleyMono-Regular.ttf");
-        db.load_font_data(font_data.to_vec());
+        // Load CMU Sans Serif for headings/UI
+        db.load_font_data(
+            include_bytes!("../../assets/fonts/cmu-sans-serif/CMUSansSerif-Medium.ttf").to_vec(),
+        );
+        db.load_font_data(
+            include_bytes!("../../assets/fonts/cmu-sans-serif/CMUSansSerif-Bold.ttf").to_vec(),
+        );
+        // Load Adobe Caslon Pro for body text
+        db.load_font_data(
+            include_bytes!("../../assets/fonts/adobe-caslon/AdobeCaslonPro-Regular.ttf").to_vec(),
+        );
+        db.load_font_data(
+            include_bytes!("../../assets/fonts/adobe-caslon/AdobeCaslonPro-Bold.ttf").to_vec(),
+        );
+        // Load Ioskeley Mono for branding/handles
+        db.load_font_data(
+            include_bytes!("../../assets/fonts/ioskeley-mono/IoskeleyMono-Regular.ttf").to_vec(),
+        );
         db
     })
 }

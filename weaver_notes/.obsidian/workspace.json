@@ -41,28 +41,16 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Why I rewrote pdsls in Rust (tm).md",
+                "file": "Writing the AppView Last.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Why I rewrote pdsls in Rust (tm)"
-            }
-          },
-          {
-            "id": "4b584137400d2323",
-            "type": "leaf",
-            "state": {
-              "type": "release-notes",
-              "state": {
-                "currentVersion": "1.10.6"
-              },
-              "icon": "lucide-book-up",
-              "title": "Release Notes 1.10.6"
+              "title": "Writing the AppView Last"
             }
           }
         ],
-        "currentTab": 3
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -211,13 +199,15 @@
       "bases:Create new base": false
     }
   },
-  "active": "4b584137400d2323",
+  "active": "6029beecc3d03bce",
   "lastOpenFiles": [
+    "diff_record.png",
+    "Why I rewrote pdsls in Rust (tm).md",
+    "Writing the AppView Last.md",
     "light_mode_excerpt.png",
     "notebook_entry_preview.png",
     "xkcd_345_excerpt.png",
     "bug notes.md",
-    "Why I rewrote pdsls in Rust (tm).md",
     "meta.png",
     "Pasted image 20251114125028.png",
     "invalid_record.png",
@@ -226,7 +216,6 @@
     "json_editor_with_errors.png",
     "pretty_editor.png",
     "Arch.md",
-    "Weaver - Long-form writing.md",
-    "weaver_photo_med.jpg"
+    "Weaver - Long-form writing.md"
   ]
 }

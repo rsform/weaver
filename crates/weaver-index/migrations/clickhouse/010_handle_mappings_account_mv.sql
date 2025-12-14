@@ -1,6 +1,4 @@
 -- Auto-populate freed status from account events
--- JOINs against handle_mappings to find current handle for the DID
--- If no mapping exists yet, the JOIN fails silently (can't free unknown handles)
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS handle_mappings_from_account_mv TO handle_mappings AS
 SELECT

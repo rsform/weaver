@@ -1,8 +1,5 @@
 -- Per-account revision state tracking
 -- Maintains latest rev/cid per DID for dedup and gap detection
---
--- AggregatingMergeTree with incremental MV from raw_records
--- Query with argMaxMerge/maxMerge to finalize aggregates
 
 CREATE TABLE IF NOT EXISTS account_rev_state (
     -- Account DID

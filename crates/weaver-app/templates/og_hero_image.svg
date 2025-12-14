@@ -5,14 +5,14 @@
   <!-- Bottom panel with theme colors -->
   <rect x="0" y="420" width="1200" height="210" fill="#191724"/>
 
-  <!-- Title -->
+  <!-- Title - CMU Sans Serif -->
   {% for line in title_lines %}
-  <text x="60" y="{{ 480 + loop.index0 * 56 }}" fill="#c4a7e7" font-family="IBM Plex Sans, sans-serif" font-size="52" font-weight="900">{{ line }}</text>
+  <text x="60" y="{{ 472 + loop.index0 * 56 }}" fill="#c4a7e7" font-family="CMU Sans Serif, sans-serif" font-size="52" font-weight="bold">{{ line }}</text>
   {% endfor %}
 
-  <!-- Notebook + Author row -->
-  <text x="60" y="600" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
+  <!-- Notebook + Author row - flows after title -->
+  <text x="60" y="{{ 472 + (title_lines.len() - 1) * 56 + 52 }}" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="32">{{ notebook_title }} · @{{ author_handle }}</text>
 
   <!-- Weaver branding -->
-  <text x="1080" y="600" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="20">weaver.sh</text>
+  <text x="1060" y="600" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="24">weaver.sh</text>
 </svg>

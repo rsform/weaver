@@ -22,8 +22,10 @@ services:
       TAP_BIND: ":2480"
       TAP_DISABLE_ACKS: "false"
       TAP_LOG_LEVEL: info
-      TAP_SIGNAL_COLLECTION: sh.tangled.actor.profile
-      TAP_COLLECTION_FILTERS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*"
+      TAP_OUTBOX_PARALLELISM: 5
+      #TAP_FULL_NETWORK: true
+      TAP_SIGNAL_COLLECTION: place.stream.chat.profile
+      TAP_COLLECTION_FILTERS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*,net.anisota.*,place.stream.*"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:2480/health"]
       interval: 20s
@@ -32,11 +34,14 @@ services:
     restart: unless-stopped
 
   # Weaver indexer - consumes from tap
-  indexer:
-    container_name: weaver-indexer
+  index:
+    container_name: weaver-index
     image: ${REGISTRY_HOST:-localhost}:5000/weaver-index:latest
     ports:
       - "3000:3000"
+    command: ["run"]
+    volumes:
+      - index_data:/app/data
     environment:
       RUST_LOG: info,weaver_index=debug,hyper_util::client::legacy::pool=info
       CLICKHOUSE_URL: ${CLICKHOUSE_URL}
@@ -47,12 +52,12 @@ services:
       TAP_URL: ws://tap:2480/channel
       TAP_SEND_ACKS: "true"
       FIREHOSE_RELAY_URL: wss://bsky.network
-      INDEXER_COLLECTIONS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*"
+      INDEXER_COLLECTIONS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*,net.anisota.*,place.stream.*"
     depends_on:
       tap:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/xrpc/_health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/xrpc/_health"]
       interval: 20s
       timeout: 5s
       retries: 3
@@ -68,9 +73,6 @@ services:
       PORT: 8080
       IP: 0.0.0.0
       RUST_LOG: info
-    depends_on:
-      indexer:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
       interval: 20s
@@ -81,3 +83,4 @@ services:
 volumes:
   registry_data:
   tap_data:
+  index_data:

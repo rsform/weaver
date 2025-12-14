@@ -25,8 +25,6 @@ CREATE TABLE IF NOT EXISTS notebooks (
 
     -- Soft delete (epoch = not deleted)
     deleted_at DateTime64(3) DEFAULT toDateTime64(0, 3),
-
-    -- Full record JSON for hydration
     record JSON DEFAULT '{}'
 )
 ENGINE = ReplacingMergeTree(indexed_at)

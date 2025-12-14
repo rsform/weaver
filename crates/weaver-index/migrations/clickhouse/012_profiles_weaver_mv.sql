@@ -3,7 +3,7 @@
 CREATE MATERIALIZED VIEW IF NOT EXISTS profiles_weaver_mv TO profiles_weaver AS
 SELECT
     did,
-    toString(record) as profile,
+    record as profile,
     coalesce(record.displayName, '') as display_name,
     coalesce(record.description, '') as description,
     coalesce(record.avatar.ref.`$link`, '') as avatar_cid,

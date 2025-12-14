@@ -3,11 +3,11 @@
   <rect width="1200" height="630" fill="#191724"/>
 
   <!-- Weaver title -->
-  <text x="60" y="280" fill="#c4a7e7" font-family="Ioskeley Mono, monospace" font-size="120" font-weight="700">Weaver</text>
+  <text x="60" y="280" fill="#c4a7e7" font-family="Ioskeley Mono, monospace" font-size="126" font-weight="bold">Weaver</text>
 
   <!-- Tagline -->
-  <text x="60" y="380" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="40">Share your words, your way.</text>
+  <text x="60" y="380" fill="#ebbcba" font-family="Ioskeley Mono, monospace" font-size="44">Share your words, your way.</text>
 
   <!-- Branding -->
-  <text x="60" y="590" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="24">weaver.sh</text>
+  <text x="60" y="590" fill="#908caa" font-family="Ioskeley Mono, monospace" font-size="28">weaver.sh</text>
 </svg>

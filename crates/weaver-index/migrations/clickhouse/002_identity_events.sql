@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS raw_identity_events (
     -- The DID this identity event is about
     did String,
 
-    -- Handle (may be empty if cleared)
+    -- Handle (may be empty)
     handle String,
 
     -- Sequence number from firehose

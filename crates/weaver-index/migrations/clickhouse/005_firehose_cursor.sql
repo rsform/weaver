@@ -2,7 +2,6 @@
 -- Tracks our position in the firehose stream for resumption after restart
 
 CREATE TABLE IF NOT EXISTS firehose_cursor (
-    -- Consumer identifier (allows multiple consumers with different cursors)
     consumer_id String,
 
     -- Last successfully processed sequence number

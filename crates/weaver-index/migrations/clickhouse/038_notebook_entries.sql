@@ -1,6 +1,5 @@
 -- Notebook entries mapping (denormalized for reverse lookup)
 -- Maps entries to the notebooks that contain them
--- Enables reverse lookup: find notebooks containing an entry
 
 CREATE TABLE IF NOT EXISTS notebook_entries (
     -- Entry being referenced

@@ -1411,9 +1411,9 @@ checksum = "2f421161cb492475f1661ddc9815a745a1c894592070661180fdec3d4872e9c3"
 
 [[package]]
 name = "const-str"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4d34b8f066904ed7cfa4a6f9ee96c3214aa998cb44b69ca20bd2054f47402ed"
+checksum = "b0664d2867b4a32697dfe655557f5c3b187e9b605b38612a748e5ec99811d160"
 
 [[package]]
 name = "const_format"
@@ -2477,7 +2477,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "ciborium",
- "const-str 0.7.0",
+ "const-str 0.7.1",
  "const_format",
  "content_disposition",
  "derive_more 2.1.0",
@@ -5567,7 +5567,7 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 [[package]]
 name = "jacquard"
 version = "0.9.4"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "bytes",
  "getrandom 0.2.16",
@@ -5599,7 +5599,7 @@ dependencies = [
 [[package]]
 name = "jacquard-api"
 version = "0.9.2"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "bon",
  "bytes",
@@ -5618,7 +5618,7 @@ dependencies = [
 [[package]]
 name = "jacquard-axum"
 version = "0.9.2"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "axum",
  "bytes",
@@ -5640,7 +5640,7 @@ dependencies = [
 [[package]]
 name = "jacquard-common"
 version = "0.9.2"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "base64 0.22.1",
  "bon",
@@ -5688,7 +5688,7 @@ dependencies = [
 [[package]]
 name = "jacquard-derive"
 version = "0.9.4"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "heck 0.5.0",
  "jacquard-lexicon",
@@ -5700,7 +5700,7 @@ dependencies = [
 [[package]]
 name = "jacquard-identity"
 version = "0.9.2"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "bon",
  "bytes",
@@ -5729,7 +5729,7 @@ dependencies = [
 [[package]]
 name = "jacquard-lexicon"
 version = "0.9.2"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "cid",
  "dashmap 6.1.0",
@@ -5755,7 +5755,7 @@ dependencies = [
 [[package]]
 name = "jacquard-oauth"
 version = "0.9.2"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -5788,7 +5788,7 @@ dependencies = [
 [[package]]
 name = "jacquard-repo"
 version = "0.9.4"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "bytes",
  "cid",
@@ -6746,7 +6746,7 @@ dependencies = [
 [[package]]
 name = "mini-moka"
 version = "0.10.99"
-source = "git+https://tangled.org/@nonbinary.computer/jacquard#d5d29a337d8f08ae52fe7bb4e31f91f8b029ff48"
+source = "git+https://tangled.org/@nonbinary.computer/jacquard#bf8f91add8747b64b1d1d74af4b358960f69d6e7"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-utils",

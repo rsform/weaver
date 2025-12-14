@@ -102,10 +102,9 @@ impl ServiceIdentity {
     /// Encode the public key as a multikey string
     fn encode_public_key(signing_key: &SigningKey) -> String {
         let verifying_key = signing_key.verifying_key();
-        let point = verifying_key.to_encoded_point(true); // compressed
-        let bytes = point.as_bytes();
+        let bytes = verifying_key.to_sec1_bytes();
         // 0xE7 is the multicodec for secp256k1-pub
-        multikey(0xE7, bytes)
+        multikey(0xE7, bytes.as_ref())
     }
 
     /// Get the public key multibase string
@@ -126,7 +125,6 @@ impl ServiceIdentity {
             "@context": [
                 "https://www.w3.org/ns/did/v1",
                 "https://w3id.org/security/multikey/v1",
-                "https://w3id.org/security/suites/secp256k1-2019/v1"
             ],
             "id": did_str,
             "verificationMethod": [{
@@ -152,7 +150,6 @@ impl ServiceIdentity {
             "@context": [
                 "https://www.w3.org/ns/did/v1",
                 "https://w3id.org/security/multikey/v1",
-                "https://w3id.org/security/suites/secp256k1-2019/v1"
             ],
             "id": did_str,
             "verificationMethod": [{

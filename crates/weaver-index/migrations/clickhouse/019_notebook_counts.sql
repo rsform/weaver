@@ -1,6 +1,4 @@
--- Notebook engagement counts
--- Updated by MVs from likes, bookmarks, subscriptions (added later with graph tables)
--- Joined with notebooks at query time
+-- Notebook engagement counts table stub
 
 CREATE TABLE IF NOT EXISTS notebook_counts (
     did String,
