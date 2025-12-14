@@ -10,12 +10,14 @@ use jacquard::types::value::Data;
 use jacquard_axum::ExtractXrpc;
 use jacquard_axum::service_auth::ExtractOptionalServiceAuth;
 use smol_str::SmolStr;
+use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::actor::{ProfileDataView, ProfileDataViewInner, ProfileView};
 use weaver_api::sh_weaver::notebook::{
     AuthorListView, BookEntryRef, BookEntryView, EntryView, FeedEntryView, NotebookView,
     get_book_entry::{GetBookEntryOutput, GetBookEntryRequest},
     get_entry::{GetEntryOutput, GetEntryRequest},
     get_entry_feed::{GetEntryFeedOutput, GetEntryFeedRequest},
+    get_notebook::{GetNotebookOutput, GetNotebookRequest},
     get_notebook_feed::{GetNotebookFeedOutput, GetNotebookFeedRequest},
     resolve_entry::{ResolveEntryOutput, ResolveEntryRequest},
     resolve_notebook::{ResolveNotebookOutput, ResolveNotebookRequest},
@@ -192,6 +194,117 @@ pub async fn resolve_notebook(
             notebook,
             entries,
             entry_cursor: next_cursor,
+            extra_data: None,
+        }
+        .into_static(),
+    ))
+}
+
+/// Handle sh.weaver.notebook.getNotebook
+///
+/// Gets a notebook by AT URI, returns notebook view with entry refs.
+pub async fn get_notebook(
+    State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
+    ExtractXrpc(args): ExtractXrpc<GetNotebookRequest>,
+) -> Result<Json<GetNotebookOutput<'static>>, XrpcErrorResponse> {
+    let _viewer: Viewer = viewer;
+
+    // Parse the AT URI to extract authority and rkey
+    let uri = &args.notebook;
+    let authority = uri.authority();
+    let rkey = uri
+        .rkey()
+        .ok_or_else(|| XrpcErrorResponse::invalid_request("URI must include rkey"))?;
+    let rkey_str = rkey.as_ref();
+
+    // Resolve authority to DID (could be handle or DID)
+    let did = resolve_actor(&state, authority).await?;
+    let did_str = did.as_str();
+
+    // Fetch notebook by DID + rkey
+    let notebook_row = state
+        .clickhouse
+        .get_notebook(did_str, rkey_str)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get notebook: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?
+        .ok_or_else(|| XrpcErrorResponse::not_found("Notebook not found"))?;
+
+    // Fetch notebook contributors
+    let notebook_contributors = state
+        .clickhouse
+        .get_notebook_contributors(did_str, rkey_str)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get notebook contributors: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    // Collect all author DIDs for batch hydration
+    let mut all_author_dids: HashSet<&str> =
+        notebook_contributors.iter().map(|s| s.as_str()).collect();
+    for did in &notebook_row.author_dids {
+        all_author_dids.insert(did.as_str());
+    }
+
+    // Batch fetch profiles
+    let author_dids_vec: Vec<&str> = all_author_dids.into_iter().collect();
+    let profiles = state
+        .clickhouse
+        .get_profiles_batch(&author_dids_vec)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to batch fetch profiles: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    let profile_map: HashMap<&str, &ProfileRow> =
+        profiles.iter().map(|p| (p.did.as_str(), p)).collect();
+
+    // Build NotebookView
+    let notebook_uri = AtUri::new(&notebook_row.uri).map_err(|e| {
+        tracing::error!("Invalid notebook URI in db: {}", e);
+        XrpcErrorResponse::internal_error("Invalid URI stored")
+    })?;
+
+    let notebook_cid = Cid::new(notebook_row.cid.as_bytes()).map_err(|e| {
+        tracing::error!("Invalid notebook CID in db: {}", e);
+        XrpcErrorResponse::internal_error("Invalid CID stored")
+    })?;
+
+    let authors = hydrate_authors(&notebook_contributors, &profile_map)?;
+    let record = parse_record_json(&notebook_row.record)?;
+
+    let notebook = NotebookView::new()
+        .uri(notebook_uri.into_static())
+        .cid(notebook_cid.into_static())
+        .authors(authors)
+        .record(record.clone())
+        .indexed_at(notebook_row.indexed_at.fixed_offset())
+        .maybe_title(non_empty_cowstr(&notebook_row.title))
+        .maybe_path(non_empty_cowstr(&notebook_row.path))
+        .build();
+
+    // Deserialize Book from record to get entry_list
+    let book: weaver_api::sh_weaver::notebook::book::Book =
+        jacquard::from_data(&record).map_err(|e| {
+            tracing::error!("Failed to deserialize Book record: {}", e);
+            XrpcErrorResponse::internal_error("Invalid Book record")
+        })?;
+
+    let entries: Vec<StrongRef<'static>> = book
+        .entry_list
+        .into_iter()
+        .map(|r| r.into_static())
+        .collect();
+
+    Ok(Json(
+        GetNotebookOutput {
+            notebook,
+            entries,
             extra_data: None,
         }
         .into_static(),

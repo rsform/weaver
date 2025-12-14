@@ -19,15 +19,19 @@ use weaver_api::sh_weaver::actor::{
     get_actor_entries::GetActorEntriesRequest, get_actor_notebooks::GetActorNotebooksRequest,
     get_profile::GetProfileRequest,
 };
+use weaver_api::sh_weaver::collab::get_collaboration_state::GetCollaborationStateRequest;
+use weaver_api::sh_weaver::collab::get_resource_participants::GetResourceParticipantsRequest;
+use weaver_api::sh_weaver::edit::get_edit_history::GetEditHistoryRequest;
 use weaver_api::sh_weaver::notebook::{
     get_book_entry::GetBookEntryRequest, get_entry::GetEntryRequest,
-    get_entry_feed::GetEntryFeedRequest, get_notebook_feed::GetNotebookFeedRequest,
-    resolve_entry::ResolveEntryRequest, resolve_notebook::ResolveNotebookRequest,
+    get_entry_feed::GetEntryFeedRequest, get_notebook::GetNotebookRequest,
+    get_notebook_feed::GetNotebookFeedRequest, resolve_entry::ResolveEntryRequest,
+    resolve_notebook::ResolveNotebookRequest,
 };
 
 use crate::clickhouse::Client;
 use crate::config::ShardConfig;
-use crate::endpoints::{actor, notebook, repo};
+use crate::endpoints::{actor, collab, edit, notebook, repo};
 use crate::error::{IndexError, ServerError};
 use crate::sqlite::ShardRouter;
 
@@ -94,6 +98,7 @@ pub fn router(state: AppState, did_doc: DidDocument<'static>) -> Router {
         .merge(ResolveNotebookRequest::into_router(
             notebook::resolve_notebook,
         ))
+        .merge(GetNotebookRequest::into_router(notebook::get_notebook))
         .merge(GetEntryRequest::into_router(notebook::get_entry))
         .merge(ResolveEntryRequest::into_router(notebook::resolve_entry))
         .merge(GetNotebookFeedRequest::into_router(
@@ -101,6 +106,15 @@ pub fn router(state: AppState, did_doc: DidDocument<'static>) -> Router {
         ))
         .merge(GetEntryFeedRequest::into_router(notebook::get_entry_feed))
         .merge(GetBookEntryRequest::into_router(notebook::get_book_entry))
+        // sh.weaver.collab.* endpoints
+        .merge(GetResourceParticipantsRequest::into_router(
+            collab::get_resource_participants,
+        ))
+        .merge(GetCollaborationStateRequest::into_router(
+            collab::get_collaboration_state,
+        ))
+        // sh.weaver.edit.* endpoints
+        .merge(GetEditHistoryRequest::into_router(edit::get_edit_history))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
         .merge(did_web_router(did_doc))

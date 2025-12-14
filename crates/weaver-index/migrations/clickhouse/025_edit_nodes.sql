@@ -22,13 +22,15 @@ CREATE TABLE IF NOT EXISTS edit_nodes (
     resource_rkey String DEFAULT '',
     resource_collection LowCardinality(String) DEFAULT '',
 
-    -- For diffs: reference to root
+    -- For diffs: reference to root (StrongRef)
     root_did String DEFAULT '',
     root_rkey String DEFAULT '',
+    root_cid String DEFAULT '',
 
-    -- For diffs: reference to previous node
+    -- For diffs: reference to previous node (StrongRef)
     prev_did String DEFAULT '',
     prev_rkey String DEFAULT '',
+    prev_cid String DEFAULT '',
 
     -- Whether this has inline diff data vs blob snapshot
     has_inline_diff UInt8 DEFAULT 0,

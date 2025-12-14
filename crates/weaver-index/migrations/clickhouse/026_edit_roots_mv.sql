@@ -47,8 +47,10 @@ SELECT
     -- Roots don't have root/prev refs
     '' as root_did,
     '' as root_rkey,
+    '' as root_cid,
     '' as prev_did,
     '' as prev_rkey,
+    '' as prev_cid,
 
     -- Roots always have snapshot
     0 as has_inline_diff,

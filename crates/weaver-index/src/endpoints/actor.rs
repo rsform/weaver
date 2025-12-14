@@ -163,14 +163,8 @@ pub async fn resolve_actor<'a>(
     }
 }
 
-/// Convert SmolStr to Option<CowStr> if non-empty
-fn non_empty_str(s: &smol_str::SmolStr) -> Option<jacquard::CowStr<'static>> {
-    if s.is_empty() {
-        None
-    } else {
-        Some(s.to_cowstr().into_static())
-    }
-}
+// Re-export from parent for local use
+use super::non_empty_str;
 
 /// Parse cursor string to i64 timestamp millis
 fn parse_cursor(cursor: Option<&str>) -> Result<Option<i64>, XrpcErrorResponse> {
@@ -426,7 +420,7 @@ fn hydrate_authors(
 }
 
 /// Convert ProfileRow to ProfileDataView
-fn profile_to_data_view(
+pub fn profile_to_data_view(
     profile: &ProfileRow,
 ) -> Result<ProfileDataView<'static>, XrpcErrorResponse> {
     use jacquard::types::string::Uri;

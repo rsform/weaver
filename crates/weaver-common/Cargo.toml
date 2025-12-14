@@ -9,6 +9,7 @@ publish = false
 default = ["dev"]
 dev = []
 native = ["jacquard/dns"]
+use-index = []
 iroh = ["dep:iroh", "dep:iroh-gossip", "dep:iroh-tickets"]
 telemetry = ["dep:metrics", "dep:metrics-exporter-prometheus", "dep:tracing-subscriber", "dep:tracing-loki"]
 

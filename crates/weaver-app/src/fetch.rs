@@ -24,7 +24,10 @@ use jacquard::types::string::Handle;
 use jacquard::types::string::Nsid;
 use jacquard::xrpc::XrpcResponse;
 use jacquard::xrpc::*;
-use jacquard::{smol_str::{SmolStr, format_smolstr}, types::ident::AtIdentifier};
+use jacquard::{
+    smol_str::{SmolStr, format_smolstr},
+    types::ident::AtIdentifier,
+};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::{sync::Arc, time::Duration};
@@ -112,6 +115,11 @@ impl XrpcClient for Client {
             if let Some(session) = guard.clone() {
                 session.base_uri().await
             } else {
+                // When unauthenticated, use index if configured
+                #[cfg(feature = "use-index")]
+                if !crate::env::WEAVER_INDEXER_URL.is_empty() {
+                    return CowStr::from(crate::env::WEAVER_INDEXER_URL);
+                }
                 self.oauth_client.base_uri().await
             }
         }
@@ -392,8 +400,19 @@ impl Fetcher {
         &self,
         session: OAuthSession<JacquardResolver, crate::auth::AuthStore>,
     ) {
+        let agent = Arc::new(Agent::new(session));
+
+        // When use-index is enabled, set the atproto_proxy header for service proxying
+        #[cfg(feature = "use-index")]
+        if !crate::env::WEAVER_INDEXER_DID.is_empty() {
+            let proxy_value = format!("{}#atproto_index", crate::env::WEAVER_INDEXER_DID);
+            let mut opts = agent.opts().await;
+            opts.atproto_proxy = Some(CowStr::from(proxy_value));
+            agent.set_opts(opts).await;
+        }
+
         let mut session_slot = self.client.session.write().await;
-        *session_slot = Some(Arc::new(Agent::new(session)));
+        *session_slot = Some(agent);
     }
 
     pub async fn downgrade_to_unauthenticated(&self) {
@@ -508,6 +527,63 @@ impl Fetcher {
         }
     }
 
+    #[cfg(feature = "use-index")]
+    pub async fn fetch_notebooks_from_ufos(
+        &self,
+    ) -> Result<Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+        use weaver_api::sh_weaver::notebook::book::Book;
+        use weaver_api::sh_weaver::notebook::get_notebook_feed::GetNotebookFeed;
+
+        let client = self.get_client();
+
+        let resp = client
+            .send(GetNotebookFeed::new().limit(100).build())
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let output = resp
+            .into_output()
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let mut notebooks = Vec::new();
+
+        for notebook in output.notebooks {
+            // Extract entry_list from the record
+            let book: Book = jacquard::from_data(&notebook.record)
+                .map_err(|e| dioxus::CapturedError::from_display(e))?;
+            let book = book.into_static();
+
+            let entries: Vec<StrongRef<'static>> = book
+                .entry_list
+                .into_iter()
+                .map(IntoStatic::into_static)
+                .collect();
+
+            let ident = notebook.uri.authority().clone().into_static();
+            let title = notebook
+                .title
+                .as_ref()
+                .map(|t| SmolStr::new(t.as_ref()))
+                .unwrap_or_else(|| SmolStr::new("Untitled"));
+
+            let result = Arc::new((notebook.into_static(), entries));
+            #[cfg(feature = "server")]
+            {
+                cache_impl::insert(&self.notebook_key_cache, title.clone(), ident.clone());
+                cache_impl::insert(&self.book_cache, (ident.clone(), title), result.clone());
+                if let Some(path) = result.0.path.as_ref() {
+                    let path: SmolStr = path.as_ref().into();
+                    cache_impl::insert(&self.notebook_key_cache, path.clone(), ident.clone());
+                    cache_impl::insert(&self.book_cache, (ident, path), result.clone());
+                }
+            }
+            notebooks.push(result);
+        }
+
+        Ok(notebooks)
+    }
+
+    #[cfg(not(feature = "use-index"))]
     pub async fn fetch_notebooks_from_ufos(
         &self,
     ) -> Result<Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
@@ -530,10 +606,13 @@ impl Fetcher {
             // Construct URI
             let uri_str = format_smolstr!(
                 "at://{}/{}/{}",
-                ufos_record.did, ufos_record.collection, ufos_record.rkey
+                ufos_record.did,
+                ufos_record.collection,
+                ufos_record.rkey
             );
-            let uri = AtUri::new_owned(uri_str)
-                .map_err(|e| dioxus::CapturedError::from_display(format_smolstr!("Invalid URI: {}", e).as_str()))?;
+            let uri = AtUri::new_owned(uri_str).map_err(|e| {
+                dioxus::CapturedError::from_display(format_smolstr!("Invalid URI: {}", e).as_str())
+            })?;
             match client.view_notebook(&uri).await {
                 Ok((notebook, entries)) => {
                     let ident = uri.authority().clone().into_static();
@@ -573,7 +652,47 @@ impl Fetcher {
         Ok(notebooks)
     }
 
+    /// Fetch entries from index feed (reverse chronological)
+    #[cfg(feature = "use-index")]
+    pub async fn fetch_entries_from_ufos(
+        &self,
+    ) -> Result<Vec<Arc<(EntryView<'static>, Entry<'static>, u64)>>> {
+        use jacquard::IntoStatic;
+        use weaver_api::sh_weaver::notebook::entry::Entry;
+        use weaver_api::sh_weaver::notebook::get_entry_feed::GetEntryFeed;
+
+        let client = self.get_client();
+
+        let resp = client
+            .send(GetEntryFeed::new().limit(100).build())
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let output = resp
+            .into_output()
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let mut entries = Vec::new();
+
+        for feed_entry in output.feed {
+            let entry_view = feed_entry.entry;
+            // indexed_at is ISO datetime, parse to get millisecond timestamp
+            let timestamp = chrono::DateTime::parse_from_rfc3339(entry_view.indexed_at.as_str())
+                .map(|dt| dt.timestamp_millis() as u64)
+                .unwrap_or(0);
+
+            let entry: Entry = jacquard::from_data(&entry_view.record)
+                .map_err(|e| dioxus::CapturedError::from_display(e))?;
+            let entry = entry.into_static();
+
+            entries.push(Arc::new((entry_view.into_static(), entry, timestamp)));
+        }
+
+        Ok(entries)
+    }
+
     /// Fetch entries from UFOS discovery service (reverse chronological)
+    #[cfg(not(feature = "use-index"))]
     pub async fn fetch_entries_from_ufos(
         &self,
     ) -> Result<Vec<Arc<(EntryView<'static>, Entry<'static>, u64)>>> {
@@ -630,6 +749,81 @@ impl Fetcher {
         Ok(entries)
     }
 
+    #[cfg(feature = "use-index")]
+    pub async fn fetch_notebooks_for_did(
+        &self,
+        ident: &AtIdentifier<'_>,
+    ) -> Result<Vec<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+        use weaver_api::sh_weaver::actor::get_actor_notebooks::GetActorNotebooks;
+        use weaver_api::sh_weaver::notebook::book::Book;
+
+        let client = self.get_client();
+
+        let resp = client
+            .send(
+                GetActorNotebooks::new()
+                    .actor(ident.clone())
+                    .limit(100)
+                    .build(),
+            )
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let output = resp
+            .into_output()
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let mut notebooks = Vec::new();
+
+        for notebook in output.notebooks {
+            // Extract entry_list from the record
+            let book: Book = jacquard::from_data(&notebook.record)
+                .map_err(|e| dioxus::CapturedError::from_display(e))?;
+            let book = book.into_static();
+
+            let entries: Vec<StrongRef<'static>> = book
+                .entry_list
+                .into_iter()
+                .map(IntoStatic::into_static)
+                .collect();
+
+            let ident_static = notebook.uri.authority().clone().into_static();
+            let title = notebook
+                .title
+                .as_ref()
+                .map(|t| SmolStr::new(t.as_ref()))
+                .unwrap_or_else(|| SmolStr::new("Untitled"));
+
+            let result = Arc::new((notebook.into_static(), entries));
+            #[cfg(feature = "server")]
+            {
+                cache_impl::insert(
+                    &self.notebook_key_cache,
+                    title.clone(),
+                    ident_static.clone(),
+                );
+                cache_impl::insert(
+                    &self.book_cache,
+                    (ident_static.clone(), title),
+                    result.clone(),
+                );
+                if let Some(path) = result.0.path.as_ref() {
+                    let path: SmolStr = path.as_ref().into();
+                    cache_impl::insert(
+                        &self.notebook_key_cache,
+                        path.clone(),
+                        ident_static.clone(),
+                    );
+                    cache_impl::insert(&self.book_cache, (ident_static, path), result.clone());
+                }
+            }
+            notebooks.push(result);
+        }
+
+        Ok(notebooks)
+    }
+
+    #[cfg(not(feature = "use-index"))]
     pub async fn fetch_notebooks_for_did(
         &self,
         ident: &AtIdentifier<'_>,
@@ -728,7 +922,11 @@ impl Fetcher {
                         notebooks.push(result);
                     }
                     Err(e) => {
-                        tracing::warn!("fetch_notebooks_for_did: view_notebook failed for {}: {}", record.uri, e);
+                        tracing::warn!(
+                            "fetch_notebooks_for_did: view_notebook failed for {}: {}",
+                            record.uri,
+                            e
+                        );
                         continue;
                     }
                 }
@@ -738,6 +936,45 @@ impl Fetcher {
     }
 
     /// Fetch all entries for a DID (for profile timeline)
+    #[cfg(feature = "use-index")]
+    pub async fn fetch_entries_for_did(
+        &self,
+        ident: &AtIdentifier<'_>,
+    ) -> Result<Vec<Arc<(EntryView<'static>, Entry<'static>)>>> {
+        use weaver_api::sh_weaver::actor::get_actor_entries::GetActorEntries;
+
+        let client = self.get_client();
+
+        let resp = client
+            .send(
+                GetActorEntries::new()
+                    .actor(ident.clone())
+                    .limit(100)
+                    .build(),
+            )
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let output = resp
+            .into_output()
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        let mut entries = Vec::new();
+
+        for entry_view in output.entries {
+            // Deserialize Entry from the record field
+            let entry: Entry = jacquard::from_data(&entry_view.record)
+                .map_err(|e| dioxus::CapturedError::from_display(e))?;
+            let entry = entry.into_static();
+
+            entries.push(Arc::new((entry_view.into_static(), entry)));
+        }
+
+        Ok(entries)
+    }
+
+    /// Fetch all entries for a DID (for profile timeline)
+    #[cfg(not(feature = "use-index"))]
     pub async fn fetch_entries_for_did(
         &self,
         ident: &AtIdentifier<'_>,
@@ -922,7 +1159,9 @@ impl Fetcher {
         // Try to find notebook context via constellation
         let entry_uri = entry_view.uri.clone();
         let at_uri = AtUri::new(entry_uri.as_ref()).map_err(|e| {
-            dioxus::CapturedError::from_display(format_smolstr!("Invalid entry URI: {}", e).as_str())
+            dioxus::CapturedError::from_display(
+                format_smolstr!("Invalid entry URI: {}", e).as_str(),
+            )
         })?;
 
         let (total, first_notebook) = client
@@ -941,7 +1180,9 @@ impl Fetcher {
                     notebook_id.rkey.0.as_str()
                 );
                 let notebook_uri = AtUri::new_owned(notebook_uri_str).map_err(|e| {
-                    dioxus::CapturedError::from_display(format_smolstr!("Invalid notebook URI: {}", e).as_str())
+                    dioxus::CapturedError::from_display(
+                        format_smolstr!("Invalid notebook URI: {}", e).as_str(),
+                    )
                 })?;
 
                 // Fetch notebook and find entry position
@@ -1032,7 +1273,9 @@ impl Fetcher {
         // Check if entry is in multiple notebooks - if so, clear prev/next
         let entry_uri = book_entry_view.entry.uri.clone();
         let at_uri = AtUri::new(entry_uri.as_ref()).map_err(|e| {
-            dioxus::CapturedError::from_display(format_smolstr!("Invalid entry URI: {}", e).as_str())
+            dioxus::CapturedError::from_display(
+                format_smolstr!("Invalid entry URI: {}", e).as_str(),
+            )
         })?;
 
         let (total, _) = client

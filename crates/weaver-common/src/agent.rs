@@ -359,6 +359,41 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     /// View functions - generic versions that work with any Agent
 
     /// Fetch a notebook and construct NotebookView with author profiles
+    #[cfg(feature = "use-index")]
+    fn view_notebook(
+        &self,
+        uri: &AtUri<'_>,
+    ) -> impl Future<Output = Result<(NotebookView<'static>, Vec<StrongRef<'static>>), WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            use weaver_api::sh_weaver::notebook::get_notebook::GetNotebook;
+
+            let resp = self
+                .send(GetNotebook::new().notebook(uri.clone()).build())
+                .await
+                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+            let output = resp.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to get notebook: {}",
+                    e
+                )))
+            })?;
+
+            Ok((
+                output.notebook.into_static(),
+                output
+                    .entries
+                    .into_iter()
+                    .map(IntoStatic::into_static)
+                    .collect(),
+            ))
+        }
+    }
+
+    #[cfg(not(feature = "use-index"))]
     fn view_notebook(
         &self,
         uri: &AtUri<'_>,
@@ -608,6 +643,54 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     }
 
     /// Search for a notebook by title for a given DID or handle
+    #[cfg(feature = "use-index")]
+    fn notebook_by_title(
+        &self,
+        ident: &jacquard::types::ident::AtIdentifier<'_>,
+        title: &str,
+    ) -> impl Future<
+        Output = Result<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>, WeaverError>,
+    >
+    where
+        Self: Sized,
+    {
+        async move {
+            use weaver_api::sh_weaver::notebook::resolve_notebook::ResolveNotebook;
+
+            let resp = self
+                .send(
+                    ResolveNotebook::new()
+                        .actor(ident.clone())
+                        .name(title)
+                        .build(),
+                )
+                .await
+                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+            match resp.into_output() {
+                Ok(output) => {
+                    // Extract StrongRefs from the BookEntryViews for compatibility
+                    let entries: Vec<StrongRef<'static>> = output
+                        .entries
+                        .iter()
+                        .map(|bev| {
+                            StrongRef::new()
+                                .uri(bev.entry.uri.clone())
+                                .cid(bev.entry.cid.clone())
+                                .build()
+                                .into_static()
+                        })
+                        .collect();
+
+                    Ok(Some((output.notebook.into_static(), entries)))
+                }
+                Err(_) => Ok(None),
+            }
+        }
+    }
+
+    /// Search for a notebook by title for a given DID or handle
+    #[cfg(not(feature = "use-index"))]
     fn notebook_by_title(
         &self,
         ident: &jacquard::types::ident::AtIdentifier<'_>,
@@ -740,6 +823,41 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     }
 
     /// Hydrate a profile view from either weaver or bsky profile
+    #[cfg(feature = "use-index")]
+    fn hydrate_profile_view(
+        &self,
+        did: &Did<'_>,
+    ) -> impl Future<
+        Output = Result<
+            (
+                Option<AtUri<'static>>,
+                weaver_api::sh_weaver::actor::ProfileDataView<'static>,
+            ),
+            WeaverError,
+        >,
+    > {
+        async move {
+            use weaver_api::sh_weaver::actor::get_profile::GetProfile;
+
+            let resp = self
+                .send(GetProfile::new().actor(did.clone()).build())
+                .await
+                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+            let output = resp.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to get profile: {}",
+                    e
+                )))
+            })?;
+
+            // URI is goofy in this signature, just return None for now
+            Ok((None, output.value.into_static()))
+        }
+    }
+
+    /// Hydrate a profile view from either weaver or bsky profile
+    #[cfg(not(feature = "use-index"))]
     fn hydrate_profile_view(
         &self,
         did: &Did<'_>,
@@ -885,6 +1003,39 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     }
 
     /// View an entry at a specific index with prev/next navigation
+    #[cfg(feature = "use-index")]
+    fn view_entry<'a>(
+        &self,
+        notebook: &NotebookView<'a>,
+        _entries: &[StrongRef<'_>],
+        index: usize,
+    ) -> impl Future<Output = Result<BookEntryView<'a>, WeaverError>> {
+        async move {
+            use weaver_api::sh_weaver::notebook::get_book_entry::GetBookEntry;
+
+            let resp = self
+                .send(
+                    GetBookEntry::new()
+                        .notebook(notebook.uri.clone())
+                        .index(index as i64)
+                        .build(),
+                )
+                .await
+                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+            let output = resp.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to get book entry: {}",
+                    e
+                )))
+            })?;
+
+            Ok(output.value.into_static())
+        }
+    }
+
+    /// View an entry at a specific index with prev/next navigation
+    #[cfg(not(feature = "use-index"))]
     fn view_entry<'a>(
         &self,
         notebook: &NotebookView<'a>,
@@ -1146,6 +1297,57 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     ///
     /// This bypasses notebook context entirely - useful for standalone entries
     /// or when you have the rkey but not the notebook.
+    #[cfg(feature = "use-index")]
+    fn fetch_entry_by_rkey(
+        &self,
+        ident: &jacquard::types::ident::AtIdentifier<'_>,
+        rkey: &str,
+    ) -> impl Future<Output = Result<(EntryView<'static>, entry::Entry<'static>), WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            use jacquard::types::collection::Collection;
+            use weaver_api::sh_weaver::notebook::get_entry::GetEntry;
+
+            // Build entry URI from ident + rkey
+            let entry_uri_str = format!("at://{}/{}/{}", ident, entry::Entry::NSID, rkey);
+            let entry_uri = AtUri::new(&entry_uri_str)
+                .map_err(|_| AgentError::from(ClientError::invalid_request("Invalid entry URI")))?
+                .into_static();
+
+            let resp = self
+                .send(GetEntry::new().uri(entry_uri).build())
+                .await
+                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+            let output = resp.into_output().map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to get entry: {}",
+                    e
+                )))
+            })?;
+
+            // Clone the record for deserialization so we can consume output.value
+            let record_clone = output.value.record.clone();
+
+            // Deserialize Entry from the cloned record
+            let entry_value: entry::Entry = jacquard::from_data(&record_clone).map_err(|e| {
+                AgentError::from(ClientError::invalid_request(format!(
+                    "Failed to deserialize entry record: {}",
+                    e
+                )))
+            })?;
+
+            Ok((output.value.into_static(), entry_value.into_static()))
+        }
+    }
+
+    /// Fetch an entry directly by its rkey, returning the EntryView and raw Entry.
+    ///
+    /// This bypasses notebook context entirely - useful for standalone entries
+    /// or when you have the rkey but not the notebook.
+    #[cfg(not(feature = "use-index"))]
     fn fetch_entry_by_rkey(
         &self,
         ident: &jacquard::types::ident::AtIdentifier<'_>,

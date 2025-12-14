@@ -44,17 +44,21 @@ SELECT
         ''
     ) as resource_collection,
 
-    -- Root reference
+    -- Root reference (StrongRef: uri + cid)
     splitByChar('/', replaceOne(toString(record.root.uri), 'at://', ''))[1] as root_did,
     splitByChar('/', replaceOne(toString(record.root.uri), 'at://', ''))[3] as root_rkey,
+    toString(record.root.cid) as root_cid,
 
-    -- Prev reference (optional)
+    -- Prev reference (optional StrongRef)
     if(toString(record.prev.uri) != '',
         splitByChar('/', replaceOne(toString(record.prev.uri), 'at://', ''))[1],
         '') as prev_did,
     if(toString(record.prev.uri) != '',
         splitByChar('/', replaceOne(toString(record.prev.uri), 'at://', ''))[3],
         '') as prev_rkey,
+    if(toString(record.prev.uri) != '',
+        toString(record.prev.cid),
+        '') as prev_cid,
 
     -- Check for inline diff vs snapshot
     if(length(toString(record.inlineDiff)) > 0, 1, 0) as has_inline_diff,

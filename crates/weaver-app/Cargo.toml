@@ -23,11 +23,12 @@ path = "src/bin/embed_worker.rs"
 required-features = ["web"]
 
 [features]
-default = ["web", "fullstack-server", "no-app-index"]
+default = ["web", "fullstack-server", "use-index"]
 # Fullstack mode with SSR and server functions
 fullstack-server = ["dioxus/fullstack"]
 wasm-split = ["dioxus/wasm-split"]
-no-app-index = []
+# Use weaver-index for reads (proxied when authenticated)
+use-index = ["weaver-common/use-index"]
 
 web = ["dioxus/web", "dioxus-primitives/web"]
 desktop = ["dioxus/desktop"]
