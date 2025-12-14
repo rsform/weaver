@@ -17,6 +17,7 @@ use weaver_api::sh_weaver::notebook::{
     get_book_entry::{GetBookEntryOutput, GetBookEntryRequest},
     get_entry::{GetEntryOutput, GetEntryRequest},
     get_entry_feed::{GetEntryFeedOutput, GetEntryFeedRequest},
+    get_entry_notebooks::{GetEntryNotebooksOutput, GetEntryNotebooksRequest, NotebookRef},
     get_notebook::{GetNotebookOutput, GetNotebookRequest},
     get_notebook_feed::{GetNotebookFeedOutput, GetNotebookFeedRequest},
     resolve_entry::{ResolveEntryOutput, ResolveEntryRequest},
@@ -809,10 +810,24 @@ pub async fn get_entry_feed(
     let has_more = entry_rows.len() > limit as usize;
     let entry_rows: Vec<_> = entry_rows.into_iter().take(limit as usize).collect();
 
-    // Collect author DIDs for hydration
+    // Batch fetch contributors for all entries
+    let entry_keys: Vec<(&str, &str)> = entry_rows
+        .iter()
+        .map(|e| (e.did.as_str(), e.rkey.as_str()))
+        .collect();
+    let contributors_map = state
+        .clickhouse
+        .get_entry_contributors_batch(&entry_keys)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to batch fetch contributors: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    // Collect all contributor DIDs for profile hydration
     let mut all_author_dids: HashSet<&str> = HashSet::new();
-    for entry in &entry_rows {
-        for did in &entry.author_dids {
+    for contributors in contributors_map.values() {
+        for did in contributors {
             all_author_dids.insert(did.as_str());
         }
     }
@@ -834,7 +849,14 @@ pub async fn get_entry_feed(
     // Build FeedEntryViews
     let mut feed: Vec<FeedEntryView<'static>> = Vec::with_capacity(entry_rows.len());
     for entry_row in &entry_rows {
-        let entry_view = build_entry_view(entry_row, &profile_map)?;
+        // Get contributors for this entry
+        let entry_key = (entry_row.did.clone(), entry_row.rkey.clone());
+        let contributors = contributors_map
+            .get(&entry_key)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+
+        let entry_view = build_entry_view_with_authors(entry_row, contributors, &profile_map)?;
 
         let feed_entry = FeedEntryView::new().entry(entry_view).build();
 
@@ -990,4 +1012,115 @@ fn build_entry_view(
         .build();
 
     Ok(entry_view)
+}
+
+/// Handle sh.weaver.notebook.getEntryNotebooks
+///
+/// Returns notebooks that contain a given entry.
+pub async fn get_entry_notebooks(
+    State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
+    ExtractXrpc(args): ExtractXrpc<GetEntryNotebooksRequest>,
+) -> Result<Json<GetEntryNotebooksOutput<'static>>, XrpcErrorResponse> {
+    let _viewer: Viewer = viewer;
+
+    // Parse the entry URI
+    let entry_uri = &args.entry;
+    let authority = entry_uri.authority();
+    let entry_rkey = entry_uri
+        .rkey()
+        .ok_or_else(|| XrpcErrorResponse::invalid_request("Entry URI must include rkey"))?;
+
+    // Resolve authority to DID
+    let entry_did = resolve_actor(&state, authority).await?;
+    let entry_did_str = entry_did.as_str();
+    let entry_rkey_str = entry_rkey.as_ref();
+
+    // Get notebooks containing this entry
+    let notebook_refs = state
+        .clickhouse
+        .get_notebooks_for_entry(entry_did_str, entry_rkey_str)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get notebooks for entry: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    if notebook_refs.is_empty() {
+        return Ok(Json(
+            GetEntryNotebooksOutput {
+                notebooks: Vec::new(),
+                extra_data: None,
+            }
+            .into_static(),
+        ));
+    }
+
+    // Fetch notebook details and owner profiles
+    let mut notebooks = Vec::with_capacity(notebook_refs.len());
+    let mut owner_dids: HashSet<&str> = HashSet::new();
+
+    // First pass: collect owner DIDs
+    for (notebook_did, _notebook_rkey) in &notebook_refs {
+        owner_dids.insert(notebook_did.as_str());
+    }
+
+    // Batch fetch profiles
+    let owner_dids_vec: Vec<&str> = owner_dids.into_iter().collect();
+    let profiles = state
+        .clickhouse
+        .get_profiles_batch(&owner_dids_vec)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to batch fetch profiles: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    let profile_map: HashMap<&str, &ProfileRow> =
+        profiles.iter().map(|p| (p.did.as_str(), p)).collect();
+
+    // Fetch each notebook's details
+    for (notebook_did, notebook_rkey) in &notebook_refs {
+        let notebook_row = state
+            .clickhouse
+            .get_notebook(notebook_did.as_str(), notebook_rkey.as_str())
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get notebook: {}", e);
+                XrpcErrorResponse::internal_error("Database query failed")
+            })?;
+
+        if let Some(nb) = notebook_row {
+            let uri = AtUri::new(&nb.uri)
+                .map_err(|_| XrpcErrorResponse::internal_error("Invalid notebook URI"))?
+                .into_static();
+
+            let cid = Cid::new(nb.cid.as_bytes())
+                .map_err(|_| XrpcErrorResponse::internal_error("Invalid notebook CID"))?
+                .into_static();
+
+            // Get owner profile
+            let owner = profile_map
+                .get(notebook_did.as_str())
+                .map(|p| crate::endpoints::collab::profile_to_view_basic(p))
+                .transpose()?;
+
+            notebooks.push(
+                NotebookRef::new()
+                    .uri(uri)
+                    .cid(cid)
+                    .maybe_title(non_empty_cowstr(&nb.title))
+                    .maybe_owner(owner)
+                    .build(),
+            );
+        }
+    }
+
+    Ok(Json(
+        GetEntryNotebooksOutput {
+            notebooks,
+            extra_data: None,
+        }
+        .into_static(),
+    ))
 }

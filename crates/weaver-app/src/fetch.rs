@@ -26,6 +26,7 @@ use jacquard::xrpc::XrpcResponse;
 use jacquard::xrpc::*;
 use jacquard::{
     smol_str::{SmolStr, format_smolstr},
+    types::aturi::AtUri,
     types::ident::AtIdentifier,
 };
 use serde::{Deserialize, Serialize};
@@ -381,6 +382,18 @@ pub struct Fetcher {
 
 impl Fetcher {
     pub fn new(client: OAuthClient<JacquardResolver, AuthStore>) -> Self {
+        // Set indexer URL for unauthenticated requests
+        #[cfg(feature = "use-index")]
+        if !crate::env::WEAVER_INDEXER_URL.is_empty() {
+            if let Ok(url) = jacquard::url::Url::parse(crate::env::WEAVER_INDEXER_URL) {
+                if let Ok(mut guard) = client.endpoint.try_write() {
+                    use jacquard::cowstr::ToCowStr;
+
+                    *guard = Some(url.to_cowstr().into_static());
+                }
+            }
+        }
+
         Self {
             client: Arc::new(Client::new(client)),
             #[cfg(feature = "server")]
@@ -1462,6 +1475,131 @@ impl LexiconSchemaResolver for Fetcher {
         nsid: &Nsid<'_>,
     ) -> std::result::Result<ResolvedLexiconSchema<'static>, LexiconResolutionError> {
         self.client.resolve_lexicon_schema(nsid).await
+    }
+}
+
+// ============================================================================
+// Collaboration & Edit methods (use-index gated)
+// ============================================================================
+
+impl Fetcher {
+    /// Get edit history for a resource from weaver-index.
+    ///
+    /// Returns edit roots and diffs for the given resource URI.
+    #[cfg(feature = "use-index")]
+    pub async fn get_edit_history(
+        &self,
+        resource_uri: &AtUri<'_>,
+    ) -> Result<weaver_api::sh_weaver::edit::get_edit_history::GetEditHistoryOutput<'static>> {
+        use weaver_api::sh_weaver::edit::get_edit_history::GetEditHistory;
+
+        let client = self.get_client();
+        let resp = client
+            .send(GetEditHistory::new().resource(resource_uri.clone()).build())
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        resp.into_output()
+            .map(|o| o.into_static())
+            .map_err(|e| dioxus::CapturedError::from_display(e))
+    }
+
+    /// List drafts for an actor from weaver-index.
+    #[cfg(feature = "use-index")]
+    pub async fn list_drafts(
+        &self,
+        actor: &AtIdentifier<'_>,
+    ) -> Result<weaver_api::sh_weaver::edit::list_drafts::ListDraftsOutput<'static>> {
+        use weaver_api::sh_weaver::edit::list_drafts::ListDrafts;
+
+        let client = self.get_client();
+        let resp = client
+            .send(ListDrafts::new().actor(actor.clone()).build())
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        resp.into_output()
+            .map(|o| o.into_static())
+            .map_err(|e| dioxus::CapturedError::from_display(e))
+    }
+
+    /// Get resource sessions from weaver-index.
+    ///
+    /// Returns active collaboration sessions for the given resource.
+    #[cfg(feature = "use-index")]
+    pub async fn get_resource_sessions(
+        &self,
+        resource_uri: &AtUri<'_>,
+    ) -> Result<
+        weaver_api::sh_weaver::collab::get_resource_sessions::GetResourceSessionsOutput<'static>,
+    > {
+        use weaver_api::sh_weaver::collab::get_resource_sessions::GetResourceSessions;
+
+        let client = self.get_client();
+        let resp = client
+            .send(
+                GetResourceSessions::new()
+                    .resource(resource_uri.clone())
+                    .build(),
+            )
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        resp.into_output()
+            .map(|o| o.into_static())
+            .map_err(|e| dioxus::CapturedError::from_display(e))
+    }
+
+    /// Get resource participants from weaver-index.
+    ///
+    /// Returns owner and collaborators who can edit the resource.
+    #[cfg(feature = "use-index")]
+    pub async fn get_resource_participants(
+        &self,
+        resource_uri: &AtUri<'_>,
+    ) -> Result<
+        weaver_api::sh_weaver::collab::get_resource_participants::GetResourceParticipantsOutput<
+            'static,
+        >,
+    > {
+        use weaver_api::sh_weaver::collab::get_resource_participants::GetResourceParticipants;
+
+        let client = self.get_client();
+        let resp = client
+            .send(
+                GetResourceParticipants::new()
+                    .resource(resource_uri.clone())
+                    .build(),
+            )
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        resp.into_output()
+            .map(|o| o.into_static())
+            .map_err(|e| dioxus::CapturedError::from_display(e))
+    }
+
+    /// Get contributors for a resource from weaver-index.
+    #[cfg(feature = "use-index")]
+    pub async fn get_contributors(
+        &self,
+        resource_uri: &AtUri<'_>,
+    ) -> Result<weaver_api::sh_weaver::edit::get_contributors::GetContributorsOutput<'static>> {
+        use weaver_api::sh_weaver::edit::get_contributors::GetContributors;
+
+        let client = self.get_client();
+        let resp = client
+            .send(
+                GetContributors::new()
+                    .resource(resource_uri.clone())
+                    .build(),
+            )
+            .await
+            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+
+        resp.into_output()
+            .map(|o| o.into_static())
+            .map_err(|e| dioxus::CapturedError::from_display(e))
     }
 }
 

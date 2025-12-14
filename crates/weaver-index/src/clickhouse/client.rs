@@ -23,6 +23,8 @@ impl Client {
             .with_option("allow_experimental_json_type", "1")
             .with_option("input_format_binary_read_json_as_string", "1")
             .with_option("output_format_binary_write_json_as_string", "1")
+            // Output datetimes in ISO 8601 format (ATProto standard)
+            .with_option("date_time_output_format", "iso")
             .with_option("send_timeout", "120")
             .with_option("receive_timeout", "120");
 

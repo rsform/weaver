@@ -258,9 +258,51 @@ pub enum SyncResult {
 
 /// Find ALL edit.root records across collaborators for an entry.
 ///
+/// With use-index: Uses weaver-index getEditHistory endpoint.
+/// Without use-index: Queries Constellation for backlinks.
+#[cfg(feature = "use-index")]
+pub async fn find_all_edit_roots_for_entry(
+    fetcher: &Fetcher,
+    entry_uri: &AtUri<'_>,
+) -> Result<Vec<RecordId<'static>>, WeaverError> {
+    let output = fetcher
+        .get_edit_history(entry_uri)
+        .await
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to get edit history: {}", e)))?;
+
+    // Convert EditHistoryEntry roots to RecordId format
+    let roots: Vec<RecordId<'static>> = output
+        .roots
+        .into_iter()
+        .filter_map(|entry| {
+            let uri = AtUri::new(entry.uri.as_ref()).ok()?;
+            let did = match uri.authority() {
+                AtIdentifier::Did(d) => d.clone().into_static(),
+                _ => return None,
+            };
+            let rkey = uri.rkey()?.clone().into_static();
+            Some(RecordId {
+                did,
+                collection: Nsid::raw(ROOT_NSID).into_static(),
+                rkey,
+            })
+        })
+        .collect();
+
+    tracing::debug!(
+        "find_all_edit_roots_for_entry (index): found {} roots",
+        roots.len()
+    );
+
+    Ok(roots)
+}
+
+/// Find ALL edit.root records across collaborators for an entry.
+///
 /// 1. Gets list of collaborators via permissions
 /// 2. Queries Constellation for edit.root in each collaborator's repo
 /// 3. Returns all found roots for CRDT merge
+#[cfg(not(feature = "use-index"))]
 pub async fn find_all_edit_roots_for_entry(
     fetcher: &Fetcher,
     entry_uri: &AtUri<'_>,
@@ -442,9 +484,50 @@ pub struct RemoteDraft {
     pub created_at: String,
 }
 
+/// List all drafts for the current user.
+///
+/// With use-index: Uses weaver-index listDrafts endpoint.
+/// Without use-index: Uses direct PDS ListRecords query.
+#[cfg(feature = "use-index")]
+pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>, WeaverError> {
+    let did = fetcher
+        .current_did()
+        .await
+        .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
+
+    let actor = AtIdentifier::Did(did);
+    let output = fetcher
+        .list_drafts(&actor)
+        .await
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to list drafts: {}", e)))?;
+
+    tracing::debug!(
+        "list_drafts_from_pds (index): found {} drafts",
+        output.drafts.len()
+    );
+
+    let drafts = output
+        .drafts
+        .into_iter()
+        .filter_map(|draft| {
+            let uri = AtUri::new(draft.uri.as_ref()).ok()?.into_static();
+            let rkey = uri.rkey()?.0.as_str().to_string();
+            let created_at = draft.created_at.to_string();
+            Some(RemoteDraft {
+                uri,
+                rkey,
+                created_at,
+            })
+        })
+        .collect();
+
+    Ok(drafts)
+}
+
 /// List all drafts from PDS for the current user.
 ///
 /// Returns a list of draft records from `sh.weaver.edit.draft` collection.
+#[cfg(not(feature = "use-index"))]
 pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>, WeaverError> {
     use weaver_api::com_atproto::repo::list_records::ListRecords;
 

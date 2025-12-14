@@ -13,6 +13,7 @@ use jacquard_axum::IntoRouter;
 use jacquard_axum::did_web::did_web_router;
 use jacquard_axum::service_auth::ServiceAuth;
 use serde::Serialize;
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use weaver_api::sh_weaver::actor::{
@@ -21,12 +22,15 @@ use weaver_api::sh_weaver::actor::{
 };
 use weaver_api::sh_weaver::collab::get_collaboration_state::GetCollaborationStateRequest;
 use weaver_api::sh_weaver::collab::get_resource_participants::GetResourceParticipantsRequest;
+use weaver_api::sh_weaver::collab::get_resource_sessions::GetResourceSessionsRequest;
+use weaver_api::sh_weaver::edit::get_contributors::GetContributorsRequest;
 use weaver_api::sh_weaver::edit::get_edit_history::GetEditHistoryRequest;
+use weaver_api::sh_weaver::edit::list_drafts::ListDraftsRequest;
 use weaver_api::sh_weaver::notebook::{
     get_book_entry::GetBookEntryRequest, get_entry::GetEntryRequest,
-    get_entry_feed::GetEntryFeedRequest, get_notebook::GetNotebookRequest,
-    get_notebook_feed::GetNotebookFeedRequest, resolve_entry::ResolveEntryRequest,
-    resolve_notebook::ResolveNotebookRequest,
+    get_entry_feed::GetEntryFeedRequest, get_entry_notebooks::GetEntryNotebooksRequest,
+    get_notebook::GetNotebookRequest, get_notebook_feed::GetNotebookFeedRequest,
+    resolve_entry::ResolveEntryRequest, resolve_notebook::ResolveNotebookRequest,
 };
 
 use crate::clickhouse::Client;
@@ -106,6 +110,9 @@ pub fn router(state: AppState, did_doc: DidDocument<'static>) -> Router {
         ))
         .merge(GetEntryFeedRequest::into_router(notebook::get_entry_feed))
         .merge(GetBookEntryRequest::into_router(notebook::get_book_entry))
+        .merge(GetEntryNotebooksRequest::into_router(
+            notebook::get_entry_notebooks,
+        ))
         // sh.weaver.collab.* endpoints
         .merge(GetResourceParticipantsRequest::into_router(
             collab::get_resource_participants,
@@ -113,9 +120,15 @@ pub fn router(state: AppState, did_doc: DidDocument<'static>) -> Router {
         .merge(GetCollaborationStateRequest::into_router(
             collab::get_collaboration_state,
         ))
+        .merge(GetResourceSessionsRequest::into_router(
+            collab::get_resource_sessions,
+        ))
         // sh.weaver.edit.* endpoints
         .merge(GetEditHistoryRequest::into_router(edit::get_edit_history))
+        .merge(GetContributorsRequest::into_router(edit::get_contributors))
+        .merge(ListDraftsRequest::into_router(edit::list_drafts))
         .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive().max_age(std::time::Duration::from_secs(86400)))
         .with_state(state)
         .merge(did_web_router(did_doc))
 }

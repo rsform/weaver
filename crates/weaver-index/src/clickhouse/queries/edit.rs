@@ -27,33 +27,34 @@ pub struct EditNodeRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Draft with associated edit root info
+#[derive(Debug, Clone, Row, Deserialize)]
+pub struct DraftWithRootRow {
+    pub did: SmolStr,
+    pub rkey: SmolStr,
+    pub cid: SmolStr,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub root_did: SmolStr,
+    pub root_rkey: SmolStr,
+    pub root_cid: SmolStr,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis::option")]
+    pub last_edit_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 impl Client {
     /// Get edit history for a resource.
     ///
     /// Returns roots and diffs separately, ordered by created_at.
-    /// The resource_uri should be an at:// URI for an entry or notebook.
     pub async fn get_edit_history(
         &self,
-        resource_uri: &str,
+        resource_did: &str,
+        resource_collection: &str,
+        resource_rkey: &str,
         cursor: Option<i64>,
         after_rkey: Option<&str>,
         limit: i64,
     ) -> Result<Vec<EditNodeRow>, IndexError> {
-        // Parse resource URI to extract did/collection/rkey
-        let parts: Vec<&str> = resource_uri
-            .strip_prefix("at://")
-            .unwrap_or(resource_uri)
-            .split('/')
-            .collect();
-
-        if parts.len() < 3 {
-            return Ok(Vec::new());
-        }
-
-        let resource_did = parts[0];
-        let resource_collection = parts[1];
-        let resource_rkey = parts[2];
-
         let query = r#"
             SELECT
                 did,
@@ -99,6 +100,67 @@ impl Client {
             .await
             .map_err(|e| ClickHouseError::Query {
                 message: "failed to get edit history".into(),
+                source: e,
+            })?;
+
+        Ok(rows)
+    }
+
+    /// List drafts for an actor.
+    ///
+    /// Returns draft records with associated edit root info if available.
+    pub async fn list_drafts(
+        &self,
+        actor_did: &str,
+        cursor: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<DraftWithRootRow>, IndexError> {
+        // Query drafts table with LEFT JOIN to get associated edit roots
+        // Edit roots reference drafts via resource_type/did/rkey fields
+        let query = r#"
+            SELECT
+                d.did,
+                d.rkey,
+                d.cid,
+                d.created_at,
+                COALESCE(e.did, '') AS root_did,
+                COALESCE(e.rkey, '') AS root_rkey,
+                COALESCE(e.cid, '') AS root_cid,
+                e.created_at AS last_edit_at
+            FROM drafts d FINAL
+            LEFT JOIN (
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    created_at,
+                    resource_did,
+                    resource_rkey
+                FROM edit_nodes FINAL
+                WHERE node_type = 'root'
+                  AND resource_type = 'draft'
+                  AND deleted_at = toDateTime64(0, 3)
+            ) e ON e.resource_did = d.did AND e.resource_rkey = d.rkey
+            WHERE d.did = ?
+              AND d.deleted_at = toDateTime64(0, 3)
+              AND (? = 0 OR toUnixTimestamp64Milli(d.created_at) < ?)
+            ORDER BY d.created_at DESC
+            LIMIT ?
+        "#;
+
+        let cursor_val = cursor.unwrap_or(0);
+
+        let rows = self
+            .inner()
+            .query(query)
+            .bind(actor_did)
+            .bind(cursor_val)
+            .bind(cursor_val)
+            .bind(limit)
+            .fetch_all::<DraftWithRootRow>()
+            .await
+            .map_err(|e| ClickHouseError::Query {
+                message: "failed to list drafts".into(),
                 source: e,
             })?;
 

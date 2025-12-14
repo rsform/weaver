@@ -90,4 +90,60 @@ impl Client {
 
         Ok(row.cnt > 0)
     }
+
+    /// Get active collaboration sessions for a resource.
+    ///
+    /// Sessions are stored as records with collection `sh.weaver.collab.session`.
+    /// They have a TTL (expiresAt) and should be filtered to only return unexpired sessions.
+    pub async fn get_resource_sessions(
+        &self,
+        resource_uri: &str,
+    ) -> Result<Vec<SessionRow>, IndexError> {
+        let query = r#"
+            SELECT
+                did,
+                rkey,
+                cid,
+                record.nodeId AS node_id,
+                record.relayUrl AS relay_url,
+                record.createdAt AS created_at,
+                record.expiresAt AS expires_at
+            FROM raw_records FINAL
+            WHERE collection = 'sh.weaver.collab.session'
+              AND is_live = 1
+              AND record.resource.uri = ?
+              AND (
+                  record.expiresAt IS NULL
+                  OR record.expiresAt > now64(3)
+              )
+            ORDER BY created_at DESC
+        "#;
+
+        let rows = self
+            .inner()
+            .query(query)
+            .bind(resource_uri)
+            .fetch_all::<SessionRow>()
+            .await
+            .map_err(|e| ClickHouseError::Query {
+                message: "failed to get resource sessions".into(),
+                source: e,
+            })?;
+
+        Ok(rows)
+    }
+}
+
+/// Session record row
+#[derive(Debug, Clone, Row, Deserialize)]
+pub struct SessionRow {
+    pub did: SmolStr,
+    pub rkey: SmolStr,
+    pub cid: SmolStr,
+    pub node_id: SmolStr,
+    pub relay_url: SmolStr,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis::option")]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }

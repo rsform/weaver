@@ -271,6 +271,34 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                                         });
 
                                         // Discover existing peers
+                                        #[cfg(feature = "use-index")]
+                                        let bootstrap_peers = match fetcher
+                                            .get_resource_sessions(&uri)
+                                            .await
+                                        {
+                                            Ok(output) => {
+                                                tracing::info!(
+                                                    count = output.sessions.len(),
+                                                    "CollabCoordinator: found peers via index"
+                                                );
+                                                debug_state.with_mut(|ds| {
+                                                    ds.discovered_peers = output.sessions.len();
+                                                });
+                                                output
+                                                    .sessions
+                                                    .into_iter()
+                                                    .map(|s| s.node_id.as_ref().into())
+                                                    .collect::<Vec<SmolStr>>()
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(
+                                                    "CollabCoordinator: peer discovery failed: {e}"
+                                                );
+                                                vec![]
+                                            }
+                                        };
+
+                                        #[cfg(not(feature = "use-index"))]
                                         let bootstrap_peers = match fetcher
                                             .find_session_peers(&uri)
                                             .await
@@ -469,6 +497,32 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                         Err(_) => return,
                     };
 
+                    #[cfg(feature = "use-index")]
+                    match fetcher.get_resource_sessions(&uri).await {
+                        Ok(output) => {
+                            debug_state.with_mut(|ds| ds.discovered_peers = output.sessions.len());
+                            if !output.sessions.is_empty() {
+                                let peer_ids: Vec<SmolStr> = output
+                                    .sessions
+                                    .into_iter()
+                                    .map(|s| s.node_id.as_ref().into())
+                                    .collect();
+
+                                if let Some(ref mut s) = *worker_sink.write() {
+                                    if let Err(e) =
+                                        s.send(WorkerInput::AddPeers { peers: peer_ids }).await
+                                    {
+                                        tracing::warn!("Periodic AddPeers send failed: {e}");
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::debug!("Peer discovery failed: {e}");
+                        }
+                    }
+
+                    #[cfg(not(feature = "use-index"))]
                     match fetcher.find_session_peers(&uri).await {
                         Ok(peers) => {
                             debug_state.with_mut(|ds| ds.discovered_peers = peers.len());

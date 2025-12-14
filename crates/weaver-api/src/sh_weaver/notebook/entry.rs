@@ -61,8 +61,8 @@ pub mod entry_state {
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
         type Path;
-        type CreatedAt;
         type Title;
+        type CreatedAt;
         type Content;
     }
     /// Empty state - all required fields are unset
@@ -70,8 +70,8 @@ pub mod entry_state {
     impl sealed::Sealed for Empty {}
     impl State for Empty {
         type Path = Unset;
-        type CreatedAt = Unset;
         type Title = Unset;
+        type CreatedAt = Unset;
         type Content = Unset;
     }
     ///State transition - sets the `path` field to Set
@@ -79,17 +79,8 @@ pub mod entry_state {
     impl<S: State> sealed::Sealed for SetPath<S> {}
     impl<S: State> State for SetPath<S> {
         type Path = Set<members::path>;
+        type Title = S::Title;
         type CreatedAt = S::CreatedAt;
-        type Title = S::Title;
-        type Content = S::Content;
-    }
-    ///State transition - sets the `created_at` field to Set
-    pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
-    impl<S: State> State for SetCreatedAt<S> {
-        type Path = S::Path;
-        type CreatedAt = Set<members::created_at>;
-        type Title = S::Title;
         type Content = S::Content;
     }
     ///State transition - sets the `title` field to Set
@@ -97,8 +88,17 @@ pub mod entry_state {
     impl<S: State> sealed::Sealed for SetTitle<S> {}
     impl<S: State> State for SetTitle<S> {
         type Path = S::Path;
-        type CreatedAt = S::CreatedAt;
         type Title = Set<members::title>;
+        type CreatedAt = S::CreatedAt;
+        type Content = S::Content;
+    }
+    ///State transition - sets the `created_at` field to Set
+    pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
+    impl<S: State> State for SetCreatedAt<S> {
+        type Path = S::Path;
+        type Title = S::Title;
+        type CreatedAt = Set<members::created_at>;
         type Content = S::Content;
     }
     ///State transition - sets the `content` field to Set
@@ -106,8 +106,8 @@ pub mod entry_state {
     impl<S: State> sealed::Sealed for SetContent<S> {}
     impl<S: State> State for SetContent<S> {
         type Path = S::Path;
-        type CreatedAt = S::CreatedAt;
         type Title = S::Title;
+        type CreatedAt = S::CreatedAt;
         type Content = Set<members::content>;
     }
     /// Marker types for field names
@@ -115,10 +115,10 @@ pub mod entry_state {
     pub mod members {
         ///Marker type for the `path` field
         pub struct path(());
-        ///Marker type for the `created_at` field
-        pub struct created_at(());
         ///Marker type for the `title` field
         pub struct title(());
+        ///Marker type for the `created_at` field
+        pub struct created_at(());
         ///Marker type for the `content` field
         pub struct content(());
     }
@@ -359,8 +359,8 @@ impl<'a, S> EntryBuilder<'a, S>
 where
     S: entry_state::State,
     S::Path: entry_state::IsSet,
-    S::CreatedAt: entry_state::IsSet,
     S::Title: entry_state::IsSet,
+    S::CreatedAt: entry_state::IsSet,
     S::Content: entry_state::IsSet,
 {
     /// Build the final struct

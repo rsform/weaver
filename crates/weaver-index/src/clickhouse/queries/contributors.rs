@@ -19,6 +19,14 @@ struct ContributorRow {
     contributor_did: SmolStr,
 }
 
+/// Row for batch contributor query (includes entry identity)
+#[derive(Debug, Clone, Row, Deserialize)]
+struct BatchContributorRow {
+    entry_did: SmolStr,
+    entry_rkey: SmolStr,
+    contributor_did: SmolStr,
+}
+
 /// Row for notebook lookup
 #[derive(Debug, Clone, Row, Deserialize)]
 struct NotebookRefRow {
@@ -91,46 +99,25 @@ impl Client {
         Ok(rows.into_iter().map(|r| r.contributor_did).collect())
     }
 
-    /// Get contributors for an entry, including cascaded notebook-level collaborators.
+    /// Get contributors for an entry.
     ///
-    /// Returns DIDs of users who have contributed to this entry OR are
-    /// notebook-level collaborators for a notebook containing this entry.
+    /// Returns DIDs of users who have contributed to this entry.
     pub async fn get_entry_contributors(
         &self,
         entry_did: &str,
         entry_rkey: &str,
     ) -> Result<Vec<SmolStr>, IndexError> {
-        // Single query that unions:
-        // 1. Direct entry contributors
-        // 2. Notebook collaborators for notebooks containing this entry
         let query = r#"
-            SELECT DISTINCT contributor_did FROM (
-                -- Direct entry contributors
-                SELECT contributor_did
-                FROM contributors FINAL
-                WHERE resource_did = ?
-                  AND resource_rkey = ?
-                  AND resource_collection = 'sh.weaver.notebook.entry'
-
-                UNION ALL
-
-                -- Notebook-level collaborators (cascaded)
-                SELECT c.contributor_did
-                FROM notebook_entries ne FINAL
-                INNER JOIN contributors c FINAL ON
-                    c.resource_did = ne.notebook_did
-                    AND c.resource_rkey = ne.notebook_rkey
-                    AND c.resource_collection = 'sh.weaver.notebook.book'
-                WHERE ne.entry_did = ?
-                  AND ne.entry_rkey = ?
-            )
+            SELECT DISTINCT contributor_did
+            FROM contributors FINAL
+            WHERE resource_did = ?
+              AND resource_rkey = ?
+              AND resource_collection = 'sh.weaver.notebook.entry'
         "#;
 
         let rows = self
             .inner()
             .query(query)
-            .bind(entry_did)
-            .bind(entry_rkey)
             .bind(entry_did)
             .bind(entry_rkey)
             .fetch_all::<ContributorRow>()
@@ -141,6 +128,63 @@ impl Client {
             })?;
 
         Ok(rows.into_iter().map(|r| r.contributor_did).collect())
+    }
+
+    /// Batch get contributors for multiple entries.
+    ///
+    /// Returns a map of (did, rkey) -> Vec<contributor_did>.
+    pub async fn get_entry_contributors_batch(
+        &self,
+        entries: &[(&str, &str)], // Vec of (did, rkey)
+    ) -> Result<std::collections::HashMap<(SmolStr, SmolStr), Vec<SmolStr>>, IndexError> {
+        use std::collections::HashMap;
+
+        if entries.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        // Build (did, rkey) tuples for the IN clause
+        let tuples: String = entries
+            .iter()
+            .map(|(did, rkey)| format!("('{}', '{}')", did, rkey))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let query = format!(
+            r#"
+            SELECT resource_did AS entry_did, resource_rkey AS entry_rkey, contributor_did
+            FROM contributors FINAL
+            WHERE (resource_did, resource_rkey) IN ({tuples})
+              AND resource_collection = 'sh.weaver.notebook.entry'
+            "#
+        );
+
+        let rows = self
+            .inner()
+            .query(&query)
+            .fetch_all::<BatchContributorRow>()
+            .await
+            .map_err(|e| ClickHouseError::Query {
+                message: "failed to batch get entry contributors".into(),
+                source: e,
+            })?;
+
+        // Group by (entry_did, entry_rkey)
+        let mut result: HashMap<(SmolStr, SmolStr), Vec<SmolStr>> = HashMap::new();
+        for row in rows {
+            result
+                .entry((row.entry_did, row.entry_rkey))
+                .or_default()
+                .push(row.contributor_did);
+        }
+
+        // Dedupe each entry's contributors
+        for contributors in result.values_mut() {
+            contributors.sort();
+            contributors.dedup();
+        }
+
+        Ok(result)
     }
 
     /// Get contributors for a notebook.

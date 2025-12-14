@@ -7,7 +7,7 @@ use jacquard::IntoStatic;
 use jacquard::cowstr::ToCowStr;
 use jacquard::identity::resolver::IdentityResolver;
 use jacquard::types::ident::AtIdentifier;
-use jacquard::types::string::{AtUri, Cid, Did, Handle};
+use jacquard::types::string::{AtUri, Cid, Did, Handle, Uri};
 use jacquard_axum::ExtractXrpc;
 use jacquard_axum::service_auth::{ExtractOptionalServiceAuth, VerifiedServiceAuth};
 use smol_str::SmolStr;
@@ -78,13 +78,36 @@ pub async fn get_profile(
         XrpcErrorResponse::internal_error("Invalid handle stored")
     })?;
 
+    // Build avatar URL from CID if present
+    let avatar = if !profile.avatar_cid.is_empty() {
+        let url = format!(
+            "https://cdn.bsky.app/img/avatar/plain/{}/{}@jpeg",
+            profile.did, profile.avatar_cid
+        );
+        Uri::new_owned(url).ok()
+    } else {
+        None
+    };
+
+    // Build banner URL from CID if present
+    let banner = if !profile.banner_cid.is_empty() {
+        let url = format!(
+            "https://cdn.bsky.app/img/banner/plain/{}/{}@jpeg",
+            profile.did, profile.banner_cid
+        );
+        Uri::new_owned(url).ok()
+    } else {
+        None
+    };
+
     // Build ProfileView (weaver native profile)
     let inner_profile = ProfileView::new()
         .did(did.clone())
         .handle(handle)
         .maybe_display_name(non_empty_str(&profile.display_name))
         .maybe_description(non_empty_str(&profile.description))
-        // TODO: avatar/banner need URL construction from CID
+        .maybe_avatar(avatar)
+        .maybe_banner(banner)
         .build();
 
     let inner = ProfileDataViewInner::ProfileView(Box::new(inner_profile));
@@ -271,7 +294,7 @@ pub async fn get_actor_notebooks(
         GetActorNotebooksOutput {
             notebooks,
             cursor: next_cursor,
-            extra_data: None
+            extra_data: None,
         }
         .into_static(),
     ))
@@ -308,10 +331,24 @@ pub async fn get_actor_entries(
     let has_more = entry_rows.len() > limit as usize;
     let entry_rows: Vec<_> = entry_rows.into_iter().take(limit as usize).collect();
 
-    // Collect author DIDs for hydration
+    // Batch fetch contributors for all entries
+    let entry_keys: Vec<(&str, &str)> = entry_rows
+        .iter()
+        .map(|e| (e.did.as_str(), e.rkey.as_str()))
+        .collect();
+    let contributors_map = state
+        .clickhouse
+        .get_entry_contributors_batch(&entry_keys)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to batch fetch contributors: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    // Collect all contributor DIDs for profile hydration
     let mut all_author_dids: HashSet<&str> = HashSet::new();
-    for entry in &entry_rows {
-        for did in &entry.author_dids {
+    for contributors in contributors_map.values() {
+        for did in contributors {
             all_author_dids.insert(did.as_str());
         }
     }
@@ -343,7 +380,14 @@ pub async fn get_actor_entries(
             XrpcErrorResponse::internal_error("Invalid CID stored")
         })?;
 
-        let authors = hydrate_authors(&entry_row.author_dids, &profile_map)?;
+        // Get contributors for this entry
+        let entry_key = (entry_row.did.clone(), entry_row.rkey.clone());
+        let contributors = contributors_map
+            .get(&entry_key)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+
+        let authors = hydrate_authors(contributors, &profile_map)?;
         let record = parse_record_json(&entry_row.record)?;
 
         let entry = EntryView::new()

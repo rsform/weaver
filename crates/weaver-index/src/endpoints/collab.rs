@@ -18,11 +18,14 @@ use weaver_api::sh_weaver::collab::get_collaboration_state::{
 use weaver_api::sh_weaver::collab::get_resource_participants::{
     GetResourceParticipantsOutput, GetResourceParticipantsRequest,
 };
-use weaver_api::sh_weaver::collab::{CollaborationStateView, ParticipantStateView};
+use weaver_api::sh_weaver::collab::get_resource_sessions::{
+    GetResourceSessionsOutput, GetResourceSessionsRequest,
+};
+use weaver_api::sh_weaver::collab::{CollaborationStateView, ParticipantStateView, SessionView};
 
 use crate::clickhouse::{CollaboratorRow, ProfileRow};
 use crate::endpoints::actor::Viewer;
-use crate::endpoints::non_empty_str;
+use crate::endpoints::{non_empty_str, resolve_uri};
 use crate::endpoints::repo::XrpcErrorResponse;
 use crate::server::AppState;
 
@@ -37,12 +40,13 @@ pub async fn get_resource_participants(
     let _viewer: Viewer = viewer;
     let viewer_did: Option<&str> = _viewer.as_ref().map(|v| v.did().as_str());
 
-    let resource_uri = args.resource.as_str();
+    // Resolve URI and get canonical form
+    let resolved = resolve_uri(&state, &args.resource).await?;
 
     // Get all permissions for the resource
     let permissions = state
         .clickhouse
-        .get_resource_permissions(resource_uri)
+        .get_resource_permissions(&resolved.canonical_uri)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get resource permissions: {}", e);
@@ -134,12 +138,13 @@ pub async fn get_collaboration_state(
 ) -> Result<Json<GetCollaborationStateOutput<'static>>, XrpcErrorResponse> {
     let _viewer: Viewer = viewer;
 
-    let resource_uri = args.resource.as_str();
+    // Resolve URI and get canonical form
+    let resolved = resolve_uri(&state, &args.resource).await?;
 
     // Get permissions for the resource
     let permissions = state
         .clickhouse
-        .get_resource_permissions(resource_uri)
+        .get_resource_permissions(&resolved.canonical_uri)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get resource permissions: {}", e);
@@ -153,7 +158,7 @@ pub async fn get_collaboration_state(
     // Get collaborators (invite+accept pairs) for additional data
     let collaborators = state
         .clickhouse
-        .get_collaborators(resource_uri)
+        .get_collaborators(&resolved.canonical_uri)
         .await
         .map_err(|e| {
             tracing::error!("Failed to get collaborators: {}", e);
@@ -163,7 +168,7 @@ pub async fn get_collaboration_state(
     // Check for divergence
     let has_divergence = state
         .clickhouse
-        .has_divergence(resource_uri)
+        .has_divergence(&resolved.canonical_uri)
         .await
         .map_err(|e| {
             tracing::error!("Failed to check divergence: {}", e);
@@ -202,7 +207,7 @@ pub async fn get_collaboration_state(
         })?;
 
     // Build resource StrongRef - look up the CID from the appropriate table
-    let resource_uri_parsed = AtUri::new(resource_uri)
+    let resource_uri_parsed = AtUri::new(&resolved.canonical_uri)
         .map_err(|_| XrpcErrorResponse::internal_error("Invalid resource URI"))?
         .into_static();
 
@@ -324,4 +329,120 @@ fn build_participant_state(
         .maybe_invite_uri(invite_uri)
         .maybe_accept_uri(accept_uri)
         .build())
+}
+
+/// Handle sh.weaver.collab.getResourceSessions
+///
+/// Returns active real-time collaboration sessions for a resource.
+pub async fn get_resource_sessions(
+    State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
+    ExtractXrpc(args): ExtractXrpc<GetResourceSessionsRequest>,
+) -> Result<Json<GetResourceSessionsOutput<'static>>, XrpcErrorResponse> {
+    let _viewer: Viewer = viewer;
+
+    // Resolve URI and get canonical form
+    let resolved = resolve_uri(&state, &args.resource).await?;
+
+    // Get active sessions
+    let session_rows = state
+        .clickhouse
+        .get_resource_sessions(&resolved.canonical_uri)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get resource sessions: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    if session_rows.is_empty() {
+        return Ok(Json(
+            GetResourceSessionsOutput {
+                sessions: Vec::new(),
+                extra_data: None,
+            }
+            .into_static(),
+        ));
+    }
+
+    // Collect user DIDs for profile hydration
+    let user_dids: Vec<&str> = session_rows.iter().map(|s| s.did.as_str()).collect();
+
+    // Batch fetch profiles
+    let profiles = state
+        .clickhouse
+        .get_profiles_batch(&user_dids)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to batch fetch profiles: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    let profile_map: HashMap<&str, &ProfileRow> =
+        profiles.iter().map(|p| (p.did.as_str(), p)).collect();
+
+    // Build resource StrongRef once (same for all sessions)
+    let resource_cid = state
+        .clickhouse
+        .get_record_cid(&resolved.did, &resolved.collection, &resolved.rkey)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get resource CID: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?
+        .ok_or_else(|| XrpcErrorResponse::not_found("Resource not found"))?;
+
+    let resource_ref = StrongRef::new()
+        .uri(args.resource.clone().into_static())
+        .cid(
+            Cid::new(resource_cid.as_bytes())
+                .map_err(|_| XrpcErrorResponse::internal_error("Invalid resource CID"))?
+                .into_static(),
+        )
+        .build();
+
+    // Build session views
+    let mut sessions = Vec::with_capacity(session_rows.len());
+    for row in &session_rows {
+        let uri = AtUri::new(&format!(
+            "at://{}/sh.weaver.collab.session/{}",
+            row.did, row.rkey
+        ))
+        .map_err(|_| XrpcErrorResponse::internal_error("Invalid session URI"))?
+        .into_static();
+
+        let user = profile_map
+            .get(row.did.as_str())
+            .map(|p| profile_to_view_basic(p))
+            .transpose()?
+            .ok_or_else(|| XrpcErrorResponse::internal_error("Missing user profile"))?;
+
+        let created_at = Datetime::new(row.created_at.fixed_offset());
+        let expires_at = row.expires_at.map(|dt| Datetime::new(dt.fixed_offset()));
+
+        let relay_url = if row.relay_url.is_empty() {
+            None
+        } else {
+            jacquard::types::string::Uri::new_owned(row.relay_url.to_string()).ok()
+        };
+
+        sessions.push(
+            SessionView::new()
+                .uri(uri)
+                .user(user)
+                .resource(resource_ref.clone())
+                .node_id(row.node_id.to_cowstr().into_static())
+                .created_at(created_at)
+                .maybe_relay_url(relay_url)
+                .maybe_expires_at(expires_at)
+                .build(),
+        );
+    }
+
+    Ok(Json(
+        GetResourceSessionsOutput {
+            sessions,
+            extra_data: None,
+        }
+        .into_static(),
+    ))
 }

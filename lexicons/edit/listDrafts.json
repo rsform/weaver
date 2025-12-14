@@ -1,0 +1,62 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.edit.listDrafts",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "List draft records for an actor. Drafts are unpublished edit roots that aren't linked to a published entry.",
+      "parameters": {
+        "type": "params",
+        "required": ["actor"],
+        "properties": {
+          "actor": {
+            "type": "string",
+            "format": "at-identifier",
+            "description": "DID or handle of the actor"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "cursor": { "type": "string" }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["drafts"],
+          "properties": {
+            "drafts": {
+              "type": "array",
+              "items": { "type": "ref", "ref": "#draftView" }
+            },
+            "cursor": { "type": "string" }
+          }
+        }
+      }
+    },
+    "draftView": {
+      "type": "object",
+      "description": "Hydrated view of a draft with edit state.",
+      "required": ["uri", "cid", "createdAt"],
+      "properties": {
+        "uri": { "type": "string", "format": "at-uri" },
+        "cid": { "type": "string", "format": "cid" },
+        "title": {
+          "type": "string",
+          "description": "Extracted title if available from edit state"
+        },
+        "editRoot": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef",
+          "description": "Associated edit root if one exists"
+        },
+        "lastEditAt": { "type": "string", "format": "datetime" },
+        "createdAt": { "type": "string", "format": "datetime" }
+      }
+    }
+  }
+}

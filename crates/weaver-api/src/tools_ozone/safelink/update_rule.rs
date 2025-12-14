@@ -48,8 +48,8 @@ pub mod update_rule_state {
     pub trait State: sealed::Sealed {
         type Reason;
         type Action;
-        type Url;
         type Pattern;
+        type Url;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
@@ -57,8 +57,8 @@ pub mod update_rule_state {
     impl State for Empty {
         type Reason = Unset;
         type Action = Unset;
-        type Url = Unset;
         type Pattern = Unset;
+        type Url = Unset;
     }
     ///State transition - sets the `reason` field to Set
     pub struct SetReason<S: State = Empty>(PhantomData<fn() -> S>);
@@ -66,8 +66,8 @@ pub mod update_rule_state {
     impl<S: State> State for SetReason<S> {
         type Reason = Set<members::reason>;
         type Action = S::Action;
-        type Url = S::Url;
         type Pattern = S::Pattern;
+        type Url = S::Url;
     }
     ///State transition - sets the `action` field to Set
     pub struct SetAction<S: State = Empty>(PhantomData<fn() -> S>);
@@ -75,17 +75,8 @@ pub mod update_rule_state {
     impl<S: State> State for SetAction<S> {
         type Reason = S::Reason;
         type Action = Set<members::action>;
+        type Pattern = S::Pattern;
         type Url = S::Url;
-        type Pattern = S::Pattern;
-    }
-    ///State transition - sets the `url` field to Set
-    pub struct SetUrl<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetUrl<S> {}
-    impl<S: State> State for SetUrl<S> {
-        type Reason = S::Reason;
-        type Action = S::Action;
-        type Url = Set<members::url>;
-        type Pattern = S::Pattern;
     }
     ///State transition - sets the `pattern` field to Set
     pub struct SetPattern<S: State = Empty>(PhantomData<fn() -> S>);
@@ -93,8 +84,17 @@ pub mod update_rule_state {
     impl<S: State> State for SetPattern<S> {
         type Reason = S::Reason;
         type Action = S::Action;
-        type Url = S::Url;
         type Pattern = Set<members::pattern>;
+        type Url = S::Url;
+    }
+    ///State transition - sets the `url` field to Set
+    pub struct SetUrl<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetUrl<S> {}
+    impl<S: State> State for SetUrl<S> {
+        type Reason = S::Reason;
+        type Action = S::Action;
+        type Pattern = S::Pattern;
+        type Url = Set<members::url>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
@@ -103,10 +103,10 @@ pub mod update_rule_state {
         pub struct reason(());
         ///Marker type for the `action` field
         pub struct action(());
-        ///Marker type for the `url` field
-        pub struct url(());
         ///Marker type for the `pattern` field
         pub struct pattern(());
+        ///Marker type for the `url` field
+        pub struct url(());
     }
 }
 
@@ -258,8 +258,8 @@ where
     S: update_rule_state::State,
     S::Reason: update_rule_state::IsSet,
     S::Action: update_rule_state::IsSet,
-    S::Url: update_rule_state::IsSet,
     S::Pattern: update_rule_state::IsSet,
+    S::Url: update_rule_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> UpdateRule<'a> {

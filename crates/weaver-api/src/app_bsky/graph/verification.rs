@@ -41,8 +41,8 @@ pub mod verification_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type DisplayName;
         type Subject;
+        type DisplayName;
         type Handle;
         type CreatedAt;
     }
@@ -50,26 +50,26 @@ pub mod verification_state {
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type DisplayName = Unset;
         type Subject = Unset;
+        type DisplayName = Unset;
         type Handle = Unset;
         type CreatedAt = Unset;
-    }
-    ///State transition - sets the `display_name` field to Set
-    pub struct SetDisplayName<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetDisplayName<S> {}
-    impl<S: State> State for SetDisplayName<S> {
-        type DisplayName = Set<members::display_name>;
-        type Subject = S::Subject;
-        type Handle = S::Handle;
-        type CreatedAt = S::CreatedAt;
     }
     ///State transition - sets the `subject` field to Set
     pub struct SetSubject<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetSubject<S> {}
     impl<S: State> State for SetSubject<S> {
-        type DisplayName = S::DisplayName;
         type Subject = Set<members::subject>;
+        type DisplayName = S::DisplayName;
+        type Handle = S::Handle;
+        type CreatedAt = S::CreatedAt;
+    }
+    ///State transition - sets the `display_name` field to Set
+    pub struct SetDisplayName<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetDisplayName<S> {}
+    impl<S: State> State for SetDisplayName<S> {
+        type Subject = S::Subject;
+        type DisplayName = Set<members::display_name>;
         type Handle = S::Handle;
         type CreatedAt = S::CreatedAt;
     }
@@ -77,8 +77,8 @@ pub mod verification_state {
     pub struct SetHandle<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetHandle<S> {}
     impl<S: State> State for SetHandle<S> {
-        type DisplayName = S::DisplayName;
         type Subject = S::Subject;
+        type DisplayName = S::DisplayName;
         type Handle = Set<members::handle>;
         type CreatedAt = S::CreatedAt;
     }
@@ -86,18 +86,18 @@ pub mod verification_state {
     pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
     impl<S: State> State for SetCreatedAt<S> {
-        type DisplayName = S::DisplayName;
         type Subject = S::Subject;
+        type DisplayName = S::DisplayName;
         type Handle = S::Handle;
         type CreatedAt = Set<members::created_at>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `display_name` field
-        pub struct display_name(());
         ///Marker type for the `subject` field
         pub struct subject(());
+        ///Marker type for the `display_name` field
+        pub struct display_name(());
         ///Marker type for the `handle` field
         pub struct handle(());
         ///Marker type for the `created_at` field
@@ -214,8 +214,8 @@ where
 impl<'a, S> VerificationBuilder<'a, S>
 where
     S: verification_state::State,
-    S::DisplayName: verification_state::IsSet,
     S::Subject: verification_state::IsSet,
+    S::DisplayName: verification_state::IsSet,
     S::Handle: verification_state::IsSet,
     S::CreatedAt: verification_state::IsSet,
 {

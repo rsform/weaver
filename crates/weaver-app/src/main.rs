@@ -61,16 +61,16 @@ fn main() {
     // Run `serve()` on the server only
     #[cfg(feature = "server")]
     dioxus::serve(|| async move {
-        use weaver_app::blobcache::BlobCache;
-        use weaver_app::auth::AuthStore;
-        use jacquard::oauth::{client::OAuthClient, session::ClientData};
         use axum::{
             extract::{Extension, Request},
             middleware,
             middleware::Next,
             routing::get,
         };
+        use jacquard::oauth::{client::OAuthClient, session::ClientData};
         use std::convert::Infallible;
+        use weaver_app::auth::AuthStore;
+        use weaver_app::blobcache::BlobCache;
 
         #[cfg(not(feature = "fullstack-server"))]
         let router = { axum::Router::new().merge(dioxus::server::router(App)) };
@@ -81,13 +81,11 @@ fn main() {
                 AuthStore::new(),
                 ClientData::new_public(CONFIG.oauth.clone()),
             )));
+
             let blob_cache = Arc::new(BlobCache::new(fetcher.clone()));
             axum::Router::new()
                 .route("/favicon.ico", get(weaver_app::favicon))
-                .serve_dioxus_application(
-                    ServeConfig::builder(),
-                    App,
-                )
+                .serve_dioxus_application(ServeConfig::builder(), App)
                 .layer(middleware::from_fn({
                     let blob_cache = blob_cache.clone();
                     let fetcher = fetcher.clone();

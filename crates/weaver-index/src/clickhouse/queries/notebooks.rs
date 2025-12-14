@@ -65,7 +65,7 @@ impl Client {
                 created_at,
                 indexed_at,
                 record
-            FROM notebooks
+            FROM notebooks FINAL
             WHERE did = ?
               AND (path = ? OR title = ?)
               AND deleted_at = toDateTime64(0, 3)
@@ -110,7 +110,7 @@ impl Client {
                 created_at,
                 indexed_at,
                 record
-            FROM notebooks
+            FROM notebooks FINAL
             WHERE did = ?
               AND rkey = ?
               AND deleted_at = toDateTime64(0, 3)
@@ -147,42 +147,30 @@ impl Client {
         // Note: rkey ordering is intentional here - it's the notebook's entry order
         let query = if cursor.is_some() {
             r#"
-                SELECT
-                    did,
-                    rkey,
-                    cid,
-                    uri,
-                    title,
-                    path,
-                    tags,
-                    author_dids,
-                    created_at,
-                    indexed_at,
-                    record
-                FROM entries
-                WHERE did = ?
-                  AND deleted_at = toDateTime64(0, 3)
-                  AND rkey > ?
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                FROM (
+                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
+                    FROM entries FINAL
+                    WHERE did = ?
+                      AND deleted_at = toDateTime64(0, 3)
+                      AND rkey > ?
+                )
+                WHERE rn = 1
                 ORDER BY rkey ASC
                 LIMIT ?
             "#
         } else {
             r#"
-                SELECT
-                    did,
-                    rkey,
-                    cid,
-                    uri,
-                    title,
-                    path,
-                    tags,
-                    author_dids,
-                    created_at,
-                    indexed_at,
-                    record
-                FROM entries
-                WHERE did = ?
-                  AND deleted_at = toDateTime64(0, 3)
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                FROM (
+                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
+                    FROM entries FINAL
+                    WHERE did = ?
+                      AND deleted_at = toDateTime64(0, 3)
+                )
+                WHERE rn = 1
                 ORDER BY rkey ASC
                 LIMIT ?
             "#
@@ -237,11 +225,11 @@ impl Client {
                 created_at,
                 indexed_at,
                 record
-            FROM entries
+            FROM entries FINAL
             WHERE rkey = ?
               AND did IN ({})
               AND deleted_at = toDateTime64(0, 3)
-            ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+            ORDER BY updated_at DESC
             LIMIT 1
             "#,
             placeholders.join(", ")
@@ -284,11 +272,11 @@ impl Client {
                 created_at,
                 indexed_at,
                 record
-            FROM entries
+            FROM entries FINAL
             WHERE did = ?
               AND rkey = ?
               AND deleted_at = toDateTime64(0, 3)
-            ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+            ORDER BY updated_at DESC
             LIMIT 1
         "#;
 
@@ -326,11 +314,11 @@ impl Client {
                 created_at,
                 indexed_at,
                 record
-            FROM entries
+            FROM entries FINAL
             WHERE did = ?
               AND (path = ? OR title = ?)
               AND deleted_at = toDateTime64(0, 3)
-            ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+            ORDER BY updated_at DESC
             LIMIT 1
         "#;
 
@@ -374,7 +362,7 @@ impl Client {
                     created_at,
                     indexed_at,
                     record
-                FROM notebooks
+                FROM notebooks FINAL
                 WHERE did = ?
                   AND deleted_at = toDateTime64(0, 3)
                   AND created_at < fromUnixTimestamp64Milli(?)
@@ -395,7 +383,7 @@ impl Client {
                     created_at,
                     indexed_at,
                     record
-                FROM notebooks
+                FROM notebooks FINAL
                 WHERE did = ?
                   AND deleted_at = toDateTime64(0, 3)
                 ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
@@ -433,43 +421,31 @@ impl Client {
     ) -> Result<Vec<EntryRow>, IndexError> {
         let query = if cursor.is_some() {
             r#"
-                SELECT
-                    did,
-                    rkey,
-                    cid,
-                    uri,
-                    title,
-                    path,
-                    tags,
-                    author_dids,
-                    created_at,
-                    indexed_at,
-                    record
-                FROM entries
-                WHERE did = ?
-                  AND deleted_at = toDateTime64(0, 3)
-                  AND created_at < fromUnixTimestamp64Milli(?)
-                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                FROM (
+                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
+                    FROM entries FINAL
+                    WHERE did = ?
+                      AND deleted_at = toDateTime64(0, 3)
+                      AND created_at < fromUnixTimestamp64Milli(?)
+                )
+                WHERE rn = 1
+                ORDER BY created_at DESC
                 LIMIT ?
             "#
         } else {
             r#"
-                SELECT
-                    did,
-                    rkey,
-                    cid,
-                    uri,
-                    title,
-                    path,
-                    tags,
-                    author_dids,
-                    created_at,
-                    indexed_at,
-                    record
-                FROM entries
-                WHERE did = ?
-                  AND deleted_at = toDateTime64(0, 3)
-                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                FROM (
+                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
+                    FROM entries FINAL
+                    WHERE did = ?
+                      AND deleted_at = toDateTime64(0, 3)
+                )
+                WHERE rn = 1
+                ORDER BY created_at DESC
                 LIMIT ?
             "#
         };
@@ -519,7 +495,7 @@ impl Client {
                     created_at,
                     indexed_at,
                     record
-                FROM notebooks
+                FROM notebooks FINAL
                 WHERE deleted_at = toDateTime64(0, 3)
                   AND hasAny(tags, ?)
                   AND created_at < fromUnixTimestamp64Milli(?)
@@ -540,7 +516,7 @@ impl Client {
                     created_at,
                     indexed_at,
                     record
-                FROM notebooks
+                FROM notebooks FINAL
                 WHERE deleted_at = toDateTime64(0, 3)
                   AND hasAny(tags, ?)
                 ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
@@ -560,7 +536,7 @@ impl Client {
                     created_at,
                     indexed_at,
                     record
-                FROM notebooks
+                FROM notebooks FINAL
                 WHERE deleted_at = toDateTime64(0, 3)
                   AND created_at < fromUnixTimestamp64Milli(?)
                 ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
@@ -580,7 +556,7 @@ impl Client {
                     created_at,
                     indexed_at,
                     record
-                FROM notebooks
+                FROM notebooks FINAL
                 WHERE deleted_at = toDateTime64(0, 3)
                 ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
                 LIMIT ?
@@ -623,82 +599,58 @@ impl Client {
     ) -> Result<Vec<EntryRow>, IndexError> {
         let base_query = if tags.is_some() && cursor.is_some() {
             r#"
-                SELECT
-                    did,
-                    rkey,
-                    cid,
-                    uri,
-                    title,
-                    path,
-                    tags,
-                    author_dids,
-                    created_at,
-                    indexed_at,
-                    record
-                FROM entries
-                WHERE deleted_at = toDateTime64(0, 3)
-                  AND hasAny(tags, ?)
-                  AND created_at < fromUnixTimestamp64Milli(?)
-                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                FROM (
+                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
+                    FROM entries FINAL
+                    WHERE deleted_at = toDateTime64(0, 3)
+                      AND hasAny(tags, ?)
+                      AND created_at < fromUnixTimestamp64Milli(?)
+                )
+                WHERE rn = 1
+                ORDER BY created_at DESC
                 LIMIT ?
             "#
         } else if tags.is_some() {
             r#"
-                SELECT
-                    did,
-                    rkey,
-                    cid,
-                    uri,
-                    title,
-                    path,
-                    tags,
-                    author_dids,
-                    created_at,
-                    indexed_at,
-                    record
-                FROM entries
-                WHERE deleted_at = toDateTime64(0, 3)
-                  AND hasAny(tags, ?)
-                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                FROM (
+                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
+                    FROM entries FINAL
+                    WHERE deleted_at = toDateTime64(0, 3)
+                      AND hasAny(tags, ?)
+                )
+                WHERE rn = 1
+                ORDER BY created_at DESC
                 LIMIT ?
             "#
         } else if cursor.is_some() {
             r#"
-                SELECT
-                    did,
-                    rkey,
-                    cid,
-                    uri,
-                    title,
-                    path,
-                    tags,
-                    author_dids,
-                    created_at,
-                    indexed_at,
-                    record
-                FROM entries
-                WHERE deleted_at = toDateTime64(0, 3)
-                  AND created_at < fromUnixTimestamp64Milli(?)
-                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                FROM (
+                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
+                    FROM entries FINAL
+                    WHERE deleted_at = toDateTime64(0, 3)
+                      AND created_at < fromUnixTimestamp64Milli(?)
+                )
+                WHERE rn = 1
+                ORDER BY created_at DESC
                 LIMIT ?
             "#
         } else {
             r#"
-                SELECT
-                    did,
-                    rkey,
-                    cid,
-                    uri,
-                    title,
-                    path,
-                    tags,
-                    author_dids,
-                    created_at,
-                    indexed_at,
-                    record
-                FROM entries
-                WHERE deleted_at = toDateTime64(0, 3)
-                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                FROM (
+                    SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
+                           ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
+                    FROM entries FINAL
+                    WHERE deleted_at = toDateTime64(0, 3)
+                )
+                WHERE rn = 1
+                ORDER BY created_at DESC
                 LIMIT ?
             "#
         };
