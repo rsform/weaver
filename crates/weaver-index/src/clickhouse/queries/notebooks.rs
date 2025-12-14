@@ -19,6 +19,8 @@ pub struct NotebookRow {
     pub tags: Vec<SmolStr>,
     pub author_dids: Vec<SmolStr>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub indexed_at: chrono::DateTime<chrono::Utc>,
     pub record: SmolStr,
 }
@@ -34,6 +36,8 @@ pub struct EntryRow {
     pub path: SmolStr,
     pub tags: Vec<SmolStr>,
     pub author_dids: Vec<SmolStr>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
+    pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub indexed_at: chrono::DateTime<chrono::Utc>,
     pub record: SmolStr,
@@ -58,13 +62,14 @@ impl Client {
                 path,
                 tags,
                 author_dids,
+                created_at,
                 indexed_at,
                 record
             FROM notebooks
             WHERE did = ?
               AND (path = ? OR title = ?)
               AND deleted_at = toDateTime64(0, 3)
-            ORDER BY event_time DESC
+            ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
             LIMIT 1
         "#;
 
@@ -102,13 +107,14 @@ impl Client {
                 path,
                 tags,
                 author_dids,
+                created_at,
                 indexed_at,
                 record
             FROM notebooks
             WHERE did = ?
               AND rkey = ?
               AND deleted_at = toDateTime64(0, 3)
-            ORDER BY event_time DESC
+            ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
             LIMIT 1
         "#;
 
@@ -131,13 +137,14 @@ impl Client {
     ///
     /// Note: This is a simplified version. The full implementation would
     /// need to join with notebook's entryList to get proper ordering.
-    /// For now, we just list entries by the same author.
+    /// For now, we just list entries by the same author, ordered by rkey (notebook order).
     pub async fn list_notebook_entries(
         &self,
         did: &str,
         limit: u32,
         cursor: Option<&str>,
     ) -> Result<Vec<EntryRow>, IndexError> {
+        // Note: rkey ordering is intentional here - it's the notebook's entry order
         let query = if cursor.is_some() {
             r#"
                 SELECT
@@ -149,6 +156,7 @@ impl Client {
                     path,
                     tags,
                     author_dids,
+                    created_at,
                     indexed_at,
                     record
                 FROM entries
@@ -169,6 +177,7 @@ impl Client {
                     path,
                     tags,
                     author_dids,
+                    created_at,
                     indexed_at,
                     record
                 FROM entries
@@ -200,7 +209,7 @@ impl Client {
     /// Get an entry by rkey, picking the most recent version across collaborators.
     ///
     /// For collaborative entries, the same rkey may exist in multiple repos.
-    /// This returns the most recently updated version, with indexed_at as tiebreaker.
+    /// This returns the most recently updated version.
     ///
     /// `candidate_dids` should include the notebook owner + all collaborator DIDs.
     pub async fn get_entry(
@@ -225,13 +234,14 @@ impl Client {
                 path,
                 tags,
                 author_dids,
+                created_at,
                 indexed_at,
                 record
             FROM entries
             WHERE rkey = ?
               AND did IN ({})
               AND deleted_at = toDateTime64(0, 3)
-            ORDER BY updated_at DESC, indexed_at DESC
+            ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
             LIMIT 1
             "#,
             placeholders.join(", ")
@@ -271,13 +281,14 @@ impl Client {
                 path,
                 tags,
                 author_dids,
+                created_at,
                 indexed_at,
                 record
             FROM entries
             WHERE did = ?
               AND rkey = ?
               AND deleted_at = toDateTime64(0, 3)
-            ORDER BY updated_at DESC, indexed_at DESC
+            ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
             LIMIT 1
         "#;
 
@@ -312,13 +323,14 @@ impl Client {
                 path,
                 tags,
                 author_dids,
+                created_at,
                 indexed_at,
                 record
             FROM entries
             WHERE did = ?
               AND (path = ? OR title = ?)
               AND deleted_at = toDateTime64(0, 3)
-            ORDER BY event_time DESC
+            ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
             LIMIT 1
         "#;
 
@@ -336,5 +348,453 @@ impl Client {
             })?;
 
         Ok(row)
+    }
+
+    /// List notebooks for an actor.
+    ///
+    /// Returns notebooks owned by the given DID, ordered by created_at DESC.
+    /// Cursor is created_at timestamp in milliseconds.
+    pub async fn list_actor_notebooks(
+        &self,
+        did: &str,
+        limit: u32,
+        cursor: Option<i64>,
+    ) -> Result<Vec<NotebookRow>, IndexError> {
+        let query = if cursor.is_some() {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM notebooks
+                WHERE did = ?
+                  AND deleted_at = toDateTime64(0, 3)
+                  AND created_at < fromUnixTimestamp64Milli(?)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        } else {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM notebooks
+                WHERE did = ?
+                  AND deleted_at = toDateTime64(0, 3)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        };
+
+        let mut q = self.inner().query(query).bind(did);
+
+        if let Some(c) = cursor {
+            q = q.bind(c);
+        }
+
+        let rows = q
+            .bind(limit)
+            .fetch_all::<NotebookRow>()
+            .await
+            .map_err(|e| ClickHouseError::Query {
+                message: "failed to list actor notebooks".into(),
+                source: e,
+            })?;
+
+        Ok(rows)
+    }
+
+    /// List entries for an actor.
+    ///
+    /// Returns entries owned by the given DID, ordered by created_at DESC.
+    /// Cursor is created_at timestamp in milliseconds.
+    pub async fn list_actor_entries(
+        &self,
+        did: &str,
+        limit: u32,
+        cursor: Option<i64>,
+    ) -> Result<Vec<EntryRow>, IndexError> {
+        let query = if cursor.is_some() {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM entries
+                WHERE did = ?
+                  AND deleted_at = toDateTime64(0, 3)
+                  AND created_at < fromUnixTimestamp64Milli(?)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        } else {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM entries
+                WHERE did = ?
+                  AND deleted_at = toDateTime64(0, 3)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        };
+
+        let mut q = self.inner().query(query).bind(did);
+
+        if let Some(c) = cursor {
+            q = q.bind(c);
+        }
+
+        let rows =
+            q.bind(limit)
+                .fetch_all::<EntryRow>()
+                .await
+                .map_err(|e| ClickHouseError::Query {
+                    message: "failed to list actor entries".into(),
+                    source: e,
+                })?;
+
+        Ok(rows)
+    }
+
+    /// Get a global feed of notebooks.
+    ///
+    /// Returns notebooks ordered by created_at DESC (chronological) or by
+    /// popularity metrics if algorithm is "popular".
+    /// Cursor is created_at timestamp in milliseconds.
+    pub async fn get_notebook_feed(
+        &self,
+        algorithm: &str,
+        tags: Option<&[&str]>,
+        limit: u32,
+        cursor: Option<i64>,
+    ) -> Result<Vec<NotebookRow>, IndexError> {
+        // For now, just chronological. Popular would need join with counts.
+        let base_query = if tags.is_some() && cursor.is_some() {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM notebooks
+                WHERE deleted_at = toDateTime64(0, 3)
+                  AND hasAny(tags, ?)
+                  AND created_at < fromUnixTimestamp64Milli(?)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        } else if tags.is_some() {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM notebooks
+                WHERE deleted_at = toDateTime64(0, 3)
+                  AND hasAny(tags, ?)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        } else if cursor.is_some() {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM notebooks
+                WHERE deleted_at = toDateTime64(0, 3)
+                  AND created_at < fromUnixTimestamp64Milli(?)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        } else {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM notebooks
+                WHERE deleted_at = toDateTime64(0, 3)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        };
+
+        let _ = algorithm; // TODO: implement popular sorting
+
+        let mut q = self.inner().query(base_query);
+
+        if let Some(t) = tags {
+            q = q.bind(t);
+        }
+        if let Some(c) = cursor {
+            q = q.bind(c);
+        }
+
+        let rows = q
+            .bind(limit)
+            .fetch_all::<NotebookRow>()
+            .await
+            .map_err(|e| ClickHouseError::Query {
+                message: "failed to get notebook feed".into(),
+                source: e,
+            })?;
+
+        Ok(rows)
+    }
+
+    /// Get a global feed of entries.
+    ///
+    /// Returns entries ordered by created_at DESC (chronological).
+    /// Cursor is created_at timestamp in milliseconds.
+    pub async fn get_entry_feed(
+        &self,
+        algorithm: &str,
+        tags: Option<&[&str]>,
+        limit: u32,
+        cursor: Option<i64>,
+    ) -> Result<Vec<EntryRow>, IndexError> {
+        let base_query = if tags.is_some() && cursor.is_some() {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM entries
+                WHERE deleted_at = toDateTime64(0, 3)
+                  AND hasAny(tags, ?)
+                  AND created_at < fromUnixTimestamp64Milli(?)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        } else if tags.is_some() {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM entries
+                WHERE deleted_at = toDateTime64(0, 3)
+                  AND hasAny(tags, ?)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        } else if cursor.is_some() {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM entries
+                WHERE deleted_at = toDateTime64(0, 3)
+                  AND created_at < fromUnixTimestamp64Milli(?)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        } else {
+            r#"
+                SELECT
+                    did,
+                    rkey,
+                    cid,
+                    uri,
+                    title,
+                    path,
+                    tags,
+                    author_dids,
+                    created_at,
+                    indexed_at,
+                    record
+                FROM entries
+                WHERE deleted_at = toDateTime64(0, 3)
+                ORDER BY toStartOfFiveMinutes(event_time) DESC, created_at DESC
+                LIMIT ?
+            "#
+        };
+
+        let _ = algorithm; // TODO: implement popular sorting
+
+        let mut q = self.inner().query(base_query);
+
+        if let Some(t) = tags {
+            q = q.bind(t);
+        }
+        if let Some(c) = cursor {
+            q = q.bind(c);
+        }
+
+        let rows =
+            q.bind(limit)
+                .fetch_all::<EntryRow>()
+                .await
+                .map_err(|e| ClickHouseError::Query {
+                    message: "failed to get entry feed".into(),
+                    source: e,
+                })?;
+
+        Ok(rows)
+    }
+
+    /// Get an entry at a specific index within a notebook.
+    ///
+    /// Returns the entry at the given 0-based index, plus adjacent entries for prev/next.
+    pub async fn get_book_entry_at_index(
+        &self,
+        notebook_did: &str,
+        notebook_rkey: &str,
+        index: u32,
+    ) -> Result<Option<(EntryRow, Option<EntryRow>, Option<EntryRow>)>, IndexError> {
+        // Fetch entries for this notebook with index context
+        // We need 3 entries: prev (index-1), current (index), next (index+1)
+        let offset = if index > 0 { index - 1 } else { 0 };
+        let fetch_count = if index > 0 { 3u32 } else { 2u32 };
+
+        let query = r#"
+            SELECT
+                e.did,
+                e.rkey,
+                e.cid,
+                e.uri,
+                e.title,
+                e.path,
+                e.tags,
+                e.author_dids,
+                e.created_at,
+                e.indexed_at,
+                e.record
+            FROM notebook_entries ne FINAL
+            INNER JOIN entries e ON
+                e.did = ne.entry_did
+                AND e.rkey = ne.entry_rkey
+                AND e.deleted_at = toDateTime64(0, 3)
+            WHERE ne.notebook_did = ?
+              AND ne.notebook_rkey = ?
+            ORDER BY ne.position ASC
+            LIMIT ? OFFSET ?
+        "#;
+
+        let rows: Vec<EntryRow> = self
+            .inner()
+            .query(query)
+            .bind(notebook_did)
+            .bind(notebook_rkey)
+            .bind(fetch_count)
+            .bind(offset)
+            .fetch_all()
+            .await
+            .map_err(|e| ClickHouseError::Query {
+                message: "failed to get book entry at index".into(),
+                source: e,
+            })?;
+
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        // Determine which row is which based on the offset
+        let mut iter = rows.into_iter();
+        if index == 0 {
+            // No prev, rows[0] is current, rows[1] is next (if exists)
+            let current = iter.next();
+            let next = iter.next();
+            Ok(current.map(|c| (c, None, next)))
+        } else {
+            // rows[0] is prev, rows[1] is current, rows[2] is next
+            let prev = iter.next();
+            let current = iter.next();
+            let next = iter.next();
+            Ok(current.map(|c| (c, prev, next)))
+        }
     }
 }

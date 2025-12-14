@@ -6,6 +6,7 @@ pub mod firehose;
 pub mod indexer;
 pub mod parallel_tap;
 pub mod server;
+pub mod service_identity;
 pub mod sqlite;
 pub mod tap;
 
@@ -14,4 +15,5 @@ pub use error::{IndexError, Result};
 pub use indexer::{FirehoseIndexer, load_cursor};
 pub use parallel_tap::TapIndexer;
 pub use server::{AppState, ServerConfig};
+pub use service_identity::ServiceIdentity;
 pub use sqlite::{ShardKey, ShardRouter, SqliteShard};

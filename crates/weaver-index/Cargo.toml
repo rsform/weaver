@@ -25,9 +25,13 @@ weaver-common = { path = "../weaver-common", features = ["telemetry"] }
 
 # AT Protocol / Jacquard
 jacquard = { workspace = true, features = ["websocket", "zstd", "dns", "cache"] }
-jacquard-common = { workspace = true }
+jacquard-common = { workspace = true, features = ["crypto-k256"] }
 jacquard-repo = { workspace = true }
 jacquard-axum = { workspace = true }
+
+# Crypto (for service identity keypair)
+k256 = { version = "0.13", features = ["ecdsa"] }
+rand = "0.8"
 
 # ClickHouse
 clickhouse = { version = "0.14", features = ["inserter", "chrono", "rustls-tls-ring", "rustls-tls-webpki-roots"] }

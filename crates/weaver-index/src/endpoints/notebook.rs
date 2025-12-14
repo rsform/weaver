@@ -8,17 +8,21 @@ use jacquard::cowstr::ToCowStr;
 use jacquard::types::string::{AtUri, Cid, Did, Handle, Uri};
 use jacquard::types::value::Data;
 use jacquard_axum::ExtractXrpc;
+use jacquard_axum::service_auth::ExtractOptionalServiceAuth;
 use smol_str::SmolStr;
 use weaver_api::sh_weaver::actor::{ProfileDataView, ProfileDataViewInner, ProfileView};
 use weaver_api::sh_weaver::notebook::{
-    AuthorListView, BookEntryView, EntryView, NotebookView,
+    AuthorListView, BookEntryRef, BookEntryView, EntryView, FeedEntryView, NotebookView,
+    get_book_entry::{GetBookEntryOutput, GetBookEntryRequest},
     get_entry::{GetEntryOutput, GetEntryRequest},
+    get_entry_feed::{GetEntryFeedOutput, GetEntryFeedRequest},
+    get_notebook_feed::{GetNotebookFeedOutput, GetNotebookFeedRequest},
     resolve_entry::{ResolveEntryOutput, ResolveEntryRequest},
     resolve_notebook::{ResolveNotebookOutput, ResolveNotebookRequest},
 };
 
-use crate::clickhouse::ProfileRow;
-use crate::endpoints::actor::resolve_actor;
+use crate::clickhouse::{EntryRow, ProfileRow};
+use crate::endpoints::actor::{Viewer, resolve_actor};
 use crate::endpoints::repo::XrpcErrorResponse;
 use crate::server::AppState;
 
@@ -27,8 +31,12 @@ use crate::server::AppState;
 /// Resolves a notebook by actor + path/title, returns notebook with entries.
 pub async fn resolve_notebook(
     State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
     ExtractXrpc(args): ExtractXrpc<ResolveNotebookRequest>,
 ) -> Result<Json<ResolveNotebookOutput<'static>>, XrpcErrorResponse> {
+    // viewer can be used later for viewer state (bookmarks, read status, etc.)
+    let _viewer: Viewer = viewer;
+
     // Resolve actor to DID
     let did = resolve_actor(&state, &args.actor).await?;
     let did_str = did.as_str();
@@ -195,8 +203,11 @@ pub async fn resolve_notebook(
 /// Gets an entry by AT URI.
 pub async fn get_entry(
     State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
     ExtractXrpc(args): ExtractXrpc<GetEntryRequest>,
 ) -> Result<Json<GetEntryOutput<'static>>, XrpcErrorResponse> {
+    let _viewer: Viewer = viewer;
+
     // Parse the AT URI to extract authority and rkey
     let uri = &args.uri;
     let authority = uri.authority();
@@ -273,8 +284,11 @@ pub async fn get_entry(
 /// Resolves an entry by actor + notebook name + entry name.
 pub async fn resolve_entry(
     State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
     ExtractXrpc(args): ExtractXrpc<ResolveEntryRequest>,
 ) -> Result<Json<ResolveEntryOutput<'static>>, XrpcErrorResponse> {
+    let _viewer: Viewer = viewer;
+
     // Resolve actor to DID
     let did = resolve_actor(&state, &args.actor).await?;
     let did_str = did.as_str();
@@ -294,6 +308,7 @@ pub async fn resolve_entry(
                     XrpcErrorResponse::internal_error("Database query failed")
                 })
         },
+        // TODO: fix this, as we do need the entries to know for sure which, in case of collisions
         async {
             state
                 .clickhouse
@@ -521,4 +536,345 @@ fn profile_to_data_view(
         .build();
 
     Ok(profile_data)
+}
+
+/// Parse cursor string to i64 timestamp millis
+fn parse_cursor(cursor: Option<&str>) -> Result<Option<i64>, XrpcErrorResponse> {
+    cursor
+        .map(|c| {
+            c.parse::<i64>()
+                .map_err(|_| XrpcErrorResponse::invalid_request("Invalid cursor format"))
+        })
+        .transpose()
+}
+
+/// Handle sh.weaver.notebook.getNotebookFeed
+///
+/// Returns a global feed of notebooks.
+pub async fn get_notebook_feed(
+    State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
+    ExtractXrpc(args): ExtractXrpc<GetNotebookFeedRequest>,
+) -> Result<Json<GetNotebookFeedOutput<'static>>, XrpcErrorResponse> {
+    let _viewer: Viewer = viewer;
+
+    let limit = args.limit.unwrap_or(50).clamp(1, 100) as u32;
+    let cursor = parse_cursor(args.cursor.as_deref())?;
+    let algorithm = args.algorithm.as_deref().unwrap_or("chronological");
+
+    // Convert tags to &[&str] if present
+    let tags_vec: Vec<&str> = args
+        .tags
+        .as_ref()
+        .map(|t| t.iter().map(|s| s.as_ref()).collect())
+        .unwrap_or_default();
+    let tags = if tags_vec.is_empty() {
+        None
+    } else {
+        Some(tags_vec.as_slice())
+    };
+
+    let notebook_rows = state
+        .clickhouse
+        .get_notebook_feed(algorithm, tags, limit + 1, cursor)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get notebook feed: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    // Check if there are more
+    let has_more = notebook_rows.len() > limit as usize;
+    let notebook_rows: Vec<_> = notebook_rows.into_iter().take(limit as usize).collect();
+
+    // Collect author DIDs for hydration
+    let mut all_author_dids: HashSet<&str> = HashSet::new();
+    for nb in &notebook_rows {
+        for did in &nb.author_dids {
+            all_author_dids.insert(did.as_str());
+        }
+    }
+
+    // Batch fetch profiles
+    let author_dids_vec: Vec<&str> = all_author_dids.into_iter().collect();
+    let profiles = state
+        .clickhouse
+        .get_profiles_batch(&author_dids_vec)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to batch fetch profiles: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    let profile_map: HashMap<&str, &ProfileRow> =
+        profiles.iter().map(|p| (p.did.as_str(), p)).collect();
+
+    // Build NotebookViews
+    let mut notebooks: Vec<NotebookView<'static>> = Vec::with_capacity(notebook_rows.len());
+    for nb_row in &notebook_rows {
+        let notebook_uri = AtUri::new(&nb_row.uri).map_err(|e| {
+            tracing::error!("Invalid notebook URI in db: {}", e);
+            XrpcErrorResponse::internal_error("Invalid URI stored")
+        })?;
+
+        let notebook_cid = Cid::new(nb_row.cid.as_bytes()).map_err(|e| {
+            tracing::error!("Invalid notebook CID in db: {}", e);
+            XrpcErrorResponse::internal_error("Invalid CID stored")
+        })?;
+
+        let authors = hydrate_authors(&nb_row.author_dids, &profile_map)?;
+        let record = parse_record_json(&nb_row.record)?;
+
+        let notebook = NotebookView::new()
+            .uri(notebook_uri.into_static())
+            .cid(notebook_cid.into_static())
+            .authors(authors)
+            .record(record)
+            .indexed_at(nb_row.indexed_at.fixed_offset())
+            .maybe_title(non_empty_cowstr(&nb_row.title))
+            .maybe_path(non_empty_cowstr(&nb_row.path))
+            .build();
+
+        notebooks.push(notebook);
+    }
+
+    // Build cursor for pagination (created_at millis)
+    let next_cursor = if has_more {
+        notebook_rows
+            .last()
+            .map(|nb| nb.created_at.timestamp_millis().to_cowstr().into_static())
+    } else {
+        None
+    };
+
+    Ok(Json(
+        GetNotebookFeedOutput {
+            notebooks,
+            cursor: next_cursor,
+            extra_data: None,
+        }
+        .into_static(),
+    ))
+}
+
+/// Handle sh.weaver.notebook.getEntryFeed
+///
+/// Returns a global feed of entries.
+pub async fn get_entry_feed(
+    State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
+    ExtractXrpc(args): ExtractXrpc<GetEntryFeedRequest>,
+) -> Result<Json<GetEntryFeedOutput<'static>>, XrpcErrorResponse> {
+    let _viewer: Viewer = viewer;
+
+    let limit = args.limit.unwrap_or(50).clamp(1, 100) as u32;
+    let cursor = parse_cursor(args.cursor.as_deref())?;
+    let algorithm = args.algorithm.as_deref().unwrap_or("chronological");
+
+    // Convert tags to &[&str] if present
+    let tags_vec: Vec<&str> = args
+        .tags
+        .as_ref()
+        .map(|t| t.iter().map(|s| s.as_ref()).collect())
+        .unwrap_or_default();
+    let tags = if tags_vec.is_empty() {
+        None
+    } else {
+        Some(tags_vec.as_slice())
+    };
+
+    let entry_rows = state
+        .clickhouse
+        .get_entry_feed(algorithm, tags, limit + 1, cursor)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get entry feed: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    // Check if there are more
+    let has_more = entry_rows.len() > limit as usize;
+    let entry_rows: Vec<_> = entry_rows.into_iter().take(limit as usize).collect();
+
+    // Collect author DIDs for hydration
+    let mut all_author_dids: HashSet<&str> = HashSet::new();
+    for entry in &entry_rows {
+        for did in &entry.author_dids {
+            all_author_dids.insert(did.as_str());
+        }
+    }
+
+    // Batch fetch profiles
+    let author_dids_vec: Vec<&str> = all_author_dids.into_iter().collect();
+    let profiles = state
+        .clickhouse
+        .get_profiles_batch(&author_dids_vec)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to batch fetch profiles: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    let profile_map: HashMap<&str, &ProfileRow> =
+        profiles.iter().map(|p| (p.did.as_str(), p)).collect();
+
+    // Build FeedEntryViews
+    let mut feed: Vec<FeedEntryView<'static>> = Vec::with_capacity(entry_rows.len());
+    for entry_row in &entry_rows {
+        let entry_view = build_entry_view(entry_row, &profile_map)?;
+
+        let feed_entry = FeedEntryView::new().entry(entry_view).build();
+
+        feed.push(feed_entry);
+    }
+
+    // Build cursor for pagination (created_at millis)
+    let next_cursor = if has_more {
+        entry_rows
+            .last()
+            .map(|e| e.created_at.timestamp_millis().to_cowstr().into_static())
+    } else {
+        None
+    };
+
+    Ok(Json(
+        GetEntryFeedOutput {
+            feed,
+            cursor: next_cursor,
+            extra_data: None,
+        }
+        .into_static(),
+    ))
+}
+
+/// Handle sh.weaver.notebook.getBookEntry
+///
+/// Returns an entry at a specific index within a notebook, with prev/next navigation.
+pub async fn get_book_entry(
+    State(state): State<AppState>,
+    ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
+    ExtractXrpc(args): ExtractXrpc<GetBookEntryRequest>,
+) -> Result<Json<GetBookEntryOutput<'static>>, XrpcErrorResponse> {
+    let _viewer: Viewer = viewer;
+
+    // Parse the notebook URI
+    let notebook_uri = &args.notebook;
+    let authority = notebook_uri.authority();
+    let notebook_rkey = notebook_uri
+        .rkey()
+        .ok_or_else(|| XrpcErrorResponse::invalid_request("Notebook URI must include rkey"))?;
+
+    // Resolve authority to DID
+    let notebook_did = resolve_actor(&state, authority).await?;
+    let notebook_did_str = notebook_did.as_str();
+    let notebook_rkey_str = notebook_rkey.as_ref();
+
+    let index = args.index.unwrap_or(0).max(0) as u32;
+
+    // Fetch entry at index with prev/next
+    let result = state
+        .clickhouse
+        .get_book_entry_at_index(notebook_did_str, notebook_rkey_str, index)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get book entry: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    let (current_row, prev_row, next_row) =
+        result.ok_or_else(|| XrpcErrorResponse::not_found("Entry not found at index"))?;
+
+    // Collect all author DIDs for hydration
+    let mut all_author_dids: HashSet<&str> = HashSet::new();
+    for did in &current_row.author_dids {
+        all_author_dids.insert(did.as_str());
+    }
+    if let Some(ref prev) = prev_row {
+        for did in &prev.author_dids {
+            all_author_dids.insert(did.as_str());
+        }
+    }
+    if let Some(ref next) = next_row {
+        for did in &next.author_dids {
+            all_author_dids.insert(did.as_str());
+        }
+    }
+
+    // Batch fetch profiles
+    let author_dids_vec: Vec<&str> = all_author_dids.into_iter().collect();
+    let profiles = state
+        .clickhouse
+        .get_profiles_batch(&author_dids_vec)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to fetch profiles: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    let profile_map: HashMap<&str, &ProfileRow> =
+        profiles.iter().map(|p| (p.did.as_str(), p)).collect();
+
+    // Build the current entry view
+    let entry_view = build_entry_view(&current_row, &profile_map)?;
+
+    // Build prev/next refs if present
+    let prev_ref = if let Some(ref prev) = prev_row {
+        let prev_view = build_entry_view(prev, &profile_map)?;
+        Some(BookEntryRef::new().entry(prev_view).build())
+    } else {
+        None
+    };
+
+    let next_ref = if let Some(ref next) = next_row {
+        let next_view = build_entry_view(next, &profile_map)?;
+        Some(BookEntryRef::new().entry(next_view).build())
+    } else {
+        None
+    };
+
+    let book_entry = BookEntryView::new()
+        .entry(entry_view)
+        .index(index as i64)
+        .maybe_prev(prev_ref)
+        .maybe_next(next_ref)
+        .build();
+
+    Ok(Json(
+        GetBookEntryOutput {
+            value: book_entry,
+            extra_data: None,
+        }
+        .into_static(),
+    ))
+}
+
+/// Build an EntryView from an EntryRow
+fn build_entry_view(
+    entry_row: &EntryRow,
+    profile_map: &HashMap<&str, &ProfileRow>,
+) -> Result<EntryView<'static>, XrpcErrorResponse> {
+    let entry_uri = AtUri::new(&entry_row.uri).map_err(|e| {
+        tracing::error!("Invalid entry URI in db: {}", e);
+        XrpcErrorResponse::internal_error("Invalid URI stored")
+    })?;
+
+    let entry_cid = Cid::new(entry_row.cid.as_bytes()).map_err(|e| {
+        tracing::error!("Invalid entry CID in db: {}", e);
+        XrpcErrorResponse::internal_error("Invalid CID stored")
+    })?;
+
+    let authors = hydrate_authors(&entry_row.author_dids, profile_map)?;
+    let record = parse_record_json(&entry_row.record)?;
+
+    let entry_view = EntryView::new()
+        .uri(entry_uri.into_static())
+        .cid(entry_cid.into_static())
+        .authors(authors)
+        .record(record)
+        .indexed_at(entry_row.indexed_at.fixed_offset())
+        .maybe_title(non_empty_cowstr(&entry_row.title))
+        .maybe_path(non_empty_cowstr(&entry_row.path))
+        .build();
+
+    Ok(entry_view)
 }

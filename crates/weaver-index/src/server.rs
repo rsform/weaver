@@ -5,18 +5,25 @@ use axum::{Json, Router, extract::State, http::StatusCode, response::IntoRespons
 use jacquard::api::com_atproto::repo::{
     get_record::GetRecordRequest, list_records::ListRecordsRequest,
 };
-use weaver_api::sh_weaver::actor::get_profile::GetProfileRequest;
-use weaver_api::sh_weaver::notebook::{
-    get_entry::GetEntryRequest,
-    resolve_entry::ResolveEntryRequest,
-    resolve_notebook::ResolveNotebookRequest,
-};
 use jacquard::client::UnauthenticatedSession;
 use jacquard::identity::JacquardResolver;
+use jacquard::types::did_doc::DidDocument;
+use jacquard::types::string::Did;
 use jacquard_axum::IntoRouter;
+use jacquard_axum::did_web::did_web_router;
+use jacquard_axum::service_auth::ServiceAuth;
 use serde::Serialize;
 use tower_http::trace::TraceLayer;
 use tracing::info;
+use weaver_api::sh_weaver::actor::{
+    get_actor_entries::GetActorEntriesRequest, get_actor_notebooks::GetActorNotebooksRequest,
+    get_profile::GetProfileRequest,
+};
+use weaver_api::sh_weaver::notebook::{
+    get_book_entry::GetBookEntryRequest, get_entry::GetEntryRequest,
+    get_entry_feed::GetEntryFeedRequest, get_notebook_feed::GetNotebookFeedRequest,
+    resolve_entry::ResolveEntryRequest, resolve_notebook::ResolveNotebookRequest,
+};
 
 use crate::clickhouse::Client;
 use crate::config::ShardConfig;
@@ -35,21 +42,41 @@ pub struct AppState {
     pub clickhouse: Arc<Client>,
     pub shards: Arc<ShardRouter>,
     pub resolver: Resolver,
+    /// Our service DID (expected audience for service auth JWTs)
+    pub service_did: Did<'static>,
 }
 
 impl AppState {
-    pub fn new(clickhouse: Client, shard_config: ShardConfig) -> Self {
+    pub fn new(clickhouse: Client, shard_config: ShardConfig, service_did: Did<'static>) -> Self {
         Self {
             clickhouse: Arc::new(clickhouse),
             shards: Arc::new(ShardRouter::new(shard_config.base_path)),
             resolver: UnauthenticatedSession::new_slingshot(),
+            service_did,
         }
     }
 }
 
+impl ServiceAuth for AppState {
+    type Resolver = UnauthenticatedSession<JacquardResolver>;
+
+    fn service_did(&self) -> &Did<'_> {
+        &self.service_did
+    }
+
+    fn resolver(&self) -> &Self::Resolver {
+        &self.resolver
+    }
+
+    fn require_lxm(&self) -> bool {
+        true
+    }
+}
+
 /// Build the axum router with all XRPC endpoints
-pub fn router(state: AppState) -> Router {
+pub fn router(state: AppState, did_doc: DidDocument<'static>) -> Router {
     Router::new()
+        // did:web document
         .route("/xrpc/_health", get(health))
         .route("/metrics", get(metrics))
         // com.atproto.repo.* endpoints (record cache)
@@ -57,12 +84,26 @@ pub fn router(state: AppState) -> Router {
         .merge(ListRecordsRequest::into_router(repo::list_records))
         // sh.weaver.actor.* endpoints
         .merge(GetProfileRequest::into_router(actor::get_profile))
+        .merge(GetActorNotebooksRequest::into_router(
+            actor::get_actor_notebooks,
+        ))
+        .merge(GetActorEntriesRequest::into_router(
+            actor::get_actor_entries,
+        ))
         // sh.weaver.notebook.* endpoints
-        .merge(ResolveNotebookRequest::into_router(notebook::resolve_notebook))
+        .merge(ResolveNotebookRequest::into_router(
+            notebook::resolve_notebook,
+        ))
         .merge(GetEntryRequest::into_router(notebook::get_entry))
         .merge(ResolveEntryRequest::into_router(notebook::resolve_entry))
+        .merge(GetNotebookFeedRequest::into_router(
+            notebook::get_notebook_feed,
+        ))
+        .merge(GetEntryFeedRequest::into_router(notebook::get_entry_feed))
+        .merge(GetBookEntryRequest::into_router(notebook::get_book_entry))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+        .merge(did_web_router(did_doc))
 }
 
 /// Prometheus metrics endpoint
@@ -105,6 +146,8 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    /// Service DID for this indexer (used as expected audience for service auth)
+    pub service_did: Did<'static>,
 }
 
 impl Default for ServerConfig {
@@ -112,6 +155,8 @@ impl Default for ServerConfig {
         Self {
             host: "0.0.0.0".to_string(),
             port: 3000,
+            // Default to a placeholder - should be overridden in production
+            service_did: Did::new_static("did:web:index.weaver.sh").unwrap(),
         }
     }
 }
@@ -123,8 +168,16 @@ impl ServerConfig {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(3000);
+        let service_did = std::env::var("SERVICE_DID")
+            .ok()
+            .and_then(|s| Did::new_owned(s).ok())
+            .unwrap_or_else(|| Did::new_static("did:web:index.weaver.sh").unwrap());
 
-        Self { host, port }
+        Self {
+            host,
+            port,
+            service_did,
+        }
     }
 
     pub fn addr(&self) -> SocketAddr {
@@ -135,9 +188,13 @@ impl ServerConfig {
 }
 
 /// Run the HTTP server
-pub async fn run(state: AppState, config: ServerConfig) -> Result<(), IndexError> {
+pub async fn run(
+    state: AppState,
+    config: ServerConfig,
+    did_doc: DidDocument<'static>,
+) -> Result<(), IndexError> {
     let addr = config.addr();
-    let app = router(state);
+    let app = router(state, did_doc);
 
     info!("Starting HTTP server on {}", addr);
 

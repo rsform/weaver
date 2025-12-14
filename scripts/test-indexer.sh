@@ -56,6 +56,54 @@ urlencode() {
     python3 -c "import urllib.parse; print(urllib.parse.quote('$1', safe=''))"
 }
 
+# Get actor notebooks
+test_actor_notebooks() {
+    local actor="${1:-$DID}"
+    local limit="${2:-10}"
+    info "Testing sh.weaver.actor.getActorNotebooks (actor=${actor}, limit=${limit})..."
+    curl -s "${BASE_URL}/xrpc/sh.weaver.actor.getActorNotebooks?actor=${actor}&limit=${limit}" | jq .
+}
+
+# Get actor notebooks with cursor
+test_actor_notebooks_cursor() {
+    local cursor="$1"
+    local actor="${2:-$DID}"
+    local limit="${3:-10}"
+    info "Testing sh.weaver.actor.getActorNotebooks with cursor..."
+    curl -s "${BASE_URL}/xrpc/sh.weaver.actor.getActorNotebooks?actor=${actor}&limit=${limit}&cursor=${cursor}" | jq .
+}
+
+# Get actor entries
+test_actor_entries() {
+    local actor="${1:-$DID}"
+    local limit="${2:-10}"
+    info "Testing sh.weaver.actor.getActorEntries (actor=${actor}, limit=${limit})..."
+    curl -s "${BASE_URL}/xrpc/sh.weaver.actor.getActorEntries?actor=${actor}&limit=${limit}" | jq .
+}
+
+# Get notebook feed
+test_notebook_feed() {
+    local limit="${1:-10}"
+    info "Testing sh.weaver.notebook.getNotebookFeed (limit=${limit})..."
+    curl -s "${BASE_URL}/xrpc/sh.weaver.notebook.getNotebookFeed?limit=${limit}" | jq .
+}
+
+# Get entry feed
+test_entry_feed() {
+    local limit="${1:-10}"
+    info "Testing sh.weaver.notebook.getEntryFeed (limit=${limit})..."
+    curl -s "${BASE_URL}/xrpc/sh.weaver.notebook.getEntryFeed?limit=${limit}" | jq .
+}
+
+# Get book entry by index
+test_book_entry() {
+    local notebook_rkey="${1:-weaver}"
+    local index="${2:-0}"
+    local notebook_uri="at://${DID}/sh.weaver.notebook.book/${notebook_rkey}"
+    info "Testing sh.weaver.notebook.getBookEntry (notebook=${notebook_uri}, index=${index})..."
+    curl -s "${BASE_URL}/xrpc/sh.weaver.notebook.getBookEntry?notebook=$(urlencode "${notebook_uri}")&index=${index}" | jq .
+}
+
 # Test all entry rkeys
 test_all_entries() {
     local rkeys=(
@@ -91,6 +139,16 @@ test_all() {
     test_resolve_entry "weaver" "drafts_privacy"
     echo
     test_get_entry "3m7tg3ni77tqx"
+    echo
+    test_actor_notebooks
+    echo
+    test_actor_entries
+    echo
+    test_notebook_feed
+    echo
+    test_entry_feed
+    echo
+    test_book_entry "3m4rbphheug2b" 0
 }
 
 # Main
@@ -113,11 +171,26 @@ case "${1:-all}" in
     entries)
         test_all_entries
         ;;
+    actor-notebooks)
+        test_actor_notebooks "${2:-$DID}" "${3:-10}"
+        ;;
+    actor-entries)
+        test_actor_entries "${2:-$DID}" "${3:-10}"
+        ;;
+    notebook-feed)
+        test_notebook_feed "${2:-10}"
+        ;;
+    entry-feed)
+        test_entry_feed "${2:-10}"
+        ;;
+    book-entry)
+        test_book_entry "${2:-3m4rbphheug2b}" "${3:-0}"
+        ;;
     all)
         test_all
         ;;
     *)
-        echo "Usage: $0 {health|profile|notebook [name]|entry [rkey]|resolve [notebook] [entry]|entries|all}"
+        echo "Usage: $0 {health|profile|notebook [name]|entry [rkey]|resolve [notebook] [entry]|entries|actor-notebooks [actor] [limit]|actor-entries [actor] [limit]|notebook-feed [limit]|entry-feed [limit]|book-entry [notebook] [index]|all}"
         echo
         echo "Environment:"
         echo "  INDEXER_URL  Base URL (default: http://localhost:3000)"

@@ -14,10 +14,10 @@ use crate::config::{IndexerConfig, TapConfig};
 use crate::error::{ClickHouseError, Result};
 use crate::tap::{TapConfig as TapConsumerConfig, TapConsumer, TapEvent};
 
-/// TAP indexer with multiple parallel websocket connections
+/// Tap indexer with multiple parallel websocket connections
 ///
-/// Each worker maintains its own websocket connection to TAP and its own
-/// ClickHouse inserter. TAP distributes events across connected clients,
+/// Each worker maintains its own websocket connection to Tap and its own
+/// ClickHouse inserter. Tap distributes events across connected clients,
 /// and its ack-gating mechanism ensures per-DID ordering is preserved
 /// regardless of which worker handles which events.
 pub struct TapIndexer {
@@ -297,8 +297,8 @@ async fn run_tap_worker(
 /// then runs INSERT queries to populate target tables for incremental MVs.
 async fn run_backfill(client: Arc<Client>) {
     // Wait for in-flight inserts to settle
-    info!("backfill: waiting 10s for in-flight inserts to settle");
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    info!("backfill: waiting 100s for in-flight inserts to settle");
+    tokio::time::sleep(Duration::from_secs(100)).await;
 
     let mvs = Migrator::incremental_mvs();
     if mvs.is_empty() {

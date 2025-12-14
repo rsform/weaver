@@ -1,13 +1,15 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
+use weaver_index::clickhouse::InserterConfig;
 use weaver_index::clickhouse::{Client, Migrator};
 use weaver_index::config::{
     ClickHouseConfig, FirehoseConfig, IndexerConfig, ShardConfig, SourceMode, TapConfig,
 };
 use weaver_index::firehose::FirehoseConsumer;
 use weaver_index::server::{AppState, ServerConfig, TelemetryConfig, telemetry};
-use weaver_index::clickhouse::InserterConfig;
-use weaver_index::{FirehoseIndexer, TapIndexer, load_cursor};
+use weaver_index::{FirehoseIndexer, ServiceIdentity, TapIndexer, load_cursor};
 
 #[derive(Parser)]
 #[command(name = "indexer")]
@@ -140,12 +142,39 @@ async fn run_full() -> miette::Result<()> {
     );
     info!("SQLite shards at {}", shard_config.base_path.display());
 
+    // Load or generate service identity keypair
+    let key_path = std::env::var("SERVICE_KEY_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("./data/service.key"));
+    let identity = ServiceIdentity::load_or_generate(&key_path)?;
+    info!(
+        public_key = %identity.public_key_multibase(),
+        "Service identity loaded"
+    );
+
+    // Generate DID document with service endpoint
+    let service_endpoint = std::env::var("SERVICE_ENDPOINT").unwrap_or_else(|_| {
+        format!(
+            "https://{}",
+            server_config
+                .service_did
+                .as_str()
+                .strip_prefix("did:web:")
+                .unwrap_or("index.weaver.sh")
+        )
+    });
+    let did_doc = identity.did_document_with_service(&server_config.service_did, &service_endpoint);
+
     // Create separate clients for indexer and server
     let indexer_client = Client::new(&ch_config)?;
     let server_client = Client::new(&ch_config)?;
 
     // Build AppState for server
-    let state = AppState::new(server_client, shard_config);
+    let state = AppState::new(
+        server_client,
+        shard_config,
+        server_config.service_did.clone(),
+    );
 
     // Spawn the indexer task
     let indexer_handle = match source_mode {
@@ -182,7 +211,7 @@ async fn run_full() -> miette::Result<()> {
 
     // Run server, monitoring indexer health
     tokio::select! {
-        result = weaver_index::server::run(state, server_config) => {
+        result = weaver_index::server::run(state, server_config, did_doc) => {
             result?;
         }
         result = indexer_handle => {
@@ -273,10 +302,33 @@ async fn run_server_only() -> miette::Result<()> {
     );
     info!("SQLite shards at {}", shard_config.base_path.display());
 
+    // Load or generate service identity keypair
+    let key_path = std::env::var("SERVICE_KEY_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("./data/service.key"));
+    let identity = ServiceIdentity::load_or_generate(&key_path)?;
+    info!(
+        public_key = %identity.public_key_multibase(),
+        "Service identity loaded"
+    );
+
+    // Generate DID document with service endpoint
+    let service_endpoint = std::env::var("SERVICE_ENDPOINT").unwrap_or_else(|_| {
+        format!(
+            "https://{}",
+            server_config
+                .service_did
+                .as_str()
+                .strip_prefix("did:web:")
+                .unwrap_or("localhost")
+        )
+    });
+    let did_doc = identity.did_document_with_service(&server_config.service_did, &service_endpoint);
+
     let client = Client::new(&ch_config)?;
 
-    let state = AppState::new(client, shard_config);
-    weaver_index::server::run(state, server_config).await?;
+    let state = AppState::new(client, shard_config, server_config.service_did.clone());
+    weaver_index::server::run(state, server_config, did_doc).await?;
 
     Ok(())
 }

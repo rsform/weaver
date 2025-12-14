@@ -30,9 +30,7 @@
           }
         }
       },
-      "errors": [
-        { "name": "NotebookNotFound" }
-      ]
+      "errors": [{ "name": "NotebookNotFound" }]
     }
   }
 }
