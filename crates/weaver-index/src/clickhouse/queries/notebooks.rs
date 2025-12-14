@@ -742,17 +742,17 @@ impl Client {
 
         let query = r#"
             SELECT
-                e.did,
-                e.rkey,
-                e.cid,
-                e.uri,
-                e.title,
-                e.path,
-                e.tags,
-                e.author_dids,
-                e.created_at,
-                e.indexed_at,
-                e.record
+                e.did AS did,
+                e.rkey AS rkey,
+                e.cid AS cid,
+                e.uri AS uri,
+                e.title AS title,
+                e.path AS path,
+                e.tags AS tags,
+                e.author_dids AS author_dids,
+                e.created_at AS created_at,
+                e.indexed_at AS indexed_at,
+                e.record AS record
             FROM notebook_entries ne FINAL
             INNER JOIN entries e ON
                 e.did = ne.entry_did
