@@ -307,6 +307,14 @@ img {{
     border-radius: 4px;
 }}
 
+/* Hygiene for iframes */
+.html-embed-block {{
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1rem 0;
+}}
+
 /* AT Protocol Embeds - Container */
 /* Light mode: paper with shadow, dark mode: blueprint with borders */
 .atproto-embed {{
@@ -434,6 +442,8 @@ a.embed-author-name:hover {{
     margin-bottom: 0.75rem;
     white-space: pre-wrap;
 }}
+
+
 
 .embed-description {{
     display: block;

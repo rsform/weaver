@@ -6,14 +6,83 @@ use dioxus::prelude::*;
 use jacquard::{smol_str::SmolStr, types::ident::AtIdentifier};
 use std::collections::HashSet;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
-use weaver_api::sh_weaver::notebook::{EntryView, NotebookView, entry::Entry};
+use weaver_api::sh_weaver::notebook::{
+    BookEntryRef, BookEntryView, EntryView, NotebookView, entry::Entry,
+};
+
+/// Constructs BookEntryViews from notebook entry refs and all available entries.
+///
+/// Matches StrongRefs by URI to find the corresponding EntryView,
+/// then builds BookEntryView with index and prev/next navigation refs.
+fn build_book_entry_views(
+    entry_refs: &[StrongRef<'static>],
+    all_entries: &[(EntryView<'static>, Entry<'static>)],
+) -> Vec<BookEntryView<'static>> {
+    use jacquard::IntoStatic;
+
+    // Build a lookup map for faster matching
+    let entry_map: std::collections::HashMap<&str, &EntryView<'static>> = all_entries
+        .iter()
+        .map(|(view, _)| (view.uri.as_ref(), view))
+        .collect();
+
+    let mut views = Vec::with_capacity(entry_refs.len());
+
+    for (idx, strong_ref) in entry_refs.iter().enumerate() {
+        let Some(entry_view) = entry_map.get(strong_ref.uri.as_ref()).copied() else {
+            continue;
+        };
+
+        // Build prev ref (if not first)
+        let prev = if idx > 0 {
+            entry_refs
+                .get(idx - 1)
+                .and_then(|prev_ref| entry_map.get(prev_ref.uri.as_ref()).copied())
+                .map(|prev_view| {
+                    BookEntryRef::new()
+                        .entry(prev_view.clone())
+                        .build()
+                        .into_static()
+                })
+        } else {
+            None
+        };
+
+        // Build next ref (if not last)
+        let next = if idx + 1 < entry_refs.len() {
+            entry_refs
+                .get(idx + 1)
+                .and_then(|next_ref| entry_map.get(next_ref.uri.as_ref()).copied())
+                .map(|next_view| {
+                    BookEntryRef::new()
+                        .entry(next_view.clone())
+                        .build()
+                        .into_static()
+                })
+        } else {
+            None
+        };
+
+        views.push(
+            BookEntryView::new()
+                .entry(entry_view.clone())
+                .index(idx as i64)
+                .maybe_prev(prev)
+                .maybe_next(next)
+                .build()
+                .into_static(),
+        );
+    }
+
+    views
+}
 
 /// A single item in the profile timeline (either notebook or standalone entry)
 #[derive(Clone, PartialEq)]
 pub enum ProfileTimelineItem {
     Notebook {
         notebook: NotebookView<'static>,
-        entries: Vec<StrongRef<'static>>,
+        entries: Vec<BookEntryView<'static>>,
         /// Most recent entry's created_at for sorting
         sort_date: jacquard::types::string::Datetime,
     },
@@ -93,9 +162,16 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     let auth_state = use_context::<Signal<AuthState>>();
 
     // Use client-only versions to avoid SSR issues with concurrent server futures
-    let (_profile_res, profile) = data::use_profile_data_client(ident);
-    let (_notebooks_res, notebooks) = data::use_notebooks_for_did_client(ident);
-    let (_entries_res, all_entries) = data::use_entries_for_did_client(ident);
+    let (_profile_res, profile) = data::use_profile_data(ident);
+    let (_notebooks_res, notebooks) = data::use_notebooks_for_did(ident);
+    let (_entries_res, all_entries) = data::use_entries_for_did(ident);
+
+    #[cfg(feature = "fullstack-server")]
+    {
+        _profile_res?;
+        _notebooks_res?;
+        _entries_res?;
+    }
 
     // Check if viewing own profile
     let is_own_profile = use_memo(move || {
@@ -171,12 +247,13 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
             if let Some(all_ents) = ents.as_ref() {
                 for (notebook, entry_refs) in nbs {
                     if is_pinned(notebook.uri.as_ref(), pinned_set) {
-                        let sort_date = entry_refs
+                        let book_entries = build_book_entry_views(entry_refs, all_ents);
+                        let sort_date = book_entries
                             .iter()
-                            .filter_map(|r| {
+                            .filter_map(|bev| {
                                 all_ents
                                     .iter()
-                                    .find(|(v, _)| v.uri.as_ref() == r.uri.as_ref())
+                                    .find(|(v, _)| v.uri.as_ref() == bev.entry.uri.as_ref())
                             })
                             .map(|(_, entry)| entry.created_at.clone())
                             .max()
@@ -184,7 +261,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
                         items.push(ProfileTimelineItem::Notebook {
                             notebook: notebook.clone(),
-                            entries: entry_refs.clone(),
+                            entries: book_entries,
                             sort_date,
                         });
                     }
@@ -231,12 +308,13 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
             if let Some(all_ents) = ents.as_ref() {
                 for (notebook, entry_refs) in nbs {
                     if !is_pinned(notebook.uri.as_ref(), pinned_set) {
-                        let sort_date = entry_refs
+                        let book_entries = build_book_entry_views(entry_refs, all_ents);
+                        let sort_date = book_entries
                             .iter()
-                            .filter_map(|r| {
+                            .filter_map(|bev| {
                                 all_ents
                                     .iter()
-                                    .find(|(v, _)| v.uri.as_ref() == r.uri.as_ref())
+                                    .find(|(v, _)| v.uri.as_ref() == bev.entry.uri.as_ref())
                             })
                             .map(|(_, entry)| entry.created_at.clone())
                             .max()
@@ -244,7 +322,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
 
                         items.push(ProfileTimelineItem::Notebook {
                             notebook: notebook.clone(),
-                            entries: entry_refs.clone(),
+                            entries: book_entries,
                             sort_date,
                         });
                     }
@@ -361,7 +439,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                             class: "pinned-item",
                                                             NotebookCard {
                                                                 notebook: notebook.clone(),
-                                                                entry_refs: entries.clone(),
+                                                                entries: entries.clone(),
                                                                 is_pinned: true,
                                                                 profile_ident: Some(ident()),
                                                             }
@@ -409,7 +487,7 @@ pub fn RepositoryIndex(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                                                         key: "notebook-{notebook.cid}",
                                                         NotebookCard {
                                                             notebook: notebook.clone(),
-                                                            entry_refs: entries.clone(),
+                                                            entries: entries.clone(),
                                                             is_pinned: false,
                                                             profile_ident: Some(ident()),
                                                         }
@@ -458,11 +536,14 @@ fn NotebookEntryPreview(
 
     let entry_view = &book_entry_view.entry;
 
-    let entry_title = entry_view.title.as_ref()
+    let entry_title = entry_view
+        .title
+        .as_ref()
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
 
-    let entry_path = entry_view.path
+    let entry_path = entry_view
+        .path
         .as_ref()
         .map(|p| p.as_ref().to_string())
         .unwrap_or_else(|| entry_title.to_string());
@@ -476,7 +557,8 @@ fn NotebookEntryPreview(
         html_buf
     });
 
-    let created_at = parsed_entry.as_ref()
+    let created_at = parsed_entry
+        .as_ref()
         .map(|entry| entry.created_at.as_ref().format("%B %d, %Y").to_string());
 
     let entry_uri = entry_view.uri.clone().into_static();
@@ -529,11 +611,12 @@ fn NotebookEntryPreview(
 #[component]
 pub fn NotebookCard(
     notebook: NotebookView<'static>,
-    entry_refs: Vec<StrongRef<'static>>,
+    entries: Vec<BookEntryView<'static>>,
     #[props(default = false)] is_pinned: bool,
     #[props(default)] show_author: Option<bool>,
     /// Profile identity for context-aware author visibility (hides single author on their own profile)
-    #[props(default)] profile_ident: Option<AtIdentifier<'static>>,
+    #[props(default)]
+    profile_ident: Option<AtIdentifier<'static>>,
     #[props(default)] on_pinned_changed: Option<EventHandler<bool>>,
     #[props(default)] on_deleted: Option<EventHandler<()>>,
 ) -> Element {
@@ -575,19 +658,6 @@ pub fn NotebookCard(
     let ident = notebook.uri.authority().clone().into_static();
     let book_title: SmolStr = notebook_path.clone().into();
 
-    // Fetch all entries to get first/last
-    let ident_for_fetch = ident.clone();
-    let book_title_for_fetch = book_title.clone();
-    let entries = use_resource(use_reactive!(|(ident_for_fetch, book_title_for_fetch)| {
-        let fetcher = fetcher.clone();
-        async move {
-            fetcher
-                .list_notebook_entries(ident_for_fetch, book_title_for_fetch)
-                .await
-                .ok()
-                .flatten()
-        }
-    }));
     rsx! {
         div { class: "notebook-card",
             div { class: "notebook-card-container",
@@ -642,16 +712,17 @@ pub fn NotebookCard(
                 }
 
                 // Entry previews section
-                if let Some(Some(entry_list)) = entries() {
                     div { class: "notebook-card-previews",
                         {
                             use jacquard::from_data;
                             use weaver_api::sh_weaver::notebook::entry::Entry;
+                            tracing::info!("rendering entries: {:?}", entries.iter().map(|e|
+                              e.entry.uri.as_ref()).collect::<Vec<_>>());
 
-                            if entry_list.len() <= 5 {
+                            if entries.len() <= 5 {
                                 // Show all entries if 5 or fewer
                                 rsx! {
-                                    for entry_view in entry_list.iter() {
+                                    for entry_view in entries.iter() {
                                         NotebookEntryPreview {
                                             book_entry_view: entry_view.clone(),
                                             ident: ident.clone(),
@@ -662,7 +733,7 @@ pub fn NotebookCard(
                             } else {
                                 // Show first, interstitial, and last
                                 rsx! {
-                                    if let Some(first_entry) = entry_list.first() {
+                                    if let Some(first_entry) = entries.first() {
                                         NotebookEntryPreview {
                                             book_entry_view: first_entry.clone(),
                                             ident: ident.clone(),
@@ -673,7 +744,7 @@ pub fn NotebookCard(
 
                                     // Interstitial showing count
                                     {
-                                        let middle_count = entry_list.len().saturating_sub(2);
+                                        let middle_count = entries.len().saturating_sub(2);
                                         rsx! {
                                             div { class: "notebook-entry-interstitial",
                                                 "... {middle_count} more "
@@ -683,7 +754,7 @@ pub fn NotebookCard(
                                         }
                                     }
 
-                                    if let Some(last_entry) = entry_list.last() {
+                                    if let Some(last_entry) = entries.last() {
                                         NotebookEntryPreview {
                                             book_entry_view: last_entry.clone(),
                                             ident: ident.clone(),
@@ -695,7 +766,7 @@ pub fn NotebookCard(
                             }
                         }
                     }
-                }
+
 
                 if let Some(ref tags) = notebook.tags {
                     if !tags.is_empty() {

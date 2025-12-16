@@ -41,7 +41,7 @@ pub struct TapRecordEvent {
     /// Operation: create, update, delete
     pub action: RecordAction,
     /// Content identifier
-    pub cid: SmolStr,
+    pub cid: Option<SmolStr>,
     /// The actual record data (only present for create/update)
     #[serde(default)]
     pub record: Option<serde_json::Value>,

@@ -6,6 +6,7 @@ use axum::{Json, extract::State};
 use jacquard::IntoStatic;
 use jacquard::cowstr::ToCowStr;
 use jacquard::identity::resolver::IdentityResolver;
+use jacquard::prelude::*;
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::string::{AtUri, Cid, Did, Handle, Uri};
 use jacquard_axum::ExtractXrpc;
@@ -52,7 +53,41 @@ pub async fn get_profile(
         })?;
 
     let Some(data) = profile_data else {
-        return Err(XrpcErrorResponse::not_found("Profile not found"));
+        // get the bluesky profile
+        // TODO: either cache this or yell at tap to start tracking their account!
+        let profile_resp = state
+            .resolver
+            .send(
+                weaver_api::app_bsky::actor::get_profile::GetProfile::new()
+                    .actor(did)
+                    .build(),
+            )
+            .await
+            .map_err(|e| XrpcErrorResponse::not_found(e.to_string()))?;
+        let bsky_profile = profile_resp
+            .into_output()
+            .map_err(|e| XrpcErrorResponse::not_found(e.to_string()))?
+            .value;
+        let inner_profile = ProfileView::new()
+            .did(bsky_profile.did)
+            .handle(bsky_profile.handle)
+            .maybe_display_name(bsky_profile.display_name)
+            .maybe_description(bsky_profile.description)
+            .maybe_avatar(bsky_profile.avatar)
+            .maybe_banner(bsky_profile.banner)
+            .build();
+
+        let inner = ProfileDataViewInner::ProfileView(Box::new(inner_profile));
+
+        let output = ProfileDataView::new().inner(inner).build();
+
+        return Ok(Json(
+            GetProfileOutput {
+                value: output,
+                extra_data: None,
+            }
+            .into_static(),
+        ));
     };
 
     // Build the response

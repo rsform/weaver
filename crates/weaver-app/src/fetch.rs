@@ -9,6 +9,8 @@ use jacquard::client::AgentError;
 use jacquard::client::AgentKind;
 use jacquard::error::ClientError;
 use jacquard::error::XrpcResult;
+use jacquard::from_data;
+use jacquard::from_data_owned;
 use jacquard::identity::JacquardResolver;
 use jacquard::identity::lexicon_resolver::{
     LexiconResolutionError, LexiconSchemaResolver, ResolvedLexiconSchema,
@@ -46,6 +48,7 @@ use weaver_api::{
 };
 use weaver_common::WeaverError;
 use weaver_common::WeaverExt;
+use weaver_common::agent::title_matches;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct UfosRecord {
@@ -363,7 +366,7 @@ pub struct Fetcher {
     #[cfg(feature = "server")]
     book_cache: cache_impl::Cache<
         (AtIdentifier<'static>, SmolStr),
-        Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>,
+        Arc<(NotebookView<'static>, Vec<BookEntryView<'static>>)>,
     >,
     /// Maps notebook title OR path to ident (book_cache accepts either as key)
     #[cfg(feature = "server")]
@@ -453,7 +456,7 @@ impl Fetcher {
         &self,
         ident: AtIdentifier<'static>,
         title: SmolStr,
-    ) -> Result<Option<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+    ) -> Result<Option<Arc<(NotebookView<'static>, Vec<BookEntryView<'static>>)>>> {
         #[cfg(feature = "server")]
         if let Some(cached) = cache_impl::get(&self.book_cache, &(ident.clone(), title.clone())) {
             return Ok(Some(cached));
@@ -490,7 +493,7 @@ impl Fetcher {
     pub async fn get_notebook_by_key(
         &self,
         key: &str,
-    ) -> Result<Option<Arc<(NotebookView<'static>, Vec<StrongRef<'static>>)>>> {
+    ) -> Result<Option<Arc<(NotebookView<'static>, Vec<BookEntryView<'static>>)>>> {
         let key: SmolStr = key.into();
 
         // Check cache first (key could be title or path)
@@ -500,11 +503,16 @@ impl Fetcher {
 
         // Fallback: query UFOS and populate caches
         let notebooks = self.fetch_notebooks_from_ufos().await?;
-        Ok(notebooks.into_iter().find(|arc| {
+        let notebook = notebooks.into_iter().find(|arc| {
             let (view, _) = arc.as_ref();
             view.title.as_deref() == Some(key.as_str())
                 || view.path.as_deref() == Some(key.as_str())
-        }))
+        });
+        if let Some(notebook) = notebook {
+            let ident = notebook.0.uri.authority().clone().into_static();
+            return self.get_notebook(ident, key).await;
+        }
+        Ok(None)
     }
 
     pub async fn get_entry(
@@ -522,13 +530,19 @@ impl Fetcher {
 
         if let Some(result) = self.get_notebook(ident.clone(), book_title).await? {
             let (notebook, entries) = result.as_ref();
-            let client = self.get_client();
-            if let Some(entry) = client
-                .entry_by_title(notebook, entries.as_ref(), &entry_title)
-                .await
-                .map_err(|e| dioxus::CapturedError::from_display(e))?
-            {
-                let stored = Arc::new(entry);
+            if let Some(entry) = entries.iter().find(|e| {
+                if let Some(path) = e.entry.path.as_deref() {
+                    path == entry_title.as_str()
+                } else if let Some(title) = e.entry.title.as_deref() {
+                    title_matches(title, &entry_title)
+                } else {
+                    false
+                }
+            }) {
+                let stored = Arc::new((
+                    entry.clone(),
+                    from_data_owned(entry.entry.record.clone()).expect("should deserialize"),
+                ));
                 #[cfg(feature = "server")]
                 cache_impl::insert(&self.entry_cache, (ident, entry_title), stored.clone());
                 Ok(Some(stored))
@@ -583,10 +597,13 @@ impl Fetcher {
             #[cfg(feature = "server")]
             {
                 cache_impl::insert(&self.notebook_key_cache, title.clone(), ident.clone());
+                #[cfg(not(feature = "use-index"))]
                 cache_impl::insert(&self.book_cache, (ident.clone(), title), result.clone());
+
                 if let Some(path) = result.0.path.as_ref() {
                     let path: SmolStr = path.as_ref().into();
                     cache_impl::insert(&self.notebook_key_cache, path.clone(), ident.clone());
+                    #[cfg(not(feature = "use-index"))]
                     cache_impl::insert(&self.book_cache, (ident, path), result.clone());
                 }
             }
@@ -640,6 +657,8 @@ impl Fetcher {
                     {
                         // Cache by title
                         cache_impl::insert(&self.notebook_key_cache, title.clone(), ident.clone());
+
+                        #[cfg(not(feature = "use-index"))]
                         cache_impl::insert(
                             &self.book_cache,
                             (ident.clone(), title),
@@ -653,6 +672,8 @@ impl Fetcher {
                                 path.clone(),
                                 ident.clone(),
                             );
+
+                            #[cfg(not(feature = "use-index"))]
                             cache_impl::insert(&self.book_cache, (ident, path), result.clone());
                         }
                     }
@@ -815,11 +836,6 @@ impl Fetcher {
                     title.clone(),
                     ident_static.clone(),
                 );
-                cache_impl::insert(
-                    &self.book_cache,
-                    (ident_static.clone(), title),
-                    result.clone(),
-                );
                 if let Some(path) = result.0.path.as_ref() {
                     let path: SmolStr = path.as_ref().into();
                     cache_impl::insert(
@@ -827,7 +843,6 @@ impl Fetcher {
                         path.clone(),
                         ident_static.clone(),
                     );
-                    cache_impl::insert(&self.book_cache, (ident_static, path), result.clone());
                 }
             }
             notebooks.push(result);
@@ -1062,50 +1077,8 @@ impl Fetcher {
         ident: AtIdentifier<'static>,
         book_title: SmolStr,
     ) -> Result<Option<Vec<BookEntryView<'static>>>> {
-        use jacquard::types::aturi::AtUri;
-
         if let Some(result) = self.get_notebook(ident.clone(), book_title).await? {
-            let (notebook, entry_refs) = result.as_ref();
-            let mut book_entries = Vec::new();
-            let client = self.get_client();
-
-            for (index, entry_ref) in entry_refs.iter().enumerate() {
-                // Try to extract rkey from URI
-                let rkey = AtUri::new(entry_ref.uri.as_ref())
-                    .ok()
-                    .and_then(|uri| uri.rkey().map(|r| SmolStr::new(r.as_ref())));
-
-                // Check cache first
-                #[cfg(feature = "server")]
-                if let Some(ref rkey) = rkey {
-                    if let Some(cached) =
-                        cache_impl::get(&self.entry_cache, &(ident.clone(), rkey.clone()))
-                    {
-                        book_entries.push(cached.0.clone());
-                        continue;
-                    }
-                }
-
-                // Fetch if not cached
-                if let Ok(book_entry) = client.view_entry(notebook, entry_refs, index).await {
-                    // Try to populate cache by deserializing Entry from the view's record
-                    #[cfg(feature = "server")]
-                    if let Some(rkey) = rkey {
-                        use jacquard::IntoStatic;
-                        use weaver_api::sh_weaver::notebook::entry::Entry;
-                        if let Ok(entry) =
-                            jacquard::from_data::<Entry<'_>>(&book_entry.entry.record)
-                        {
-                            let cached =
-                                Arc::new((book_entry.clone().into_static(), entry.into_static()));
-                            cache_impl::insert(&self.entry_cache, (ident.clone(), rkey), cached);
-                        }
-                    }
-                    book_entries.push(book_entry);
-                }
-            }
-
-            Ok(Some(book_entries))
+            Ok(Some(result.as_ref().1.clone()))
         } else {
             Err(dioxus::CapturedError::from_display("Notebook not found"))
         }
@@ -1269,13 +1242,12 @@ impl Fetcher {
         };
 
         // Find entry position in notebook
-        let book_entry_view = client
-            .entry_in_notebook_by_rkey(&notebook, &entries, &rkey)
-            .await
-            .map_err(|e| dioxus::CapturedError::from_display(e))?;
+        let book_entry_view = entries
+            .iter()
+            .find(|e| e.entry.uri.rkey().as_ref().map(|k| k.as_ref()) == Some(rkey.as_ref()));
 
         let mut book_entry_view = match book_entry_view {
-            Some(bev) => bev,
+            Some(bev) => bev.clone(),
             None => {
                 // Entry not in this notebook's entry list - return basic view without nav
                 use weaver_api::sh_weaver::notebook::BookEntryView;

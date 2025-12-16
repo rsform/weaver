@@ -289,13 +289,16 @@ pub async fn get_contributors(
 
 /// Handle sh.weaver.edit.listDrafts
 ///
-/// Returns draft records for an actor.
+/// Returns draft records for an actor. Requires authentication.
+/// Only returns drafts if viewer is the actor or has collab permission.
 pub async fn list_drafts(
     State(state): State<AppState>,
     ExtractOptionalServiceAuth(viewer): ExtractOptionalServiceAuth,
     ExtractXrpc(args): ExtractXrpc<ListDraftsRequest>,
 ) -> Result<Json<ListDraftsOutput<'static>>, XrpcErrorResponse> {
-    let _viewer: Viewer = viewer;
+    // Require authentication
+    let viewer = viewer.ok_or_else(|| XrpcErrorResponse::auth_required("Authentication required"))?;
+    let viewer_did = viewer.did();
 
     let limit = args.limit.unwrap_or(50).min(100).max(1);
 
@@ -309,6 +312,12 @@ pub async fn list_drafts(
 
     // Resolve actor to DID
     let actor_did = resolve_actor(&state, &args.actor).await?;
+
+    // Permission check: viewer must be the actor (owner access)
+    // TODO: Add collab grant check for draft sharing
+    if viewer_did.as_str() != actor_did.as_str() {
+        return Err(XrpcErrorResponse::forbidden("Cannot view another user's drafts"));
+    }
 
     // Fetch drafts
     let draft_rows = state

@@ -113,6 +113,14 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
                         div { class: "error", "{err}" }
                     }
                     Button {
+                        r#type: "submit",
+                        disabled: is_loading(),
+                        onclick: move |_| {
+                            submit_closure2();
+                        },
+                        if is_loading() { "Authenticating..." } else { "Sign In" }
+                    }
+                    Button {
                         r#type: "button",
                         onclick: move |_| {
                             open.set(false)
@@ -121,14 +129,7 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
                         variant: ButtonVariant::Secondary,
                         "Cancel"
                     }
-                    Button {
-                        r#type: "submit",
-                        disabled: is_loading(),
-                        onclick: move |_| {
-                            submit_closure2();
-                        },
-                        if is_loading() { "Authenticating..." } else { "Sign In" }
-                    }
+
 
             }
         }

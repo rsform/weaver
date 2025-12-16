@@ -39,7 +39,7 @@ fn strip_trailing_punctuation(s: &str) -> &str {
 }
 
 /// Check if a search term matches a value, with fallback to stripped punctuation
-fn title_matches(value: &str, search: &str) -> bool {
+pub fn title_matches(value: &str, search: &str) -> bool {
     // Exact match first
     if value == search {
         return true;
@@ -682,7 +682,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         ident: &jacquard::types::ident::AtIdentifier<'_>,
         title: &str,
     ) -> impl Future<
-        Output = Result<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>, WeaverError>,
+        Output = Result<Option<(NotebookView<'static>, Vec<BookEntryView<'static>>)>, WeaverError>,
     >
     where
         Self: Sized,
@@ -701,22 +701,10 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                 .map_err(|e| AgentError::from(ClientError::from(e)))?;
 
             match resp.into_output() {
-                Ok(output) => {
-                    // Extract StrongRefs from the BookEntryViews for compatibility
-                    let entries: Vec<StrongRef<'static>> = output
-                        .entries
-                        .iter()
-                        .map(|bev| {
-                            StrongRef::new()
-                                .uri(bev.entry.uri.clone())
-                                .cid(bev.entry.cid.clone())
-                                .build()
-                                .into_static()
-                        })
-                        .collect();
-
-                    Ok(Some((output.notebook.into_static(), entries)))
-                }
+                Ok(output) => Ok(Some((
+                    output.notebook.into_static(),
+                    output.entries.into_static(),
+                ))),
                 Err(_) => Ok(None),
             }
         }
@@ -729,7 +717,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         ident: &jacquard::types::ident::AtIdentifier<'_>,
         title: &str,
     ) -> impl Future<
-        Output = Result<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>, WeaverError>,
+        Output = Result<Option<(NotebookView<'static>, Vec<BookEntryView<'static>>)>, WeaverError>,
     >
     where
         Self: Sized,
@@ -817,12 +805,15 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                             );
                         }
 
-                        let entries = notebook
-                            .entry_list
-                            .iter()
-                            .cloned()
-                            .map(IntoStatic::into_static)
-                            .collect();
+                        // TODO: Fix this - entries building is broken because we need NotebookView
+                        // to call view_entry but we're still building the NotebookView
+                        let entries = Vec::new(); // Temporarily empty
+
+                        // let mut entries = Vec::with_capacity(notebook.entry_list.len());
+                        // for (index, _) in notebook.entry_list.iter().enumerate() {
+                        //     let entry_view = self.view_entry(&notebook_view, &notebook.entry_list, index).await?;
+                        //     entries.push(entry_view);
+                        // }
 
                         // Fetch permissions for this notebook
                         let permissions = self.get_permissions_for_resource(&record.uri).await?;

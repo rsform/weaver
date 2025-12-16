@@ -24,7 +24,8 @@ services:
       TAP_LOG_LEVEL: info
       TAP_OUTBOX_PARALLELISM: 5
       #TAP_FULL_NETWORK: true
-      TAP_SIGNAL_COLLECTION: place.stream.chat.profile
+      #TAP_SIGNAL_COLLECTION: place.stream.chat.profile
+      TAP_SIGNAL_COLLECTION: sh.weaver.actor.profile
       TAP_COLLECTION_FILTERS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*,net.anisota.*,place.stream.*"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:2480/health"]

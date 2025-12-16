@@ -153,7 +153,7 @@ fn PinnedNotebookCard(ident: AtIdentifier<'static>, title: SmolStr) -> Element {
         Some((view, entries)) => rsx! {
             NotebookCard {
                 notebook: view.clone(),
-                entry_refs: entries.clone(),
+                entries: entries.clone(),
                 show_author: Some(true)
             }
         },

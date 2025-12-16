@@ -1437,7 +1437,7 @@ impl<
 
                 self.last_char_offset = closing_char_end;
             }
-            Html(html) | InlineHtml(html) => {
+            Html(html) => {
                 // Track offset mapping for raw HTML
                 let char_start = self.last_char_offset;
                 let html_char_len = html.chars().count();
@@ -1445,6 +1445,18 @@ impl<
 
                 self.write(&html)?;
 
+                // Record mapping for inline HTML
+                self.record_mapping(range.clone(), char_start..char_end);
+                self.last_char_offset = char_end;
+            }
+            InlineHtml(html) => {
+                // Track offset mapping for raw HTML
+                let char_start = self.last_char_offset;
+                let html_char_len = html.chars().count();
+                let char_end = char_start + html_char_len;
+                self.write(r#"<span class="html-embed html-embed-inline">"#)?;
+                self.write(&html)?;
+                self.write("</span>")?;
                 // Record mapping for inline HTML
                 self.record_mapping(range.clone(), char_start..char_end);
                 self.last_char_offset = char_end;
@@ -1743,7 +1755,46 @@ impl<
 
         // Emit the opening tag
         match tag {
-            Tag::HtmlBlock => Ok(()),
+            // HTML blocks get their own paragraph to try and corral them better
+            Tag::HtmlBlock => {
+                // Record paragraph start for boundary tracking
+                // BUT skip if inside a list - list owns the paragraph boundary
+                if self.list_depth == 0 {
+                    self.current_paragraph_start =
+                        Some((self.last_byte_offset, self.last_char_offset));
+                }
+                let node_id = self.gen_node_id();
+
+                if self.end_newline {
+                    write!(
+                        &mut self.writer,
+                        r#"<p id="{}", class="html-embed html-embed-block">"#,
+                        node_id
+                    )?;
+                } else {
+                    write!(
+                        &mut self.writer,
+                        r#"\n<p id="{}", class="html-embed html-embed-block">"#,
+                        node_id
+                    )?;
+                }
+                self.begin_node(node_id.clone());
+
+                // Map the start position of the paragraph (before any content)
+                // This allows cursor to be placed at the very beginning
+                let para_start_char = self.last_char_offset;
+                let mapping = OffsetMapping {
+                    byte_range: range.start..range.start,
+                    char_range: para_start_char..para_start_char,
+                    node_id,
+                    char_offset_in_node: 0,
+                    child_index: Some(0), // position before first child
+                    utf16_len: 0,
+                };
+                self.offset_maps.push(mapping);
+
+                Ok(())
+            }
             Tag::Paragraph => {
                 // Record paragraph start for boundary tracking
                 // BUT skip if inside a list - list owns the paragraph boundary
@@ -2454,7 +2505,20 @@ impl<
 
         // Emit tag HTML first
         let result = match tag {
-            TagEnd::HtmlBlock => Ok(()),
+            TagEnd::HtmlBlock => {
+                // Record paragraph end for boundary tracking
+                // BUT skip if inside a list - list owns the paragraph boundary
+                if self.list_depth == 0 {
+                    if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
+                        let byte_range = byte_start..self.last_byte_offset;
+                        let char_range = char_start..self.last_char_offset;
+                        self.paragraph_ranges.push((byte_range, char_range));
+                    }
+                }
+
+                self.end_node();
+                self.write("</p>\n")
+            }
             TagEnd::Paragraph => {
                 // Record paragraph end for boundary tracking
                 // BUT skip if inside a list - list owns the paragraph boundary

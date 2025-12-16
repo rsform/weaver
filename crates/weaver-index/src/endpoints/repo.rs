@@ -51,6 +51,22 @@ impl XrpcErrorResponse {
             message: Some(message.into()),
         }
     }
+
+    pub fn auth_required(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            error: "AuthRequired".to_string(),
+            message: Some(message.into()),
+        }
+    }
+
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            error: "Forbidden".to_string(),
+            message: Some(message.into()),
+        }
+    }
 }
 
 impl IntoResponse for XrpcErrorResponse {

@@ -246,8 +246,13 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                     self.write(&html)?;
                 }
             },
-            Html(html) | InlineHtml(html) => {
+            Html(html) => {
                 self.write(&html)?;
+            }
+            InlineHtml(html) => {
+                self.write(r#"<span class="html-embed html-embed-inline">"#)?;
+                self.write(&html)?;
+                self.write("</span>")?;
             }
             SoftBreak => self.write_newline()?,
             HardBreak => self.write("<br />\n")?,
@@ -281,7 +286,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
 
     fn start_tag(&mut self, tag: Tag<'_>) -> Result<(), W::Error> {
         match tag {
-            Tag::HtmlBlock => Ok(()),
+            Tag::HtmlBlock => self.write(r#"<span class="html-embed html-embed-block">"#),
             Tag::Paragraph => {
                 if self.end_newline {
                     self.write("<p>")
@@ -493,7 +498,10 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                             self.consume_until_end();
                             return self.write(&html);
                         } else {
-                            tracing::debug!("[ClientWriter] No embed content from provider for {}", dest_url);
+                            tracing::debug!(
+                                "[ClientWriter] No embed content from provider for {}",
+                                dest_url
+                            );
                         }
                     } else {
                         tracing::debug!("[ClientWriter] No embed provider available");
@@ -575,7 +583,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
     fn end_tag(&mut self, tag: markdown_weaver::TagEnd) -> Result<(), W::Error> {
         use markdown_weaver::TagEnd;
         match tag {
-            TagEnd::HtmlBlock => Ok(()),
+            TagEnd::HtmlBlock => self.write("</span>\n"),
             TagEnd::Paragraph => self.write("</p>\n"),
             TagEnd::Heading(level) => {
                 self.write("</")?;

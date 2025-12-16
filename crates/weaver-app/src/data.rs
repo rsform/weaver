@@ -977,7 +977,7 @@ pub fn use_notebook(
     book_title: ReadSignal<SmolStr>,
 ) -> (
     Result<Resource<Option<serde_json::Value>>, RenderError>,
-    Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>,
+    Memo<Option<(NotebookView<'static>, Vec<BookEntryView<'static>>)>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let res = use_server_future(use_reactive!(|(ident, book_title)| {
@@ -995,7 +995,7 @@ pub fn use_notebook(
     let memo = use_memo(use_reactive!(|res| {
         let res = res.as_ref().ok()?;
         if let Some(Some(value)) = &*res.read() {
-            jacquard::from_json_value::<(NotebookView, Vec<StrongRef>)>(value.clone()).ok()
+            jacquard::from_json_value::<(NotebookView, Vec<BookEntryView>)>(value.clone()).ok()
         } else {
             None
         }
@@ -1009,8 +1009,8 @@ pub fn use_notebook(
     ident: ReadSignal<AtIdentifier<'static>>,
     book_title: ReadSignal<SmolStr>,
 ) -> (
-    Resource<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>,
-    Memo<Option<(NotebookView<'static>, Vec<StrongRef<'static>>)>>,
+    Resource<Option<(NotebookView<'static>, Vec<BookEntryView<'static>>)>>,
+    Memo<Option<(NotebookView<'static>, Vec<BookEntryView<'static>>)>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let res = use_resource(move || {

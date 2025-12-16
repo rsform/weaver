@@ -46,10 +46,7 @@ pub async fn resolve_notebook(
     let name = args.name.as_ref();
 
     let limit = args.entry_limit.unwrap_or(50).clamp(1, 100) as u32;
-    let cursor: Option<u32> = args
-        .entry_cursor
-        .as_deref()
-        .and_then(|c| c.parse().ok());
+    let cursor: Option<u32> = args.entry_cursor.as_deref().and_then(|c| c.parse().ok());
 
     // Fetch notebook first to get its rkey
     let notebook_row = state

@@ -136,15 +136,29 @@ impl BlobCache {
                     .build(),
             )
             .await
-            .map_err(|e| CapturedError::from_display(format_smolstr!("Failed to fetch entry: {}", e).as_str().to_string()))?;
+            .map_err(|e| {
+                CapturedError::from_display(
+                    format_smolstr!("Failed to fetch entry: {}", e)
+                        .as_str()
+                        .to_string(),
+                )
+            })?;
 
-        let record = resp
-            .into_output()
-            .map_err(|e| CapturedError::from_display(format_smolstr!("Failed to parse entry: {}", e).as_str().to_string()))?;
+        let record = resp.into_output().map_err(|e| {
+            CapturedError::from_display(
+                format_smolstr!("Failed to parse entry: {}", e)
+                    .as_str()
+                    .to_string(),
+            )
+        })?;
 
         // Parse the entry
         let entry: Entry = jacquard::from_data(&record.value).map_err(|e| {
-            CapturedError::from_display(format_smolstr!("Failed to deserialize entry: {}", e).as_str().to_string())
+            CapturedError::from_display(
+                format_smolstr!("Failed to deserialize entry: {}", e)
+                    .as_str()
+                    .to_string(),
+            )
         })?;
 
         // Find the image by name
@@ -159,7 +173,11 @@ impl BlobCache {
             })
             .map(|img| img.image.blob().cid().clone().into_static())
             .ok_or_else(|| {
-                CapturedError::from_display(format_smolstr!("Image '{}' not found in entry", name).as_str().to_string())
+                CapturedError::from_display(
+                    format_smolstr!("Image '{}' not found in entry", name)
+                        .as_str()
+                        .to_string(),
+                )
             })?;
 
         // Check cache first
@@ -199,16 +217,28 @@ impl BlobCache {
             )
             .await
             .map_err(|e| {
-                CapturedError::from_display(format_smolstr!("Failed to fetch PublishedBlob: {}", e).as_str().to_string())
+                CapturedError::from_display(
+                    format_smolstr!("Failed to fetch PublishedBlob: {}", e)
+                        .as_str()
+                        .to_string(),
+                )
             })?;
 
         let record = resp.into_output().map_err(|e| {
-            CapturedError::from_display(format_smolstr!("Failed to parse PublishedBlob: {}", e).as_str().to_string())
+            CapturedError::from_display(
+                format_smolstr!("Failed to parse PublishedBlob: {}", e)
+                    .as_str()
+                    .to_string(),
+            )
         })?;
 
         // Parse the PublishedBlob
         let published: PublishedBlob = jacquard::from_data(&record.value).map_err(|e| {
-            CapturedError::from_display(format_smolstr!("Failed to deserialize PublishedBlob: {}", e).as_str().to_string())
+            CapturedError::from_display(
+                format_smolstr!("Failed to deserialize PublishedBlob: {}", e)
+                    .as_str()
+                    .to_string(),
+            )
         })?;
 
         // Get CID from the upload blob ref
@@ -248,14 +278,24 @@ impl BlobCache {
             .get_notebook_by_key(notebook_key)
             .await?
             .ok_or_else(|| {
-                CapturedError::from_display(format_smolstr!("Notebook '{}' not found", notebook_key).as_str().to_string())
+                CapturedError::from_display(
+                    format_smolstr!("Notebook '{}' not found", notebook_key)
+                        .as_str()
+                        .to_string(),
+                )
             })?;
 
         let (view, entry_refs) = notebook.as_ref();
 
         // Get the DID from the notebook URI for blob fetching
         let notebook_did = jacquard::types::aturi::AtUri::new(view.uri.as_ref())
-            .map_err(|e| CapturedError::from_display(format_smolstr!("Invalid notebook URI: {}", e).as_str().to_string()))?
+            .map_err(|e| {
+                CapturedError::from_display(
+                    format_smolstr!("Invalid notebook URI: {}", e)
+                        .as_str()
+                        .to_string(),
+                )
+            })?
             .authority()
             .clone()
             .into_static();
@@ -277,8 +317,14 @@ impl BlobCache {
         let client = self.fetcher.get_client();
         for entry_ref in entry_refs {
             // Parse the entry URI to get rkey
-            let entry_uri = jacquard::types::aturi::AtUri::new(entry_ref.uri.as_ref())
-                .map_err(|e| CapturedError::from_display(format_smolstr!("Invalid entry URI: {}", e).as_str().to_string()))?;
+            let entry_uri = jacquard::types::aturi::AtUri::new(entry_ref.entry.uri.as_ref())
+                .map_err(|e| {
+                    CapturedError::from_display(
+                        format_smolstr!("Invalid entry URI: {}", e)
+                            .as_str()
+                            .to_string(),
+                    )
+                })?;
             let rkey = entry_uri
                 .rkey()
                 .ok_or_else(|| CapturedError::from_display("Entry URI missing rkey"))?;
@@ -319,10 +365,15 @@ impl BlobCache {
             }
         }
 
-        Err(CapturedError::from_display(format_smolstr!(
-            "Image '{}' not found in notebook '{}'",
-            image_name, notebook_key
-        ).as_str().to_string()))
+        Err(CapturedError::from_display(
+            format_smolstr!(
+                "Image '{}' not found in notebook '{}'",
+                image_name,
+                notebook_key
+            )
+            .as_str()
+            .to_string(),
+        ))
     }
 
     /// Insert bytes directly into cache (for pre-warming after upload)

@@ -39,6 +39,8 @@ pub struct EntryRow {
     #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
     pub indexed_at: chrono::DateTime<chrono::Utc>,
     pub record: SmolStr,
 }
@@ -136,6 +138,7 @@ impl Client {
     /// List entries for a specific notebook, ordered by position in the notebook.
     ///
     /// Uses notebook_entries table to get entries that belong to this notebook.
+    /// Deduplicates entries by rkey, keeping the most recently updated version.
     pub async fn list_notebook_entries(
         &self,
         notebook_did: &str,
@@ -143,6 +146,8 @@ impl Client {
         limit: u32,
         cursor: Option<u32>,
     ) -> Result<Vec<EntryRow>, IndexError> {
+        use std::collections::HashMap;
+
         let query = r#"
             SELECT
                 e.did AS did,
@@ -154,10 +159,11 @@ impl Client {
                 e.tags AS tags,
                 e.author_dids AS author_dids,
                 e.created_at AS created_at,
+                e.updated_at AS updated_at,
                 e.indexed_at AS indexed_at,
                 e.record AS record
             FROM notebook_entries ne FINAL
-            INNER JOIN entries e ON
+            INNER JOIN entries FINAL AS e ON
                 e.did = ne.entry_did
                 AND e.rkey = ne.entry_rkey
                 AND e.deleted_at = toDateTime64(0, 3)
@@ -176,7 +182,8 @@ impl Client {
             .bind(notebook_did)
             .bind(notebook_rkey)
             .bind(cursor_val)
-            .bind(limit)
+            // Fetch extra to account for duplicates we'll filter out
+            .bind(limit * 2)
             .fetch_all::<EntryRow>()
             .await
             .map_err(|e| ClickHouseError::Query {
@@ -184,7 +191,28 @@ impl Client {
                 source: e,
             })?;
 
-        Ok(rows)
+        // Dedupe by rkey, keeping the most recently updated version
+        let mut seen: HashMap<SmolStr, usize> = HashMap::new();
+        let mut deduped: Vec<EntryRow> = Vec::with_capacity(rows.len());
+
+        for row in rows {
+            if let Some(&existing_idx) = seen.get(&row.rkey) {
+                // Keep the one with the more recent updated_at
+                if row.updated_at > deduped[existing_idx].updated_at {
+                    deduped[existing_idx] = row;
+                }
+            } else {
+                seen.insert(row.rkey.clone(), deduped.len());
+                deduped.push(row);
+            }
+
+            // Stop once we have enough unique entries
+            if deduped.len() >= limit as usize {
+                break;
+            }
+        }
+
+        Ok(deduped)
     }
 
     /// Get an entry by rkey, picking the most recent version across collaborators.
@@ -216,6 +244,7 @@ impl Client {
                 tags,
                 author_dids,
                 created_at,
+                updated_at,
                 indexed_at,
                 record
             FROM entries FINAL
@@ -263,6 +292,7 @@ impl Client {
                 tags,
                 author_dids,
                 created_at,
+                updated_at,
                 indexed_at,
                 record
             FROM entries FINAL
@@ -305,6 +335,7 @@ impl Client {
                 tags,
                 author_dids,
                 created_at,
+                updated_at,
                 indexed_at,
                 record
             FROM entries FINAL
@@ -414,7 +445,7 @@ impl Client {
     ) -> Result<Vec<EntryRow>, IndexError> {
         let query = if cursor.is_some() {
             r#"
-                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record
                 FROM (
                     SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
                            ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
@@ -429,7 +460,7 @@ impl Client {
             "#
         } else {
             r#"
-                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record
                 FROM (
                     SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
                            ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
@@ -592,7 +623,7 @@ impl Client {
     ) -> Result<Vec<EntryRow>, IndexError> {
         let base_query = if tags.is_some() && cursor.is_some() {
             r#"
-                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record
                 FROM (
                     SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
                            ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
@@ -607,7 +638,7 @@ impl Client {
             "#
         } else if tags.is_some() {
             r#"
-                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record
                 FROM (
                     SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
                            ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
@@ -621,7 +652,7 @@ impl Client {
             "#
         } else if cursor.is_some() {
             r#"
-                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record
                 FROM (
                     SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
                            ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
@@ -635,7 +666,7 @@ impl Client {
             "#
         } else {
             r#"
-                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, indexed_at, record
+                SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record
                 FROM (
                     SELECT did, rkey, cid, uri, title, path, tags, author_dids, created_at, updated_at, indexed_at, record,
                            ROW_NUMBER() OVER (PARTITION BY rkey ORDER BY updated_at DESC) as rn
@@ -696,10 +727,11 @@ impl Client {
                 e.tags AS tags,
                 e.author_dids AS author_dids,
                 e.created_at AS created_at,
+                e.updated_at AS updated_at,
                 e.indexed_at AS indexed_at,
                 e.record AS record
             FROM notebook_entries ne FINAL
-            INNER JOIN entries e ON
+            INNER JOIN entries FINAL AS e ON
                 e.did = ne.entry_did
                 AND e.rkey = ne.entry_rkey
                 AND e.deleted_at = toDateTime64(0, 3)

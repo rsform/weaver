@@ -12,7 +12,9 @@ use crate::clickhouse::{
 };
 use crate::config::{IndexerConfig, TapConfig};
 use crate::error::{ClickHouseError, Result};
-use crate::tap::{TapConfig as TapConsumerConfig, TapConsumer, TapEvent};
+use crate::tap::{
+    RecordAction, TapConfig as TapConsumerConfig, TapConsumer, TapEvent, TapRecordEvent,
+};
 
 /// Tap indexer with multiple parallel websocket connections
 ///
@@ -183,7 +185,13 @@ async fn run_tap_worker(
                             );
                             let raw_data = format!(
                                 r#"{{"did":"{}","collection":"{}","rkey":"{}","cid":"{}","error":"serialization_failed"}}"#,
-                                record.did, record.collection, record.rkey, record.cid
+                                record.did,
+                                record.collection,
+                                record.rkey,
+                                record
+                                    .cid
+                                    .as_ref()
+                                    .unwrap_or(&SmolStr::new_static("no cid"))
                             );
                             records
                                 .write_raw_to_dlq(
@@ -208,12 +216,22 @@ async fn run_tap_worker(
                     "writing record"
                 );
 
+                if record.action == RecordAction::Delete {
+                    let client = client.clone();
+                    let record_clone = record.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_delete(&client, record_clone).await {
+                            warn!(error = ?e, "delete handling failed");
+                        }
+                    });
+                }
+
                 records
                     .write(RawRecordInsert {
                         did: record.did.clone(),
                         collection: record.collection.clone(),
                         rkey: record.rkey.clone(),
-                        cid: record.cid.clone(),
+                        cid: record.cid.clone().unwrap_or_default(),
                         rev: record.rev.clone(),
                         record: json.to_smolstr(),
                         operation: record.action.as_str().to_smolstr(),
@@ -332,4 +350,66 @@ async fn run_backfill(client: Arc<Client>) {
     }
 
     info!("backfill: all incremental MVs processed");
+}
+
+#[derive(Debug, Clone, clickhouse::Row, serde::Deserialize)]
+struct LookupRawRecord {
+    #[allow(dead_code)]
+    did: SmolStr,
+    #[allow(dead_code)]
+    collection: SmolStr,
+    #[allow(dead_code)]
+    cid: SmolStr,
+    #[allow(dead_code)]
+    record: SmolStr, // JSON string of the original record
+}
+
+async fn handle_delete(client: &Client, record: TapRecordEvent) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(15);
+
+    loop {
+        // Try to find the record by rkey
+        let query = format!(
+            r#"
+            SELECT did, collection, cid, record
+            FROM raw_records
+            WHERE did = '{}' AND rkey = '{}'
+            ORDER BY event_time DESC
+            LIMIT 1
+            "#,
+            record.did, record.rkey
+        );
+
+        let original: Option<LookupRawRecord> = client
+            .inner()
+            .query(&query)
+            .fetch_optional()
+            .await
+            .map_err(|e| crate::error::ClickHouseError::Query {
+                message: "delete lookup failed".into(),
+                source: e,
+            })?;
+
+        if let Some(original) = original {
+            // Found the record - the main insert path already handles creating
+            // the delete row, so we're done. In phase 2, this is where we'd
+            // parse original.record and insert count deltas for denormalized tables.
+            debug!(did = %record.did, cid = %original.cid, "delete found original record");
+            return Ok(());
+        }
+
+        if Instant::now() > deadline {
+            // Gave up - create stub tombstone
+            // The record will be inserted via the main batch path with operation='delete'
+            // and empty record content, which serves as our stub tombstone
+            warn!(
+                did = %record.did,
+                cid = %original.as_ref().map(|o| o.cid.clone()).unwrap_or(SmolStr::new_static("")),
+                "delete timeout, stub tombstone will be created"
+            );
+            return Ok(());
+        }
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 }

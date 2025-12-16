@@ -16,6 +16,7 @@ pub async fn get_profile(
     State(state): State<AppState>,
     ExtractXrpc(args): ExtractXrpc<GetProfileRequest>,
 ) -> Result<Json<GetProfileOutput<'static>>, XrpcErrorResponse> {
+    // TODO: either cache this or yell at tap to start tracking their account!
     let response = state.resolver.send(args).await.map_err(|e| {
         tracing::warn!("Appview getProfile failed: {}", e);
         XrpcErrorResponse::internal_error("Failed to fetch profile from appview")
