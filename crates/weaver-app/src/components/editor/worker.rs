@@ -43,6 +43,8 @@ pub enum WorkerInput {
         editing_uri: Option<SmolStr>,
         /// Editing CID if editing existing entry
         editing_cid: Option<SmolStr>,
+        /// Notebook URI for re-publishing
+        notebook_uri: Option<SmolStr>,
     },
     /// Start collab session (worker will spawn CollabNode)
     StartCollab {
@@ -100,6 +102,8 @@ pub enum WorkerOutput {
         editing_uri: Option<SmolStr>,
         /// Editing CID
         editing_cid: Option<SmolStr>,
+        /// Notebook URI for re-publishing
+        notebook_uri: Option<SmolStr>,
         /// Export timing in ms
         export_ms: f64,
         /// Encode timing in ms
@@ -266,6 +270,7 @@ mod worker_impl {
                             cursor_offset,
                             editing_uri,
                             editing_cid,
+                            notebook_uri,
                         } => {
                             let Some(ref doc) = doc else {
                                 if let Err(e) = scope
@@ -314,6 +319,7 @@ mod worker_impl {
                                     cursor_offset,
                                     editing_uri,
                                     editing_cid,
+                                    notebook_uri,
                                     export_ms,
                                     encode_ms,
                                 })
@@ -663,6 +669,7 @@ mod worker_impl {
                         cursor_offset,
                         editing_uri,
                         editing_cid,
+                        notebook_uri,
                     } => {
                         let Some(ref doc) = doc else {
                             if let Err(e) = scope
@@ -707,6 +714,7 @@ mod worker_impl {
                                 cursor_offset,
                                 editing_uri,
                                 editing_cid,
+                                notebook_uri,
                                 export_ms,
                                 encode_ms,
                             })

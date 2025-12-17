@@ -605,14 +605,13 @@ pub fn EntryMetadata(
 
             div { class: "entry-meta-info",
                 // Authors
-                if !entry_view.authors.is_empty() {
                     div { class: "entry-authors",
                         AuthorList {
                             authors: entry_view.authors.clone(),
                             owner_ident: Some(ident.clone()),
                         }
                     }
-                }
+
 
                 // Date
                 div { class: "entry-date",

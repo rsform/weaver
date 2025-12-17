@@ -163,7 +163,7 @@ impl Client {
                 e.indexed_at AS indexed_at,
                 e.record AS record
             FROM notebook_entries ne FINAL
-            INNER JOIN entries FINAL AS e ON
+            INNER JOIN entries e FINAL ON
                 e.did = ne.entry_did
                 AND e.rkey = ne.entry_rkey
                 AND e.deleted_at = toDateTime64(0, 3)
@@ -731,7 +731,7 @@ impl Client {
                 e.indexed_at AS indexed_at,
                 e.record AS record
             FROM notebook_entries ne FINAL
-            INNER JOIN entries FINAL AS e ON
+            INNER JOIN entries e FINAL ON
                 e.did = ne.entry_did
                 AND e.rkey = ne.entry_rkey
                 AND e.deleted_at = toDateTime64(0, 3)

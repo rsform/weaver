@@ -5,7 +5,7 @@ use crate::auth::AuthState;
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 use crate::components::editor::{list_drafts_from_pds, RemoteDraft};
-use crate::components::editor::{delete_draft, list_drafts};
+use crate::components::editor::{delete_draft, delete_draft_from_pds, list_drafts};
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
 use jacquard::smol_str::{SmolStr, format_smolstr};
@@ -39,9 +39,13 @@ pub fn DraftsList(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     let mut local_drafts = use_signal(list_drafts);
     let mut show_delete_confirm = use_signal(|| None::<String>);
 
+    // Clone fetcher early for use in both resource and delete handler
+    let fetcher_for_resource = fetcher.clone();
+    let fetcher_for_delete = fetcher.clone();
+
     // Fetch remote drafts from PDS (depends on auth state to re-run when logged in)
     let remote_drafts_resource = use_resource(move || {
-        let fetcher = fetcher.clone();
+        let fetcher = fetcher_for_resource.clone();
         let _did = auth_state.read().did.clone(); // Track auth state for reactivity
         async move { list_drafts_from_pds(&fetcher).await.ok().unwrap_or_default() }
     });
@@ -131,9 +135,20 @@ pub fn DraftsList(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     });
 
     let mut handle_delete = move |key: String| {
+        let fetcher = fetcher_for_delete.clone();
+        let key_clone = key.clone();
+
+        // Delete from localStorage immediately
         delete_draft(&key);
         local_drafts.set(list_drafts());
         show_delete_confirm.set(None);
+
+        // Also delete from PDS (async, fire-and-forget)
+        spawn(async move {
+            if let Err(e) = delete_draft_from_pds(&fetcher, &key_clone).await {
+                tracing::warn!("Failed to delete draft from PDS: {}", e);
+            }
+        });
     };
 
     rsx! {

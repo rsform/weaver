@@ -152,8 +152,25 @@ pub async fn resolve_notebook(
             XrpcErrorResponse::internal_error("Invalid CID stored")
         })?;
 
+        let entry_contributors = state
+            .clickhouse
+            .get_entry_contributors(did_str, &entry_row.rkey)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get entry contributors: {}", e);
+                XrpcErrorResponse::internal_error("Database query failed")
+            })?;
+
+        let mut all_author_dids: HashSet<SmolStr> = entry_contributors.iter().cloned().collect();
+        // Also include author_dids from the record (explicit declarations)
+        for did in &entry_row.author_dids {
+            all_author_dids.insert(did.clone());
+        }
+
+        let author_dids_vec: Vec<SmolStr> = all_author_dids.into_iter().collect();
+
         // Hydrate entry authors
-        let entry_authors = hydrate_authors(&entry_row.author_dids, &profile_map)?;
+        let entry_authors = hydrate_authors(&author_dids_vec, &profile_map)?;
 
         // Parse record JSON
         let entry_record = parse_record_json(&entry_row.record)?;

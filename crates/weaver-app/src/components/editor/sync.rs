@@ -239,6 +239,42 @@ fn build_doc_ref(
     }
 }
 
+/// Convert a DocRef to an entry_ref StrongRef.
+///
+/// For EntryRef: returns the entry's StrongRef directly
+/// For DraftRef: parses the draft_key as AT-URI, fetches the draft record to get CID, builds StrongRef
+/// For NotebookRef: returns the notebook's StrongRef
+async fn doc_ref_to_entry_ref(
+    fetcher: &Fetcher,
+    doc_ref: &DocRef<'_>,
+) -> Option<StrongRef<'static>> {
+    match &doc_ref.value {
+        DocRefValue::EntryRef(entry_ref) => Some(entry_ref.entry.clone().into_static()),
+        DocRefValue::DraftRef(draft_ref) => {
+            // draft_key contains the canonical AT-URI: at://{did}/sh.weaver.edit.draft/{rkey}
+            let draft_uri = AtUri::new(&draft_ref.draft_key).ok()?.into_static();
+
+            // Fetch the draft record to get its CID
+            match fetcher.client.get_record::<Draft>(&draft_uri).await {
+                Ok(response) => {
+                    let output = response.into_output().ok()?;
+                    let cid = output.cid?.into_static();
+                    Some(StrongRef::new().uri(draft_uri).cid(cid).build())
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to fetch draft record for entry_ref: {}", e);
+                    None
+                }
+            }
+        }
+        DocRefValue::NotebookRef(notebook_ref) => Some(notebook_ref.notebook.clone().into_static()),
+        DocRefValue::Unknown(_) => {
+            tracing::warn!("Unknown DocRefValue variant, cannot convert to entry_ref");
+            None
+        }
+    }
+}
+
 /// Result of a sync operation.
 #[derive(Clone, Debug)]
 pub enum SyncResult {
@@ -629,19 +665,30 @@ pub async fn find_diffs_for_root(
     Ok(all_diffs)
 }
 
+/// Result of creating an edit root, includes optional draft stub info.
+pub struct CreateRootResult {
+    /// The root record URI
+    pub root_uri: AtUri<'static>,
+    /// The root record CID
+    pub root_cid: Cid<'static>,
+    /// Draft stub StrongRef if this was a new draft (not editing published entry)
+    pub draft_ref: Option<StrongRef<'static>>,
+}
+
 /// Create the edit root record for an entry.
 ///
 /// Uploads the current Loro snapshot as a blob and creates an `sh.weaver.edit.root`
 /// record referencing the entry (or draft key if unpublished).
 ///
 /// For drafts, also creates the `sh.weaver.edit.draft` stub record first.
+/// Returns the draft stub info so caller can set entry_ref.
 pub async fn create_edit_root(
     fetcher: &Fetcher,
     doc: &EditorDocument,
     draft_key: &str,
     entry_uri: Option<&AtUri<'_>>,
     entry_cid: Option<&Cid<'_>>,
-) -> Result<(AtUri<'static>, Cid<'static>), WeaverError> {
+) -> Result<CreateRootResult, WeaverError> {
     let client = fetcher.get_client();
     let did = fetcher
         .current_did()
@@ -649,22 +696,56 @@ pub async fn create_edit_root(
         .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
 
     // For drafts, create the stub record first (makes it discoverable via listRecords)
-    if entry_uri.is_none() {
+    let draft_ref: Option<StrongRef<'static>> = if entry_uri.is_none() {
         let rkey = extract_draft_rkey(draft_key);
-        // Try to create draft stub, ignore if it already exists
+        // Try to create draft stub, or get existing one
         match create_draft_stub(fetcher, &did, &rkey).await {
-            Ok((uri, _cid)) => {
+            Ok((uri, cid)) => {
                 tracing::debug!("Created draft stub: {}", uri);
+                Some(StrongRef::new().uri(uri).cid(cid).build())
             }
             Err(e) => {
-                // Check if it's a "record already exists" error - that's fine
+                // Check if it's a "record already exists" error
                 let err_str = e.to_string();
-                if !err_str.contains("RecordAlreadyExists") && !err_str.contains("already exists") {
+                if err_str.contains("RecordAlreadyExists") || err_str.contains("already exists") {
+                    // Draft exists - fetch it to get the CID
+                    let draft_uri_str = format!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
+                    if let Ok(draft_uri) = AtUri::new(&draft_uri_str) {
+                        if let Ok(response) =
+                            fetcher.get_client().get_record::<Draft>(&draft_uri).await
+                        {
+                            if let Ok(output) = response.into_output() {
+                                if let Some(cid) = output.cid {
+                                    Some(
+                                        StrongRef::new()
+                                            .uri(draft_uri.into_static())
+                                            .cid(cid.into_static())
+                                            .build(),
+                                    )
+                                } else {
+                                    tracing::warn!("Draft exists but has no CID");
+                                    None
+                                }
+                            } else {
+                                tracing::warn!("Draft exists but couldn't parse output");
+                                None
+                            }
+                        } else {
+                            tracing::warn!("Draft exists but couldn't fetch record");
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
                     tracing::warn!("Failed to create draft stub (continuing anyway): {}", e);
+                    None
                 }
             }
         }
-    }
+    } else {
+        None // Published entry, not a draft
+    };
 
     // Export full snapshot
     let snapshot = doc.export_snapshot();
@@ -708,7 +789,11 @@ pub async fn create_edit_root(
         .into_output()
         .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
 
-    Ok((output.uri.into_static(), output.cid.into_static()))
+    Ok(CreateRootResult {
+        root_uri: output.uri.into_static(),
+        root_cid: output.cid.into_static(),
+        draft_ref,
+    })
 }
 
 /// Create a diff record with updates since the last sync.
@@ -827,7 +912,7 @@ pub async fn sync_to_pds(
     if doc.edit_root().is_none() {
         // First sync - create root
         let create_start = crate::perf::now();
-        let (root_uri, root_cid) = create_edit_root(
+        let result = create_edit_root(
             fetcher,
             doc,
             draft_key,
@@ -839,8 +924,8 @@ pub async fn sync_to_pds(
 
         // Build StrongRef for the root
         let root_ref = StrongRef::new()
-            .uri(root_uri.clone())
-            .cid(root_cid.clone())
+            .uri(result.root_uri.clone())
+            .cid(result.root_cid.clone())
             .build();
 
         // Update document state
@@ -848,12 +933,20 @@ pub async fn sync_to_pds(
         doc.set_last_diff(None);
         doc.mark_synced();
 
+        // For drafts: set entry_ref to the draft record (enables draft discovery/recovery)
+        if let Some(draft_ref) = result.draft_ref {
+            if doc.entry_ref().is_none() {
+                tracing::debug!("Setting entry_ref to draft: {}", draft_ref.uri);
+                doc.set_entry_ref(Some(draft_ref));
+            }
+        }
+
         let total_ms = crate::perf::now() - fn_start;
         tracing::debug!(total_ms, create_ms, "sync_to_pds: created root");
 
         Ok(SyncResult::CreatedRoot {
-            uri: root_uri,
-            cid: root_cid,
+            uri: result.root_uri,
+            cid: result.root_cid,
         })
     } else {
         // Subsequent sync - create diff
@@ -916,6 +1009,8 @@ pub struct PdsEditState {
     /// Last seen diff URI per collaborator root (for incremental sync).
     /// Maps root URI -> last diff URI we've imported from that root.
     pub last_seen_diffs: std::collections::HashMap<AtUri<'static>, AtUri<'static>>,
+    /// The DocRef from the root record (tells us what's being edited)
+    pub doc_ref: DocRef<'static>,
 }
 
 /// Fetch a blob from the PDS.
@@ -1006,6 +1101,7 @@ pub async fn load_all_edit_states_from_pds(
     let merged_doc = LoroDoc::new();
     let mut our_root_ref: Option<StrongRef<'static>> = None;
     let mut our_last_diff_ref: Option<StrongRef<'static>> = None;
+    let mut merged_doc_ref: Option<DocRef<'static>> = None;
     let mut updated_last_seen = last_seen_diffs.clone();
 
     // Get current user's DID to identify "our" root for sync state tracking
@@ -1054,6 +1150,11 @@ pub async fn load_all_edit_states_from_pds(
                 updated_last_seen.insert(uri.clone(), last_diff.uri.clone().into_static());
             }
 
+            // Track doc_ref from the first root we process (they should all match)
+            if merged_doc_ref.is_none() {
+                merged_doc_ref = Some(pds_state.doc_ref.clone());
+            }
+
             // Track "our" root/diff refs for sync state (used when syncing back)
             // We want to track our own edit.root so subsequent diffs go to the right place
             let is_our_root = current_did.as_ref().is_some_and(|did| root_did == *did);
@@ -1089,6 +1190,7 @@ pub async fn load_all_edit_states_from_pds(
         root_snapshot: merged_snapshot.into(),
         diff_updates: vec![], // Already merged into snapshot
         last_seen_diffs: updated_last_seen,
+        doc_ref: merged_doc_ref.expect("Should have at least one doc_ref if we have a root"),
     }))
 }
 
@@ -1131,6 +1233,9 @@ async fn load_edit_state_from_root_id(
         .cid(root_cid.into_static())
         .build();
 
+    // Extract the DocRef from the root record
+    let doc_ref = root_output.value.doc.into_static();
+
     // Fetch the root snapshot blob
     let root_snapshot = fetch_blob(
         fetcher,
@@ -1149,6 +1254,7 @@ async fn load_edit_state_from_root_id(
             root_snapshot,
             diff_updates: vec![],
             last_seen_diffs: std::collections::HashMap::new(),
+            doc_ref,
         }));
     }
 
@@ -1170,9 +1276,14 @@ async fn load_edit_state_from_root_id(
             }
         }
 
-        let diff_uri = AtUri::new(&format_smolstr!("at://{}/{}/{}", diff_id.did, DIFF_NSID, rkey_str))
-            .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid diff URI: {}", e)))?
-            .into_static();
+        let diff_uri = AtUri::new(&format_smolstr!(
+            "at://{}/{}/{}",
+            diff_id.did,
+            DIFF_NSID,
+            rkey_str
+        ))
+        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid diff URI: {}", e)))?
+        .into_static();
 
         let diff_response = fetcher
             .client
@@ -1226,6 +1337,7 @@ async fn load_edit_state_from_root_id(
         root_snapshot,
         diff_updates,
         last_seen_diffs: std::collections::HashMap::new(),
+        doc_ref,
     }))
 }
 
@@ -1291,6 +1403,7 @@ pub async fn load_and_merge_document(
                 synced_version: None, // Local-only, never synced to PDS
                 last_seen_diffs: std::collections::HashMap::new(),
                 resolved_content,
+                notebook_uri: local.notebook_uri, // Restored from localStorage
             }))
         }
 
@@ -1314,17 +1427,24 @@ pub async fn load_and_merge_document(
             // Capture the version after loading all PDS state - this is our sync baseline
             let synced_version = Some(doc.oplog_vv());
 
+            // Reconstruct entry_ref from the DocRef stored in edit.root
+            let entry_ref = doc_ref_to_entry_ref(fetcher, &pds.doc_ref).await;
+            if entry_ref.is_some() {
+                tracing::debug!("Reconstructed entry_ref from PDS DocRef");
+            }
+
             let resolved_content =
                 prefetch_embeds_from_doc(&doc, fetcher, owner_ident.as_deref()).await;
 
             Ok(Some(LoadedDocState {
                 doc,
-                entry_ref: None, // Entry ref comes from the entry itself, not edit state
+                entry_ref,
                 edit_root: Some(pds.root_ref),
                 last_diff: pds.last_diff_ref,
                 synced_version, // Just loaded from PDS, fully synced
                 last_seen_diffs: pds.last_seen_diffs,
                 resolved_content,
+                notebook_uri: None, // PDS-only, notebook context comes from target_notebook
             }))
         }
 
@@ -1377,6 +1497,7 @@ pub async fn load_and_merge_document(
                 synced_version: Some(pds_version),
                 last_seen_diffs: pds.last_seen_diffs,
                 resolved_content,
+                notebook_uri: local.notebook_uri, // Restored from localStorage
             }))
         }
     }
@@ -1413,8 +1534,8 @@ pub struct SyncStatusProps {
     pub document: EditorDocument,
     /// Draft key for this document
     pub draft_key: String,
-    /// Auto-sync interval in milliseconds (0 to disable)
-    #[props(default = 30_000)]
+    /// Auto-sync interval in milliseconds (0 to disable, default disabled)
+    #[props(default = 0)]
     pub auto_sync_interval_ms: u32,
     /// Callback to refresh/reload document from collaborators
     #[props(default)]
@@ -1427,10 +1548,21 @@ pub struct SyncStatusProps {
 /// Sync status indicator with auto-sync functionality.
 ///
 /// Displays the current sync state and automatically syncs to PDS periodically.
+/// Initially shows "Start syncing" until user activates sync, then auto-syncs.
 #[component]
 pub fn SyncStatus(props: SyncStatusProps) -> Element {
     let fetcher = use_context::<Fetcher>();
     let auth_state = use_context::<Signal<AuthState>>();
+
+    let doc = props.document.clone();
+    let draft_key = props.draft_key.clone();
+
+    // Sync activated - true if sync has been started (either manually or doc already has edit_root)
+    // Once activated, auto-sync is enabled
+    let mut sync_activated = use_signal(|| {
+        // If document already has an edit_root, syncing is already active
+        props.document.edit_root().is_some()
+    });
 
     // Sync state management
     let mut sync_state = use_signal(|| {
@@ -1442,32 +1574,27 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
     });
     let mut last_error: Signal<Option<String>> = use_signal(|| None);
 
-    let doc = props.document.clone();
-    let draft_key = props.draft_key.clone();
-
     // Check if we're authenticated (drafts can sync via DraftRef even without entry)
     let is_authenticated = auth_state.read().is_authenticated();
 
     // Auto-sync trigger signal - set to true to trigger a sync
     let mut trigger_sync = use_signal(|| false);
 
-    // Auto-sync timer - triggers sync when there are unsynced changes
+    // Auto-sync timer - only triggers after sync has been activated
     {
-        let auto_sync_interval_ms = props.auto_sync_interval_ms;
         let doc_for_check = doc.clone();
 
-        dioxus_sdk::time::use_interval(
-            std::time::Duration::from_millis(auto_sync_interval_ms as u64),
-            move |_| {
-                if auto_sync_interval_ms == 0 {
-                    return;
-                }
-                // Only trigger if there are unsynced changes
-                if doc_for_check.has_unsynced_changes() {
-                    trigger_sync.set(true);
-                }
-            },
-        );
+        // Use 30s interval for auto-sync once activated
+        dioxus_sdk::time::use_interval(std::time::Duration::from_secs(30), move |_| {
+            // Only auto-sync if activated
+            if !*sync_activated.peek() {
+                return;
+            }
+            // Only trigger if there are unsynced changes
+            if doc_for_check.has_unsynced_changes() {
+                trigger_sync.set(true);
+            }
+        });
     }
 
     // Collaborator poll timer - checks for collaborator updates periodically
@@ -1572,6 +1699,11 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
                 Ok(_) => {
                     sync_state.set(SyncState::Synced);
                     last_error.set(None);
+                    // Activate auto-sync after first successful sync
+                    if !*sync_activated.peek() {
+                        sync_activated.set(true);
+                        tracing::debug!("Sync activated - auto-sync enabled");
+                    }
                     tracing::debug!("Sync completed successfully");
                 }
                 Err(e) => {
@@ -1584,19 +1716,66 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
     });
 
     // Determine display state (drafts can sync too via DraftRef)
+    let is_activated = *sync_activated.read();
     let display_state = if !is_authenticated {
         SyncState::Disabled
     } else {
         *sync_state.read()
     };
 
-    let (icon, label, class) = match display_state {
-        SyncState::Synced => ("✓", "Synced", "sync-status synced"),
-        SyncState::Syncing => ("◌", "Syncing...", "sync-status syncing"),
-        SyncState::Unsynced => ("●", "Unsynced", "sync-status unsynced"),
-        SyncState::RemoteChanges => ("↓", "Updates", "sync-status remote-changes"),
-        SyncState::Error => ("✕", "Sync error", "sync-status error"),
-        SyncState::Disabled => ("○", "Sync disabled", "sync-status disabled"),
+    // Before activation: show "Start syncing" button
+    // After activation: show normal sync states
+    let (icon, label, class) = if !is_activated && is_authenticated {
+        ("▶", "Start syncing", "sync-status start-sync")
+    } else {
+        match display_state {
+            SyncState::Synced => ("✓", "Synced", "sync-status synced"),
+            SyncState::Syncing => ("◌", "Syncing...", "sync-status syncing"),
+            SyncState::Unsynced => ("●", "Unsynced", "sync-status unsynced"),
+            SyncState::RemoteChanges => ("↓", "Updates", "sync-status remote-changes"),
+            SyncState::Error => ("✕", "Sync error", "sync-status error"),
+            SyncState::Disabled => ("○", "Sync disabled", "sync-status disabled"),
+        }
+    };
+
+    // Long-press detection for deactivating sync
+    let mut long_press_active = use_signal(|| false);
+    #[cfg(target_arch = "wasm32")]
+    let mut long_press_timeout: Signal<Option<gloo_timers::callback::Timeout>> =
+        use_signal(|| None);
+
+    let on_pointer_down = move |_: dioxus::events::PointerEvent| {
+        // Only allow deactivation if sync is currently activated
+        if !*sync_activated.peek() {
+            return;
+        }
+
+        long_press_active.set(true);
+
+        // Start 1 second timer for long press
+        #[cfg(target_arch = "wasm32")]
+        let timeout = gloo_timers::callback::Timeout::new(1000, move || {
+            if *long_press_active.peek() {
+                sync_activated.set(false);
+                long_press_active.set(false);
+                tracing::debug!("Sync deactivated via long press");
+            }
+        });
+        #[cfg(target_arch = "wasm32")]
+        long_press_timeout.set(Some(timeout));
+    };
+
+    let on_pointer_up = move |_: dioxus::events::PointerEvent| {
+        long_press_active.set(false);
+        // Cancel the timeout by dropping it
+        #[cfg(target_arch = "wasm32")]
+        long_press_timeout.set(None);
+    };
+
+    let on_pointer_leave = move |_: dioxus::events::PointerEvent| {
+        long_press_active.set(false);
+        #[cfg(target_arch = "wasm32")]
+        long_press_timeout.set(None);
     };
 
     // Combined sync handler - pulls remote changes first if needed, then pushes local
@@ -1605,6 +1784,11 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
         let on_refresh = props.on_refresh.clone();
         let current_state = display_state;
         move |_: dioxus::events::MouseEvent| {
+            // Don't trigger click if long press just fired
+            if !*sync_activated.peek() && *long_press_active.peek() {
+                return;
+            }
+
             if *sync_state.peek() == SyncState::Syncing {
                 return; // Already syncing
             }
@@ -1623,11 +1807,25 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
         }
     };
 
+    // Show tooltip hint about long-press when sync is active
+    let title = if is_activated {
+        if let Some(ref err) = *last_error.read() {
+            err.clone()
+        } else {
+            format!("{} (hold to stop syncing)", label)
+        }
+    } else {
+        label.to_string()
+    };
+
     rsx! {
         div {
             class: "{class}",
-            title: if let Some(ref err) = *last_error.read() { err.clone() } else { label.to_string() },
+            title: "{title}",
             onclick: on_sync_click,
+            onpointerdown: on_pointer_down,
+            onpointerup: on_pointer_up,
+            onpointerleave: on_pointer_leave,
 
             span { class: "sync-icon", "{icon}" }
             span { class: "sync-label", "{label}" }

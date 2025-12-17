@@ -22,9 +22,9 @@ use gloo_storage::{LocalStorage, Storage};
 use jacquard::IntoStatic;
 use jacquard::smol_str::{SmolStr, ToSmolStr};
 use jacquard::types::string::{AtUri, Cid};
-use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use loro::cursor::Cursor;
 use serde::{Deserialize, Serialize};
+use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 
 use super::document::EditorDocument;
 
@@ -71,6 +71,10 @@ pub struct EditorSnapshot {
     /// CID of the entry if editing an existing entry
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editing_cid: Option<SmolStr>,
+
+    /// AT-URI of the notebook this draft belongs to (for re-publishing)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notebook_uri: Option<SmolStr>,
 }
 
 /// Build the full storage key from a draft key.
@@ -104,6 +108,7 @@ pub fn save_to_storage(
         cursor_offset: doc.cursor.read().offset,
         editing_uri: doc.entry_ref().map(|r| r.uri.to_smolstr()),
         editing_cid: doc.entry_ref().map(|r| r.cid.to_smolstr()),
+        notebook_uri: doc.notebook_uri(),
     };
 
     let write_start = crate::perf::now();
@@ -151,6 +156,9 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
             // Verify the content matches (sanity check)
             if doc.content() == snapshot.content {
                 doc.set_entry_ref(entry_ref.clone());
+                if let Some(notebook_uri) = snapshot.notebook_uri {
+                    doc.set_notebook_uri(Some(notebook_uri));
+                }
                 return Some(doc);
             }
             tracing::warn!("Snapshot content mismatch, falling back to text content");
@@ -162,6 +170,9 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     doc.cursor.write().offset = snapshot.cursor_offset.min(doc.len_chars());
     doc.sync_loro_cursor();
     doc.set_entry_ref(entry_ref);
+    if let Some(notebook_uri) = snapshot.notebook_uri {
+        doc.set_notebook_uri(Some(notebook_uri));
+    }
     Some(doc)
 }
 
@@ -171,6 +182,8 @@ pub struct LocalSnapshotData {
     pub snapshot: Vec<u8>,
     /// Entry StrongRef if editing an existing entry
     pub entry_ref: Option<StrongRef<'static>>,
+    /// Notebook URI for re-publishing
+    pub notebook_uri: Option<SmolStr>,
 }
 
 /// Load snapshot data from LocalStorage (WASM only).
@@ -201,6 +214,7 @@ pub fn load_snapshot_from_storage(key: &str) -> Option<LocalSnapshotData> {
     Some(LocalSnapshotData {
         snapshot: snapshot_bytes,
         entry_ref,
+        notebook_uri: snapshot.notebook_uri,
     })
 }
 
@@ -248,6 +262,71 @@ pub fn list_drafts() -> Vec<(String, String, Option<String>)> {
     }
 
     drafts
+}
+
+/// Delete a draft stub record from PDS.
+///
+/// This deletes the sh.weaver.edit.draft record, making the draft
+/// invisible in listDrafts. Edit history (edit.root, edit.diff) is
+/// preserved for potential recovery.
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub async fn delete_draft_from_pds(
+    fetcher: &crate::fetch::Fetcher,
+    draft_key: &str,
+) -> Result<(), weaver_common::WeaverError> {
+    use jacquard::prelude::XrpcClient;
+    use jacquard::types::ident::AtIdentifier;
+    use jacquard::types::recordkey::RecordKey;
+    use jacquard::types::string::Nsid;
+    use weaver_api::com_atproto::repo::delete_record::DeleteRecord;
+
+    // Only delete if authenticated
+    let Some(did) = fetcher.current_did().await else {
+        tracing::debug!("Not authenticated, skipping PDS draft deletion");
+        return Ok(());
+    };
+
+    // Extract rkey from draft_key
+    let rkey_str = if let Some(tid) = draft_key.strip_prefix("new:") {
+        tid.to_string()
+    } else if draft_key.starts_with("at://") {
+        draft_key.split('/').last().unwrap_or(draft_key).to_string()
+    } else {
+        draft_key.to_string()
+    };
+
+    let rkey = RecordKey::any(&rkey_str)
+        .map_err(|e| weaver_common::WeaverError::InvalidNotebook(e.to_string()))?;
+
+    // Build the delete request
+    let request = DeleteRecord::new()
+        .repo(AtIdentifier::Did(did))
+        .collection(Nsid::new_static("sh.weaver.edit.draft").unwrap())
+        .rkey(rkey)
+        .build();
+
+    // Execute deletion
+    let client = fetcher.get_client();
+    match client.send(request).await {
+        Ok(_) => {
+            tracing::info!("Deleted draft stub from PDS: {}", draft_key);
+            Ok(())
+        }
+        Err(e) => {
+            // Log but don't fail - draft may not exist on PDS
+            tracing::warn!("Failed to delete draft from PDS (may not exist): {}", e);
+            Ok(())
+        }
+    }
+}
+
+/// Non-WASM stub for delete_draft_from_pds
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
+pub async fn delete_draft_from_pds(
+    _fetcher: &crate::fetch::Fetcher,
+    _draft_key: &str,
+) -> Result<(), weaver_common::WeaverError> {
+    Ok(())
 }
 
 /// Clear all editor drafts from LocalStorage (WASM only).

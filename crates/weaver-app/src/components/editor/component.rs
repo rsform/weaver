@@ -93,11 +93,36 @@ pub fn MarkdownEditor(
         let draft_key = draft_key.clone();
         let entry_uri = parsed_uri.clone();
         let initial_content = initial_content.clone();
+        let target_notebook = target_notebook.clone();
 
         async move {
+            // Resolve target_notebook to a URI if provided
+            let notebook_uri: Option<SmolStr> = if let Some(ref title) = target_notebook {
+                if let Some(did) = fetcher.current_did().await {
+                    let ident = jacquard::types::ident::AtIdentifier::Did(did);
+                    match fetcher.get_notebook(ident, title.clone()).await {
+                        Ok(Some(notebook_data)) => {
+                            Some(notebook_data.0.uri.to_smolstr())
+                        }
+                        Ok(None) | Err(_) => {
+                            tracing::debug!("Could not resolve notebook '{}' to URI", title);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             match load_and_merge_document(&fetcher, &draft_key, entry_uri.as_ref()).await {
-                Ok(Some(state)) => {
+                Ok(Some(mut state)) => {
                     tracing::debug!("Loaded merged document state");
+                    // If we resolved a notebook URI and state doesn't have one, use it
+                    if state.notebook_uri.is_none() {
+                        state.notebook_uri = notebook_uri;
+                    }
                     return LoadResult::Loaded(state);
                 }
                 Ok(None) => {
@@ -302,6 +327,7 @@ pub fn MarkdownEditor(
                                     synced_version: None, // Fresh from entry, never synced
                                     last_seen_diffs: std::collections::HashMap::new(),
                                     resolved_content,
+                                    notebook_uri: notebook_uri.clone(),
                                 });
                             }
                             Err(e) => {
@@ -327,6 +353,7 @@ pub fn MarkdownEditor(
                         synced_version: None, // New doc, never synced
                         last_seen_diffs: std::collections::HashMap::new(),
                         resolved_content: weaver_common::ResolvedContent::default(),
+                        notebook_uri,
                     })
                 }
                 Err(e) => {
@@ -732,6 +759,7 @@ fn MarkdownEditorInner(
                         cursor_offset,
                         editing_uri,
                         editing_cid,
+                        notebook_uri,
                         export_ms,
                         encode_ms,
                     } => {
@@ -744,6 +772,7 @@ fn MarkdownEditorInner(
                             cursor_offset,
                             editing_uri,
                             editing_cid,
+                            notebook_uri,
                         };
                         let write_start = crate::perf::now();
                         let _ = gloo_storage::LocalStorage::set(
@@ -848,6 +877,7 @@ fn MarkdownEditorInner(
                     let cursor_offset = doc.cursor.read().offset;
                     let editing_uri = doc.entry_ref().map(|r| r.uri.to_smolstr());
                     let editing_cid = doc.entry_ref().map(|r| r.cid.to_smolstr());
+                    let notebook_uri = doc.notebook_uri();
 
                     let sink_clone = worker_sink.clone();
 
@@ -865,6 +895,7 @@ fn MarkdownEditorInner(
                                     cursor_offset,
                                     editing_uri,
                                     editing_cid,
+                                    notebook_uri,
                                 })
                                 .await;
                         }

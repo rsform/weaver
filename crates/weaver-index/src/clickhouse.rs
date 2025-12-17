@@ -7,8 +7,8 @@ mod schema;
 pub use client::{Client, TableSize};
 pub use migrations::{DbObject, MigrationResult, Migrator, ObjectType};
 pub use queries::{
-    CollaboratorRow, EditHeadRow, EditNodeRow, EntryRow, HandleMappingRow, NotebookRow,
-    ProfileCountsRow, ProfileRow, ProfileWithCounts,
+    CollaboratorRow, EditChainNode, EditHeadRow, EditNodeRow, EntryRow, HandleMappingRow,
+    NotebookRow, ProfileCountsRow, ProfileRow, ProfileWithCounts, StaleDraftRow,
 };
 pub use resilient_inserter::{InserterConfig, ResilientRecordInserter};
 pub use schema::{

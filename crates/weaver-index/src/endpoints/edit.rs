@@ -369,6 +369,13 @@ pub async fn list_drafts(
 
         let last_edit_at = row.last_edit_at.map(|dt| Datetime::new(dt.fixed_offset()));
 
+        // Include title if available
+        let title = if row.title.is_empty() {
+            None
+        } else {
+            Some(row.title.to_cowstr().into_static())
+        };
+
         drafts.push(
             DraftView::new()
                 .uri(uri)
@@ -376,6 +383,7 @@ pub async fn list_drafts(
                 .created_at(created_at)
                 .maybe_edit_root(edit_root)
                 .maybe_last_edit_at(last_edit_at)
+                .maybe_title(title)
                 .build(),
         );
     }

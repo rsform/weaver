@@ -41,12 +41,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Writing the AppView Last.md",
+                "file": "Untitled.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Writing the AppView Last"
+              "title": "Untitled"
             }
           }
         ],
@@ -199,13 +199,15 @@
       "bases:Create new base": false
     }
   },
-  "active": "6029beecc3d03bce",
+  "active": "2f6bdb6d2dce13ed",
   "lastOpenFiles": [
+    "cargo_bloated.png",
+    "Writing the AppView Last.md",
+    "Untitled.md",
     "weaver_index_html.png",
     "2025-12-14T23:32:19.png",
     "diff_record.png",
     "Why I rewrote pdsls in Rust (tm).md",
-    "Writing the AppView Last.md",
     "light_mode_excerpt.png",
     "notebook_entry_preview.png",
     "xkcd_345_excerpt.png",
@@ -214,7 +216,6 @@
     "Pasted image 20251114125028.png",
     "invalid_record.png",
     "Pasted image 20251114125031.png",
-    "Pasted image 20251114121431.png",
     "Arch.md",
     "Weaver - Long-form writing.md"
   ]

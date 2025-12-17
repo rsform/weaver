@@ -58,8 +58,8 @@ pub use writer::{EditorImageResolver, ImageResolver, SyntaxSpanInfo, SyntaxType,
 // Storage
 #[allow(unused_imports)]
 pub use storage::{
-    DRAFT_KEY_PREFIX, EditorSnapshot, clear_all_drafts, delete_draft, list_drafts,
-    load_from_storage, load_snapshot_from_storage, save_to_storage,
+    DRAFT_KEY_PREFIX, EditorSnapshot, clear_all_drafts, delete_draft, delete_draft_from_pds,
+    list_drafts, load_from_storage, load_snapshot_from_storage, save_to_storage,
 };
 
 // Sync

@@ -9,6 +9,7 @@ pub mod server;
 pub mod service_identity;
 pub mod sqlite;
 pub mod tap;
+pub mod tasks;
 
 pub use config::Config;
 pub use error::{IndexError, Result};
@@ -17,3 +18,4 @@ pub use parallel_tap::TapIndexer;
 pub use server::{AppState, ServerConfig};
 pub use service_identity::ServiceIdentity;
 pub use sqlite::{ShardKey, ShardRouter, SqliteShard};
+pub use tasks::{run_draft_title_task, DraftTitleTaskConfig};

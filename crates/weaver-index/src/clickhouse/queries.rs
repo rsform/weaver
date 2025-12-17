@@ -12,7 +12,7 @@ mod profiles;
 
 pub use collab::PermissionRow;
 pub use collab_state::{CollaboratorRow, EditHeadRow};
-pub use edit::EditNodeRow;
+pub use edit::{EditChainNode, EditNodeRow, StaleDraftRow};
 pub use identity::HandleMappingRow;
 pub use notebooks::{EntryRow, NotebookRow};
 pub use profiles::{ProfileCountsRow, ProfileRow, ProfileWithCounts};

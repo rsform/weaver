@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
+use jacquard::client::UnauthenticatedSession;
 use weaver_index::clickhouse::InserterConfig;
 use weaver_index::clickhouse::{Client, Migrator};
 use weaver_index::config::{
@@ -9,7 +10,10 @@ use weaver_index::config::{
 };
 use weaver_index::firehose::FirehoseConsumer;
 use weaver_index::server::{AppState, ServerConfig, TelemetryConfig, telemetry};
-use weaver_index::{FirehoseIndexer, ServiceIdentity, TapIndexer, load_cursor};
+use weaver_index::{
+    DraftTitleTaskConfig, FirehoseIndexer, ServiceIdentity, TapIndexer, load_cursor,
+    run_draft_title_task,
+};
 
 #[derive(Parser)]
 #[command(name = "indexer")]
@@ -165,9 +169,10 @@ async fn run_full() -> miette::Result<()> {
     });
     let did_doc = identity.did_document_with_service(&server_config.service_did, &service_endpoint);
 
-    // Create separate clients for indexer and server
+    // Create separate clients for indexer, server, and background tasks
     let indexer_client = Client::new(&ch_config)?;
     let server_client = Client::new(&ch_config)?;
+    let task_client = std::sync::Arc::new(Client::new(&ch_config)?);
 
     // Build AppState for server
     let state = AppState::new(
@@ -208,6 +213,14 @@ async fn run_full() -> miette::Result<()> {
             tokio::spawn(async move { indexer.run().await })
         }
     };
+
+    // Spawn background tasks
+    let resolver = UnauthenticatedSession::new_public();
+    tokio::spawn(run_draft_title_task(
+        task_client,
+        resolver,
+        DraftTitleTaskConfig::default(),
+    ));
 
     // Run server, monitoring indexer health
     tokio::select! {

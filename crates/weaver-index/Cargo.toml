@@ -64,6 +64,9 @@ url = "2"
 chrono = { version = "0.4", features = ["serde"] }
 smol_str = "0.3"
 
+# CRDT (for parsing draft snapshots)
+loro = { workspace = true }
+
 # CID handling (for CAR block lookups)
 cid = "0.11"
 
@@ -73,6 +76,7 @@ base64 = "0.22"
 dashmap = "6"
 include_dir = "0.7.4"
 regex = "1"
+mini-moka = { git = "https://github.com/moka-rs/mini-moka", rev = "da864e849f5d034f32e02197fee9bb5d5af36d3d" }
 
 # WebSocket (for tap consumer)
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }

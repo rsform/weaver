@@ -4,6 +4,7 @@
 
 use dioxus::prelude::*;
 use jacquard::cowstr::ToCowStr;
+use jacquard::smol_str::ToSmolStr;
 use jacquard::types::collection::Collection;
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::recordkey::RecordKey;
@@ -252,12 +253,43 @@ pub async fn publish_entry(
             .maybe_embeds(entry_embeds)
             .build();
 
+        // Check if we have a stored notebook URI (for re-publishing to same notebook)
+        // This avoids duplicate notebook creation when re-publishing
+        let (notebook_uri, entry_refs) = if let Some(stored_uri) = doc.notebook_uri() {
+            // Try to fetch notebook directly by URI to avoid duplicate creation
+            match client.get_notebook_by_uri(&stored_uri).await {
+                Ok(Some((uri, refs))) => {
+                    tracing::debug!("Found notebook by stored URI: {}", uri);
+                    (uri, refs)
+                }
+                Ok(None) | Err(_) => {
+                    // Stored URI invalid or notebook deleted, fall back to title lookup
+                    tracing::warn!("Stored notebook URI invalid, falling back to title lookup");
+                    let (did, _) = client
+                        .session_info()
+                        .await
+                        .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
+                    client.upsert_notebook(notebook, &did).await?
+                }
+            }
+        } else {
+            // No stored URI, use title-based lookup/creation
+            let (did, _) = client
+                .session_info()
+                .await
+                .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
+            client.upsert_notebook(notebook, &did).await?
+        };
+
         // Pass existing rkey if re-publishing (to allow title changes without creating new entry)
         let doc_entry_ref = doc.entry_ref();
         let existing_rkey = doc_entry_ref.as_ref().and_then(|r| r.uri.rkey());
-        let (entry_ref, was_created) = client
-            .upsert_entry(
-                notebook,
+
+        // Use upsert_entry_with_notebook since we already have notebook data
+        let (entry_ref, notebook_uri_final, was_created) = client
+            .upsert_entry_with_notebook(
+                notebook_uri,
+                entry_refs,
                 &doc.title(),
                 entry,
                 existing_rkey.map(|r| r.0.as_str()),
@@ -267,6 +299,9 @@ pub async fn publish_entry(
 
         // Set entry_ref so subsequent publishes update this record
         doc.set_entry_ref(Some(entry_ref));
+
+        // Store the notebook URI for future re-publishing
+        doc.set_notebook_uri(Some(notebook_uri_final.to_smolstr()));
 
         if was_created {
             PublishResult::Created(uri)
@@ -288,11 +323,9 @@ pub async fn publish_entry(
         // Check if we're the owner or a collaborator
         let owner_did = match existing_ref.uri.authority() {
             AtIdentifier::Did(d) => d.clone(),
-            AtIdentifier::Handle(h) => fetcher
-                .client
-                .resolve_handle(h)
-                .await
-                .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve handle: {}", e)))?,
+            AtIdentifier::Handle(h) => fetcher.client.resolve_handle(h).await.map_err(|e| {
+                WeaverError::InvalidNotebook(format!("Failed to resolve handle: {}", e))
+            })?,
         };
         let is_collaborator = owner_did != current_did;
 
@@ -304,6 +337,7 @@ pub async fn publish_entry(
             .title(doc.title())
             .path(path)
             .created_at(Datetime::now())
+            .updated_at(Datetime::now())
             .maybe_tags(tags)
             .maybe_embeds(entry_embeds)
             .build();

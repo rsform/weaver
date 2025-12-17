@@ -10,6 +10,7 @@ use jacquard::types::string::Did;
 /// Pinned content items - can be notebooks or entries
 #[derive(Clone, PartialEq)]
 pub enum PinnedItem {
+    #[allow(dead_code)]
     Notebook {
         ident: AtIdentifier<'static>,
         title: SmolStr,
@@ -31,8 +32,12 @@ fn pinned_items() -> Vec<PinnedItem> {
         // },
         PinnedItem::Entry {
             ident: AtIdentifier::Did(Did::new_static("did:plc:yfvwmnlztr4dwkb7hwz55r2g").unwrap()),
-            rkey: SmolStr::new_static("3m4rbphjzt62b"),
+            rkey: SmolStr::new_static("3m7ysqf2z5s22"),
         },
+        // PinnedItem::Entry {
+        //     ident: AtIdentifier::Did(Did::new_static("did:plc:yfvwmnlztr4dwkb7hwz55r2g").unwrap()),
+        //     rkey: SmolStr::new_static("3m4rbphjzt62b"),
+        // },
     ]
 }
 

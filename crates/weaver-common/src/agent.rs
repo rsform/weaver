@@ -123,6 +123,46 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         }
     }
 
+    /// Fetch a notebook by URI and return its entry list
+    ///
+    /// Returns Ok(Some((uri, entry_list))) if the notebook exists and can be parsed,
+    /// Ok(None) if the notebook doesn't exist,
+    /// Err if there's a network or parsing error.
+    fn get_notebook_by_uri(
+        &self,
+        uri: &str,
+    ) -> impl Future<Output = Result<Option<(AtUri<'static>, Vec<StrongRef<'static>>)>, WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            use weaver_api::sh_weaver::notebook::book::Book;
+
+            let at_uri = AtUri::new(uri)
+                .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid notebook URI: {}", e)))?;
+
+            let response = match self.get_record::<Book>(&at_uri).await {
+                Ok(r) => r,
+                Err(_) => return Ok(None), // Notebook doesn't exist
+            };
+
+            let output = match response.into_output() {
+                Ok(o) => o,
+                Err(_) => return Ok(None), // Failed to parse
+            };
+
+            let entries = output
+                .value
+                .entry_list
+                .iter()
+                .cloned()
+                .map(IntoStatic::into_static)
+                .collect();
+
+            Ok(Some((at_uri.into_static(), entries)))
+        }
+    }
+
     /// Find or create a notebook by title, returning its URI and entry list
     ///
     /// If the notebook doesn't exist, creates it with the given DID as author.
@@ -208,37 +248,24 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         }
     }
 
-    /// Find or create an entry within a notebook
+    /// Find or create an entry within a notebook (with pre-fetched notebook data)
     ///
-    /// Multi-step workflow:
-    /// 1. Find the notebook by title
-    /// 2. If existing_rkey is provided, match by rkey; otherwise match by title
-    /// 3. If found: update the entry with new content
-    /// 4. If not found: create new entry and append to notebook's entry_list
+    /// This variant accepts notebook URI and entry_refs directly to avoid redundant
+    /// notebook lookups when the caller has already fetched this data.
     ///
-    /// The `existing_rkey` parameter allows updating an entry even if its title changed,
-    /// and enables pre-generating rkeys for path rewriting before publish.
-    ///
-    /// Returns (entry_ref, was_created)
-    fn upsert_entry(
+    /// Returns (entry_ref, notebook_uri, was_created)
+    fn upsert_entry_with_notebook(
         &self,
-        notebook_title: &str,
+        notebook_uri: AtUri<'static>,
+        entry_refs: Vec<StrongRef<'static>>,
         entry_title: &str,
         entry: entry::Entry<'_>,
         existing_rkey: Option<&str>,
-    ) -> impl Future<Output = Result<(StrongRef<'static>, bool), WeaverError>>
+    ) -> impl Future<Output = Result<(StrongRef<'static>, AtUri<'static>, bool), WeaverError>>
     where
         Self: Sized,
     {
         async move {
-            // Get our own DID
-            let (did, _) = self.session_info().await.ok_or_else(|| {
-                AgentError::from(ClientError::invalid_request("No session info available"))
-            })?;
-
-            // Find or create notebook
-            let (notebook_uri, entry_refs) = self.upsert_notebook(notebook_title, &did).await?;
-
             // If we have an existing rkey, try to find and update that specific entry
             if let Some(rkey) = existing_rkey {
                 // Check if this entry exists in the notebook by comparing rkeys
@@ -259,7 +286,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                             .uri(output.uri.into_static())
                             .cid(output.cid.into_static())
                             .build();
-                        return Ok((updated_ref, false));
+                        return Ok((updated_ref, notebook_uri, false));
                     }
                 }
 
@@ -283,10 +310,10 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                 })
                 .await?;
 
-                return Ok((new_ref, true));
+                return Ok((new_ref, notebook_uri, true));
             }
 
-            // No existing rkey - use title-based matching (original behavior)
+            // No existing rkey - use title-based matching
 
             // Fast path: if notebook is empty, skip search and create directly
             if entry_refs.is_empty() {
@@ -307,7 +334,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                 })
                 .await?;
 
-                return Ok((new_ref, true));
+                return Ok((new_ref, notebook_uri, true));
             }
 
             // Check if entry with this title exists in the notebook
@@ -331,7 +358,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                             .uri(output.uri.into_static())
                             .cid(output.cid.into_static())
                             .build();
-                        return Ok((updated_ref, false));
+                        return Ok((updated_ref, notebook_uri, false));
                     }
                 }
             }
@@ -355,7 +382,50 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             })
             .await?;
 
-            Ok((new_ref, true))
+            Ok((new_ref, notebook_uri, true))
+        }
+    }
+
+    /// Find or create an entry within a notebook
+    ///
+    /// Multi-step workflow:
+    /// 1. Find the notebook by title
+    /// 2. If existing_rkey is provided, match by rkey; otherwise match by title
+    /// 3. If found: update the entry with new content
+    /// 4. If not found: create new entry and append to notebook's entry_list
+    ///
+    /// The `existing_rkey` parameter allows updating an entry even if its title changed,
+    /// and enables pre-generating rkeys for path rewriting before publish.
+    ///
+    /// Returns (entry_ref, notebook_uri, was_created)
+    fn upsert_entry(
+        &self,
+        notebook_title: &str,
+        entry_title: &str,
+        entry: entry::Entry<'_>,
+        existing_rkey: Option<&str>,
+    ) -> impl Future<Output = Result<(StrongRef<'static>, AtUri<'static>, bool), WeaverError>>
+    where
+        Self: Sized,
+    {
+        async move {
+            // Get our own DID
+            let (did, _) = self.session_info().await.ok_or_else(|| {
+                AgentError::from(ClientError::invalid_request("No session info available"))
+            })?;
+
+            // Find or create notebook
+            let (notebook_uri, entry_refs) = self.upsert_notebook(notebook_title, &did).await?;
+
+            // Delegate to the variant with pre-fetched notebook data
+            self.upsert_entry_with_notebook(
+                notebook_uri,
+                entry_refs,
+                entry_title,
+                entry,
+                existing_rkey,
+            )
+            .await
         }
     }
 

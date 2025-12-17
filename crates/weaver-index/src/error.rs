@@ -29,6 +29,10 @@ pub enum IndexError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     Sqlite(#[from] SqliteError),
+
+    #[error("resource not found: {resource}")]
+    #[diagnostic(code(index::not_found))]
+    NotFound { resource: String },
 }
 
 /// HTTP server errors

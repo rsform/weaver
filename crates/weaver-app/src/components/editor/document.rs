@@ -23,6 +23,7 @@ use loro::{
 
 use jacquard::IntoStatic;
 use jacquard::from_json_value;
+use jacquard::smol_str::SmolStr;
 use jacquard::types::string::AtUri;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::embed::images::Image;
@@ -90,6 +91,9 @@ pub struct EditorDocument {
     /// None for new entries that haven't been published yet.
     /// Signal so cloned docs share the same state after publish.
     pub entry_ref: Signal<Option<StrongRef<'static>>>,
+
+    /// AT-URI of the notebook this draft belongs to (for re-publishing)
+    pub notebook_uri: Signal<Option<SmolStr>>,
 
     // --- Edit sync state (for PDS sync) ---
     /// StrongRef to the sh.weaver.edit.root record for this edit session.
@@ -235,6 +239,8 @@ pub struct LoadedDocState {
     /// Pre-resolved embed content fetched during load.
     /// Avoids embed pop-in on initial render.
     pub resolved_content: weaver_common::ResolvedContent,
+    /// Notebook URI for re-publishing to the same notebook.
+    pub notebook_uri: Option<SmolStr>,
 }
 
 impl PartialEq for LoadedDocState {
@@ -316,6 +322,7 @@ impl EditorDocument {
             tags,
             embeds,
             entry_ref: Signal::new(None),
+            notebook_uri: Signal::new(None),
             edit_root: Signal::new(None),
             last_diff: Signal::new(None),
             last_synced_version: Signal::new(None),
@@ -490,6 +497,16 @@ impl EditorDocument {
     /// Set the StrongRef when editing an existing entry.
     pub fn set_entry_ref(&mut self, entry: Option<StrongRef<'static>>) {
         self.entry_ref.set(entry);
+    }
+
+    /// Get the notebook URI if this draft belongs to a notebook.
+    pub fn notebook_uri(&self) -> Option<SmolStr> {
+        self.notebook_uri.read().clone()
+    }
+
+    /// Set the notebook URI for re-publishing to the same notebook.
+    pub fn set_notebook_uri(&mut self, uri: Option<SmolStr>) {
+        self.notebook_uri.set(uri);
     }
 
     // --- Tags accessors ---
@@ -1090,6 +1107,7 @@ impl EditorDocument {
             tags,
             embeds,
             entry_ref: Signal::new(None),
+            notebook_uri: Signal::new(None),
             edit_root: Signal::new(None),
             last_diff: Signal::new(None),
             last_synced_version: Signal::new(None),
@@ -1148,6 +1166,7 @@ impl EditorDocument {
             tags,
             embeds,
             entry_ref: Signal::new(state.entry_ref),
+            notebook_uri: Signal::new(state.notebook_uri),
             edit_root: Signal::new(state.edit_root),
             last_diff: Signal::new(state.last_diff),
             // Use the synced version from state (tracks the PDS version vector)

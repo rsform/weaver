@@ -32,7 +32,7 @@ RUN cp crates/weaver-app/.env-prod crates/weaver-app/.env
 # Build wasm workers
 RUN RUSTFLAGS='--cfg getrandom_backend="wasm_js"' cargo build -p weaver-app --bin editor_worker --bin embed_worker \
     --target wasm32-unknown-unknown --release \
-    --no-default-features --features "web, use-index"
+    --no-default-features --features "web","collab-worker","use-index"
 
 # Run wasm-bindgen on workers
 RUN wasm-bindgen target/wasm32-unknown-unknown/release/editor_worker.wasm \
