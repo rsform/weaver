@@ -465,7 +465,7 @@ fn MarkdownEditorInner(
         let resolver = image_resolver();
         let resolved = resolved_content();
 
-        tracing::debug!(
+        tracing::trace!(
             "Rendering with {} pre-resolved embeds",
             resolved.embed_content.len()
         );
@@ -780,7 +780,7 @@ fn MarkdownEditorInner(
                             &snapshot,
                         );
                         let write_ms = crate::perf::now() - write_start;
-                        tracing::debug!(export_ms, encode_ms, write_ms, "worker autosave complete");
+                        tracing::trace!(export_ms, encode_ms, write_ms, "worker autosave complete");
                     }
                     WorkerOutput::Error { message } => {
                         tracing::error!("Worker error: {}", message);

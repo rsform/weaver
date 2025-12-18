@@ -227,7 +227,7 @@ mod worker_impl {
                 RaceResult::CoordinatorMsg(None) => break, // Coordinator closed
                 RaceResult::CoordinatorMsg(Some(msg)) => {
                     // Fall through to message handling below
-                    tracing::debug!(?msg, "Worker: received message");
+                    tracing::trace!(?msg, "Worker: received message");
                     match msg {
                         WorkerInput::Init {
                             snapshot,

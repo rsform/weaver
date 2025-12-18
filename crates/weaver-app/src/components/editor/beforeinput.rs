@@ -553,11 +553,28 @@ pub fn get_target_range_from_event(
     // Log raw DOM position for debugging
     let start_node_name = start_container.node_name();
     let start_text = start_container.text_content().unwrap_or_default();
+    let end_node_name = end_container.node_name();
+    let end_text = end_container.text_content().unwrap_or_default();
+
+    // Check if containers are the editor element itself
+    let start_is_editor = start_container.dyn_ref::<web_sys::Element>()
+        .map(|e| e == &editor_element)
+        .unwrap_or(false);
+    let end_is_editor = end_container.dyn_ref::<web_sys::Element>()
+        .map(|e| e == &editor_element)
+        .unwrap_or(false);
+
     tracing::trace!(
         start_node_name = %start_node_name,
         start_offset,
-        start_text_preview = %start_text.chars().take(20).collect::<String>(),
-        "get_target_range_from_event: raw DOM position"
+        start_is_editor,
+        start_text_preview = %start_text.chars().take(30).collect::<String>(),
+        end_node_name = %end_node_name,
+        end_offset,
+        end_is_editor,
+        end_text_preview = %end_text.chars().take(30).collect::<String>(),
+        collapsed = static_range.collapsed(),
+        "get_target_range_from_event: raw StaticRange from browser"
     );
 
     let start = dom_position_to_text_offset(
@@ -576,6 +593,12 @@ pub fn get_target_range_from_event(
         paragraphs,
         None,
     )?;
+
+    tracing::trace!(
+        start,
+        end,
+        "get_target_range_from_event: computed text offsets"
+    );
 
     Some(Range::new(start, end))
 }

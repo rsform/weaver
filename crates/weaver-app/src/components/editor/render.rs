@@ -224,6 +224,41 @@ pub fn render_paragraphs_incremental(
     let current_len = text.len_unicode();
     let current_byte_len = text.len_utf8();
 
+    // If we have cache but no edit, just return cached data (no re-render needed)
+    // This happens on cursor position changes, clicks, etc.
+    if let (Some(c), None) = (cache, edit) {
+        // Verify cache is still valid (document length matches)
+        let cached_len = c.paragraphs.last().map(|p| p.char_range.end).unwrap_or(0);
+        if cached_len == current_len {
+            tracing::trace!(
+                target: "weaver::render",
+                "no edit, returning cached paragraphs"
+            );
+            let paragraphs: Vec<ParagraphRender> = c
+                .paragraphs
+                .iter()
+                .map(|p| ParagraphRender {
+                    id: p.id.clone(),
+                    byte_range: p.byte_range.clone(),
+                    char_range: p.char_range.clone(),
+                    html: p.html.clone(),
+                    offset_map: p.offset_map.clone(),
+                    syntax_spans: p.syntax_spans.clone(),
+                    source_hash: p.source_hash,
+                })
+                .collect();
+            let paragraphs = add_gap_paragraphs(paragraphs, text, &source);
+            return (
+                paragraphs,
+                c.clone(),
+                c.paragraphs
+                    .iter()
+                    .flat_map(|p| p.collected_refs.clone())
+                    .collect(),
+            );
+        }
+    }
+
     let use_fast_path = cache.is_some() && edit.is_some() && !is_boundary_affecting(edit.unwrap());
 
     tracing::debug!(
@@ -335,7 +370,10 @@ pub fn render_paragraphs_incremental(
             // Adjust ranges based on position relative to edit
             let (byte_range, char_range) = if cached_para.char_range.end < edit_pos {
                 // Before edit - no change
-                (cached_para.byte_range.clone(), cached_para.char_range.clone())
+                (
+                    cached_para.byte_range.clone(),
+                    cached_para.char_range.clone(),
+                )
             } else if cached_para.char_range.start > edit_pos {
                 // After edit - shift by delta
                 (
@@ -347,8 +385,10 @@ pub fn render_paragraphs_incremental(
             } else {
                 // Contains edit - expand end
                 (
-                    cached_para.byte_range.start..apply_delta(cached_para.byte_range.end, byte_delta),
-                    cached_para.char_range.start..apply_delta(cached_para.char_range.end, char_delta),
+                    cached_para.byte_range.start
+                        ..apply_delta(cached_para.byte_range.end, byte_delta),
+                    cached_para.char_range.start
+                        ..apply_delta(cached_para.char_range.end, char_delta),
                 )
             };
 
@@ -370,6 +410,7 @@ pub fn render_paragraphs_incremental(
                     &para_text,
                     parser,
                 )
+                .with_node_id_prefix(&cached_para.id)
                 .with_image_resolver(&resolver)
                 .with_embed_provider(resolved_content);
 
@@ -380,18 +421,30 @@ pub fn render_paragraphs_incremental(
                 let (html, offset_map, syntax_spans, para_refs) = match writer.run() {
                     Ok(result) => {
                         // Adjust offsets to be document-absolute
-                        let mut offset_map = result.offset_maps_by_paragraph.into_iter().next().unwrap_or_default();
+                        let mut offset_map = result
+                            .offset_maps_by_paragraph
+                            .into_iter()
+                            .next()
+                            .unwrap_or_default();
                         for m in &mut offset_map {
                             m.char_range.start += char_range.start;
                             m.char_range.end += char_range.start;
                             m.byte_range.start += byte_range.start;
                             m.byte_range.end += byte_range.start;
                         }
-                        let mut syntax_spans = result.syntax_spans_by_paragraph.into_iter().next().unwrap_or_default();
+                        let mut syntax_spans = result
+                            .syntax_spans_by_paragraph
+                            .into_iter()
+                            .next()
+                            .unwrap_or_default();
                         for s in &mut syntax_spans {
                             s.adjust_positions(char_range.start as isize);
                         }
-                        let para_refs = result.collected_refs_by_paragraph.into_iter().next().unwrap_or_default();
+                        let para_refs = result
+                            .collected_refs_by_paragraph
+                            .into_iter()
+                            .next()
+                            .unwrap_or_default();
                         let html = result.html_segments.into_iter().next().unwrap_or_default();
                         (html, offset_map, syntax_spans, para_refs)
                     }
@@ -485,22 +538,134 @@ pub fn render_paragraphs_incremental(
     }
 
     // ============ SLOW PATH ============
-    // Full render when boundaries might have changed
+    // Partial render: reuse cached paragraphs before edit, parse from affected to end
     let render_start = crate::perf::now();
+
+    // Try partial parse if we have cache and edit info
+    let (reused_paragraphs, parse_start_byte, parse_start_char) =
+        if let (Some(c), Some(e)) = (cache, edit) {
+            // Find the first cached paragraph that contains or is after the edit
+            let edit_pos = e.edit_char_pos;
+            let affected_idx = c
+                .paragraphs
+                .iter()
+                .position(|p| p.char_range.end >= edit_pos);
+
+            if let Some(mut idx) = affected_idx {
+                // If edit is near the start of a paragraph (within first few chars),
+                // the previous paragraph is also affected (e.g., backspace to join)
+                const BOUNDARY_SLOP: usize = 3;
+                let para_start = c.paragraphs[idx].char_range.start;
+                if idx > 0 && edit_pos < para_start + BOUNDARY_SLOP {
+                    idx -= 1;
+                }
+
+                if idx > 0 {
+                    // Reuse paragraphs before the affected one
+                    let reused: Vec<_> = c.paragraphs[..idx].to_vec();
+                    let last_reused = &c.paragraphs[idx - 1];
+                    tracing::trace!(
+                        reused_count = idx,
+                        parse_start_byte = last_reused.byte_range.end,
+                        parse_start_char = last_reused.char_range.end,
+                        "slow path: partial parse from affected paragraph"
+                    );
+                    (
+                        reused,
+                        last_reused.byte_range.end,
+                        last_reused.char_range.end,
+                    )
+                } else {
+                    // Edit is in first paragraph, parse everything
+                    (Vec::new(), 0, 0)
+                }
+            } else {
+                // Edit is after all paragraphs (appending), parse from end
+                if let Some(last) = c.paragraphs.last() {
+                    let reused = c.paragraphs.clone();
+                    (reused, last.byte_range.end, last.char_range.end)
+                } else {
+                    (Vec::new(), 0, 0)
+                }
+            }
+        } else {
+            // No cache or no edit info, parse everything
+            (Vec::new(), 0, 0)
+        };
+
+    // Parse from the start point to end of document
+    let parse_slice = &source[parse_start_byte..];
     let parser =
-        Parser::new_ext(&source, weaver_renderer::default_md_options()).into_offset_iter();
+        Parser::new_ext(parse_slice, weaver_renderer::default_md_options()).into_offset_iter();
 
     // Use provided resolver or empty default
     let resolver = image_resolver.cloned().unwrap_or_default();
 
-    // Build writer with all resolvers
+    // Create a temporary LoroText for the slice (needed by writer)
+    let slice_doc = loro::LoroDoc::new();
+    let slice_text = slice_doc.get_text("content");
+    let _ = slice_text.insert(0, parse_slice);
+
+    // Determine starting paragraph ID for freshly parsed paragraphs
+    // This MUST match the IDs we assign later - the writer bakes node ID prefixes into HTML
+    let reused_count = reused_paragraphs.len();
+
+    // If reused_count = 0 (full re-render), start from 0 for DOM stability
+    // Otherwise, use next_para_id to avoid collisions with reused paragraphs
+    let parsed_para_id_start = if reused_count == 0 {
+        0
+    } else {
+        cache.map(|c| c.next_para_id).unwrap_or(0)
+    };
+
+    tracing::trace!(
+        parsed_para_id_start,
+        reused_count,
+        "slow path: paragraph ID allocation"
+    );
+
+    // Find if cursor paragraph is being re-parsed (not reused)
+    // If so, we want it to keep its cached prefix for DOM/offset_map stability
+    let cursor_para_override: Option<(usize, String)> = cache.and_then(|c| {
+        // Find cached paragraph containing cursor
+        let cached_cursor_idx = c.paragraphs.iter().position(|p| {
+            p.char_range.start <= cursor_offset && cursor_offset <= p.char_range.end
+        })?;
+
+        // If cursor paragraph is reused (not being re-parsed), no override needed
+        if cached_cursor_idx < reused_count {
+            return None;
+        }
+
+        // Cursor paragraph is being re-parsed - use its cached ID
+        let cached_para = &c.paragraphs[cached_cursor_idx];
+        let parsed_index = cached_cursor_idx - reused_count;
+
+        tracing::trace!(
+            cached_cursor_idx,
+            reused_count,
+            parsed_index,
+            cached_id = %cached_para.id,
+            "slow path: cursor paragraph override"
+        );
+
+        Some((parsed_index, cached_para.id.clone()))
+    });
+
+    // Build writer with all resolvers and auto-incrementing paragraph prefixes
     let mut writer = EditorWriter::<_, &ResolvedContent, &EditorImageResolver>::new(
-        &source,
-        text,
+        parse_slice,
+        &slice_text,
         parser,
     )
+    .with_auto_incrementing_prefix(parsed_para_id_start)
     .with_image_resolver(&resolver)
     .with_embed_provider(resolved_content);
+
+    // Apply cursor paragraph override if needed
+    if let Some((idx, ref prefix)) = cursor_para_override {
+        writer = writer.with_static_prefix_at_index(idx, prefix);
+    }
 
     if let Some(idx) = entry_index {
         writer = writer.with_entry_index(idx);
@@ -511,42 +676,68 @@ pub fn render_paragraphs_incremental(
         Err(_) => return (Vec::new(), RenderCache::default(), vec![]),
     };
 
+    // Get the final paragraph ID counter from the writer (accounts for all parsed paragraphs)
+    let parsed_para_count = writer_result.paragraph_ranges.len();
+
     let render_ms = crate::perf::now() - render_start;
 
-    let paragraph_ranges = writer_result.paragraph_ranges.clone();
+    // Adjust parsed paragraph ranges to be document-absolute
+    let parsed_paragraph_ranges: Vec<_> = writer_result
+        .paragraph_ranges
+        .iter()
+        .map(|(byte_range, char_range)| {
+            (
+                (byte_range.start + parse_start_byte)..(byte_range.end + parse_start_byte),
+                (char_range.start + parse_start_char)..(char_range.end + parse_start_char),
+            )
+        })
+        .collect();
 
-    // Log discovered paragraphs
-    for (i, (byte_range, char_range)) in paragraph_ranges.iter().enumerate() {
-        let preview: String = text_slice_to_string(text, char_range.clone())
-            .chars()
-            .take(30)
-            .collect();
-        tracing::trace!(
-            target: "weaver::render",
-            para_idx = i,
-            char_range = ?char_range,
-            byte_range = ?byte_range,
-            preview = %preview,
-            "paragraph boundary"
-        );
+    // Combine reused ranges with parsed ranges
+    let paragraph_ranges: Vec<_> = reused_paragraphs
+        .iter()
+        .map(|p| (p.byte_range.clone(), p.char_range.clone()))
+        .chain(parsed_paragraph_ranges.clone())
+        .collect();
+
+    // Log discovered paragraphs (only if trace is enabled to avoid wasted work)
+    if tracing::enabled!(tracing::Level::TRACE) {
+        for (i, (byte_range, char_range)) in paragraph_ranges.iter().enumerate() {
+            let preview: String = text_slice_to_string(text, char_range.clone())
+                .chars()
+                .take(30)
+                .collect();
+            tracing::trace!(
+                target: "weaver::render",
+                para_idx = i,
+                char_range = ?char_range,
+                byte_range = ?byte_range,
+                preview = %preview,
+                "paragraph boundary"
+            );
+        }
     }
 
-    // Build paragraphs from full render segments
+    // Build paragraphs from render results
     let build_start = crate::perf::now();
     let mut paragraphs = Vec::with_capacity(paragraph_ranges.len());
     let mut new_cached = Vec::with_capacity(paragraph_ranges.len());
     let mut all_refs: Vec<weaver_common::ExtractedRef> = Vec::new();
-    let mut next_para_id = cache.map(|c| c.next_para_id).unwrap_or(0);
+    // next_para_id must account for all IDs allocated by the writer
+    let mut next_para_id = parsed_para_id_start + parsed_para_count;
+    let reused_count = reused_paragraphs.len();
 
     // Find which paragraph contains cursor (for stable ID assignment)
     let cursor_para_idx = paragraph_ranges.iter().position(|(_, char_range)| {
         char_range.start <= cursor_offset && cursor_offset <= char_range.end
     });
 
-    tracing::debug!(
+    tracing::trace!(
         cursor_offset,
         ?cursor_para_idx,
         edit_char_pos = ?edit.map(|e| e.edit_char_pos),
+        reused_count,
+        parsed_count = parsed_paragraph_ranges.len(),
         "ID assignment: cursor and edit info"
     );
 
@@ -560,54 +751,93 @@ pub fn render_paragraphs_incremental(
         let source_hash = hash_source(&para_source);
         let is_cursor_para = Some(idx) == cursor_para_idx;
 
-        // ID assignment: cursor paragraph matches by edit position, others match by hash
-        let para_id = if is_cursor_para {
-            let edit_in_this_para = edit
-                .map(|e| char_range.start <= e.edit_char_pos && e.edit_char_pos <= char_range.end)
-                .unwrap_or(false);
-            let lookup_pos = if edit_in_this_para {
-                edit.map(|e| e.edit_char_pos).unwrap_or(cursor_offset)
-            } else {
-                cursor_offset
-            };
-            let found_cached = cache.and_then(|c| {
-                c.paragraphs
-                    .iter()
-                    .find(|p| p.char_range.start <= lookup_pos && lookup_pos <= p.char_range.end)
-            });
+        // Check if this is a reused paragraph or a freshly parsed one
+        let is_reused = idx < reused_count;
 
-            if let Some(cached) = found_cached {
-                tracing::debug!(
-                    lookup_pos,
-                    edit_in_this_para,
-                    cursor_offset,
-                    cached_id = %cached.id,
-                    cached_range = ?cached.char_range,
-                    "cursor para: reusing cached ID"
-                );
-                cached.id.clone()
-            } else {
-                let id = make_paragraph_id(next_para_id);
-                next_para_id += 1;
-                id
-            }
+        // ID assignment depends on whether this is reused or freshly parsed
+        let para_id = if is_reused {
+            // Reused paragraph: keep its existing ID (HTML already has matching prefixes)
+            reused_paragraphs[idx].id.clone()
         } else {
-            // Non-cursor: match by content hash
-            cached_by_hash
-                .get(&source_hash)
-                .map(|p| p.id.clone())
-                .unwrap_or_else(|| {
-                    let id = make_paragraph_id(next_para_id);
-                    next_para_id += 1;
-                    id
-                })
+            // Freshly parsed: ID MUST match what the writer used for node ID prefixes
+            let parsed_idx = idx - reused_count;
+
+            // Check if this is the cursor paragraph with an override
+            let id = if let Some((override_idx, ref override_prefix)) = cursor_para_override {
+                if parsed_idx == override_idx {
+                    // Use the override prefix (matches what writer used)
+                    override_prefix.clone()
+                } else {
+                    // Use auto-incremented ID (matches what writer used)
+                    make_paragraph_id(parsed_para_id_start + parsed_idx)
+                }
+            } else {
+                // No override, use auto-incremented ID
+                make_paragraph_id(parsed_para_id_start + parsed_idx)
+            };
+
+            if idx < 3 || is_cursor_para {
+                tracing::trace!(
+                    idx,
+                    parsed_idx,
+                    is_cursor_para,
+                    para_id = %id,
+                    "slow path: assigned paragraph ID"
+                );
+            }
+
+            id
         };
 
-        // Get data from full render segments
-        let html = writer_result.html_segments.get(idx).cloned().unwrap_or_default();
-        let offset_map = writer_result.offset_maps_by_paragraph.get(idx).cloned().unwrap_or_default();
-        let syntax_spans = writer_result.syntax_spans_by_paragraph.get(idx).cloned().unwrap_or_default();
-        let para_refs = writer_result.collected_refs_by_paragraph.get(idx).cloned().unwrap_or_default();
+        // Get data either from reused cache or from fresh parse
+        let (html, offset_map, syntax_spans, para_refs) = if is_reused {
+            // Reused from cache - take directly
+            let reused = &reused_paragraphs[idx];
+            (
+                reused.html.clone(),
+                reused.offset_map.clone(),
+                reused.syntax_spans.clone(),
+                reused.collected_refs.clone(),
+            )
+        } else {
+            // Freshly parsed - get from writer_result with offset adjustment
+            let parsed_idx = idx - reused_count;
+            let html = writer_result
+                .html_segments
+                .get(parsed_idx)
+                .cloned()
+                .unwrap_or_default();
+
+            // Adjust offset maps to document-absolute positions
+            let mut offset_map = writer_result
+                .offset_maps_by_paragraph
+                .get(parsed_idx)
+                .cloned()
+                .unwrap_or_default();
+            for m in &mut offset_map {
+                m.char_range.start += parse_start_char;
+                m.char_range.end += parse_start_char;
+                m.byte_range.start += parse_start_byte;
+                m.byte_range.end += parse_start_byte;
+            }
+
+            // Adjust syntax spans to document-absolute positions
+            let mut syntax_spans = writer_result
+                .syntax_spans_by_paragraph
+                .get(parsed_idx)
+                .cloned()
+                .unwrap_or_default();
+            for s in &mut syntax_spans {
+                s.adjust_positions(parse_start_char as isize);
+            }
+
+            let para_refs = writer_result
+                .collected_refs_by_paragraph
+                .get(parsed_idx)
+                .cloned()
+                .unwrap_or_default();
+            (html, offset_map, syntax_spans, para_refs)
+        };
 
         all_refs.extend(para_refs.clone());
 
@@ -635,7 +865,7 @@ pub fn render_paragraphs_incremental(
     }
 
     let build_ms = crate::perf::now() - build_start;
-    tracing::debug!(
+    tracing::trace!(
         render_ms,
         build_ms,
         paragraphs = paragraph_ranges.len(),

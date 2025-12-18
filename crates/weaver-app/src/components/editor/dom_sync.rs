@@ -135,10 +135,55 @@ pub fn dom_position_to_text_offset(
 
     // Find the containing element with a node ID (walk up from text node)
     let mut current_node = node.clone();
+    let mut walked_from: Option<web_sys::Node> = None; // Track the child we walked up from
     let node_id = loop {
+        let node_name = current_node.node_name();
+        let node_id_attr = current_node
+            .dyn_ref::<web_sys::Element>()
+            .and_then(|e| e.get_attribute("id"));
+        tracing::trace!(
+            node_name = %node_name,
+            node_id_attr = ?node_id_attr,
+            "dom_position_to_text_offset: walk-up iteration"
+        );
+
         if let Some(element) = current_node.dyn_ref::<web_sys::Element>() {
             if element == editor_element {
-                // Selection is on the editor container itself (e.g., Cmd+A select all)
+                // Selection is on the editor container itself
+                //
+                // IMPORTANT: If we WALKED UP to the editor from a descendant,
+                // offset_in_text_node is the offset within that descendant, NOT the
+                // child index in the editor. We need to find which paragraph contains
+                // the node we walked from.
+                if let Some(ref walked_node) = walked_from {
+                    // We walked up from a descendant - find which paragraph it belongs to
+                    tracing::debug!(
+                        walked_from_node_name = %walked_node.node_name(),
+                        "dom_position_to_text_offset: walked up to editor from descendant"
+                    );
+
+                    // Find paragraph containing this node by checking paragraph wrapper divs
+                    for (idx, para) in paragraphs.iter().enumerate() {
+                        if let Some(para_elem) = dom_document.get_element_by_id(&para.id) {
+                            let para_node: &web_sys::Node = para_elem.as_ref();
+                            if para_node.contains(Some(walked_node)) {
+                                // Found the paragraph - return its start
+                                tracing::trace!(
+                                    para_id = %para.id,
+                                    para_idx = idx,
+                                    char_start = para.char_range.start,
+                                    "dom_position_to_text_offset: found containing paragraph"
+                                );
+                                return Some(para.char_range.start);
+                            }
+                        }
+                    }
+                    // Couldn't find containing paragraph, fall through
+                    tracing::warn!("dom_position_to_text_offset: walked up to editor but couldn't find containing paragraph");
+                    break None;
+                }
+
+                // Selection is directly on the editor container (e.g., Cmd+A select all)
                 // Return boundary position based on offset:
                 // offset 0 = start of editor, offset == child count = end of editor
                 let child_count = editor_element.child_element_count() as usize;
@@ -158,12 +203,20 @@ pub fn dom_position_to_text_offset(
             if let Some(id) = id {
                 // Match both old-style "n0" and paragraph-prefixed "p-2-n0" node IDs
                 let is_node_id = id.starts_with('n') || id.contains("-n");
+                tracing::trace!(
+                    id = %id,
+                    is_node_id,
+                    starts_with_n = id.starts_with('n'),
+                    contains_dash_n = id.contains("-n"),
+                    "dom_position_to_text_offset: checking ID pattern"
+                );
                 if is_node_id {
                     break Some(id);
                 }
             }
         }
 
+        walked_from = Some(current_node.clone());
         current_node = current_node.parent_node()?;
     };
 
@@ -178,43 +231,75 @@ pub fn dom_position_to_text_offset(
     // Skip text nodes inside contenteditable="false" elements (like embeds)
     let mut utf16_offset_in_container = 0;
 
-    // Use SHOW_ALL (0xFFFFFFFF) to see element boundaries for tracking non-editable regions
-    if let Ok(walker) = dom_document.create_tree_walker_with_what_to_show(&container, 0xFFFFFFFF) {
-        // Track the non-editable element we're inside (if any)
-        let mut skip_until_exit: Option<web_sys::Element> = None;
+    // Check if the node IS the container element itself (not a text node descendant)
+    // In this case, offset_in_text_node is actually a child index, not a character offset
+    let node_is_container = node
+        .dyn_ref::<web_sys::Element>()
+        .map(|e| e == &container)
+        .unwrap_or(false);
 
-        while let Ok(Some(dom_node)) = walker.next_node() {
-            // Check if we've exited the non-editable subtree
-            if let Some(ref skip_elem) = skip_until_exit {
-                if !skip_elem.contains(Some(&dom_node)) {
-                    skip_until_exit = None;
+    if node_is_container {
+        // offset_in_text_node is a child index - count text content up to that child
+        let child_index = offset_in_text_node;
+        let children = container.child_nodes();
+        let mut text_counted = 0usize;
+
+        for i in 0..child_index.min(children.length() as usize) {
+            if let Some(child) = children.get(i as u32) {
+                if let Some(text) = child.text_content() {
+                    text_counted += text.encode_utf16().count();
                 }
             }
+        }
+        utf16_offset_in_container = text_counted;
 
-            // Check if entering a non-editable element
-            if skip_until_exit.is_none() {
-                if let Some(element) = dom_node.dyn_ref::<web_sys::Element>() {
-                    if element.get_attribute("contenteditable").as_deref() == Some("false") {
-                        skip_until_exit = Some(element.clone());
-                        continue;
+        tracing::debug!(
+            child_index,
+            utf16_offset = utf16_offset_in_container,
+            "dom_position_to_text_offset: node is container, using child index"
+        );
+    } else {
+        // Normal case: node is a text node, walk to find it
+        // Use SHOW_ALL (0xFFFFFFFF) to see element boundaries for tracking non-editable regions
+        if let Ok(walker) =
+            dom_document.create_tree_walker_with_what_to_show(&container, 0xFFFFFFFF)
+        {
+            // Track the non-editable element we're inside (if any)
+            let mut skip_until_exit: Option<web_sys::Element> = None;
+
+            while let Ok(Some(dom_node)) = walker.next_node() {
+                // Check if we've exited the non-editable subtree
+                if let Some(ref skip_elem) = skip_until_exit {
+                    if !skip_elem.contains(Some(&dom_node)) {
+                        skip_until_exit = None;
                     }
                 }
-            }
 
-            // Skip everything inside non-editable regions
-            if skip_until_exit.is_some() {
-                continue;
-            }
-
-            // Only process text nodes
-            if dom_node.node_type() == web_sys::Node::TEXT_NODE {
-                if &dom_node == node {
-                    utf16_offset_in_container += offset_in_text_node;
-                    break;
+                // Check if entering a non-editable element
+                if skip_until_exit.is_none() {
+                    if let Some(element) = dom_node.dyn_ref::<web_sys::Element>() {
+                        if element.get_attribute("contenteditable").as_deref() == Some("false") {
+                            skip_until_exit = Some(element.clone());
+                            continue;
+                        }
+                    }
                 }
 
-                if let Some(text) = dom_node.text_content() {
-                    utf16_offset_in_container += text.encode_utf16().count();
+                // Skip everything inside non-editable regions
+                if skip_until_exit.is_some() {
+                    continue;
+                }
+
+                // Only process text nodes
+                if dom_node.node_type() == web_sys::Node::TEXT_NODE {
+                    if &dom_node == node {
+                        utf16_offset_in_container += offset_in_text_node;
+                        break;
+                    }
+
+                    if let Some(text) = dom_node.text_content() {
+                        utf16_offset_in_container += text.encode_utf16().count();
+                    }
                 }
             }
         }
@@ -248,6 +333,17 @@ pub fn dom_position_to_text_offset(
                 {
                     let offset_in_mapping = utf16_offset_in_container - mapping_start;
                     let char_offset = mapping.char_range.start + offset_in_mapping;
+
+                    tracing::trace!(
+                        node_id = %node_id,
+                        utf16_offset = utf16_offset_in_container,
+                        mapping_start,
+                        mapping_end,
+                        offset_in_mapping,
+                        char_range_start = mapping.char_range.start,
+                        char_offset,
+                        "dom_position_to_text_offset: MATCHED mapping"
+                    );
 
                     // Check if this position is valid (not on invisible content)
                     if is_valid_cursor_position(&para.offset_map, char_offset) {

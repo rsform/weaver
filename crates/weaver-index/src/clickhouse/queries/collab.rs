@@ -108,7 +108,7 @@ impl Client {
                 record.relayUrl AS relay_url,
                 record.createdAt AS created_at,
                 record.expiresAt AS expires_at
-            FROM raw_records FINAL
+            FROM raw_records
             WHERE collection = 'sh.weaver.collab.session'
               AND is_live = 1
               AND record.resource.uri = ?
@@ -116,7 +116,7 @@ impl Client {
                   record.expiresAt IS NULL
                   OR record.expiresAt > now64(3)
               )
-            ORDER BY created_at DESC
+            ORDER BY record.createdAt.:DateTime64 DESC
         "#;
 
         let rows = self

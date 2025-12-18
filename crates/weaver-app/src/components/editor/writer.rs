@@ -416,7 +416,10 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E = (
 
     // Offset mapping tracking - current paragraph
     offset_maps: Vec<OffsetMapping>,
-    node_id_prefix: Option<String>, // paragraph ID prefix for stable node IDs
+    node_id_prefix: Option<String>,           // paragraph ID prefix for stable node IDs
+    auto_increment_prefix: Option<usize>,     // if set, auto-increment prefix per paragraph from this value
+    static_prefix_override: Option<(usize, String)>, // (index, prefix) - override auto-increment at this index
+    current_paragraph_index: usize,           // which paragraph we're currently building (0-indexed)
     next_node_id: usize,
     current_node_id: Option<String>, // node ID for current text container
     current_node_char_offset: usize, // UTF-16 offset within current node
@@ -498,6 +501,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             table_start_offset: None,
             offset_maps: Vec::new(),
             node_id_prefix: None,
+            auto_increment_prefix: None,
+            static_prefix_override: None,
+            current_paragraph_index: 0,
             next_node_id: node_id_offset,
             current_node_id: None,
             current_node_char_offset: 0,
@@ -554,6 +560,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             table_start_offset: self.table_start_offset,
             offset_maps: self.offset_maps,
             node_id_prefix: self.node_id_prefix,
+            auto_increment_prefix: self.auto_increment_prefix,
+            static_prefix_override: self.static_prefix_override,
+            current_paragraph_index: self.current_paragraph_index,
             next_node_id: self.next_node_id,
             current_node_id: self.current_node_id,
             current_node_char_offset: self.current_node_char_offset,
@@ -581,9 +590,38 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
 
     /// Set a prefix for node IDs (typically the paragraph ID).
     /// This makes node IDs paragraph-scoped and stable across re-renders.
+    /// Use this for single-paragraph renders where the paragraph ID is known.
     pub fn with_node_id_prefix(mut self, prefix: &str) -> Self {
         self.node_id_prefix = Some(prefix.to_string());
         self.next_node_id = 0; // Reset counter since each paragraph is independent
+        self
+    }
+
+    /// Enable auto-incrementing paragraph prefixes for multi-paragraph renders.
+    /// Each paragraph gets prefix "p-{N}" where N starts at `start_id` and increments.
+    /// Node IDs reset to 0 for each paragraph, giving "p-{N}-n0", "p-{N}-n1", etc.
+    pub fn with_auto_incrementing_prefix(mut self, start_id: usize) -> Self {
+        self.auto_increment_prefix = Some(start_id);
+        self.node_id_prefix = Some(format!("p-{}", start_id));
+        self.next_node_id = 0;
+        self
+    }
+
+    /// Get the next paragraph ID that would be assigned (for tracking allocations).
+    pub fn next_paragraph_id(&self) -> Option<usize> {
+        self.auto_increment_prefix
+    }
+
+    /// Override the auto-incrementing prefix for a specific paragraph index.
+    /// Use this when you need a specific paragraph (e.g., cursor paragraph) to have
+    /// a stable prefix for DOM/offset_map compatibility.
+    pub fn with_static_prefix_at_index(mut self, index: usize, prefix: &str) -> Self {
+        self.static_prefix_override = Some((index, prefix.to_string()));
+        // If this is for paragraph 0, apply it immediately
+        if index == 0 {
+            self.node_id_prefix = Some(prefix.to_string());
+            self.next_node_id = 0;
+        }
         self
     }
 
@@ -600,6 +638,28 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             .push(std::mem::take(&mut self.syntax_spans));
         self.refs_by_para
             .push(std::mem::take(&mut self.ref_collector.refs));
+
+        // Advance to next paragraph
+        self.current_paragraph_index += 1;
+
+        // Determine prefix for next paragraph
+        if let Some((override_idx, ref override_prefix)) = self.static_prefix_override {
+            if self.current_paragraph_index == override_idx {
+                // Use the static override for this paragraph
+                self.node_id_prefix = Some(override_prefix.clone());
+                self.next_node_id = 0;
+            } else if let Some(ref mut current_id) = self.auto_increment_prefix {
+                // Use auto-increment (skip the override index to avoid collision)
+                *current_id += 1;
+                self.node_id_prefix = Some(format!("p-{}", *current_id));
+                self.next_node_id = 0;
+            }
+        } else if let Some(ref mut current_id) = self.auto_increment_prefix {
+            // Normal auto-increment
+            *current_id += 1;
+            self.node_id_prefix = Some(format!("p-{}", *current_id));
+            self.next_node_id = 0;
+        }
 
         // Start new output segment for next paragraph
         self.writer.new_segment();
@@ -692,15 +752,15 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
 
                     escape_html(&mut self.writer, syntax)?;
 
+                    // Record offset mapping BEFORE end_node (which clears current_node_id)
+                    self.record_mapping(range.clone(), char_start..char_end);
+                    self.last_char_offset = char_end;
+                    self.last_byte_offset = range.end;
+
                     if created_node {
                         self.write("</span>")?;
                         self.end_node();
                     }
-
-                    // Record offset mapping but no syntax span info
-                    self.record_mapping(range.clone(), char_start..char_end);
-                    self.last_char_offset = char_end;
-                    self.last_byte_offset = range.end;
                 } else {
                     // Real syntax - wrap in hideable span
                     let syntax_type = classify_syntax(syntax);
