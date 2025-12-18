@@ -283,9 +283,23 @@ pub fn handle_beforeinput(
         // === Insertion ===
         InputType::InsertText => {
             if let Some(text) = ctx.data {
-                let action = EditorAction::Insert { text, range };
+                // Simple text insert - update model, let browser handle DOM
+                // This mirrors the simple delete handling: we track in model,
+                // browser handles visual update, DOM sync skips innerHTML for
+                // cursor paragraph when syntax is unchanged
+                let action = EditorAction::Insert {
+                    text: text.clone(),
+                    range,
+                };
                 execute_action(doc, &action);
-                BeforeInputResult::Handled
+                tracing::trace!(
+                    text_len = text.len(),
+                    range_start = range.start,
+                    range_end = range.end,
+                    cursor_after = doc.cursor.read().offset,
+                    "insertText: updated model, PassThrough to browser"
+                );
+                BeforeInputResult::PassThrough
             } else {
                 BeforeInputResult::PassThrough
             }
@@ -338,15 +352,64 @@ pub fn handle_beforeinput(
                 };
             }
 
-            let action = EditorAction::DeleteBackward { range };
-            execute_action(doc, &action);
-            BeforeInputResult::Handled
+            // Check if this delete requires special handling (newlines, zero-width chars)
+            // If not, let browser handle DOM while we just track in model
+            let needs_special_handling = if !range.is_caret() {
+                // Selection delete - we handle to ensure consistency
+                true
+            } else if range.start == 0 {
+                // At start of document, nothing to delete
+                false
+            } else {
+                // Check what char we're deleting
+                let prev_char = super::input::get_char_at(doc.loro_text(), range.start - 1);
+                matches!(prev_char, Some('\n') | Some('\u{200C}') | Some('\u{200B}'))
+            };
+
+            if needs_special_handling {
+                // Complex delete - we handle everything, prevent browser default
+                let action = EditorAction::DeleteBackward { range };
+                execute_action(doc, &action);
+                BeforeInputResult::Handled
+            } else {
+                // Simple single-char delete - track in model, let browser handle DOM
+                tracing::debug!(
+                    range_start = range.start,
+                    "deleteContentBackward: simple delete, will PassThrough to browser"
+                );
+                if range.start > 0 {
+                    let _ = doc.remove_tracked(range.start - 1, 1);
+                    doc.cursor.write().offset = range.start - 1;
+                    doc.selection.set(None);
+                }
+                tracing::debug!("deleteContentBackward: after model update, returning PassThrough");
+                BeforeInputResult::PassThrough
+            }
         }
 
         InputType::DeleteContentForward => {
-            let action = EditorAction::DeleteForward { range };
-            execute_action(doc, &action);
-            BeforeInputResult::Handled
+            // Check if this delete requires special handling
+            let needs_special_handling = if !range.is_caret() {
+                true
+            } else if range.start >= doc.len_chars() {
+                false
+            } else {
+                let next_char = super::input::get_char_at(doc.loro_text(), range.start);
+                matches!(next_char, Some('\n') | Some('\u{200C}') | Some('\u{200B}'))
+            };
+
+            if needs_special_handling {
+                let action = EditorAction::DeleteForward { range };
+                execute_action(doc, &action);
+                BeforeInputResult::Handled
+            } else {
+                // Simple single-char delete - track in model, let browser handle DOM
+                if range.start < doc.len_chars() {
+                    let _ = doc.remove_tracked(range.start, 1);
+                    doc.selection.set(None);
+                }
+                BeforeInputResult::PassThrough
+            }
         }
 
         InputType::DeleteWordBackward | InputType::DeleteEntireWordBackward => {
@@ -486,6 +549,16 @@ pub fn get_target_range_from_event(
     let start_offset = static_range.startOffset() as usize;
     let end_container = static_range.endContainer();
     let end_offset = static_range.endOffset() as usize;
+
+    // Log raw DOM position for debugging
+    let start_node_name = start_container.node_name();
+    let start_text = start_container.text_content().unwrap_or_default();
+    tracing::trace!(
+        start_node_name = %start_node_name,
+        start_offset,
+        start_text_preview = %start_text.chars().take(20).collect::<String>(),
+        "get_target_range_from_event: raw DOM position"
+    );
 
     let start = dom_position_to_text_offset(
         &dom_document,

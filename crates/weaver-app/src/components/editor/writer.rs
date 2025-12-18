@@ -17,24 +17,91 @@ use markdown_weaver_escape::{
     escape_html_body_text_with_char_count,
 };
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::Range;
 use weaver_common::{EntryIndex, ResolvedContent};
+
+/// Writer that segments output by paragraph boundaries.
+///
+/// Each paragraph's HTML is written to a separate String in the segments Vec.
+/// Call `new_segment()` at paragraph boundaries to start a new segment.
+#[derive(Debug, Clone, Default)]
+pub struct SegmentedWriter {
+    segments: Vec<String>,
+}
+
+impl SegmentedWriter {
+    pub fn new() -> Self {
+        Self {
+            segments: vec![String::new()],
+        }
+    }
+
+    /// Start a new segment for the next paragraph.
+    pub fn new_segment(&mut self) {
+        self.segments.push(String::new());
+    }
+
+    /// Get the completed segments.
+    pub fn into_segments(self) -> Vec<String> {
+        self.segments
+    }
+
+    /// Get current segment count.
+    pub fn segment_count(&self) -> usize {
+        self.segments.len()
+    }
+}
+
+impl StrWrite for SegmentedWriter {
+    type Error = fmt::Error;
+
+    #[inline]
+    fn write_str(&mut self, s: &str) -> Result<(), Self::Error> {
+        if let Some(segment) = self.segments.last_mut() {
+            segment.push_str(s);
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn write_fmt(&mut self, args: fmt::Arguments) -> Result<(), Self::Error> {
+        if let Some(segment) = self.segments.last_mut() {
+            fmt::Write::write_fmt(segment, args)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Write for SegmentedWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        <Self as StrWrite>::write_str(self, s)
+    }
+
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
+        <Self as StrWrite>::write_fmt(self, args)
+    }
+}
 
 /// Result of rendering with the EditorWriter.
 #[derive(Debug, Clone)]
 pub struct WriterResult {
-    /// Offset mappings from source to DOM positions
-    pub offset_maps: Vec<OffsetMapping>,
+    /// HTML segments, one per paragraph (parallel to paragraph_ranges)
+    pub html_segments: Vec<String>,
+
+    /// Offset mappings from source to DOM positions, grouped by paragraph
+    /// Each inner Vec corresponds to a paragraph in html_segments
+    pub offset_maps_by_paragraph: Vec<Vec<OffsetMapping>>,
 
     /// Paragraph boundaries in source: (byte_range, char_range)
     /// These are extracted during rendering by tracking Tag::Paragraph events
     pub paragraph_ranges: Vec<(Range<usize>, Range<usize>)>,
 
-    /// Syntax spans that can be conditionally hidden
-    pub syntax_spans: Vec<SyntaxSpanInfo>,
+    /// Syntax spans that can be conditionally hidden, grouped by paragraph
+    pub syntax_spans_by_paragraph: Vec<Vec<SyntaxSpanInfo>>,
 
-    /// Refs (wikilinks, AT embeds) collected during this render pass
-    pub collected_refs: Vec<weaver_common::ExtractedRef>,
+    /// Refs (wikilinks, AT embeds) collected during this render pass, grouped by paragraph
+    pub collected_refs_by_paragraph: Vec<Vec<weaver_common::ExtractedRef>>,
 }
 
 /// Classification of markdown syntax characters
@@ -312,17 +379,14 @@ impl ImageResolver for &EditorImageResolver {
 ///
 /// This writer processes offset-iter events to detect gaps (consumed formatting)
 /// and emits them as styled spans for visibility in the editor.
-pub struct EditorWriter<
-    'a,
-    I: Iterator<Item = (Event<'a>, Range<usize>)>,
-    W: StrWrite,
-    E = (),
-    R = (),
-> {
+///
+/// Output is segmented by paragraph boundaries - each paragraph's HTML goes into
+/// a separate String in the output segments Vec.
+pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E = (), R = ()> {
     source: &'a str,
     source_text: &'a LoroText,
     events: I,
-    writer: W,
+    writer: SegmentedWriter,
     last_byte_offset: usize,
     last_char_offset: usize,
 
@@ -350,8 +414,9 @@ pub struct EditorWriter<
     render_tables_as_markdown: bool,
     table_start_offset: Option<usize>, // track start of table for markdown rendering
 
-    // Offset mapping tracking
+    // Offset mapping tracking - current paragraph
     offset_maps: Vec<OffsetMapping>,
+    node_id_prefix: Option<String>, // paragraph ID prefix for stable node IDs
     next_node_id: usize,
     current_node_id: Option<String>, // node ID for current text container
     current_node_char_offset: usize, // UTF-16 offset within current node
@@ -367,19 +432,20 @@ pub struct EditorWriter<
     current_paragraph_start: Option<(usize, usize)>,     // (byte_offset, char_offset)
     list_depth: usize, // Track nesting depth to avoid paragraph boundary override inside lists
 
-    /// When true, skip HTML generation and only track paragraph boundaries.
-    /// Used for fast boundary discovery in incremental rendering.
-    boundary_only: bool,
-
-    // Syntax span tracking for conditional visibility
+    // Syntax span tracking for conditional visibility - current paragraph
     syntax_spans: Vec<SyntaxSpanInfo>,
     next_syn_id: usize,
     /// Stack of pending inline formats: (syn_id of opening span, char start of region)
     /// Used to set formatted_range when closing paired inline markers
     pending_inline_formats: Vec<(String, usize)>,
 
-    /// Collected refs (wikilinks, AT embeds, AT links) during this render pass
+    /// Collected refs (wikilinks, AT embeds, AT links) for current paragraph
     ref_collector: weaver_common::RefCollector,
+
+    // Per-paragraph accumulated results (completed paragraphs)
+    offset_maps_by_para: Vec<Vec<OffsetMapping>>,
+    syntax_spans_by_para: Vec<Vec<SyntaxSpanInfo>>,
+    refs_by_para: Vec<Vec<weaver_common::ExtractedRef>>,
 
     _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -390,53 +456,17 @@ enum TableState {
     Body,
 }
 
-impl<
-    'a,
-    I: Iterator<Item = (Event<'a>, Range<usize>)>,
-    W: StrWrite,
-    E: EmbedContentProvider,
-    R: ImageResolver,
-> EditorWriter<'a, I, W, E, R>
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider, R: ImageResolver>
+    EditorWriter<'a, I, E, R>
 {
-    pub fn new(source: &'a str, source_text: &'a LoroText, events: I, writer: W) -> Self {
-        Self::new_with_node_offset(source, source_text, events, writer, 0)
-    }
-
-    pub fn new_with_node_offset(
-        source: &'a str,
-        source_text: &'a LoroText,
-        events: I,
-        writer: W,
-        node_id_offset: usize,
-    ) -> Self {
-        Self::new_with_offsets(source, source_text, events, writer, node_id_offset, 0)
-    }
-
-    pub fn new_with_offsets(
-        source: &'a str,
-        source_text: &'a LoroText,
-        events: I,
-        writer: W,
-        node_id_offset: usize,
-        syn_id_offset: usize,
-    ) -> Self {
-        Self::new_with_all_offsets(
-            source,
-            source_text,
-            events,
-            writer,
-            node_id_offset,
-            syn_id_offset,
-            0,
-            0,
-        )
+    pub fn new(source: &'a str, source_text: &'a LoroText, events: I) -> Self {
+        Self::new_with_all_offsets(source, source_text, events, 0, 0, 0, 0)
     }
 
     pub fn new_with_all_offsets(
         source: &'a str,
         source_text: &'a LoroText,
         events: I,
-        writer: W,
         node_id_offset: usize,
         syn_id_offset: usize,
         char_offset_base: usize,
@@ -446,59 +476,9 @@ impl<
             source,
             source_text,
             events,
-            writer,
+            writer: SegmentedWriter::new(),
             last_byte_offset: byte_offset_base,
             last_char_offset: char_offset_base,
-            end_newline: true,
-            in_non_writing_block: false,
-            table_state: TableState::Head,
-            table_alignments: vec![],
-            table_cell_index: 0,
-            numbers: HashMap::new(),
-            embed_provider: None,
-            image_resolver: None,
-            entry_index: None,
-            code_buffer: None,
-            code_buffer_byte_range: None,
-            code_buffer_char_range: None,
-            code_block_char_start: None,
-            code_block_opening_span_idx: None,
-            pending_blockquote_range: None,
-            render_tables_as_markdown: true, // Default to markdown rendering
-            table_start_offset: None,
-            offset_maps: Vec::new(),
-            next_node_id: node_id_offset,
-            current_node_id: None,
-            current_node_char_offset: 0,
-            current_node_child_count: 0,
-            utf16_checkpoints: vec![(0, 0)],
-            paragraph_ranges: Vec::new(),
-            current_paragraph_start: None,
-            list_depth: 0,
-            boundary_only: false,
-            syntax_spans: Vec::new(),
-            next_syn_id: syn_id_offset,
-            pending_inline_formats: Vec::new(),
-            ref_collector: weaver_common::RefCollector::new(),
-            _phantom: std::marker::PhantomData,
-        }
-    }
-
-    /// Create a writer that only tracks paragraph boundaries without generating HTML.
-    /// Used for fast boundary discovery in incremental rendering.
-    pub fn new_boundary_only(
-        source: &'a str,
-        source_text: &'a LoroText,
-        events: I,
-        writer: W,
-    ) -> Self {
-        Self {
-            source,
-            source_text,
-            events,
-            writer,
-            last_byte_offset: 0,
-            last_char_offset: 0,
             end_newline: true,
             in_non_writing_block: false,
             table_state: TableState::Head,
@@ -517,72 +497,37 @@ impl<
             render_tables_as_markdown: true,
             table_start_offset: None,
             offset_maps: Vec::new(),
-            next_node_id: 0,
+            node_id_prefix: None,
+            next_node_id: node_id_offset,
             current_node_id: None,
             current_node_char_offset: 0,
             current_node_child_count: 0,
             utf16_checkpoints: vec![(0, 0)],
-            syntax_spans: Vec::new(),
-            next_syn_id: 0,
-            pending_inline_formats: Vec::new(),
-            ref_collector: weaver_common::RefCollector::new(),
             paragraph_ranges: Vec::new(),
             current_paragraph_start: None,
             list_depth: 0,
-            boundary_only: true,
+            syntax_spans: Vec::new(),
+            next_syn_id: syn_id_offset,
+            pending_inline_formats: Vec::new(),
+            ref_collector: weaver_common::RefCollector::new(),
+            offset_maps_by_para: Vec::new(),
+            syntax_spans_by_para: Vec::new(),
+            refs_by_para: Vec::new(),
             _phantom: std::marker::PhantomData,
         }
     }
 
     /// Add an embed content provider
-    pub fn with_embed_provider(self, provider: E) -> EditorWriter<'a, I, W, E, R> {
-        EditorWriter {
-            source: self.source,
-            source_text: self.source_text,
-            events: self.events,
-            writer: self.writer,
-            last_byte_offset: self.last_byte_offset,
-            last_char_offset: self.last_char_offset,
-            end_newline: self.end_newline,
-            in_non_writing_block: self.in_non_writing_block,
-            table_state: self.table_state,
-            table_alignments: self.table_alignments,
-            table_cell_index: self.table_cell_index,
-            numbers: self.numbers,
-            embed_provider: Some(provider),
-            image_resolver: self.image_resolver,
-            entry_index: self.entry_index,
-            code_buffer: self.code_buffer,
-            code_buffer_byte_range: self.code_buffer_byte_range,
-            code_buffer_char_range: self.code_buffer_char_range,
-            code_block_char_start: self.code_block_char_start,
-            code_block_opening_span_idx: self.code_block_opening_span_idx,
-            pending_blockquote_range: self.pending_blockquote_range,
-            render_tables_as_markdown: self.render_tables_as_markdown,
-            table_start_offset: self.table_start_offset,
-            offset_maps: self.offset_maps,
-            next_node_id: self.next_node_id,
-            current_node_id: self.current_node_id,
-            current_node_char_offset: self.current_node_char_offset,
-            current_node_child_count: self.current_node_child_count,
-            utf16_checkpoints: self.utf16_checkpoints,
-            paragraph_ranges: self.paragraph_ranges,
-            current_paragraph_start: self.current_paragraph_start,
-            list_depth: self.list_depth,
-            boundary_only: self.boundary_only,
-            syntax_spans: self.syntax_spans,
-            next_syn_id: self.next_syn_id,
-            pending_inline_formats: self.pending_inline_formats,
-            ref_collector: self.ref_collector,
-            _phantom: std::marker::PhantomData,
-        }
+    pub fn with_embed_provider(mut self, provider: E) -> EditorWriter<'a, I, E, R> {
+        self.embed_provider = Some(provider);
+        self
     }
 
     /// Add an image resolver for mapping markdown image URLs to CDN URLs
     pub fn with_image_resolver<R2: ImageResolver>(
         self,
         resolver: R2,
-    ) -> EditorWriter<'a, I, W, E, R2> {
+    ) -> EditorWriter<'a, I, E, R2> {
         EditorWriter {
             source: self.source,
             source_text: self.source_text,
@@ -608,6 +553,7 @@ impl<
             render_tables_as_markdown: self.render_tables_as_markdown,
             table_start_offset: self.table_start_offset,
             offset_maps: self.offset_maps,
+            node_id_prefix: self.node_id_prefix,
             next_node_id: self.next_node_id,
             current_node_id: self.current_node_id,
             current_node_char_offset: self.current_node_char_offset,
@@ -616,11 +562,13 @@ impl<
             paragraph_ranges: self.paragraph_ranges,
             current_paragraph_start: self.current_paragraph_start,
             list_depth: self.list_depth,
-            boundary_only: self.boundary_only,
             syntax_spans: self.syntax_spans,
             next_syn_id: self.next_syn_id,
             pending_inline_formats: self.pending_inline_formats,
             ref_collector: self.ref_collector,
+            offset_maps_by_para: self.offset_maps_by_para,
+            syntax_spans_by_para: self.syntax_spans_by_para,
+            refs_by_para: self.refs_by_para,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -631,22 +579,42 @@ impl<
         self
     }
 
+    /// Set a prefix for node IDs (typically the paragraph ID).
+    /// This makes node IDs paragraph-scoped and stable across re-renders.
+    pub fn with_node_id_prefix(mut self, prefix: &str) -> Self {
+        self.node_id_prefix = Some(prefix.to_string());
+        self.next_node_id = 0; // Reset counter since each paragraph is independent
+        self
+    }
+
+    /// Finalize the current paragraph: move accumulated items to per-para vectors,
+    /// start a new output segment for the next paragraph.
+    fn finalize_paragraph(&mut self, byte_range: Range<usize>, char_range: Range<usize>) {
+        // Record paragraph boundary
+        self.paragraph_ranges.push((byte_range, char_range));
+
+        // Move current paragraph's data to per-para vectors
+        self.offset_maps_by_para
+            .push(std::mem::take(&mut self.offset_maps));
+        self.syntax_spans_by_para
+            .push(std::mem::take(&mut self.syntax_spans));
+        self.refs_by_para
+            .push(std::mem::take(&mut self.ref_collector.refs));
+
+        // Start new output segment for next paragraph
+        self.writer.new_segment();
+    }
+
     #[inline]
-    fn write_newline(&mut self) -> Result<(), W::Error> {
+    fn write_newline(&mut self) -> fmt::Result {
         self.end_newline = true;
-        if self.boundary_only {
-            return Ok(());
-        }
         self.writer.write_str("\n")
     }
 
     #[inline]
-    fn write(&mut self, s: &str) -> Result<(), W::Error> {
+    fn write(&mut self, s: &str) -> fmt::Result {
         if !s.is_empty() {
             self.end_newline = s.ends_with('\n');
-        }
-        if self.boundary_only {
-            return Ok(());
         }
         self.writer.write_str(s)
     }
@@ -691,7 +659,7 @@ impl<
     }
 
     /// Emit syntax span for a given range and record offset mapping
-    fn emit_syntax(&mut self, range: Range<usize>) -> Result<(), W::Error> {
+    fn emit_syntax(&mut self, range: Range<usize>) -> Result<(), fmt::Error> {
         if range.start < range.end {
             let syntax = &self.source[range.clone()];
             if !syntax.is_empty() {
@@ -706,13 +674,6 @@ impl<
                     syntax = %syntax.escape_debug(),
                     "emit_syntax"
                 );
-
-                // In boundary_only mode, just update offsets without HTML
-                if self.boundary_only {
-                    self.last_char_offset = char_end;
-                    self.last_byte_offset = range.end;
-                    return Ok(());
-                }
 
                 // Whitespace-only content (trailing spaces, newlines) should be emitted
                 // as plain text, not wrapped in a hideable syntax span
@@ -811,7 +772,7 @@ impl<
         syntax: &str,
         byte_start: usize,
         syntax_type: SyntaxType,
-    ) -> Result<(), W::Error> {
+    ) -> Result<(), fmt::Error> {
         if syntax.is_empty() {
             return Ok(());
         }
@@ -820,13 +781,6 @@ impl<
         let syntax_char_len = syntax.chars().count();
         let char_end = char_start + syntax_char_len;
         let byte_end = byte_start + syntax.len();
-
-        // In boundary_only mode, just update offsets
-        if self.boundary_only {
-            self.last_char_offset = char_end;
-            self.last_byte_offset = byte_end;
-            return Ok(());
-        }
 
         let class_str = match syntax_type {
             SyntaxType::Inline => "md-syntax-inline",
@@ -862,7 +816,7 @@ impl<
     }
 
     /// Emit any gap between last position and next offset
-    fn emit_gap_before(&mut self, next_offset: usize) -> Result<(), W::Error> {
+    fn emit_gap_before(&mut self, next_offset: usize) -> Result<(), fmt::Error> {
         // Skip gap emission if we're inside a table being rendered as markdown
         if self.table_start_offset.is_some() && self.render_tables_as_markdown {
             return Ok(());
@@ -880,9 +834,15 @@ impl<
         Ok(())
     }
 
-    /// Generate a unique node ID
+    /// Generate a unique node ID.
+    /// If a prefix is set (paragraph ID), produces `{prefix}-n{counter}`.
+    /// Otherwise produces `n{counter}` for backwards compatibility.
     fn gen_node_id(&mut self) -> String {
-        let id = format!("n{}", self.next_node_id);
+        let id = if let Some(ref prefix) = self.node_id_prefix {
+            format!("{}-n{}", prefix, self.next_node_id)
+        } else {
+            format!("n{}", self.next_node_id)
+        };
         self.next_node_id += 1;
         id
     }
@@ -954,7 +914,7 @@ impl<
     ///
     /// Returns offset mappings and paragraph boundaries. The HTML is written
     /// to the writer passed in the constructor.
-    pub fn run(mut self) -> Result<WriterResult, W::Error> {
+    pub fn run(mut self) -> Result<WriterResult, fmt::Error> {
         while let Some((event, range)) = self.events.next() {
             tracing::trace!(
                 target: "weaver::writer",
@@ -1062,16 +1022,31 @@ impl<
             }
         }
 
+        // Add any remaining accumulated data for the last paragraph
+        // (content that wasn't followed by a paragraph boundary)
+        if !self.offset_maps.is_empty()
+            || !self.syntax_spans.is_empty()
+            || !self.ref_collector.refs.is_empty()
+        {
+            self.offset_maps_by_para.push(self.offset_maps);
+            self.syntax_spans_by_para.push(self.syntax_spans);
+            self.refs_by_para.push(self.ref_collector.refs);
+        }
+
+        // Get HTML segments from writer
+        let html_segments = self.writer.into_segments();
+
         Ok(WriterResult {
-            offset_maps: self.offset_maps,
+            html_segments,
+            offset_maps_by_paragraph: self.offset_maps_by_para,
             paragraph_ranges: self.paragraph_ranges,
-            syntax_spans: self.syntax_spans,
-            collected_refs: self.ref_collector.take(),
+            syntax_spans_by_paragraph: self.syntax_spans_by_para,
+            collected_refs_by_paragraph: self.refs_by_para,
         })
     }
 
     // Consume raw text events until end tag, for alt attributes
-    fn raw_text(&mut self) -> Result<(), W::Error> {
+    fn raw_text(&mut self) -> Result<(), fmt::Error> {
         use Event::*;
         let mut nest = 0;
         while let Some((event, _range)) = self.events.next() {
@@ -1135,7 +1110,7 @@ impl<
         }
     }
 
-    fn process_event(&mut self, event: Event<'_>, range: Range<usize>) -> Result<(), W::Error> {
+    fn process_event(&mut self, event: Event<'_>, range: Range<usize>) -> Result<(), fmt::Error> {
         use Event::*;
 
         match event {
@@ -1650,7 +1625,7 @@ impl<
         Ok(())
     }
 
-    fn start_tag(&mut self, tag: Tag<'_>, range: Range<usize>) -> Result<(), W::Error> {
+    fn start_tag(&mut self, tag: Tag<'_>, range: Range<usize>) -> Result<(), fmt::Error> {
         // Check if this is a block-level tag that should have syntax inside
         let is_block_tag = matches!(tag, Tag::Heading { .. } | Tag::BlockQuote(_));
 
@@ -1768,13 +1743,13 @@ impl<
                 if self.end_newline {
                     write!(
                         &mut self.writer,
-                        r#"<p id="{}", class="html-embed html-embed-block">"#,
+                        r#"<p id="{}" class="html-embed html-embed-block">"#,
                         node_id
                     )?;
                 } else {
                     write!(
                         &mut self.writer,
-                        r#"\n<p id="{}", class="html-embed html-embed-block">"#,
+                        r#"\n<p id="{}" class="html-embed html-embed-block">"#,
                         node_id
                     )?;
                 }
@@ -2500,51 +2475,86 @@ impl<
         &mut self,
         tag: markdown_weaver::TagEnd,
         range: Range<usize>,
-    ) -> Result<(), W::Error> {
+    ) -> Result<(), fmt::Error> {
         use markdown_weaver::TagEnd;
 
         // Emit tag HTML first
         let result = match tag {
             TagEnd::HtmlBlock => {
-                // Record paragraph end for boundary tracking
-                // BUT skip if inside a list - list owns the paragraph boundary
-                if self.list_depth == 0 {
-                    if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
-                        let byte_range = byte_start..self.last_byte_offset;
-                        let char_range = char_start..self.last_char_offset;
-                        self.paragraph_ranges.push((byte_range, char_range));
-                    }
-                }
+                // Capture paragraph boundary info BEFORE writing closing HTML
+                // Skip if inside a list - list owns the paragraph boundary
+                let para_boundary = if self.list_depth == 0 {
+                    self.current_paragraph_start
+                        .take()
+                        .map(|(byte_start, char_start)| {
+                            (
+                                byte_start..self.last_byte_offset,
+                                char_start..self.last_char_offset,
+                            )
+                        })
+                } else {
+                    None
+                };
 
+                // Write closing HTML to current segment
                 self.end_node();
-                self.write("</p>\n")
+                self.write("</p>\n")?;
+
+                // Now finalize paragraph (starts new segment)
+                if let Some((byte_range, char_range)) = para_boundary {
+                    self.finalize_paragraph(byte_range, char_range);
+                }
+                Ok(())
             }
             TagEnd::Paragraph => {
-                // Record paragraph end for boundary tracking
-                // BUT skip if inside a list - list owns the paragraph boundary
-                if self.list_depth == 0 {
-                    if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
-                        let byte_range = byte_start..self.last_byte_offset;
-                        let char_range = char_start..self.last_char_offset;
-                        self.paragraph_ranges.push((byte_range, char_range));
-                    }
-                }
+                // Capture paragraph boundary info BEFORE writing closing HTML
+                // Skip if inside a list - list owns the paragraph boundary
+                let para_boundary = if self.list_depth == 0 {
+                    self.current_paragraph_start
+                        .take()
+                        .map(|(byte_start, char_start)| {
+                            (
+                                byte_start..self.last_byte_offset,
+                                char_start..self.last_char_offset,
+                            )
+                        })
+                } else {
+                    None
+                };
 
+                // Write closing HTML to current segment
                 self.end_node();
-                self.write("</p>\n")
+                self.write("</p>\n")?;
+
+                // Now finalize paragraph (starts new segment)
+                if let Some((byte_range, char_range)) = para_boundary {
+                    self.finalize_paragraph(byte_range, char_range);
+                }
+                Ok(())
             }
             TagEnd::Heading(level) => {
-                // Record paragraph end for boundary tracking
-                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
-                    let byte_range = byte_start..self.last_byte_offset;
-                    let char_range = char_start..self.last_char_offset;
-                    self.paragraph_ranges.push((byte_range, char_range));
-                }
+                // Capture paragraph boundary info BEFORE writing closing HTML
+                let para_boundary =
+                    self.current_paragraph_start
+                        .take()
+                        .map(|(byte_start, char_start)| {
+                            (
+                                byte_start..self.last_byte_offset,
+                                char_start..self.last_char_offset,
+                            )
+                        });
 
+                // Write closing HTML to current segment
                 self.end_node();
                 self.write("</")?;
                 write!(&mut self.writer, "{}", level)?;
-                self.write(">\n")
+                self.write(">\n")?;
+
+                // Now finalize paragraph (starts new segment)
+                if let Some((byte_range, char_range)) = para_boundary {
+                    self.finalize_paragraph(byte_range, char_range);
+                }
+                Ok(())
             }
             TagEnd::Table => {
                 if self.render_tables_as_markdown {
@@ -2594,6 +2604,7 @@ impl<
             TagEnd::BlockQuote(_) => {
                 // If pending_blockquote_range is still set, the blockquote was empty
                 // (no paragraph inside). Emit the > as its own minimal paragraph.
+                let mut para_boundary = None;
                 if let Some(bq_range) = self.pending_blockquote_range.take() {
                     if bq_range.start < bq_range.end {
                         let raw_text = &self.source[bq_range.clone()];
@@ -2604,9 +2615,8 @@ impl<
                             // Create a minimal paragraph for the empty blockquote
                             let node_id = self.gen_node_id();
                             write!(&mut self.writer, "<div id=\"{}\"", node_id)?;
-                            // self.begin_node(node_id.clone());
 
-                            // // Record start-of-node mapping for cursor positioning
+                            // Record start-of-node mapping for cursor positioning
                             self.offset_maps.push(OffsetMapping {
                                 byte_range: para_byte_start..para_byte_start,
                                 char_range: para_char_start..para_char_start,
@@ -2623,14 +2633,20 @@ impl<
                             self.write("</div>\n")?;
                             self.end_node();
 
-                            // Record paragraph boundary for incremental rendering
+                            // Capture paragraph boundary for later finalization
                             let byte_range = para_byte_start..bq_range.end;
                             let char_range = para_char_start..self.last_char_offset;
-                            self.paragraph_ranges.push((byte_range, char_range));
+                            para_boundary = Some((byte_range, char_range));
                         }
                     }
                 }
-                self.write("</blockquote>\n")
+                self.write("</blockquote>\n")?;
+
+                // Now finalize paragraph if we had one
+                if let Some((byte_range, char_range)) = para_boundary {
+                    self.finalize_paragraph(byte_range, char_range);
+                }
+                Ok(())
             }
             TagEnd::CodeBlock => {
                 use std::sync::LazyLock;
@@ -2758,34 +2774,56 @@ impl<
                     }
                 }
 
-                // Record code block end for paragraph boundary tracking
+                // Finalize code block paragraph
                 if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
                     let byte_range = byte_start..self.last_byte_offset;
                     let char_range = char_start..self.last_char_offset;
-                    self.paragraph_ranges.push((byte_range, char_range));
+                    self.finalize_paragraph(byte_range, char_range);
                 }
 
                 Ok(())
             }
             TagEnd::List(true) => {
                 self.list_depth = self.list_depth.saturating_sub(1);
-                // Record list end for paragraph boundary tracking
-                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
-                    let byte_range = byte_start..self.last_byte_offset;
-                    let char_range = char_start..self.last_char_offset;
-                    self.paragraph_ranges.push((byte_range, char_range));
+                // Capture paragraph boundary BEFORE writing closing HTML
+                let para_boundary =
+                    self.current_paragraph_start
+                        .take()
+                        .map(|(byte_start, char_start)| {
+                            (
+                                byte_start..self.last_byte_offset,
+                                char_start..self.last_char_offset,
+                            )
+                        });
+
+                self.write("</ol>\n")?;
+
+                // Finalize paragraph after closing HTML
+                if let Some((byte_range, char_range)) = para_boundary {
+                    self.finalize_paragraph(byte_range, char_range);
                 }
-                self.write("</ol>\n")
+                Ok(())
             }
             TagEnd::List(false) => {
                 self.list_depth = self.list_depth.saturating_sub(1);
-                // Record list end for paragraph boundary tracking
-                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
-                    let byte_range = byte_start..self.last_byte_offset;
-                    let char_range = char_start..self.last_char_offset;
-                    self.paragraph_ranges.push((byte_range, char_range));
+                // Capture paragraph boundary BEFORE writing closing HTML
+                let para_boundary =
+                    self.current_paragraph_start
+                        .take()
+                        .map(|(byte_start, char_start)| {
+                            (
+                                byte_start..self.last_byte_offset,
+                                char_start..self.last_char_offset,
+                            )
+                        });
+
+                self.write("</ul>\n")?;
+
+                // Finalize paragraph after closing HTML
+                if let Some((byte_range, char_range)) = para_boundary {
+                    self.finalize_paragraph(byte_range, char_range);
                 }
-                self.write("</ul>\n")
+                Ok(())
             }
             TagEnd::Item => {
                 self.end_node();
@@ -2878,13 +2916,8 @@ impl<
     }
 }
 
-impl<
-    'a,
-    I: Iterator<Item = (Event<'a>, Range<usize>)>,
-    W: StrWrite,
-    E: EmbedContentProvider,
-    R: ImageResolver,
-> EditorWriter<'a, I, W, E, R>
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider, R: ImageResolver>
+    EditorWriter<'a, I, E, R>
 {
     fn write_embed(
         &mut self,
@@ -2894,7 +2927,7 @@ impl<
         title: CowStr<'_>,
         id: CowStr<'_>,
         attrs: Option<markdown_weaver::WeaverAttributes<'_>>,
-    ) -> Result<(), W::Error> {
+    ) -> Result<(), fmt::Error> {
         // Embed rendering: all syntax elements share one syn_id for visibility toggling
         // Structure: ![[  url-as-link  ]]  <embed-content>
         let raw_text = &self.source[range.clone()];

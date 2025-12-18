@@ -844,6 +844,7 @@ impl EditorDocument {
     /// Call this after OUR edits where we know the new cursor position.
     pub fn sync_loro_cursor(&mut self) {
         let offset = self.cursor.read().offset;
+        tracing::debug!(offset, "sync_loro_cursor: saving cursor position to Loro");
         self.loro_cursor = self.content.get_cursor(offset, Side::default());
     }
 
@@ -853,7 +854,18 @@ impl EditorDocument {
     pub fn sync_cursor_from_loro(&mut self) -> Option<usize> {
         let loro_cursor = self.loro_cursor.as_ref()?;
         let result = self.doc.get_cursor_pos(loro_cursor).ok()?;
+        let old_offset = self.cursor.read().offset;
         let new_offset = result.current.pos.min(self.len_chars());
+        let jump = if new_offset > old_offset { new_offset - old_offset } else { old_offset - new_offset };
+        if jump > 100 {
+            tracing::warn!(
+                old_offset,
+                new_offset,
+                jump,
+                "sync_cursor_from_loro: LARGE CURSOR JUMP detected"
+            );
+        }
+        tracing::debug!(old_offset, new_offset, "sync_cursor_from_loro: updating cursor from Loro");
         self.cursor.with_mut(|c| c.offset = new_offset);
         Some(new_offset)
     }
@@ -865,6 +877,7 @@ impl EditorDocument {
 
     /// Set the Loro cursor (used when restoring from storage).
     pub fn set_loro_cursor(&mut self, cursor: Option<Cursor>) {
+        tracing::debug!(has_cursor = cursor.is_some(), "set_loro_cursor called");
         self.loro_cursor = cursor;
         // Sync cursor.offset from the restored Loro cursor
         if self.loro_cursor.is_some() {
@@ -997,9 +1010,28 @@ impl EditorDocument {
     /// Import updates from a PDS diff blob.
     /// Used when loading edit history from the PDS.
     pub fn import_updates(&mut self, updates: &[u8]) -> LoroResult<()> {
+        let len_before = self.content.len_unicode();
+        let vv_before = self.doc.oplog_vv();
+
         self.doc.import(updates)?;
-        // Trigger re-render after importing remote changes
-        self.last_edit.set(None);
+
+        let len_after = self.content.len_unicode();
+        let vv_after = self.doc.oplog_vv();
+        let vv_changed = vv_before != vv_after;
+        let len_changed = len_before != len_after;
+
+        tracing::debug!(
+            len_before,
+            len_after,
+            len_changed,
+            vv_changed,
+            "import_updates: merge result"
+        );
+
+        // Only trigger re-render if something actually changed
+        if vv_changed {
+            self.last_edit.set(None);
+        }
         Ok(())
     }
 

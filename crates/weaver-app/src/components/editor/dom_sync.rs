@@ -5,6 +5,7 @@
 
 use dioxus::prelude::*;
 
+use super::cursor::restore_cursor_position;
 use super::document::{EditorDocument, Selection};
 use super::offset_map::{SnapDirection, find_nearest_valid_position, is_valid_cursor_position};
 use super::paragraph::ParagraphRender;
@@ -90,6 +91,17 @@ pub fn sync_cursor_from_dom_with_direction(
 
     match (anchor_rope, focus_rope) {
         (Some(anchor), Some(focus)) => {
+            let old_offset = doc.cursor.read().offset;
+            // Warn if cursor is jumping a large distance - likely a bug
+            let jump = if focus > old_offset { focus - old_offset } else { old_offset - focus };
+            if jump > 100 {
+                tracing::warn!(
+                    old_offset,
+                    new_offset = focus,
+                    jump,
+                    "sync_cursor_from_dom: LARGE CURSOR JUMP detected"
+                );
+            }
             doc.cursor.write().offset = focus;
             if anchor != focus {
                 doc.selection.set(Some(Selection {
@@ -144,7 +156,9 @@ pub fn dom_position_to_text_offset(
                 .or_else(|| element.get_attribute("data-node-id"));
 
             if let Some(id) = id {
-                if id.starts_with('n') && id[1..].parse::<usize>().is_ok() {
+                // Match both old-style "n0" and paragraph-prefixed "p-2-n0" node IDs
+                let is_node_id = id.starts_with('n') || id.contains("-n");
+                if is_node_id {
                     break Some(id);
                 }
             }
@@ -206,11 +220,28 @@ pub fn dom_position_to_text_offset(
         }
     }
 
+    // Log what we're looking for
+    tracing::trace!(
+        node_id = %node_id,
+        utf16_offset = utf16_offset_in_container,
+        num_paragraphs = paragraphs.len(),
+        "dom_position_to_text_offset: looking up mapping"
+    );
+
     for para in paragraphs {
         for mapping in &para.offset_map {
             if mapping.node_id == node_id {
                 let mapping_start = mapping.char_offset_in_node;
                 let mapping_end = mapping.char_offset_in_node + mapping.utf16_len;
+
+                tracing::trace!(
+                    mapping_node_id = %mapping.node_id,
+                    mapping_start,
+                    mapping_end,
+                    char_range_start = mapping.char_range.start,
+                    char_range_end = mapping.char_range.end,
+                    "dom_position_to_text_offset: found matching node_id"
+                );
 
                 if utf16_offset_in_container >= mapping_start
                     && utf16_offset_in_container <= mapping_end
@@ -267,10 +298,13 @@ pub fn sync_cursor_from_dom_with_direction(
 ) {
 }
 
-/// Update paragraph DOM elements incrementally.
+/// Update paragraph DOM elements incrementally using pool-based surgical diffing.
 ///
-/// Only modifies paragraphs that changed (by comparing source_hash).
-/// Browser preserves cursor naturally in unchanged paragraphs.
+/// Uses stable content-based paragraph IDs for efficient DOM reconciliation:
+/// - Unchanged paragraphs (same ID + hash) are not touched
+/// - Changed paragraphs (same ID, different hash) get innerHTML updated
+/// - New paragraphs get created and inserted at correct position
+/// - Removed paragraphs get deleted
 ///
 /// Returns true if the paragraph containing the cursor was updated.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -281,6 +315,7 @@ pub fn update_paragraph_dom(
     cursor_offset: usize,
     force: bool,
 ) -> bool {
+    use std::collections::HashMap;
     use wasm_bindgen::JsCast;
 
     let window = match web_sys::window() {
@@ -298,64 +333,180 @@ pub fn update_paragraph_dom(
         None => return false,
     };
 
-    // Find which paragraph contains cursor
-    // Use end-inclusive matching: cursor at position N belongs to paragraph (0..N)
-    // This handles typing at end of paragraph, which is the common case
-    // The empty paragraph at document end catches any trailing cursor positions
-    let cursor_para_idx = new_paragraphs
-        .iter()
-        .position(|p| p.char_range.start <= cursor_offset && cursor_offset <= p.char_range.end);
-
     let mut cursor_para_updated = false;
 
-    for (idx, new_para) in new_paragraphs.iter().enumerate() {
-        let para_id = format!("para-{}", idx);
+    // Build lookup for old paragraphs by ID (for syntax span comparison)
+    let old_para_map: HashMap<&str, &ParagraphRender> = old_paragraphs
+        .iter()
+        .map(|p| (p.id.as_str(), p))
+        .collect();
 
-        if let Some(old_para) = old_paragraphs.get(idx) {
-            if force || new_para.source_hash != old_para.source_hash {
-                // Changed - clear and update innerHTML
-                // We clear first to ensure any browser-added content (from IME composition,
-                // contenteditable quirks, etc.) is fully removed before setting new content
-                if let Some(elem) = document.get_element_by_id(&para_id) {
-                    if force && cursor_para_idx.is_some() {
-                        // skip re-rendering where the cursor is if we're forcing it
-                        // we don't want to fuck up what the user is doing
-                    } else {
-                        elem.set_text_content(None); // Clear completely
-                        elem.set_inner_html(&new_para.html);
-                    }
+    // Build pool of existing DOM elements by ID
+    let mut old_elements: HashMap<String, web_sys::Element> = HashMap::new();
+    let mut child_opt = editor.first_element_child();
+    while let Some(child) = child_opt {
+        if let Some(id) = child.get_attribute("id") {
+            let next = child.next_element_sibling();
+            old_elements.insert(id, child);
+            child_opt = next;
+        } else {
+            child_opt = child.next_element_sibling();
+        }
+    }
+
+    // Track position for insertBefore - starts at first element child
+    // (use first_element_child to skip any stray text nodes)
+    let mut cursor_node: Option<web_sys::Node> =
+        editor.first_element_child().map(|e| e.into());
+
+    // Single pass through new paragraphs
+    for new_para in new_paragraphs.iter() {
+        let para_id = &new_para.id;
+        let new_hash = format!("{:x}", new_para.source_hash);
+        let is_cursor_para =
+            new_para.char_range.start <= cursor_offset && cursor_offset <= new_para.char_range.end;
+
+        if let Some(existing_elem) = old_elements.remove(para_id) {
+            // Element exists - check if it needs updating
+            let old_hash = existing_elem.get_attribute("data-hash").unwrap_or_default();
+            let needs_update = force || old_hash != new_hash;
+
+            // Check if element is at correct position (compare as nodes)
+            let existing_as_node: &web_sys::Node = existing_elem.as_ref();
+            let at_correct_position = cursor_node
+                .as_ref()
+                .map(|c| c == existing_as_node)
+                .unwrap_or(false);
+
+            if !at_correct_position {
+                tracing::warn!(
+                    para_id,
+                    is_cursor_para,
+                    "update_paragraph_dom: element not at correct position, moving"
+                );
+                let _ = editor.insert_before(existing_as_node, cursor_node.as_ref());
+                if is_cursor_para {
+                    cursor_para_updated = true;
                 }
+            } else {
+                // Use next_element_sibling to skip any stray text nodes
+                cursor_node = existing_elem.next_element_sibling().map(|e| e.into());
+            }
 
-                if !force {
-                    if Some(idx) == cursor_para_idx {
+            if needs_update {
+                // TESTING: Force innerHTML update to measure timing cost
+                // TODO: Remove this flag after benchmarking
+                const FORCE_INNERHTML_UPDATE: bool = true;
+
+                // For cursor paragraph: only update if syntax/formatting changed
+                // This prevents destroying browser selection during fast typing
+                //
+                // HOWEVER: we must verify browser actually updated the DOM.
+                // PassThrough assumes browser handles edit, but sometimes it doesn't.
+                let should_skip_cursor_update = !FORCE_INNERHTML_UPDATE && is_cursor_para && !force && {
+                    let old_para = old_para_map.get(para_id.as_str());
+                    let syntax_unchanged = old_para
+                        .map(|old| old.syntax_spans == new_para.syntax_spans)
+                        .unwrap_or(false);
+
+                    // Verify DOM content length matches expected - if not, browser didn't handle it
+                    // NOTE: Get inner element (the <p>) not outer div, to avoid counting
+                    // the newline from </p>\n in the HTML
+                    let dom_matches_expected = if syntax_unchanged {
+                        let inner_elem = existing_elem.first_element_child();
+                        let dom_text = inner_elem
+                            .as_ref()
+                            .and_then(|e| e.text_content())
+                            .unwrap_or_default();
+                        let expected_len = new_para.byte_range.end - new_para.byte_range.start;
+                        let dom_len = dom_text.len();
+                        let matches = dom_len == expected_len;
+                        // Always log for debugging
+                        tracing::debug!(
+                            para_id = %para_id,
+                            dom_len,
+                            expected_len,
+                            matches,
+                            dom_text = %dom_text,
+                            "DOM sync check"
+                        );
+                        matches
+                    } else {
+                        false
+                    };
+
+                    syntax_unchanged && dom_matches_expected
+                };
+
+                if should_skip_cursor_update {
+                    tracing::trace!(
+                        para_id,
+                        "update_paragraph_dom: skipping cursor para innerHTML (syntax unchanged, DOM verified)"
+                    );
+                    // Update hash - browser native editing has the correct content
+                    let _ = existing_elem.set_attribute("data-hash", &new_hash);
+                } else {
+                    // Timing instrumentation for innerHTML update cost
+                    let start = web_sys::window()
+                        .and_then(|w| w.performance())
+                        .map(|p| p.now());
+
+                    existing_elem.set_inner_html(&new_para.html);
+                    let _ = existing_elem.set_attribute("data-hash", &new_hash);
+
+                    if let Some(start_time) = start {
+                        if let Some(end_time) = web_sys::window()
+                            .and_then(|w| w.performance())
+                            .map(|p| p.now())
+                        {
+                            let elapsed_ms = end_time - start_time;
+                            tracing::debug!(
+                                para_id,
+                                is_cursor_para,
+                                elapsed_ms,
+                                html_len = new_para.html.len(),
+                                old_hash = %old_hash,
+                                new_hash = %new_hash,
+                                "update_paragraph_dom: innerHTML update timing"
+                            );
+                        }
+                    }
+
+                    if is_cursor_para {
+                        // Restore cursor synchronously - don't wait for rAF
+                        // This prevents race conditions with fast typing
+                        if let Err(e) = restore_cursor_position(
+                            cursor_offset,
+                            &new_para.offset_map,
+                            editor_id,
+                            None,
+                        ) {
+                            tracing::warn!("Synchronous cursor restore failed: {:?}", e);
+                        }
                         cursor_para_updated = true;
                     }
                 }
             }
         } else {
+            // New element - create and insert at current position
             if let Ok(div) = document.create_element("div") {
-                div.set_id(&para_id);
+                div.set_id(para_id);
                 div.set_inner_html(&new_para.html);
-                let _ = editor.append_child(&div);
+                let _ = div.set_attribute("data-hash", &new_hash);
+                let div_node: &web_sys::Node = div.as_ref();
+                let _ = editor.insert_before(div_node, cursor_node.as_ref());
             }
 
-            if Some(idx) == cursor_para_idx {
+            if is_cursor_para {
                 cursor_para_updated = true;
             }
         }
     }
 
-    // Remove extra paragraphs if document got shorter
-    // Also mark cursor as needing restoration since structure changed
-    if new_paragraphs.len() < old_paragraphs.len() {
-        cursor_para_updated = true;
-    }
-    // TODO: i think this is the cause of a number of bits of cursor jank
-    for idx in new_paragraphs.len()..old_paragraphs.len() {
-        let para_id = format!("para-{}", idx);
-        if let Some(elem) = document.get_element_by_id(&para_id) {
-            let _ = elem.remove();
-        }
+    // Remove stale elements (still in pool = not in new paragraphs)
+    for (_, elem) in old_elements {
+        let _ = elem.remove();
+        cursor_para_updated = true; // Structure changed, cursor may need restoration
     }
 
     cursor_para_updated

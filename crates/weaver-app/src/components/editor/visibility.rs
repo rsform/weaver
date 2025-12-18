@@ -276,6 +276,7 @@ mod tests {
 
     fn make_para(start: usize, end: usize, syntax_spans: Vec<SyntaxSpanInfo>) -> ParagraphRender {
         ParagraphRender {
+            id: format!("test-{}-{}", start, end),
             byte_range: start..end,
             char_range: start..end,
             html: String::new(),

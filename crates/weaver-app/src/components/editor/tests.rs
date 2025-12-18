@@ -59,7 +59,7 @@ fn render_test(input: &str) -> Vec<TestParagraph> {
     let text = doc.get_text("content");
     text.insert(0, input).unwrap();
     let (paragraphs, _cache, _refs) =
-        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
     paragraphs.iter().map(TestParagraph::from).collect()
 }
 
@@ -648,7 +648,7 @@ fn test_heading_to_non_heading_transition() {
     // Initial state: "#" is a valid empty heading
     text.insert(0, "#").unwrap();
     let (paras1, cache1, _refs1) =
-        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
 
     eprintln!("State 1 ('#'): {}", paras1[0].html);
     assert!(paras1[0].html.contains("<h1"), "# alone should be heading");
@@ -662,6 +662,7 @@ fn test_heading_to_non_heading_transition() {
     let (paras2, _cache2, _refs2) = render_paragraphs_incremental(
         &text,
         Some(&cache1),
+        0,
         None,
         None,
         None,
@@ -776,7 +777,7 @@ fn test_char_range_coverage_allows_paragraph_breaks() {
     let text = doc.get_text("content");
     text.insert(0, input).unwrap();
     let (paragraphs, _cache, _refs) =
-        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
 
     // With standard \n\n break, we expect 2 paragraphs (no gap element)
     // Paragraph ranges include some trailing whitespace from markdown parsing
@@ -806,7 +807,7 @@ fn test_char_range_coverage_with_extra_whitespace() {
     let text = doc.get_text("content");
     text.insert(0, input).unwrap();
     let (paragraphs, _cache, _refs) =
-        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
 
     // With extra newlines, we expect 3 elements: para, gap, para
     assert_eq!(
@@ -907,13 +908,14 @@ fn test_incremental_cache_reuse() {
     text.insert(0, input).unwrap();
 
     let (paras1, cache1, _refs1) =
-        render_paragraphs_incremental(&text, None, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
     assert!(!cache1.paragraphs.is_empty(), "Cache should be populated");
 
     // Second render with same content should reuse cache
     let (paras2, _cache2, _refs2) = render_paragraphs_incremental(
         &text,
         Some(&cache1),
+        0,
         None,
         None,
         None,

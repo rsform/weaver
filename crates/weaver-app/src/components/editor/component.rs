@@ -101,9 +101,7 @@ pub fn MarkdownEditor(
                 if let Some(did) = fetcher.current_did().await {
                     let ident = jacquard::types::ident::AtIdentifier::Did(did);
                     match fetcher.get_notebook(ident, title.clone()).await {
-                        Ok(Some(notebook_data)) => {
-                            Some(notebook_data.0.uri.to_smolstr())
-                        }
+                        Ok(Some(notebook_data)) => Some(notebook_data.0.uri.to_smolstr()),
                         Ok(None) | Err(_) => {
                             tracing::debug!("Could not resolve notebook '{}' to URI", title);
                             None
@@ -472,9 +470,11 @@ fn MarkdownEditorInner(
             resolved.embed_content.len()
         );
 
+        let cursor_offset = doc_for_memo.cursor.read().offset;
         let (paras, new_cache, refs) = render::render_paragraphs_incremental(
             doc_for_memo.loro_text(),
             Some(&cache),
+            cursor_offset,
             edit.as_ref(),
             Some(&resolver),
             entry_index_for_memo.as_ref(),
@@ -677,30 +677,30 @@ fn MarkdownEditorInner(
             update_paragraph_dom(editor_id, &prev, &new_paras, cursor_offset, false);
 
         // Only restore cursor if we actually re-rendered the paragraph it's in
-        if cursor_para_updated {
-            use wasm_bindgen::JsCast;
-            use wasm_bindgen::prelude::*;
+        // if cursor_para_updated {
+        //     use wasm_bindgen::JsCast;
+        //     use wasm_bindgen::prelude::*;
 
-            // Read and consume pending snap direction
-            let snap_direction = doc_for_dom.pending_snap.write().take();
+        //     // Read and consume pending snap direction
+        //     let snap_direction = doc_for_dom.pending_snap.write().take();
 
-            // Use requestAnimationFrame to wait for browser paint
-            if let Some(window) = web_sys::window() {
-                let closure = Closure::once(move || {
-                    if let Err(e) = super::cursor::restore_cursor_position(
-                        cursor_offset,
-                        &map,
-                        editor_id,
-                        snap_direction,
-                    ) {
-                        tracing::warn!("Cursor restoration failed: {:?}", e);
-                    }
-                });
+        //     // Use requestAnimationFrame to wait for browser paint
+        //     if let Some(window) = web_sys::window() {
+        //         let closure = Closure::once(move || {
+        //             if let Err(e) = super::cursor::restore_cursor_position(
+        //                 cursor_offset,
+        //                 &map,
+        //                 editor_id,
+        //                 snap_direction,
+        //             ) {
+        //                 tracing::warn!("Cursor restoration failed: {:?}", e);
+        //             }
+        //         });
 
-                let _ = window.request_animation_frame(closure.as_ref().unchecked_ref());
-                closure.forget();
-            }
-        }
+        //         let _ = window.request_animation_frame(closure.as_ref().unchecked_ref());
+        //         closure.forget();
+        //     }
+        // }
 
         // Store for next comparison AND for event handlers (write-only, no reactive read)
         cached_paragraphs.set(new_paras.clone());
@@ -1314,6 +1314,12 @@ fn MarkdownEditorInner(
                                     && matches!(evt.key(), Key::Character(ref c) if c == "a");
 
                                 if navigation || select_all {
+                                    tracing::debug!(
+                                        key = ?evt.key(),
+                                        navigation,
+                                        select_all,
+                                        "onkeyup navigation - syncing cursor from DOM"
+                                    );
                                     let paras = cached_paragraphs();
                                     if let Some(dir) = direction_hint {
                                         sync_cursor_from_dom_with_direction(&mut doc, editor_id, &paras, Some(dir));
@@ -1336,7 +1342,7 @@ fn MarkdownEditorInner(
                         onselect: {
                             let mut doc = document.clone();
                             move |_evt| {
-                                tracing::trace!("onselect fired");
+                                tracing::debug!("onselect fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
                                 sync_cursor_from_dom(&mut doc, editor_id, &paras);
                                 let spans = syntax_spans();
@@ -1354,7 +1360,7 @@ fn MarkdownEditorInner(
                         onselectstart: {
                             let mut doc = document.clone();
                             move |_evt| {
-                                tracing::trace!("onselectstart fired");
+                                tracing::debug!("onselectstart fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
                                 sync_cursor_from_dom(&mut doc, editor_id, &paras);
                                 let spans = syntax_spans();
@@ -1372,7 +1378,7 @@ fn MarkdownEditorInner(
                         onselectionchange: {
                             let mut doc = document.clone();
                             move |_evt| {
-                                tracing::trace!("onselectionchange fired");
+                                tracing::debug!("onselectionchange fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
                                 sync_cursor_from_dom(&mut doc, editor_id, &paras);
                                 let spans = syntax_spans();
@@ -1390,7 +1396,7 @@ fn MarkdownEditorInner(
                         onclick: {
                             let mut doc = document.clone();
                             move |evt| {
-                                tracing::trace!("onclick fired");
+                                tracing::debug!("onclick fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
 
                                 // Check if click target is a math-clickable element

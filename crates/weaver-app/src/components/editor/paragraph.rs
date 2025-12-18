@@ -11,6 +11,9 @@ use std::ops::Range;
 /// A rendered paragraph with its source range and offset mappings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParagraphRender {
+    /// Stable content-based ID for DOM diffing (format: `p-{hash_prefix}-{collision_idx}`)
+    pub id: String,
+
     /// Source byte range in the rope
     pub byte_range: Range<usize>,
 
@@ -38,6 +41,12 @@ pub fn hash_source(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()
+}
+
+/// Generate a paragraph ID from monotonic counter.
+/// IDs are stable across content changes - only position/cursor determines identity.
+pub fn make_paragraph_id(id: usize) -> String {
+    format!("p-{}", id)
 }
 
 /// Extract substring from LoroText as String
