@@ -31,7 +31,7 @@
           "description": "Uses in the last 30 days."
         },
         "trendingScore": {
-          "type": "number",
+          "type": "integer",
           "description": "Appview-computed trending score."
         }
       }
@@ -112,10 +112,7 @@
         "uri": { "type": "string", "format": "at-uri" },
         "subject": {
           "type": "union",
-          "refs": [
-            "sh.weaver.notebook.defs#notebookView",
-            "sh.weaver.notebook.defs#entryView"
-          ]
+          "refs": ["sh.weaver.notebook.defs#notebookView", "sh.weaver.notebook.defs#entryView"]
         },
         "addedAt": { "type": "string", "format": "datetime" }
       }

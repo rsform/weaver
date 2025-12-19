@@ -32,7 +32,7 @@
         "notebook": { "type": "ref", "ref": "sh.weaver.notebook.defs#notebookView" },
         "reason": { "type": "ref", "ref": "#suggestionReason" },
         "score": {
-          "type": "number",
+          "type": "integer",
           "description": "Appview-computed relevance score."
         }
       }
