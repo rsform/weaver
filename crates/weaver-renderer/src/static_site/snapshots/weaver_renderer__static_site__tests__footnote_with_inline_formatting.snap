@@ -1,0 +1,5 @@
+---
+source: crates/weaver-renderer/src/static_site/tests.rs
+expression: output
+---
+<p>Text with footnote<label for="sn-1" class="margin-toggle sidenote-number"></label><input type="checkbox" id="sn-1" class="margin-toggle"/><span class="sidenote">Note with <strong>bold</strong> and <em>italic</em>.</span>.</p>

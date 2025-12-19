@@ -19,8 +19,11 @@ use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use dioxus::prelude::*;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use gloo_storage::{LocalStorage, Storage};
+#[allow(unused_imports)]
 use jacquard::IntoStatic;
+#[allow(unused_imports)]
 use jacquard::smol_str::{SmolStr, ToSmolStr};
+#[allow(unused_imports)]
 use jacquard::types::string::{AtUri, Cid};
 use loro::cursor::Cursor;
 use serde::{Deserialize, Serialize};
@@ -78,6 +81,7 @@ pub struct EditorSnapshot {
 }
 
 /// Build the full storage key from a draft key.
+#[allow(dead_code)]
 fn storage_key(key: &str) -> String {
     format!("{}{}", DRAFT_KEY_PREFIX, key)
 }

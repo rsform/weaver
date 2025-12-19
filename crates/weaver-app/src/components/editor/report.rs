@@ -5,7 +5,9 @@
 
 use dioxus::prelude::*;
 
+#[allow(unused_imports)]
 use super::log_buffer;
+#[allow(unused_imports)]
 use super::storage::load_from_storage;
 
 /// Captured report data.
@@ -112,6 +114,7 @@ pub fn ReportButton(props: ReportButtonProps) -> Element {
     let email = props.email.clone();
     let submit_report = move |_| {
         let data = report_data();
+        #[allow(unused_variables)]
         let mailto_url = data.to_mailto(&email, &comment());
 
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]

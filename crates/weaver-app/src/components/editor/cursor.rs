@@ -7,7 +7,9 @@
 //! 3. Walking text nodes to find the UTF-16 offset within the element
 //! 4. Setting cursor with web_sys Selection API
 
-use super::offset_map::{OffsetMapping, SnapDirection, find_mapping_for_char, find_nearest_valid_position};
+use super::offset_map::OffsetMapping;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use super::offset_map::{SnapDirection, find_mapping_for_char, find_nearest_valid_position};
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen::JsCast;
@@ -46,7 +48,9 @@ pub fn restore_cursor_position(
         Some((m, false)) => (m, char_offset), // Valid position, use as-is
         Some((m, true)) => {
             // Position is on invisible content, snap to nearest valid
-            if let Some(snapped) = find_nearest_valid_position(offset_map, char_offset, snap_direction) {
+            if let Some(snapped) =
+                find_nearest_valid_position(offset_map, char_offset, snap_direction)
+            {
                 tracing::trace!(
                     target: "weaver::cursor",
                     original_offset = char_offset,
@@ -190,17 +194,6 @@ fn find_text_node_at_offset(
     Err("no text node found in container".into())
 }
 
-/// Non-WASM stub for testing
-#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
-pub fn restore_cursor_position(
-    _char_offset: usize,
-    _offset_map: &[OffsetMapping],
-    _editor_id: &str,
-    _snap_direction: Option<SnapDirection>,
-) -> Result<(), String> {
-    Ok(())
-}
-
 /// Screen coordinates for a cursor position.
 #[derive(Debug, Clone, Copy)]
 pub struct CursorRect {
@@ -232,12 +225,10 @@ pub fn get_cursor_rect(
     let document = window.document()?;
 
     // Get container element
-    let container = document
-        .get_element_by_id(&mapping.node_id)
-        .or_else(|| {
-            let selector = format!("[data-node-id='{}']", mapping.node_id);
-            document.query_selector(&selector).ok().flatten()
-        })?;
+    let container = document.get_element_by_id(&mapping.node_id).or_else(|| {
+        let selector = format!("[data-node-id='{}']", mapping.node_id);
+        document.query_selector(&selector).ok().flatten()
+    })?;
 
     let range = document.create_range().ok()?;
 
@@ -288,15 +279,6 @@ pub fn get_cursor_rect_relative(
         y: cursor_rect.y - editor_rect.y(),
         height: cursor_rect.height,
     })
-}
-
-#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
-pub fn get_cursor_rect(
-    _char_offset: usize,
-    _offset_map: &[OffsetMapping],
-    _editor_id: &str,
-) -> Option<CursorRect> {
-    None
 }
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
@@ -378,10 +360,13 @@ pub fn get_selection_rects_relative(
     // Set start
     if let Some(child_index) = start_mapping.child_index {
         let _ = range.set_start(&start_container, child_index as u32);
-    } else if let Ok(container_element) = start_container.clone().dyn_into::<web_sys::HtmlElement>() {
+    } else if let Ok(container_element) = start_container.clone().dyn_into::<web_sys::HtmlElement>()
+    {
         let offset_in_range = start - start_mapping.char_range.start;
         let target_utf16_offset = start_mapping.char_offset_in_node + offset_in_range;
-        if let Ok((text_node, node_offset)) = find_text_node_at_offset(&container_element, target_utf16_offset) {
+        if let Ok((text_node, node_offset)) =
+            find_text_node_at_offset(&container_element, target_utf16_offset)
+        {
             let _ = range.set_start(&text_node, node_offset as u32);
         }
     }
@@ -392,7 +377,9 @@ pub fn get_selection_rects_relative(
     } else if let Ok(container_element) = end_container.dyn_into::<web_sys::HtmlElement>() {
         let offset_in_range = end - end_mapping.char_range.start;
         let target_utf16_offset = end_mapping.char_offset_in_node + offset_in_range;
-        if let Ok((text_node, node_offset)) = find_text_node_at_offset(&container_element, target_utf16_offset) {
+        if let Ok((text_node, node_offset)) =
+            find_text_node_at_offset(&container_element, target_utf16_offset)
+        {
             let _ = range.set_end(&text_node, node_offset as u32);
         }
     }

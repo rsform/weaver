@@ -1,6 +1,7 @@
 //! Formatting actions and utilities for applying markdown formatting.
 
 use super::document::EditorDocument;
+#[allow(unused_imports)]
 use super::input::{ListContext, detect_list_context, find_line_end};
 use dioxus::prelude::*;
 

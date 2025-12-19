@@ -125,6 +125,15 @@ html {{
     padding: 1rem 0rem;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    counter-reset: sidenote-counter;
+    max-width: 95ch;
+}}
+
+/* When sidenotes exist, body padding creates the gutter */
+/* Left padding shrinks first as viewport narrows, right stays for sidenotes */
+body:has(.sidenote) {{
+    padding-left: clamp(0rem, calc((100vw - 95ch - 15.5rem - 2rem) / 2), 15.5rem);
+    padding-right: 15.5rem;
 }}
 
 /* Typography */
@@ -286,16 +295,142 @@ tr:hover {{
 }}
 
 .footnote-definition {{
-    margin-top: 2rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--color-border);
+    order: 9999;
+    margin: 0;
+    padding: 0.5rem 0;
     font-size: 0.9em;
+}}
+
+.footnote-definition:first-of-type {{
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 2px solid var(--color-border);
+}}
+
+.footnote-definition:first-of-type::before {{
+    content: "Footnotes";
+    display: block;
+    font-weight: 600;
+    font-size: 1.1em;
+    color: var(--color-subtle);
+    margin-bottom: 0.75rem;
 }}
 
 .footnote-definition-label {{
     font-weight: 600;
     margin-right: 0.5rem;
     color: var(--color-primary);
+}}
+
+/* Aside blocks (via WeaverBlock prefix) */
+aside, .aside {{
+    float: left;
+    width: 40%;
+    margin: 0 1.5rem 1rem 0;
+    padding: 1rem;
+    background: var(--color-surface);
+    border-right: 3px solid var(--color-primary);
+    font-size: 0.9em;
+    clear: left;
+}}
+
+aside > *:first-child,
+.aside > *:first-child {{
+    margin-top: 0;
+}}
+
+aside > *:last-child,
+.aside > *:last-child {{
+    margin-bottom: 0;
+}}
+
+/* Reset blockquote styling inside asides */
+aside > blockquote,
+.aside > blockquote {{
+    border-left: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    font-size: inherit;
+}}
+
+/* Indent utilities */
+.indent-1 {{ margin-left: 1em; }}
+.indent-2 {{ margin-left: 2em; }}
+.indent-3 {{ margin-left: 3em; }}
+
+/* Tufte-style Sidenotes */
+/* Hide checkbox for sidenote toggle */
+.margin-toggle {{
+    display: none;
+}}
+
+/* Sidenote number marker (inline superscript) */
+.sidenote-number {{
+    counter-increment: sidenote-counter;
+}}
+
+.sidenote-number::after {{
+    content: counter(sidenote-counter);
+    font-size: 0.7em;
+    position: relative;
+    top: -0.5em;
+    color: var(--color-primary);
+    padding-left: 0.1em;
+}}
+
+/* Sidenote content (margin notes on wide screens) */
+.sidenote {{
+    float: right;
+    clear: right;
+    margin-right: -15.5rem;
+    width: 14rem;
+    margin-top: 0.3rem;
+    margin-bottom: 1rem;
+    font-size: 0.85em;
+    line-height: 1.4;
+    color: var(--color-subtle);
+}}
+
+.sidenote::before {{
+    content: counter(sidenote-counter) ". ";
+    color: var(--color-primary);
+}}
+
+/* Mobile sidenotes: toggle behavior */
+@media (max-width: 900px) {{
+    /* Reset sidenote gutter on mobile */
+    body:has(.sidenote) {{
+        padding-right: 0;
+    }}
+
+    aside, .aside {{
+        float: none;
+        width: 100%;
+        margin: 1rem 0;
+    }}
+
+    .sidenote {{
+        display: none;
+    }}
+
+    .margin-toggle:checked + .sidenote {{
+        display: block;
+        float: none;
+        width: 95%;
+        margin: 0.5rem 2.5%;
+        padding: 0.5rem;
+        background: var(--color-surface);
+        border-left: 2px solid var(--color-primary);
+    }}
+
+    label.sidenote-number {{
+        cursor: pointer;
+    }}
+
+    label.sidenote-number::after {{
+        text-decoration: underline;
+    }}
 }}
 
 /* Images */

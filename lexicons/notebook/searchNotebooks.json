@@ -9,7 +9,11 @@
         "type": "params",
         "required": ["q"],
         "properties": {
-          "q": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
           "author": {
             "type": "string",
             "format": "at-identifier",
@@ -17,13 +21,18 @@
           },
           "tags": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "maxLength": 10,
             "description": "Filter by tags (all must match)."
           },
           "rating": {
             "type": "array",
-            "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#contentRating" },
+            "items": {
+              "type": "string",
+              "knownValues": ["general", "teen", "mature", "explicit"]
+            },
             "description": "Filter by content rating (any of these)."
           },
           "sort": {
@@ -31,8 +40,15 @@
             "knownValues": ["relevance", "recent", "popular"],
             "default": "relevance"
           },
-          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 },
-          "cursor": { "type": "string" }
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "cursor": {
+            "type": "string"
+          }
         }
       },
       "output": {
@@ -43,9 +59,14 @@
           "properties": {
             "notebooks": {
               "type": "array",
-              "items": { "type": "ref", "ref": "sh.weaver.notebook.defs#notebookView" }
+              "items": {
+                "type": "ref",
+                "ref": "sh.weaver.notebook.defs#notebookView"
+              }
             },
-            "cursor": { "type": "string" }
+            "cursor": {
+              "type": "string"
+            }
           }
         }
       }

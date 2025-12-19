@@ -48,7 +48,7 @@ impl<W: StrWrite> MarkdownWriter<W> {
 
     fn start_tag(&mut self, tag: Tag<'_>) -> Result<(), W::Error> {
         match tag {
-            Tag::Paragraph => Ok(()),
+            Tag::Paragraph(_) => Ok(()),
             Tag::Heading { level, .. } => {
                 write!(self.writer, "{} ", "#".repeat(level as usize))
             }
@@ -109,7 +109,7 @@ impl<W: StrWrite> MarkdownWriter<W> {
 
     fn end_tag(&mut self, tag: TagEnd) -> Result<(), W::Error> {
         match tag {
-            TagEnd::Paragraph => write!(self.writer, "\n\n"),
+            TagEnd::Paragraph(_) => write!(self.writer, "\n\n"),
             TagEnd::Heading(_) => write!(self.writer, "\n\n"),
             TagEnd::BlockQuote(_) => write!(self.writer, "\n\n"),
             TagEnd::CodeBlock => write!(self.writer, "```\n\n"),
@@ -158,7 +158,7 @@ impl<W: StrWrite> MarkdownWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use markdown_weaver::{Event, Tag, CowStr};
+    use markdown_weaver::{Event, Tag, CowStr, ParagraphContext};
     use markdown_weaver_escape::FmtWriter;
 
     #[test]
@@ -166,9 +166,9 @@ mod tests {
         let mut output = String::new();
         let mut writer = MarkdownWriter::new(FmtWriter(&mut output));
 
-        writer.write_event(Event::Start(Tag::Paragraph)).unwrap();
+        writer.write_event(Event::Start(Tag::Paragraph(ParagraphContext::Complete))).unwrap();
         writer.write_event(Event::Text(CowStr::Borrowed("Hello"))).unwrap();
-        writer.write_event(Event::End(markdown_weaver::TagEnd::Paragraph)).unwrap();
+        writer.write_event(Event::End(markdown_weaver::TagEnd::Paragraph(ParagraphContext::Complete))).unwrap();
 
         assert_eq!(output, "Hello\n\n");
     }

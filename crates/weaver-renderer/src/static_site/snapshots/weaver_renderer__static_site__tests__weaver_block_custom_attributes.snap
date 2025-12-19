@@ -1,0 +1,7 @@
+---
+source: crates/weaver-renderer/src/static_site/tests.rs
+expression: output
+---
+<div class="foo" width="300px" data-test="value">
+<p>Paragraph with class and attributes.</p>
+</div>

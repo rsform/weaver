@@ -1,0 +1,7 @@
+---
+source: crates/weaver-renderer/src/atproto/tests.rs
+expression: output
+---
+<div class="highlight">
+<p>This paragraph has a custom class.</p>
+</div>

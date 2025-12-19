@@ -1,0 +1,7 @@
+---
+source: crates/weaver-renderer/src/atproto/tests.rs
+expression: output
+---
+<aside class="highlight important">
+<p>Multiple classes applied.</p>
+</aside>

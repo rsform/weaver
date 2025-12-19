@@ -28,8 +28,8 @@ thiserror = "2.0"
 syntect = { version = "5.2.0", default-features = false }
 n0-future = "=0.1.3"
 tracing = { version = "0.1.41", default-features = false, features = ["std"] }
-markdown-weaver = { git = "https://github.com/rsform/markdown-weaver" }
-markdown-weaver-escape = { git = "https://github.com/rsform/markdown-weaver" }
+markdown-weaver = { git = "https://github.com/rsform/markdown-weaver", branch = "para-end-context" }
+markdown-weaver-escape = { git = "https://github.com/rsform/markdown-weaver", branch = "para-end-context" }
 # markdown-weaver = { path = "../markdown-weaver/markdown-weaver" }
 # markdown-weaver-escape = { path = "../markdown-weaver/markdown-weaver-escape" }
 

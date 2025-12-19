@@ -1,0 +1,9 @@
+---
+source: crates/weaver-renderer/src/static_site/tests.rs
+expression: output
+---
+<aside>
+<blockquote>
+<p>This blockquote is in an aside.</p>
+</blockquote>
+</aside>

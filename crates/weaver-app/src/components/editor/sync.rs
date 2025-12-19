@@ -25,6 +25,7 @@ use jacquard::cowstr::ToCowStr;
 use jacquard::prelude::*;
 use jacquard::smol_str::format_smolstr;
 use jacquard::types::blob::MimeType;
+#[allow(unused_imports)]
 use jacquard::types::collection::Collection;
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::recordkey::RecordKey;
@@ -43,6 +44,7 @@ use weaver_api::sh_weaver::edit::draft::Draft;
 use weaver_api::sh_weaver::edit::root::Root;
 use weaver_api::sh_weaver::edit::{DocRef, DocRefValue, DraftRef, EntryRef};
 use weaver_common::constellation::{GetBacklinksQuery, RecordId};
+#[allow(unused_imports)]
 use weaver_common::{WeaverError, WeaverExt};
 
 const ROOT_NSID: &str = "sh.weaver.edit.root";

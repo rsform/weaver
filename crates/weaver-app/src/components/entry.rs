@@ -212,6 +212,9 @@ fn EntryPageView(
 
     tracing::info!("Entry: {book_title} - {title}");
 
+    let prev_entry = book_entry_view().prev.clone();
+    let next_entry = book_entry_view().next.clone();
+
     rsx! {
         EntryOgMeta {
             title: title.to_string(),
@@ -223,10 +226,10 @@ fn EntryPageView(
         }
         document::Link { rel: "stylesheet", href: ENTRY_CSS }
 
-        div { class: "entry-page-layout",
-            // Left gutter with prev button
-            if let Some(ref prev) = book_entry_view().prev {
-                div { class: "nav-gutter nav-prev",
+        div { class: "entry-page",
+            // Header: nav prev + metadata + nav next
+            header { class: "entry-header",
+                if let Some(ref prev) = prev_entry {
                     NavButton {
                         direction: "prev",
                         entry: prev.entry.clone(),
@@ -234,11 +237,7 @@ fn EntryPageView(
                         book_title: book_title()
                     }
                 }
-            }
 
-            // Main content area
-            div { class: "entry-content-main notebook-content",
-                // Metadata header
                 {
                     let (word_count, reading_time_mins) = calculate_reading_stats(&entry_record().content);
                     rsx! {
@@ -254,16 +253,38 @@ fn EntryPageView(
                     }
                 }
 
-                // Rendered markdown
-                EntryMarkdown {
-                    content: entry_record,
-                    ident
+                if let Some(ref next) = next_entry {
+                    NavButton {
+                        direction: "next",
+                        entry: next.entry.clone(),
+                        ident: ident(),
+                        book_title: book_title()
+                    }
                 }
             }
 
-            // Right gutter with next button
-            if let Some(ref next) = book_entry_view().next {
-                div { class: "nav-gutter nav-next",
+            // Main content area
+            div { class: "entry-content-wrapper",
+                div { class: "entry-content-main notebook-content",
+                    EntryMarkdown {
+                        content: entry_record,
+                        ident
+                    }
+                }
+            }
+
+            // Footer navigation
+            footer { class: "entry-footer-nav",
+                if let Some(ref prev) = prev_entry {
+                    NavButton {
+                        direction: "prev",
+                        entry: prev.entry.clone(),
+                        ident: ident(),
+                        book_title: book_title()
+                    }
+                }
+
+                if let Some(ref next) = next_entry {
                     NavButton {
                         direction: "next",
                         entry: next.entry.clone(),
@@ -648,7 +669,7 @@ pub fn EntryMetadata(
     }
 }
 
-/// Navigation button for prev/next entries
+/// Navigation link for prev/next entries (minimal: arrow + title)
 #[component]
 pub fn NavButton(
     direction: &'static str,
@@ -662,14 +683,17 @@ pub fn NavButton(
         .map(|t| t.as_ref())
         .unwrap_or("Untitled");
 
-    // Get path from view for URL, fallback to title
     let entry_path = entry
         .path
         .as_ref()
         .map(|p| p.as_ref().to_string())
         .unwrap_or_else(|| entry_title.to_string());
 
-    let arrow = if direction == "prev" { "←" } else { "→" };
+    let (arrow, title_first) = if direction == "prev" {
+        ("←", false)
+    } else {
+        ("→", true)
+    };
 
     rsx! {
         Link {
@@ -679,8 +703,13 @@ pub fn NavButton(
                 title: entry_path.into()
             },
             class: "nav-button nav-button-{direction}",
-            div { class: "nav-arrow", "{arrow}" }
-            div { class: "nav-title", "{entry_title}" }
+            if title_first {
+                span { class: "nav-title", "{entry_title}" }
+                span { class: "nav-arrow", "{arrow}" }
+            } else {
+                span { class: "nav-arrow", "{arrow}" }
+                span { class: "nav-title", "{entry_title}" }
+            }
         }
     }
 }

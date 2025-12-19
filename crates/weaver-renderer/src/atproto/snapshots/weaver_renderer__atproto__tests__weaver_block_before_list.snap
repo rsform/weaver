@@ -1,0 +1,10 @@
+---
+source: crates/weaver-renderer/src/atproto/tests.rs
+expression: output
+---
+<aside>
+<ul>
+<li>Item 1</li>
+<li>Item 2</li>
+</ul>
+</aside>

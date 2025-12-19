@@ -1,0 +1,8 @@
+---
+source: crates/weaver-renderer/src/atproto/tests.rs
+expression: output
+---
+<aside>
+<p>First paragraph in aside.</p>
+</aside>
+<p>Second paragraph NOT in aside.</p>

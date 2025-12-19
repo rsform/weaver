@@ -154,7 +154,10 @@ pub async fn write_document_head<A: AgentSession>(
     }
 
     writer.write_all(b"</head>\n").await.into_diagnostic()?;
-    writer.write_all(b"<body>\n").await.into_diagnostic()?;
+    writer
+        .write_all(b"<body style=\"background: var(--color-base); min-height: 100vh;\">\n")
+        .await
+        .into_diagnostic()?;
     writer
         .write_all(b"<div class=\"notebook-content\">\n")
         .await

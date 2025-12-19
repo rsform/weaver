@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 
 /// Cached platform detection results.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Platform {
     pub ios: bool,
     pub mac: bool,

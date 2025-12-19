@@ -98,6 +98,7 @@ fn level_str(level: &Level) -> &'static str {
 }
 
 /// Get all captured log entries as a single string.
+#[allow(dead_code)]
 pub fn get_logs() -> String {
     LOG_BUFFER.with(|buf| {
         let buf = buf.borrow();

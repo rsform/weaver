@@ -5,12 +5,13 @@
 //! Uses EditorWriter which tracks gaps in offset_iter to preserve formatting characters.
 
 use super::document::EditInfo;
+#[allow(unused_imports)]
 use super::offset_map::{OffsetMapping, RenderResult};
 use super::paragraph::{ParagraphRender, hash_source, make_paragraph_id, text_slice_to_string};
+#[allow(unused_imports)]
 use super::writer::{EditorImageResolver, EditorWriter, ImageResolver, SyntaxSpanInfo};
 use loro::LoroText;
 use markdown_weaver::Parser;
-use std::collections::HashMap;
 use std::ops::Range;
 use weaver_common::{EntryIndex, ResolvedContent};
 
@@ -94,7 +95,6 @@ fn add_gap_paragraphs(
         if gap_size > MIN_PARAGRAPH_BREAK_INCR {
             let gap_start_char = prev_end_char + MIN_PARAGRAPH_BREAK_INCR;
             let gap_end_char = para.char_range.start;
-            let gap_start_byte = prev_end_byte + MIN_PARAGRAPH_BREAK_INCR;
             let gap_end_byte = para.byte_range.start;
 
             let gap_node_id = format!("gap-{}-{}", gap_start_char, gap_end_char);
@@ -724,7 +724,7 @@ pub fn render_paragraphs_incremental(
     let mut new_cached = Vec::with_capacity(paragraph_ranges.len());
     let mut all_refs: Vec<weaver_common::ExtractedRef> = Vec::new();
     // next_para_id must account for all IDs allocated by the writer
-    let mut next_para_id = parsed_para_id_start + parsed_para_count;
+    let next_para_id = parsed_para_id_start + parsed_para_count;
     let reused_count = reused_paragraphs.len();
 
     // Find which paragraph contains cursor (for stable ID assignment)
@@ -740,11 +740,6 @@ pub fn render_paragraphs_incremental(
         parsed_count = parsed_paragraph_ranges.len(),
         "ID assignment: cursor and edit info"
     );
-
-    // Build hash->cached_para lookup for non-cursor matching
-    let cached_by_hash: HashMap<u64, &CachedParagraph> = cache
-        .map(|c| c.paragraphs.iter().map(|p| (p.source_hash, p)).collect())
-        .unwrap_or_default();
 
     for (idx, (byte_range, char_range)) in paragraph_ranges.iter().enumerate() {
         let para_source = text_slice_to_string(text, char_range.clone());

@@ -1,104 +1,140 @@
-/* Entry page layout with gutter navigation */
-.entry-page-layout {
-    display: grid;
-    grid-template-columns: minmax(200px, 1fr) minmax(0, 95ch) minmax(200px, 1fr);
-    gap: 2rem;
-    width: 100%;
+/* Entry page layout - centered content with sidenote margin */
+.entry-page {
+    --content-width: 65ch;
+    --sidenote-width: 14rem;
+    --sidenote-gap: 1.5rem;
+
+    display: flex;
+    flex-direction: column;
     min-height: 100vh;
     background: var(--color-base);
-    max-width: calc(95ch + 400px + 4rem); /* content + gutters + gaps */
+}
+
+/* Header with inline nav + metadata */
+.entry-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1.5rem 1rem;
+    max-width: calc(var(--content-width) + var(--sidenote-width) + var(--sidenote-gap) + 10rem);
     margin: 0 auto;
-    padding: 0 1rem 0 0;
+    width: 100%;
     box-sizing: border-box;
 }
 
-/* Main content area */
-.entry-content-main {
-    grid-column: 2;
-    background: var(--color-base);
-}
-
-/* Navigation gutters */
-.nav-gutter {
-    position: sticky;
-    top: auto;
-    bottom: 2rem;
-    height: fit-content;
-    align-self: end;
-}
-
-.nav-prev {
-    grid-column: 1;
-}
-
-.nav-next {
-    grid-column: 3;
-}
-
-/* Navigation buttons */
+/* Nav links in header - minimal style */
 .nav-button {
     display: flex;
-    flex-direction: column;
+    align-items: center;
     gap: 0.5rem;
-    padding: 1rem;
-    background: var(--color-surface);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text) 8%, transparent);
+    color: var(--color-subtle);
     text-decoration: none;
-    color: var(--color-text);
-    transition:
-        box-shadow 0.2s ease,
-        border-color 0.2s ease;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    transition: color 0.2s ease;
 }
 
-.nav-button:hover {
-    box-shadow: 0 2px 6px color-mix(in srgb, var(--color-text) 12%, transparent);
+.entry-header .nav-button:hover {
+    color: var(--color-primary);
 }
 
-/* Dark mode: borders instead of shadows */
-@media (prefers-color-scheme: dark) {
-    .nav-button {
-        box-shadow: none;
-        border: 1px dashed var(--color-border);
-    }
-
-    .nav-button:hover {
-        box-shadow: none;
-        border-color: var(--color-primary);
-    }
+.entry-header .nav-button-prev {
+    flex-shrink: 1;
+    min-width: 0;
 }
 
-.nav-button-prev {
+.entry-header .nav-button-next {
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.entry-header .nav-arrow {
+    font-weight: 600;
+    color: var(--color-primary);
+    flex-shrink: 0;
+}
+
+.entry-header .nav-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Metadata takes center, flexes to fill */
+.entry-header .entry-metadata {
+    flex: 1;
+    max-width: var(--content-width);
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+/* Main content area */
+.entry-content-wrapper {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    padding: 0 1rem;
+}
+
+.entry-content-main {
+    width: var(--content-width);
+    max-width: 100%;
+    position: relative;
+}
+
+/* When sidenotes exist, shift content left to make room */
+.entry-content-main:has(.sidenote) {
+    margin-right: calc(var(--sidenote-width) + var(--sidenote-gap));
+}
+
+/* Footer navigation */
+.entry-footer-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    gap: 2rem;
+    max-width: calc(var(--content-width) + 20rem);
+    margin: 4rem auto 2rem;
+    padding: 0 1rem;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.entry-footer-nav .nav-button-prev {
     align-items: flex-start;
     text-align: left;
 }
 
-.nav-button-next {
+.entry-footer-nav .nav-button-next {
     align-items: flex-end;
     text-align: right;
+    margin-left: auto;
 }
 
-.nav-arrow {
-    font-size: 1.5rem;
+.entry-footer-nav .nav-arrow {
+    font-size: 1.25rem;
     font-weight: bold;
     color: var(--color-primary);
-    transition: color 0.2s ease;
 }
 
-.nav-button:hover .nav-arrow {
-    color: var(--color-emphasis);
-}
-
-.nav-button:hover .nav-label {
-    color: var(--color-secondary);
-}
-
-.nav-title {
+.entry-footer-nav .nav-title {
     font-size: 0.95rem;
     font-weight: 500;
     line-height: 1.4;
 }
 
-/* Entry metadata header */
+/* Entry metadata in header context */
+.entry-header .entry-metadata .entry-title {
+    font-size: 1.75rem;
+    margin: 0 0 0.5rem 0;
+}
+
+.entry-header .entry-metadata .entry-header-row {
+    flex-wrap: wrap;
+}
+
+/* Standalone entry metadata (when not in header) */
 .entry-metadata {
     margin-bottom: calc(1rem * var(--spacing-scale, 1.5));
     padding-bottom: calc(0.5rem * var(--spacing-scale, 1.5));
@@ -235,60 +271,73 @@
     background: var(--color-surface);
 }
 
-/* Responsive layout - Tablet/small desktop */
-@media (max-width: 1400px) {
-    .entry-page-layout {
-        grid-template-columns: 1fr;
-        gap: 0;
+/* TODO: footnote ordering needs non-flex solution for aside reflow to work */
+
+/* Responsive: tablet */
+@media (max-width: 1200px) {
+    .entry-header {
+        flex-wrap: wrap;
     }
 
-    .entry-content-main {
-        grid-column: 1;
-        padding: 2rem 1rem;
+    .entry-header .entry-metadata {
+        order: -1;
+        flex-basis: 100%;
+        max-width: none;
     }
 
-    .nav-gutter {
-        position: relative;
-        bottom: auto;
-        grid-column: 1;
-        padding: 0 1rem;
+    .entry-header .nav-button-prev {
+        order: 0;
     }
 
-    .nav-prev {
-        order: 2;
+    .entry-header .nav-button-next {
+        order: 1;
+        margin-left: auto;
+    }
+}
+
+/* Responsive: when sidenotes need to squeeze */
+@media (max-width: 1000px) {
+    .entry-content-main:has(.sidenote) {
+        margin-right: calc(var(--sidenote-width) + 0.5rem);
+        margin-left: -3rem;
+    }
+}
+
+/* Responsive: narrower - compress left margin more */
+@media (max-width: 900px) {
+    .entry-header .nav-title {
+        max-width: 8rem;
+    }
+
+    .entry-content-main:has(.sidenote) {
+        margin-left: -5rem;
+    }
+}
+
+/* Responsive: mobile - sidenotes go inline */
+@media (max-width: 768px) {
+    .entry-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+    }
+
+    .entry-content-main:has(.sidenote) {
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .entry-footer-nav {
+        flex-direction: column;
+        gap: 1rem;
         margin-top: 2rem;
     }
-
-    .nav-next {
-        order: 3;
-        margin-top: 1rem;
-    }
-
-    .entry-content-main {
-        order: 1;
-    }
 }
 
-/* Tablet and smaller */
-@media (max-width: 900px) {
-    .entry-page-layout {
-        max-width: 100%;
-        grid-template-columns: minmax(0, 1fr);
-    }
-}
-
-/* Small mobile phones */
+/* Small mobile */
 @media (max-width: 480px) {
     .entry-content-main {
-        padding: 1rem 0.75rem;
-    }
-
-    .nav-gutter {
         padding: 0 0.75rem;
-    }
-
-    .nav-button {
-        padding: 0.75rem;
     }
 
     .entry-metadata {

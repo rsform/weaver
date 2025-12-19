@@ -8,6 +8,7 @@ use jacquard::smol_str::ToSmolStr;
 use jacquard::types::collection::Collection;
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::recordkey::RecordKey;
+#[allow(unused_imports)]
 use jacquard::types::string::{AtUri, Datetime, Nsid, Rkey};
 use jacquard::types::tid::Ticker;
 use jacquard::{IntoStatic, from_data, prelude::*, to_data};

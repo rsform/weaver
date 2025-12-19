@@ -10,6 +10,7 @@ use super::offset_map::SnapDirection;
 
 /// Check if we need to intercept this key event.
 /// Returns true for content-modifying operations, false for navigation.
+#[allow(unused)]
 pub fn should_intercept_key(evt: &Event<KeyboardData>) -> bool {
     use dioxus::prelude::keyboard_types::Key;
 
@@ -42,6 +43,7 @@ pub fn should_intercept_key(evt: &Event<KeyboardData>) -> bool {
 }
 
 /// Handle keyboard events and update document state.
+#[allow(unused)]
 pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut EditorDocument) {
     use dioxus::prelude::keyboard_types::Key;
 
@@ -329,6 +331,8 @@ pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut EditorDocument) {
 /// Handle paste events and insert text at cursor.
 pub fn handle_paste(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
     evt.prevent_default();
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    let _ = doc;
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
@@ -369,6 +373,8 @@ pub fn handle_paste(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
 /// Handle cut events - extract text, write to clipboard, then delete.
 pub fn handle_cut(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
     evt.prevent_default();
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    let _ = doc;
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {

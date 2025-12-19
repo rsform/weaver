@@ -3,12 +3,15 @@
 //! Handles syncing cursor/selection state between the browser DOM and our
 //! internal document model, and updating paragraph DOM elements.
 
-use dioxus::prelude::*;
-
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::cursor::restore_cursor_position;
+#[allow(unused_imports)]
 use super::document::{EditorDocument, Selection};
+#[allow(unused_imports)]
 use super::offset_map::{SnapDirection, find_nearest_valid_position, is_valid_cursor_position};
 use super::paragraph::ParagraphRender;
+#[allow(unused_imports)]
+use dioxus::prelude::*;
 
 /// Sync internal cursor and selection state from browser DOM selection.
 ///
@@ -93,7 +96,11 @@ pub fn sync_cursor_from_dom_with_direction(
         (Some(anchor), Some(focus)) => {
             let old_offset = doc.cursor.read().offset;
             // Warn if cursor is jumping a large distance - likely a bug
-            let jump = if focus > old_offset { focus - old_offset } else { old_offset - focus };
+            let jump = if focus > old_offset {
+                focus - old_offset
+            } else {
+                old_offset - focus
+            };
             if jump > 100 {
                 tracing::warn!(
                     old_offset,
@@ -179,7 +186,9 @@ pub fn dom_position_to_text_offset(
                         }
                     }
                     // Couldn't find containing paragraph, fall through
-                    tracing::warn!("dom_position_to_text_offset: walked up to editor but couldn't find containing paragraph");
+                    tracing::warn!(
+                        "dom_position_to_text_offset: walked up to editor but couldn't find containing paragraph"
+                    );
                     break None;
                 }
 
@@ -432,10 +441,8 @@ pub fn update_paragraph_dom(
     let mut cursor_para_updated = false;
 
     // Build lookup for old paragraphs by ID (for syntax span comparison)
-    let old_para_map: HashMap<&str, &ParagraphRender> = old_paragraphs
-        .iter()
-        .map(|p| (p.id.as_str(), p))
-        .collect();
+    let old_para_map: HashMap<&str, &ParagraphRender> =
+        old_paragraphs.iter().map(|p| (p.id.as_str(), p)).collect();
 
     // Build pool of existing DOM elements by ID
     let mut old_elements: HashMap<String, web_sys::Element> = HashMap::new();
@@ -452,8 +459,7 @@ pub fn update_paragraph_dom(
 
     // Track position for insertBefore - starts at first element child
     // (use first_element_child to skip any stray text nodes)
-    let mut cursor_node: Option<web_sys::Node> =
-        editor.first_element_child().map(|e| e.into());
+    let mut cursor_node: Option<web_sys::Node> = editor.first_element_child().map(|e| e.into());
 
     // Single pass through new paragraphs
     for new_para in new_paragraphs.iter() {
@@ -499,40 +505,41 @@ pub fn update_paragraph_dom(
                 //
                 // HOWEVER: we must verify browser actually updated the DOM.
                 // PassThrough assumes browser handles edit, but sometimes it doesn't.
-                let should_skip_cursor_update = !FORCE_INNERHTML_UPDATE && is_cursor_para && !force && {
-                    let old_para = old_para_map.get(para_id.as_str());
-                    let syntax_unchanged = old_para
-                        .map(|old| old.syntax_spans == new_para.syntax_spans)
-                        .unwrap_or(false);
+                let should_skip_cursor_update =
+                    !FORCE_INNERHTML_UPDATE && is_cursor_para && !force && {
+                        let old_para = old_para_map.get(para_id.as_str());
+                        let syntax_unchanged = old_para
+                            .map(|old| old.syntax_spans == new_para.syntax_spans)
+                            .unwrap_or(false);
 
-                    // Verify DOM content length matches expected - if not, browser didn't handle it
-                    // NOTE: Get inner element (the <p>) not outer div, to avoid counting
-                    // the newline from </p>\n in the HTML
-                    let dom_matches_expected = if syntax_unchanged {
-                        let inner_elem = existing_elem.first_element_child();
-                        let dom_text = inner_elem
-                            .as_ref()
-                            .and_then(|e| e.text_content())
-                            .unwrap_or_default();
-                        let expected_len = new_para.byte_range.end - new_para.byte_range.start;
-                        let dom_len = dom_text.len();
-                        let matches = dom_len == expected_len;
-                        // Always log for debugging
-                        tracing::debug!(
-                            para_id = %para_id,
-                            dom_len,
-                            expected_len,
-                            matches,
-                            dom_text = %dom_text,
-                            "DOM sync check"
-                        );
-                        matches
-                    } else {
-                        false
+                        // Verify DOM content length matches expected - if not, browser didn't handle it
+                        // NOTE: Get inner element (the <p>) not outer div, to avoid counting
+                        // the newline from </p>\n in the HTML
+                        let dom_matches_expected = if syntax_unchanged {
+                            let inner_elem = existing_elem.first_element_child();
+                            let dom_text = inner_elem
+                                .as_ref()
+                                .and_then(|e| e.text_content())
+                                .unwrap_or_default();
+                            let expected_len = new_para.byte_range.end - new_para.byte_range.start;
+                            let dom_len = dom_text.len();
+                            let matches = dom_len == expected_len;
+                            // Always log for debugging
+                            tracing::debug!(
+                                para_id = %para_id,
+                                dom_len,
+                                expected_len,
+                                matches,
+                                dom_text = %dom_text,
+                                "DOM sync check"
+                            );
+                            matches
+                        } else {
+                            false
+                        };
+
+                        syntax_unchanged && dom_matches_expected
                     };
-
-                    syntax_unchanged && dom_matches_expected
-                };
 
                 if should_skip_cursor_update {
                     tracing::trace!(
@@ -606,15 +613,4 @@ pub fn update_paragraph_dom(
     }
 
     cursor_para_updated
-}
-
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub fn update_paragraph_dom(
-    _editor_id: &str,
-    _old_paragraphs: &[ParagraphRender],
-    _new_paragraphs: &[ParagraphRender],
-    _cursor_offset: usize,
-    _force: bool,
-) -> bool {
-    false
 }

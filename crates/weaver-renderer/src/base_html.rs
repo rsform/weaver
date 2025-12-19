@@ -96,30 +96,26 @@ where
                     escape_html_body_text(&mut self.writer, &text)?;
                     self.write("</code>")?;
                 }
-                InlineMath(text) => {
-                    match crate::math::render_math(&text, false) {
-                        crate::math::MathResult::Success(mathml) => {
-                            self.write(r#"<span class="math math-inline">"#)?;
-                            self.write(&mathml)?;
-                            self.write("</span>")?;
-                        }
-                        crate::math::MathResult::Error { html, .. } => {
-                            self.write(&html)?;
-                        }
+                InlineMath(text) => match crate::math::render_math(&text, false) {
+                    crate::math::MathResult::Success(mathml) => {
+                        self.write(r#"<span class="math math-inline">"#)?;
+                        self.write(&mathml)?;
+                        self.write("</span>")?;
                     }
-                }
-                DisplayMath(text) => {
-                    match crate::math::render_math(&text, true) {
-                        crate::math::MathResult::Success(mathml) => {
-                            self.write(r#"<span class="math math-display">"#)?;
-                            self.write(&mathml)?;
-                            self.write("</span>")?;
-                        }
-                        crate::math::MathResult::Error { html, .. } => {
-                            self.write(&html)?;
-                        }
+                    crate::math::MathResult::Error { html, .. } => {
+                        self.write(&html)?;
                     }
-                }
+                },
+                DisplayMath(text) => match crate::math::render_math(&text, true) {
+                    crate::math::MathResult::Success(mathml) => {
+                        self.write(r#"<span class="math math-display">"#)?;
+                        self.write(&mathml)?;
+                        self.write("</span>")?;
+                    }
+                    crate::math::MathResult::Error { html, .. } => {
+                        self.write(&html)?;
+                    }
+                },
                 Html(html) | InlineHtml(html) => {
                     self.write(&html)?;
                 }
@@ -161,7 +157,7 @@ where
     fn start_tag(&mut self, tag: Tag<'a>) -> Result<(), W::Error> {
         match tag {
             Tag::HtmlBlock => Ok(()),
-            Tag::Paragraph => {
+            Tag::Paragraph(_) => {
                 if self.end_newline {
                     self.write("<p>")
                 } else {
@@ -461,7 +457,7 @@ where
     fn end_tag(&mut self, tag: TagEnd) -> Result<(), W::Error> {
         match tag {
             TagEnd::HtmlBlock => {}
-            TagEnd::Paragraph => {
+            TagEnd::Paragraph(_) => {
                 self.write("</p>\n")?;
             }
             TagEnd::Heading(level) => {

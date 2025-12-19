@@ -5,11 +5,19 @@
 
 use jacquard::types::string::AtUri;
 use markdown_weaver::{
-    Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, Tag,
+    Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType,
+    ParagraphContext, Tag, WeaverAttributes,
 };
 use markdown_weaver_escape::{StrWrite, escape_href, escape_html, escape_html_body_text};
 use std::collections::HashMap;
 use weaver_common::ResolvedContent;
+
+/// Tracks the type of wrapper element emitted for WeaverBlock prefix
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WrapperElement {
+    Aside,
+    Div,
+}
 
 /// Synchronous callback for injecting embed content
 ///
@@ -69,6 +77,22 @@ pub struct ClientWriter<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E = ()> 
     embed_provider: Option<E>,
 
     code_buffer: Option<(Option<String>, String)>, // (lang, content)
+
+    /// Pending WeaverBlock attrs to apply to the next block element
+    pending_block_attrs: Option<WeaverAttributes<'static>>,
+    /// Type of wrapper element currently open (needs closing on block end)
+    active_wrapper: Option<WrapperElement>,
+    /// Buffer for WeaverBlock text content (to parse for attrs)
+    weaver_block_buffer: String,
+    /// Pending footnote reference waiting to see if definition follows immediately
+    pending_footnote: Option<(String, usize)>,
+    /// Buffer for content between footnote ref and resolution
+    pending_footnote_content: String,
+    /// Whether current footnote definition is being rendered as a sidenote
+    in_sidenote: bool,
+    /// Whether we're deferring paragraph close for sidenote handling
+    defer_paragraph_close: bool,
+
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
@@ -95,6 +119,13 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite> ClientWriter<'a, I, W> {
             numbers: self.numbers,
             embed_provider: Some(provider),
             code_buffer: self.code_buffer,
+            pending_block_attrs: self.pending_block_attrs,
+            active_wrapper: self.active_wrapper,
+            weaver_block_buffer: self.weaver_block_buffer,
+            pending_footnote: self.pending_footnote,
+            pending_footnote_content: self.pending_footnote_content,
+            in_sidenote: self.in_sidenote,
+            defer_paragraph_close: self.defer_paragraph_close,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -115,8 +146,140 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
             numbers: HashMap::new(),
             embed_provider: None,
             code_buffer: None,
+            pending_block_attrs: None,
+            active_wrapper: None,
+            weaver_block_buffer: String::new(),
+            pending_footnote: None,
+            pending_footnote_content: String::new(),
+            in_sidenote: false,
+            defer_paragraph_close: false,
             _phantom: std::marker::PhantomData,
         }
+    }
+
+    /// Parse WeaverBlock text content into attributes.
+    fn parse_weaver_attrs(text: &str) -> WeaverAttributes<'static> {
+        let mut classes = Vec::new();
+        let mut attrs = Vec::new();
+
+        for part in text.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+
+            if let Some((key, value)) = part.split_once(':') {
+                let key = key.trim();
+                let value = value.trim();
+                if !key.is_empty() && !value.is_empty() {
+                    attrs.push((
+                        CowStr::from(key.to_string()),
+                        CowStr::from(value.to_string()),
+                    ));
+                }
+            } else {
+                let class = part.strip_prefix('.').unwrap_or(part);
+                if !class.is_empty() {
+                    classes.push(CowStr::from(class.to_string()));
+                }
+            }
+        }
+
+        WeaverAttributes { classes, attrs }
+    }
+
+    /// Close deferred paragraph if we're in that state.
+    /// Called when a non-paragraph block element starts.
+    fn close_deferred_paragraph(&mut self) -> Result<(), W::Error> {
+        if self.defer_paragraph_close {
+            // Flush pending footnote as traditional before closing
+            self.flush_pending_footnote()?;
+            self.write("</p>\n")?;
+            self.close_wrapper()?;
+            self.defer_paragraph_close = false;
+        }
+        Ok(())
+    }
+
+    /// Flush any pending footnote reference as a traditional footnote
+    fn flush_pending_footnote(&mut self) -> Result<(), W::Error> {
+        if let Some((name, number)) = self.pending_footnote.take() {
+            self.write("<sup class=\"footnote-reference\"><a href=\"#")?;
+            escape_html(&mut self.writer, &name)?;
+            self.write("\">")?;
+            write!(&mut self.writer, "{}", number)?;
+            self.write("</a></sup>")?;
+            if !self.pending_footnote_content.is_empty() {
+                let content = std::mem::take(&mut self.pending_footnote_content);
+                escape_html_body_text(&mut self.writer, &content)?;
+                self.end_newline = content.ends_with('\n');
+            }
+        }
+        Ok(())
+    }
+
+    /// Emit wrapper element start based on pending block attrs
+    fn emit_wrapper_start(&mut self) -> Result<bool, W::Error> {
+        if let Some(attrs) = self.pending_block_attrs.take() {
+            let is_aside = attrs.classes.iter().any(|c| c.as_ref() == "aside");
+
+            if !self.end_newline {
+                self.write("\n")?;
+            }
+
+            if is_aside {
+                self.write("<aside")?;
+                self.active_wrapper = Some(WrapperElement::Aside);
+            } else {
+                self.write("<div")?;
+                self.active_wrapper = Some(WrapperElement::Div);
+            }
+
+            let classes: Vec<_> = if is_aside {
+                attrs
+                    .classes
+                    .iter()
+                    .filter(|c| c.as_ref() != "aside")
+                    .collect()
+            } else {
+                attrs.classes.iter().collect()
+            };
+
+            if !classes.is_empty() {
+                self.write(" class=\"")?;
+                for (i, class) in classes.iter().enumerate() {
+                    if i > 0 {
+                        self.write(" ")?;
+                    }
+                    escape_html(&mut self.writer, class)?;
+                }
+                self.write("\"")?;
+            }
+
+            for (attr, value) in &attrs.attrs {
+                self.write(" ")?;
+                escape_html(&mut self.writer, attr)?;
+                self.write("=\"")?;
+                escape_html(&mut self.writer, value)?;
+                self.write("\"")?;
+            }
+
+            self.write(">\n")?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Close active wrapper element if one is open
+    fn close_wrapper(&mut self) -> Result<(), W::Error> {
+        if let Some(wrapper) = self.active_wrapper.take() {
+            match wrapper {
+                WrapperElement::Aside => self.write("</aside>\n")?,
+                WrapperElement::Div => self.write("</div>\n")?,
+            }
+        }
+        Ok(())
     }
 
     #[inline]
@@ -139,7 +302,21 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
         while let Some(event) = self.events.next() {
             self.process_event(event)?;
         }
+        self.finalize()?;
         Ok(self.writer)
+    }
+
+    /// Finalize output, closing any deferred state
+    fn finalize(&mut self) -> Result<(), W::Error> {
+        // Flush any pending footnote as traditional
+        self.flush_pending_footnote()?;
+        // Close deferred paragraph if any
+        if self.defer_paragraph_close {
+            self.write("</p>\n")?;
+            self.close_wrapper()?;
+            self.defer_paragraph_close = false;
+        }
+        Ok(())
     }
 
     /// Consume events until End tag without writing anything.
@@ -216,6 +393,9 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 // If buffering code, append to buffer instead of writing
                 if let Some((_, ref mut buffer)) = self.code_buffer {
                     buffer.push_str(&text);
+                } else if self.pending_footnote.is_some() {
+                    // Buffer text while waiting to see if footnote def follows
+                    self.pending_footnote_content.push_str(&text);
                 } else if !self.in_non_writing_block {
                     escape_html_body_text(&mut self.writer, &text)?;
                     self.end_newline = text.ends_with('\n');
@@ -254,8 +434,20 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 self.write(&html)?;
                 self.write("</span>")?;
             }
-            SoftBreak => self.write_newline()?,
-            HardBreak => self.write("<br />\n")?,
+            SoftBreak => {
+                if self.pending_footnote.is_some() {
+                    self.pending_footnote_content.push('\n');
+                } else {
+                    self.write_newline()?;
+                }
+            }
+            HardBreak => {
+                if self.pending_footnote.is_some() {
+                    self.pending_footnote_content.push_str("<br />\n");
+                } else {
+                    self.write("<br />\n")?;
+                }
+            }
             Rule => {
                 if self.end_newline {
                     self.write("<hr />\n")?;
@@ -264,13 +456,13 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 }
             }
             FootnoteReference(name) => {
+                // Flush any existing pending footnote as traditional
+                self.flush_pending_footnote()?;
+                // Get/create footnote number
                 let len = self.numbers.len() + 1;
-                self.write("<sup class=\"footnote-reference\"><a href=\"#")?;
-                escape_html(&mut self.writer, &name)?;
-                self.write("\">")?;
                 let number = *self.numbers.entry(name.to_string()).or_insert(len);
-                write!(&mut self.writer, "{}", number)?;
-                self.write("</a></sup>")?;
+                // Buffer this reference to see if definition follows immediately
+                self.pending_footnote = Some((name.to_string(), number));
             }
             TaskListMarker(checked) => {
                 if checked {
@@ -279,7 +471,10 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                     self.write("<input disabled=\"\" type=\"checkbox\"/>\n")?;
                 }
             }
-            WeaverBlock(_) => {}
+            WeaverBlock(text) => {
+                // Buffer WeaverBlock content for parsing on End
+                self.weaver_block_buffer.push_str(&text);
+            }
         }
         Ok(())
     }
@@ -287,11 +482,24 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
     fn start_tag(&mut self, tag: Tag<'_>) -> Result<(), W::Error> {
         match tag {
             Tag::HtmlBlock => self.write(r#"<span class="html-embed html-embed-block">"#),
-            Tag::Paragraph => {
-                if self.end_newline {
-                    self.write("<p>")
+            Tag::Paragraph(_) => {
+                if self.in_sidenote {
+                    // Inside sidenote span - don't emit paragraph tags
+                    Ok(())
+                } else if self.defer_paragraph_close {
+                    // We're continuing a virtual paragraph after a sidenote
+                    // Don't emit <p> (already open)
+                    // Clear defer flag - we'll set it again at end if another sidenote follows
+                    self.defer_paragraph_close = false;
+                    Ok(())
                 } else {
-                    self.write("\n<p>")
+                    self.flush_pending_footnote()?;
+                    self.emit_wrapper_start()?;
+                    if self.end_newline {
+                        self.write("<p>")
+                    } else {
+                        self.write("\n<p>")
+                    }
                 }
             }
             Tag::Heading {
@@ -300,6 +508,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 classes,
                 attrs,
             } => {
+                self.close_deferred_paragraph()?;
+                self.emit_wrapper_start()?;
                 if !self.end_newline {
                     self.write("\n")?;
                 }
@@ -334,6 +544,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 self.write(">")
             }
             Tag::Table(alignments) => {
+                self.close_deferred_paragraph()?;
+                self.emit_wrapper_start()?;
                 self.table_alignments = alignments;
                 self.write("<table>")
             }
@@ -359,6 +571,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 }
             }
             Tag::BlockQuote(kind) => {
+                self.close_deferred_paragraph()?;
+                self.emit_wrapper_start()?;
                 let class_str = match kind {
                     None => "",
                     Some(BlockQuoteKind::Note) => " class=\"markdown-alert-note\"",
@@ -375,6 +589,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 Ok(())
             }
             Tag::CodeBlock(info) => {
+                self.close_deferred_paragraph()?;
+                self.emit_wrapper_start()?;
                 if !self.end_newline {
                     self.write_newline()?;
                 }
@@ -398,6 +614,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 }
             }
             Tag::List(Some(1)) => {
+                self.close_deferred_paragraph()?;
+                self.emit_wrapper_start()?;
                 if self.end_newline {
                     self.write("<ol>\n")
                 } else {
@@ -405,6 +623,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 }
             }
             Tag::List(Some(start)) => {
+                self.close_deferred_paragraph()?;
+                self.emit_wrapper_start()?;
                 if self.end_newline {
                     self.write("<ol start=\"")?;
                 } else {
@@ -414,6 +634,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 self.write("\">\n")
             }
             Tag::List(None) => {
+                self.close_deferred_paragraph()?;
+                self.emit_wrapper_start()?;
                 if self.end_newline {
                     self.write("<ul>\n")
                 } else {
@@ -428,6 +650,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 }
             }
             Tag::DefinitionList => {
+                self.close_deferred_paragraph()?;
+                self.emit_wrapper_start()?;
                 if self.end_newline {
                     self.write("<dl>\n")
                 } else {
@@ -556,22 +780,55 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 id,
                 attrs,
             } => self.write_embed(embed_type, dest_url, title, id, attrs),
-            Tag::WeaverBlock(_, _) => {
+            Tag::WeaverBlock(_, attrs) => {
                 self.in_non_writing_block = true;
+                self.weaver_block_buffer.clear();
+                // Store attrs from Start tag, will merge with parsed text on End
+                if !attrs.classes.is_empty() || !attrs.attrs.is_empty() {
+                    self.pending_block_attrs = Some(attrs.into_static());
+                }
                 Ok(())
             }
             Tag::FootnoteDefinition(name) => {
-                if self.end_newline {
-                    self.write("<div class=\"footnote-definition\" id=\"")?;
+                // Check if this matches a pending footnote reference (sidenote case)
+                let is_sidenote = self
+                    .pending_footnote
+                    .as_ref()
+                    .map(|(n, _)| n.as_str() == name.as_ref())
+                    .unwrap_or(false);
+
+                if is_sidenote {
+                    // Emit sidenote structure at reference position
+                    let (_, number) = self.pending_footnote.take().unwrap();
+                    let id = format!("sn-{}", number);
+
+                    // Emit: <label><input/><span class="sidenote">
+                    self.write("<label for=\"")?;
+                    self.write(&id)?;
+                    self.write("\" class=\"sidenote-number\"></label>")?;
+                    self.write("<input type=\"checkbox\" id=\"")?;
+                    self.write(&id)?;
+                    self.write("\" class=\"margin-toggle\"/>")?;
+                    self.write("<span class=\"sidenote\">")?;
+
+                    self.in_sidenote = true;
                 } else {
-                    self.write("\n<div class=\"footnote-definition\" id=\"")?;
+                    // Traditional footnote - close any deferred paragraph (which also flushes pending ref)
+                    self.close_deferred_paragraph()?;
+
+                    if self.end_newline {
+                        self.write("<div class=\"footnote-definition\" id=\"")?;
+                    } else {
+                        self.write("\n<div class=\"footnote-definition\" id=\"")?;
+                    }
+                    escape_html(&mut self.writer, &name)?;
+                    self.write("\"><sup class=\"footnote-definition-label\">")?;
+                    let len = self.numbers.len() + 1;
+                    let number = *self.numbers.entry(name.to_string()).or_insert(len);
+                    write!(&mut self.writer, "{}", number)?;
+                    self.write("</sup>")?;
                 }
-                escape_html(&mut self.writer, &name)?;
-                self.write("\"><sup class=\"footnote-definition-label\">")?;
-                let len = self.numbers.len() + 1;
-                let number = *self.numbers.entry(name.to_string()).or_insert(len);
-                write!(&mut self.writer, "{}", number)?;
-                self.write("</sup>")
+                Ok(())
             }
             Tag::MetadataBlock(_) => {
                 self.in_non_writing_block = true;
@@ -584,10 +841,30 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
         use markdown_weaver::TagEnd;
         match tag {
             TagEnd::HtmlBlock => self.write("</span>\n"),
-            TagEnd::Paragraph => self.write("</p>\n"),
+            TagEnd::Paragraph(ctx) => {
+                if self.in_sidenote {
+                    // Inside sidenote span - don't emit paragraph tags
+                    Ok(())
+                } else if ctx == ParagraphContext::Interrupted && self.pending_footnote.is_some() {
+                    // Paragraph was interrupted AND we have a pending footnote,
+                    // defer the </p> close - the sidenote will be rendered inline
+                    self.defer_paragraph_close = true;
+                    Ok(())
+                } else if self.defer_paragraph_close {
+                    // We were deferring but now closing for real
+                    self.write("</p>\n")?;
+                    self.close_wrapper()?;
+                    self.defer_paragraph_close = false;
+                    Ok(())
+                } else {
+                    self.write("</p>\n")?;
+                    self.close_wrapper()
+                }
+            }
             TagEnd::Heading(level) => {
                 self.write("</")?;
                 write!(&mut self.writer, "{}", level)?;
+                // Don't close wrapper - headings typically go with following block
                 self.write(">\n")
             }
             TagEnd::Table => self.write("</tbody></table>\n"),
@@ -605,7 +882,13 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 self.table_cell_index += 1;
                 Ok(())
             }
-            TagEnd::BlockQuote(_) => self.write("</blockquote>\n"),
+            TagEnd::BlockQuote(_) => {
+                // Close any deferred paragraph before closing blockquote
+                // (footnotes inside blockquotes can't be sidenotes since def is outside)
+                self.close_deferred_paragraph()?;
+                self.write("</blockquote>\n")?;
+                self.close_wrapper()
+            }
             TagEnd::CodeBlock => {
                 use std::sync::LazyLock;
                 use syntect::parsing::SyntaxSet;
@@ -644,10 +927,19 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 }
                 Ok(())
             }
-            TagEnd::List(true) => self.write("</ol>\n"),
-            TagEnd::List(false) => self.write("</ul>\n"),
+            TagEnd::List(true) => {
+                self.write("</ol>\n")?;
+                self.close_wrapper()
+            }
+            TagEnd::List(false) => {
+                self.write("</ul>\n")?;
+                self.close_wrapper()
+            }
             TagEnd::Item => self.write("</li>\n"),
-            TagEnd::DefinitionList => self.write("</dl>\n"),
+            TagEnd::DefinitionList => {
+                self.write("</dl>\n")?;
+                self.close_wrapper()
+            }
             TagEnd::DefinitionListTitle => self.write("</dt>\n"),
             TagEnd::DefinitionListDefinition => self.write("</dd>\n"),
             TagEnd::Emphasis => self.write("</em>"),
@@ -660,9 +952,35 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
             TagEnd::Embed => Ok(()),
             TagEnd::WeaverBlock(_) => {
                 self.in_non_writing_block = false;
+                // Parse the buffered text for attrs and store for next block
+                if !self.weaver_block_buffer.is_empty() {
+                    let parsed = Self::parse_weaver_attrs(&self.weaver_block_buffer);
+                    self.weaver_block_buffer.clear();
+                    // Merge with any existing pending attrs or set new
+                    if let Some(ref mut existing) = self.pending_block_attrs {
+                        existing.classes.extend(parsed.classes);
+                        existing.attrs.extend(parsed.attrs);
+                    } else {
+                        self.pending_block_attrs = Some(parsed);
+                    }
+                }
                 Ok(())
             }
-            TagEnd::FootnoteDefinition => self.write("</div>\n"),
+            TagEnd::FootnoteDefinition => {
+                if self.in_sidenote {
+                    self.write("</span>")?;
+                    self.in_sidenote = false;
+                    // Write any buffered content that came after the ref
+                    if !self.pending_footnote_content.is_empty() {
+                        let content = std::mem::take(&mut self.pending_footnote_content);
+                        escape_html_body_text(&mut self.writer, &content)?;
+                        self.end_newline = content.ends_with('\n');
+                    }
+                } else {
+                    self.write("</div>\n")?;
+                }
+                Ok(())
+            }
             TagEnd::MetadataBlock(_) => {
                 self.in_non_writing_block = false;
                 Ok(())

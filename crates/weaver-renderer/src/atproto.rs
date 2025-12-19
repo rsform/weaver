@@ -22,3 +22,6 @@ pub use markdown_writer::MarkdownWriter;
 pub use preprocess::AtProtoPreprocessContext;
 pub use types::{BlobInfo, BlobName};
 pub use writer::{ClientWriter, EmbedContentProvider};
+
+#[cfg(test)]
+mod tests;

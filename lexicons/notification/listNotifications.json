@@ -10,7 +10,24 @@
         "properties": {
           "reasons": {
             "type": "array",
-            "items": { "type": "ref", "ref": "sh.weaver.notification.defs#notificationReason" },
+            "items": {
+              "type": "string",
+              "knownValues": [
+                "like",
+                "bookmark",
+                "follow",
+                "followAccept",
+                "subscribe",
+                "subscribeAccept",
+                "collaborationInvite",
+                "collaborationAccept",
+                "newEntry",
+                "entryUpdate",
+                "mention",
+                "tag",
+                "comment"
+              ]
+            },
             "description": "Filter by notification reasons."
           },
           "seenAt": {

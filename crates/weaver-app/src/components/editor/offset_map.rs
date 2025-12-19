@@ -114,6 +114,7 @@ pub fn find_mapping_for_byte(
 ///
 /// Returns the mapping and whether the cursor should snap to the next
 /// visible position (for invisible content).
+#[allow(dead_code)]
 pub fn find_mapping_for_char(
     offset_map: &[OffsetMapping],
     char_offset: usize,
@@ -162,12 +163,14 @@ pub enum SnapDirection {
 
 /// Result of finding a valid cursor position.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SnappedPosition<'a> {
     pub mapping: &'a OffsetMapping,
     pub offset_in_mapping: usize,
     pub snapped: Option<SnapDirection>,
 }
 
+#[allow(dead_code)]
 impl SnappedPosition<'_> {
     /// Get the absolute char offset for this position.
     pub fn char_offset(&self) -> usize {
@@ -181,6 +184,7 @@ impl SnappedPosition<'_> {
 /// If the position is already valid, returns it directly. Otherwise,
 /// searches in the preferred direction first, falling back to the other
 /// direction if needed.
+#[allow(dead_code)]
 pub fn find_nearest_valid_position(
     offset_map: &[OffsetMapping],
     char_offset: usize,
@@ -219,6 +223,7 @@ pub fn find_nearest_valid_position(
 }
 
 /// Search for a valid position in a specific direction.
+#[allow(dead_code)]
 fn find_valid_in_direction(
     offset_map: &[OffsetMapping],
     char_offset: usize,
@@ -275,6 +280,7 @@ fn find_valid_in_direction(
 }
 
 /// Check if a char offset is at a valid (non-invisible) cursor position.
+#[allow(dead_code)]
 pub fn is_valid_cursor_position(offset_map: &[OffsetMapping], char_offset: usize) -> bool {
     find_mapping_for_char(offset_map, char_offset)
         .map(|(m, should_snap)| !should_snap && m.utf16_len > 0)
@@ -473,7 +479,8 @@ mod tests {
         let mappings = make_test_mappings();
 
         // Position 10 is invisible (in 5..15), prefer backward to end of "alt" (position 5)
-        let pos = find_nearest_valid_position(&mappings, 10, Some(SnapDirection::Backward)).unwrap();
+        let pos =
+            find_nearest_valid_position(&mappings, 10, Some(SnapDirection::Backward)).unwrap();
         assert_eq!(pos.char_offset(), 5); // end of "alt" mapping
         assert_eq!(pos.snapped, Some(SnapDirection::Backward));
     }

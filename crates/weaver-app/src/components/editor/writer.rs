@@ -5,12 +5,13 @@
 //!
 //! Uses Parser::into_offset_iter() to track gaps between events, which
 //! represent consumed formatting characters.
-
+#[allow(unused_imports)]
 use super::offset_map::{OffsetMapping, RenderResult};
 use jacquard::types::{ident::AtIdentifier, string::Rkey};
 use loro::LoroText;
 use markdown_weaver::{
     Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, Tag,
+    WeaverAttributes,
 };
 use markdown_weaver_escape::{
     StrWrite, escape_href, escape_html, escape_html_body_text,
@@ -30,6 +31,7 @@ pub struct SegmentedWriter {
     segments: Vec<String>,
 }
 
+#[allow(dead_code)]
 impl SegmentedWriter {
     pub fn new() -> Self {
         Self {
@@ -375,6 +377,13 @@ impl ImageResolver for &EditorImageResolver {
     }
 }
 
+/// Tracks the type of wrapper element emitted for WeaverBlock prefix
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WrapperElement {
+    Aside,
+    Div,
+}
+
 /// HTML writer that preserves markdown formatting characters.
 ///
 /// This writer processes offset-iter events to detect gaps (consumed formatting)
@@ -416,10 +425,10 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E = (
 
     // Offset mapping tracking - current paragraph
     offset_maps: Vec<OffsetMapping>,
-    node_id_prefix: Option<String>,           // paragraph ID prefix for stable node IDs
-    auto_increment_prefix: Option<usize>,     // if set, auto-increment prefix per paragraph from this value
+    node_id_prefix: Option<String>, // paragraph ID prefix for stable node IDs
+    auto_increment_prefix: Option<usize>, // if set, auto-increment prefix per paragraph from this value
     static_prefix_override: Option<(usize, String)>, // (index, prefix) - override auto-increment at this index
-    current_paragraph_index: usize,           // which paragraph we're currently building (0-indexed)
+    current_paragraph_index: usize, // which paragraph we're currently building (0-indexed)
     next_node_id: usize,
     current_node_id: Option<String>, // node ID for current text container
     current_node_char_offset: usize, // UTF-16 offset within current node
@@ -449,6 +458,22 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E = (
     offset_maps_by_para: Vec<Vec<OffsetMapping>>,
     syntax_spans_by_para: Vec<Vec<SyntaxSpanInfo>>,
     refs_by_para: Vec<Vec<weaver_common::ExtractedRef>>,
+
+    // WeaverBlock prefix system
+    /// Pending WeaverBlock attrs to apply to the next block element
+    pending_block_attrs: Option<WeaverAttributes<'static>>,
+    /// Type of wrapper element currently open (needs closing on block end)
+    active_wrapper: Option<WrapperElement>,
+    /// Buffer for WeaverBlock text content (to parse for attrs)
+    weaver_block_buffer: String,
+    /// Start char offset of current WeaverBlock (for syntax span)
+    weaver_block_char_start: Option<usize>,
+
+    // Footnote syntax linking (ref ↔ definition visibility)
+    /// Maps footnote name → (syntax_span_index, char_start) for linking ref and def
+    footnote_ref_spans: HashMap<String, (usize, usize)>,
+    /// Current footnote definition being processed (name, syntax_span_index, char_start)
+    current_footnote_def: Option<(String, usize, usize)>,
 
     _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -519,6 +544,12 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             offset_maps_by_para: Vec::new(),
             syntax_spans_by_para: Vec::new(),
             refs_by_para: Vec::new(),
+            pending_block_attrs: None,
+            active_wrapper: None,
+            weaver_block_buffer: String::new(),
+            weaver_block_char_start: None,
+            footnote_ref_spans: HashMap::new(),
+            current_footnote_def: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -578,6 +609,12 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             offset_maps_by_para: self.offset_maps_by_para,
             syntax_spans_by_para: self.syntax_spans_by_para,
             refs_by_para: self.refs_by_para,
+            pending_block_attrs: self.pending_block_attrs,
+            active_wrapper: self.active_wrapper,
+            weaver_block_buffer: self.weaver_block_buffer,
+            weaver_block_char_start: self.weaver_block_char_start,
+            footnote_ref_spans: self.footnote_ref_spans,
+            current_footnote_def: self.current_footnote_def,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -608,6 +645,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
     }
 
     /// Get the next paragraph ID that would be assigned (for tracking allocations).
+    #[allow(dead_code)]
     pub fn next_paragraph_id(&self) -> Option<usize> {
         self.auto_increment_prefix
     }
@@ -1106,6 +1144,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
     }
 
     // Consume raw text events until end tag, for alt attributes
+    #[allow(dead_code)]
     fn raw_text(&mut self) -> Result<(), fmt::Error> {
         use Event::*;
         let mut nest = 0;
@@ -1168,6 +1207,104 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 _ => {}
             }
         }
+    }
+
+    /// Parse WeaverBlock text content into attributes.
+    /// Format: comma-separated, colon for key:value, otherwise class.
+    /// Example: ".aside, width: 300px" -> classes: ["aside"], attrs: [("width", "300px")]
+    fn parse_weaver_attrs(text: &str) -> WeaverAttributes<'static> {
+        let mut classes = Vec::new();
+        let mut attrs = Vec::new();
+
+        for part in text.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+
+            if let Some((key, value)) = part.split_once(':') {
+                let key = key.trim();
+                let value = value.trim();
+                if !key.is_empty() && !value.is_empty() {
+                    attrs.push((CowStr::from(key.to_string()), CowStr::from(value.to_string())));
+                }
+            } else {
+                // No colon - treat as class, strip leading dot if present
+                let class = part.strip_prefix('.').unwrap_or(part);
+                if !class.is_empty() {
+                    classes.push(CowStr::from(class.to_string()));
+                }
+            }
+        }
+
+        WeaverAttributes { classes, attrs }
+    }
+
+    /// Emit wrapper element start based on pending block attrs.
+    /// Returns true if a wrapper was emitted.
+    fn emit_wrapper_start(&mut self) -> Result<bool, fmt::Error> {
+        if let Some(attrs) = self.pending_block_attrs.take() {
+            let is_aside = attrs.classes.iter().any(|c| c.as_ref() == "aside");
+
+            if !self.end_newline {
+                self.write("\n")?;
+            }
+
+            if is_aside {
+                self.write("<aside")?;
+                self.active_wrapper = Some(WrapperElement::Aside);
+            } else {
+                self.write("<div")?;
+                self.active_wrapper = Some(WrapperElement::Div);
+            }
+
+            // Write classes (excluding "aside" if using <aside> element)
+            let classes: Vec<_> = if is_aside {
+                attrs
+                    .classes
+                    .iter()
+                    .filter(|c| c.as_ref() != "aside")
+                    .collect()
+            } else {
+                attrs.classes.iter().collect()
+            };
+
+            if !classes.is_empty() {
+                self.write(" class=\"")?;
+                for (i, class) in classes.iter().enumerate() {
+                    if i > 0 {
+                        self.write(" ")?;
+                    }
+                    escape_html(&mut self.writer, class)?;
+                }
+                self.write("\"")?;
+            }
+
+            // Write other attrs
+            for (attr, value) in &attrs.attrs {
+                self.write(" ")?;
+                escape_html(&mut self.writer, attr)?;
+                self.write("=\"")?;
+                escape_html(&mut self.writer, value)?;
+                self.write("\"")?;
+            }
+
+            self.write(">\n")?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Close active wrapper element if one is open
+    fn close_wrapper(&mut self) -> Result<(), fmt::Error> {
+        if let Some(wrapper) = self.active_wrapper.take() {
+            match wrapper {
+                WrapperElement::Aside => self.write("</aside>\n")?,
+                WrapperElement::Div => self.write("</div>\n")?,
+            }
+        }
+        Ok(())
     }
 
     fn process_event(&mut self, event: Event<'_>, range: Range<usize>) -> Result<(), fmt::Error> {
@@ -1546,14 +1683,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                     escape_html(&mut self.writer, spaces)?;
                     self.write("</span>")?;
 
-                    // Record syntax span info
-                    // self.syntax_spans.push(SyntaxSpanInfo {
-                    //     syn_id,
-                    //     char_range: char_start..char_end,
-                    //     syntax_type: SyntaxType::Inline,
-                    //     formatted_range: None,
-                    // });
-
                     // Count this span as a child
                     self.current_node_child_count += 1;
 
@@ -1570,7 +1699,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
 
                     // After <br>, emit plain zero-width space for cursor positioning
                     self.write(" ")?;
-                    //self.write("\u{200B}")?;
 
                     // Count the zero-width space text node as a child
                     self.current_node_child_count += 1;
@@ -1636,13 +1764,52 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.write("<div class=\"toggle-block\"><hr /></div>\n")?;
             }
             FootnoteReference(name) => {
+                // Get/create footnote number
                 let len = self.numbers.len() + 1;
-                self.write("<sup class=\"footnote-reference\"><a href=\"#")?;
-                escape_html(&mut self.writer, &name)?;
-                self.write("\">")?;
                 let number = *self.numbers.entry(name.to_string()).or_insert(len);
-                write!(&mut self.writer, "{}", number)?;
-                self.write("</a></sup>")?;
+
+                // Emit the [^name] syntax as a hideable syntax span
+                let raw_text = &self.source[range.clone()];
+                let char_start = self.last_char_offset;
+                let syntax_char_len = raw_text.chars().count();
+                let char_end = char_start + syntax_char_len;
+                let syn_id = self.gen_syn_id();
+
+                write!(
+                    &mut self.writer,
+                    "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
+                    syn_id, char_start, char_end
+                )?;
+                escape_html(&mut self.writer, raw_text)?;
+                self.write("</span>")?;
+
+                // Track this span for linking with the footnote definition later
+                let span_index = self.syntax_spans.len();
+                self.syntax_spans.push(SyntaxSpanInfo {
+                    syn_id,
+                    char_range: char_start..char_end,
+                    syntax_type: SyntaxType::Inline,
+                    formatted_range: None, // Set when we see the definition
+                });
+                self.footnote_ref_spans
+                    .insert(name.to_string(), (span_index, char_start));
+
+                // Record offset mapping for the syntax span content
+                self.record_mapping(range.clone(), char_start..char_end);
+
+                // Count as child
+                self.current_node_child_count += 1;
+
+                // Emit the visible footnote reference (superscript number)
+                write!(
+                    &mut self.writer,
+                    "<sup class=\"footnote-reference\"><a href=\"#fn-{}\">{}</a></sup>",
+                    name, number
+                )?;
+
+                // Update tracking
+                self.last_char_offset = char_end;
+                self.last_byte_offset = range.end;
             }
             TaskListMarker(checked) => {
                 // Emit the [ ] or [x] syntax
@@ -1680,7 +1847,10 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                     self.write("<input disabled=\"\" type=\"checkbox\"/>\n")?;
                 }
             }
-            WeaverBlock(_) => {}
+            WeaverBlock(text) => {
+                // Buffer WeaverBlock content for parsing on End
+                self.weaver_block_buffer.push_str(&text);
+            }
         }
         Ok(())
     }
@@ -1830,7 +2000,10 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
 
                 Ok(())
             }
-            Tag::Paragraph => {
+            Tag::Paragraph(_) => {
+                // Handle wrapper before block
+                self.emit_wrapper_start()?;
+
                 // Record paragraph start for boundary tracking
                 // BUT skip if inside a list - list owns the paragraph boundary
                 if self.list_depth == 0 {
@@ -1892,6 +2065,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 classes,
                 attrs,
             } => {
+                // Emit wrapper if pending (but don't close on heading end - wraps following block too)
+                self.emit_wrapper_start()?;
+
                 // Record paragraph start for boundary tracking
                 // Treat headings as paragraph-level blocks
                 self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
@@ -1980,6 +2156,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                     self.in_non_writing_block = true; // Suppress content output
                     Ok(())
                 } else {
+                    self.emit_wrapper_start()?;
                     self.table_alignments = alignments;
                     self.write("<table>")
                 }
@@ -2018,6 +2195,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 }
             }
             Tag::BlockQuote(kind) => {
+                self.emit_wrapper_start()?;
+
                 let class_str = match kind {
                     None => "",
                     Some(BlockQuoteKind::Note) => " class=\"markdown-alert-note\"",
@@ -2037,6 +2216,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 Ok(())
             }
             Tag::CodeBlock(info) => {
+                self.emit_wrapper_start()?;
+
                 // Track code block as paragraph-level block
                 self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
 
@@ -2110,6 +2291,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 }
             }
             Tag::List(Some(1)) => {
+                self.emit_wrapper_start()?;
                 // Track list as paragraph-level block
                 self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
                 self.list_depth += 1;
@@ -2120,6 +2302,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 }
             }
             Tag::List(Some(start)) => {
+                self.emit_wrapper_start()?;
                 // Track list as paragraph-level block
                 self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
                 self.list_depth += 1;
@@ -2132,6 +2315,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.write("\">\n")
             }
             Tag::List(None) => {
+                self.emit_wrapper_start()?;
                 // Track list as paragraph-level block
                 self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
                 self.list_depth += 1;
@@ -2239,6 +2423,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 Ok(())
             }
             Tag::DefinitionList => {
+                self.emit_wrapper_start()?;
                 if self.end_newline {
                     self.write("<dl>\n")
                 } else {
@@ -2507,22 +2692,73 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 id,
                 attrs,
             } => self.write_embed(range, embed_type, dest_url, title, id, attrs),
-            Tag::WeaverBlock(_, _) => {
+            Tag::WeaverBlock(_, attrs) => {
                 self.in_non_writing_block = true;
+                self.weaver_block_buffer.clear();
+                self.weaver_block_char_start = Some(self.last_char_offset);
+                // Store attrs from Start tag, will merge with parsed text on End
+                if !attrs.classes.is_empty() || !attrs.attrs.is_empty() {
+                    self.pending_block_attrs = Some(attrs.into_static());
+                }
                 Ok(())
             }
             Tag::FootnoteDefinition(name) => {
-                if self.end_newline {
-                    self.write("<div class=\"footnote-definition\" id=\"")?;
-                } else {
-                    self.write("\n<div class=\"footnote-definition\" id=\"")?;
+                // Emit the [^name]: prefix as a hideable syntax span
+                // The source should have "[^name]: " at the start
+                let prefix = format!("[^{}]: ", name);
+                let char_start = self.last_char_offset;
+                let prefix_char_len = prefix.chars().count();
+                let char_end = char_start + prefix_char_len;
+                let syn_id = self.gen_syn_id();
+
+                if !self.end_newline {
+                    self.write("\n")?;
                 }
-                escape_html(&mut self.writer, &name)?;
-                self.write("\"><sup class=\"footnote-definition-label\">")?;
+
+                write!(
+                    &mut self.writer,
+                    "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
+                    syn_id, char_start, char_end
+                )?;
+                escape_html(&mut self.writer, &prefix)?;
+                self.write("</span>")?;
+
+                // Track this span for linking with the footnote reference
+                let def_span_index = self.syntax_spans.len();
+                self.syntax_spans.push(SyntaxSpanInfo {
+                    syn_id,
+                    char_range: char_start..char_end,
+                    syntax_type: SyntaxType::Block,
+                    formatted_range: None, // Set at FootnoteDefinition end
+                });
+
+                // Store the definition info for linking at end
+                self.current_footnote_def = Some((name.to_string(), def_span_index, char_start));
+
+                // Record offset mapping for the syntax span
+                self.record_mapping(range.start..range.start + prefix.len(), char_start..char_end);
+
+                // Update tracking for the prefix
+                self.last_char_offset = char_end;
+                self.last_byte_offset = range.start + prefix.len();
+
+                // Emit the definition container
+                write!(
+                    &mut self.writer,
+                    "<div class=\"footnote-definition\" id=\"fn-{}\">",
+                    name
+                )?;
+
+                // Get/create footnote number for the label
                 let len = self.numbers.len() + 1;
                 let number = *self.numbers.entry(name.to_string()).or_insert(len);
-                write!(&mut self.writer, "{}", number)?;
-                self.write("</sup>")
+                write!(
+                    &mut self.writer,
+                    "<sup class=\"footnote-definition-label\">{}</sup>",
+                    number
+                )?;
+
+                Ok(())
             }
             Tag::MetadataBlock(_) => {
                 self.in_non_writing_block = true;
@@ -2566,7 +2802,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 }
                 Ok(())
             }
-            TagEnd::Paragraph => {
+            TagEnd::Paragraph(_) => {
                 // Capture paragraph boundary info BEFORE writing closing HTML
                 // Skip if inside a list - list owns the paragraph boundary
                 let para_boundary = if self.list_depth == 0 {
@@ -2585,6 +2821,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 // Write closing HTML to current segment
                 self.end_node();
                 self.write("</p>\n")?;
+                self.close_wrapper()?;
 
                 // Now finalize paragraph (starts new segment)
                 if let Some((byte_range, char_range)) = para_boundary {
@@ -2609,6 +2846,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.write("</")?;
                 write!(&mut self.writer, "{}", level)?;
                 self.write(">\n")?;
+                // Note: Don't close wrapper here - headings typically go with following block
 
                 // Now finalize paragraph (starts new segment)
                 if let Some((byte_range, char_range)) = para_boundary {
@@ -2701,6 +2939,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                     }
                 }
                 self.write("</blockquote>\n")?;
+                self.close_wrapper()?;
 
                 // Now finalize paragraph if we had one
                 if let Some((byte_range, char_range)) = para_boundary {
@@ -2857,6 +3096,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                         });
 
                 self.write("</ol>\n")?;
+                self.close_wrapper()?;
 
                 // Finalize paragraph after closing HTML
                 if let Some((byte_range, char_range)) = para_boundary {
@@ -2878,6 +3118,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                         });
 
                 self.write("</ul>\n")?;
+                self.close_wrapper()?;
 
                 // Finalize paragraph after closing HTML
                 if let Some((byte_range, char_range)) = para_boundary {
@@ -2889,7 +3130,10 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.end_node();
                 self.write("</li>\n")
             }
-            TagEnd::DefinitionList => self.write("</dl>\n"),
+            TagEnd::DefinitionList => {
+                self.write("</dl>\n")?;
+                self.close_wrapper()
+            }
             TagEnd::DefinitionListTitle => {
                 self.end_node();
                 self.write("</dt>\n")
@@ -2956,9 +3200,84 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             TagEnd::Embed => Ok(()),
             TagEnd::WeaverBlock(_) => {
                 self.in_non_writing_block = false;
+
+                // Emit the { content } as a hideable syntax span
+                if let Some(char_start) = self.weaver_block_char_start.take() {
+                    // Build the full syntax text: { buffered_content }
+                    let syntax_text = format!("{{{}}}", self.weaver_block_buffer);
+                    let syntax_char_len = syntax_text.chars().count();
+                    let char_end = char_start + syntax_char_len;
+
+                    let syn_id = self.gen_syn_id();
+
+                    write!(
+                        &mut self.writer,
+                        "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
+                        syn_id, char_start, char_end
+                    )?;
+                    escape_html(&mut self.writer, &syntax_text)?;
+                    self.write("</span>")?;
+
+                    // Track the syntax span
+                    self.syntax_spans.push(SyntaxSpanInfo {
+                        syn_id,
+                        char_range: char_start..char_end,
+                        syntax_type: SyntaxType::Block,
+                        formatted_range: None,
+                    });
+
+                    // Record offset mapping for the syntax span
+                    self.record_mapping(range.clone(), char_start..char_end);
+
+                    // Update tracking
+                    self.last_char_offset = char_end;
+                    self.last_byte_offset = range.end;
+                }
+
+                // Parse the buffered text for attrs and store for next block
+                if !self.weaver_block_buffer.is_empty() {
+                    let parsed = Self::parse_weaver_attrs(&self.weaver_block_buffer);
+                    self.weaver_block_buffer.clear();
+                    // Merge with any existing pending attrs or set new
+                    if let Some(ref mut existing) = self.pending_block_attrs {
+                        existing.classes.extend(parsed.classes);
+                        existing.attrs.extend(parsed.attrs);
+                    } else {
+                        self.pending_block_attrs = Some(parsed);
+                    }
+                }
+
                 Ok(())
             }
-            TagEnd::FootnoteDefinition => self.write("</div>\n"),
+            TagEnd::FootnoteDefinition => {
+                self.write("</div>\n")?;
+
+                // Link the footnote definition span with its reference span
+                if let Some((name, def_span_index, _def_char_start)) =
+                    self.current_footnote_def.take()
+                {
+                    let def_char_end = self.last_char_offset;
+
+                    // Look up the reference span
+                    if let Some(&(ref_span_index, ref_char_start)) =
+                        self.footnote_ref_spans.get(&name)
+                    {
+                        // Create formatted_range spanning from ref start to def end
+                        let formatted_range = ref_char_start..def_char_end;
+
+                        // Update both spans with the same formatted_range
+                        // so they show/hide together based on cursor proximity
+                        if let Some(ref_span) = self.syntax_spans.get_mut(ref_span_index) {
+                            ref_span.formatted_range = Some(formatted_range.clone());
+                        }
+                        if let Some(def_span) = self.syntax_spans.get_mut(def_span_index) {
+                            def_span.formatted_range = Some(formatted_range);
+                        }
+                    }
+                }
+
+                Ok(())
+            }
             TagEnd::MetadataBlock(_) => {
                 self.in_non_writing_block = false;
                 Ok(())

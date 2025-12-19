@@ -1,0 +1,8 @@
+---
+source: crates/weaver-renderer/src/atproto/tests.rs
+expression: output
+---
+<aside>
+<h2>Heading in aside</h2>
+<p>Paragraph also in aside.</p>
+</aside>

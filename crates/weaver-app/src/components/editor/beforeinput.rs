@@ -57,6 +57,7 @@ pub use static_range::StaticRange;
 ///
 /// See: https://w3c.github.io/input-events/#interface-InputEvent-Attributes
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum InputType {
     // === Insertion ===
     /// Insert typed text.
@@ -131,6 +132,7 @@ pub enum InputType {
     Unknown(String),
 }
 
+#[allow(dead_code)]
 impl InputType {
     /// Parse from the browser's inputType string.
     pub fn from_str(s: &str) -> Self {
@@ -220,6 +222,7 @@ impl InputType {
 
 /// Result of handling a beforeinput event.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum BeforeInputResult {
     /// Event was handled, prevent default browser behavior.
     Handled,
@@ -235,6 +238,7 @@ pub enum BeforeInputResult {
 }
 
 /// Context for beforeinput handling.
+#[allow(dead_code)]
 pub struct BeforeInputContext<'a> {
     /// The input type.
     pub input_type: InputType,
@@ -253,6 +257,7 @@ pub struct BeforeInputContext<'a> {
 ///
 /// This is the main entry point for beforeinput-based input handling.
 /// Returns whether the event was handled and default should be prevented.
+#[allow(dead_code)]
 pub fn handle_beforeinput(
     doc: &mut EditorDocument,
     ctx: BeforeInputContext<'_>,
@@ -557,10 +562,12 @@ pub fn get_target_range_from_event(
     let end_text = end_container.text_content().unwrap_or_default();
 
     // Check if containers are the editor element itself
-    let start_is_editor = start_container.dyn_ref::<web_sys::Element>()
+    let start_is_editor = start_container
+        .dyn_ref::<web_sys::Element>()
         .map(|e| e == &editor_element)
         .unwrap_or(false);
-    let end_is_editor = end_container.dyn_ref::<web_sys::Element>()
+    let end_is_editor = end_container
+        .dyn_ref::<web_sys::Element>()
         .map(|e| e == &editor_element)
         .unwrap_or(false);
 

@@ -365,7 +365,7 @@ impl EventContext {
     pub fn get_context<'a>(event: &Event<'a>, prev: Option<&Self>) -> Self {
         match event {
             Event::Start(tag) => match tag {
-                Tag::Paragraph => Self::Text,
+                Tag::Paragraph(_) => Self::Text,
                 Tag::Heading { .. } => Self::Heading,
                 Tag::BlockQuote(_block_quote_kind) => Self::Text,
                 Tag::CodeBlock(_code_block_kind) => Self::CodeBlock,

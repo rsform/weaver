@@ -1,0 +1,7 @@
+---
+source: crates/weaver-renderer/src/atproto/tests.rs
+expression: output
+---
+<aside>
+<pre><code class="wvc-code language-Rust"><span class="wvc-source wvc-rust"><span class="wvc-meta wvc-function wvc-rust"><span class="wvc-meta wvc-function wvc-rust"><span class="wvc-storage wvc-type wvc-function wvc-rust">fn</span> </span><span class="wvc-entity wvc-name wvc-function wvc-rust">main</span></span><span class="wvc-meta wvc-function wvc-rust"><span class="wvc-meta wvc-function wvc-parameters wvc-rust"><span class="wvc-punctuation wvc-section wvc-parameters wvc-begin wvc-rust">(</span></span><span class="wvc-meta wvc-function wvc-rust"><span class="wvc-meta wvc-function wvc-parameters wvc-rust"><span class="wvc-punctuation wvc-section wvc-parameters wvc-end wvc-rust">)</span></span></span></span><span class="wvc-meta wvc-function wvc-rust"> </span><span class="wvc-meta wvc-function wvc-rust"><span class="wvc-meta wvc-block wvc-rust"><span class="wvc-punctuation wvc-section wvc-block wvc-begin wvc-rust">{</span></span><span class="wvc-meta wvc-block wvc-rust"><span class="wvc-punctuation wvc-section wvc-block wvc-end wvc-rust">}</span></span></span>
+</span></code></pre>

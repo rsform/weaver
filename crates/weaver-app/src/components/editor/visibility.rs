@@ -124,6 +124,7 @@ fn selection_overlaps(selection: Option<&Selection>, range: &Range<usize>) -> bo
 }
 
 /// Check if cursor is in the same paragraph as a syntax span.
+#[allow(dead_code)]
 fn cursor_in_same_paragraph(
     cursor_offset: usize,
     syntax_range: &Range<usize>,

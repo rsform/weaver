@@ -1,44 +1,48 @@
 //! The main MarkdownEditor component.
 
-use dioxus::prelude::*;
-use jacquard::IntoStatic;
-use jacquard::cowstr::ToCowStr;
-use jacquard::identity::resolver::IdentityResolver;
-use jacquard::smol_str::{SmolStr, ToSmolStr};
-use jacquard::types::aturi::AtUri;
-use jacquard::types::blob::BlobRef;
-use jacquard::types::ident::AtIdentifier;
-use weaver_api::sh_weaver::embed::images::Image;
-use weaver_common::WeaverExt;
-
+#[allow(unused_imports)]
 use super::actions::{
     EditorAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Range, execute_action,
     handle_keydown_with_bindings,
 };
+#[allow(unused_imports)]
 use super::beforeinput::{BeforeInputContext, BeforeInputResult, InputType, handle_beforeinput};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::beforeinput::{get_data_from_event, get_target_range_from_event};
 use super::document::{CompositionState, EditorDocument, LoadedDocState};
-use super::dom_sync::{
-    sync_cursor_from_dom, sync_cursor_from_dom_with_direction, update_paragraph_dom,
-};
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use super::dom_sync::update_paragraph_dom;
+use super::dom_sync::{sync_cursor_from_dom, sync_cursor_from_dom_with_direction};
 use super::formatting;
 use super::input::{get_char_at, handle_copy, handle_cut, handle_paste};
 use super::offset_map::SnapDirection;
 use super::paragraph::ParagraphRender;
 use super::platform;
+#[allow(unused_imports)]
 use super::publish::{LoadedEntry, PublishButton, load_entry_for_editing};
 use super::render;
 use super::storage;
 use super::sync::{SyncStatus, load_and_merge_document};
 use super::toolbar::EditorToolbar;
 use super::visibility::update_syntax_visibility;
+#[allow(unused_imports)]
 use super::writer::{EditorImageResolver, SyntaxSpanInfo};
 use crate::auth::AuthState;
 use crate::components::collab::CollaboratorAvatars;
 use crate::components::editor::ReportButton;
 use crate::components::editor::collab::CollabCoordinator;
 use crate::fetch::Fetcher;
+use dioxus::prelude::*;
+use jacquard::IntoStatic;
+use jacquard::cowstr::ToCowStr;
+use jacquard::identity::resolver::IdentityResolver;
+use jacquard::smol_str::{SmolStr, ToSmolStr};
+use jacquard::types::aturi::AtUri;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use jacquard::types::blob::BlobRef;
+use jacquard::types::ident::AtIdentifier;
+use weaver_api::sh_weaver::embed::images::Image;
+use weaver_common::WeaverExt;
 
 /// Result of loading document state.
 enum LoadResult {
@@ -47,6 +51,7 @@ enum LoadResult {
     /// Loading failed
     Failed(String),
     /// Still loading
+    #[allow(dead_code)]
     Loading,
 }
 
@@ -412,6 +417,7 @@ fn MarkdownEditorInner(
     let fetcher = use_context::<Fetcher>();
     let auth_state = use_context::<Signal<AuthState>>();
 
+    #[allow(unused_mut)]
     let mut document = use_hook(|| {
         let mut doc = EditorDocument::from_loaded_state(loaded_state.clone());
 
@@ -459,6 +465,7 @@ fn MarkdownEditorInner(
     let doc_for_memo = document.clone();
     let doc_for_refs = document.clone();
     let entry_index_for_memo = entry_index.clone();
+    #[allow(unused_mut)]
     let mut paragraphs = use_memo(move || {
         let edit = doc_for_memo.last_edit();
         let cache = render_cache.peek();
@@ -627,6 +634,7 @@ fn MarkdownEditorInner(
 
     let mut new_tag = use_signal(String::new);
 
+    #[allow(unused)]
     let offset_map = use_memo(move || {
         paragraphs()
             .iter()
@@ -639,6 +647,7 @@ fn MarkdownEditorInner(
             .flat_map(|p| p.syntax_spans.iter().cloned())
             .collect::<Vec<_>>()
     });
+    #[allow(unused_mut)]
     let mut cached_paragraphs = use_signal(|| Vec::<ParagraphRender>::new());
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
@@ -710,6 +719,7 @@ fn MarkdownEditorInner(
     });
 
     // Track last saved frontiers to detect changes (peek-only, no subscriptions)
+    #[allow(unused_mut, unused)]
     let mut last_saved_frontiers: Signal<Option<loro::Frontiers>> = use_signal(|| None);
 
     // Store interval handle so it's dropped when component unmounts (prevents panic)
@@ -1153,7 +1163,7 @@ fn MarkdownEditorInner(
                                 // Refresh callback: fetch and merge collaborator changes (incremental)
                                 let on_refresh = if is_published {
                                     let fetcher_for_refresh = fetcher.clone();
-                                    let mut doc_for_refresh = document.clone();
+                                    let doc_for_refresh = document.clone();
                                     let entry_uri = document.entry_ref().map(|r| r.uri.clone().into_static());
 
                                     Some(EventHandler::new(move |_| {
@@ -1398,6 +1408,8 @@ fn MarkdownEditorInner(
                             move |evt| {
                                 tracing::debug!("onclick fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
+                                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                                let _ = evt;
 
                                 // Check if click target is a math-clickable element
                                 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]

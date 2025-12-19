@@ -210,3 +210,128 @@ async fn test_unicode_content() {
     assert!(output.contains("🎉"));
     assert!(output.contains("café"));
 }
+
+// =============================================================================
+// WeaverBlock Prefix Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_weaver_block_aside_class() {
+    let input = "\n\n{.aside}\nThis paragraph should be in an aside.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_weaver_block_custom_class() {
+    let input = "\n\n{.highlight}\nThis paragraph has a custom class.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_weaver_block_custom_attributes() {
+    let input = "\n\n{.foo, width: 300px, data-test: value}\nParagraph with class and attributes.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_weaver_block_before_heading() {
+    let input = "\n\n{.aside}\n## Heading in aside\n\nParagraph also in aside.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_weaver_block_before_blockquote() {
+    let input = "\n\n{.aside}\n\n> This blockquote is in an aside.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_weaver_block_before_list() {
+    let input = "\n\n{.aside}\n\n- Item 1\n- Item 2";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_weaver_block_before_code_block() {
+    let input = "\n\n{.aside}\n\n```rust\nfn main() {}\n```";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_weaver_block_multiple_classes() {
+    let input = "\n\n{.aside, .highlight, .important}\nMultiple classes applied.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_weaver_block_no_effect_on_following() {
+    let input = "\n\n{.aside}\nFirst paragraph in aside.\n\nSecond paragraph NOT in aside.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+// =============================================================================
+// Footnote / Sidenote Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_footnote_traditional() {
+    let input = "Here is some text[^1].\n[^1]: This is the footnote definition.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_footnote_sidenote_inline() {
+    // When definition immediately follows reference in the same paragraph flow
+    let input = "Here is text[^note]\n[^note]: Sidenote content.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_footnote_multiple() {
+    let input = "First[^1] and second[^2] footnotes.\n[^1]: First note.\n[^2]: Second note.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_footnote_with_inline_formatting() {
+    let input = "Text with footnote[^fmt].\n[^fmt]: Note with **bold** and *italic*.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_footnote_named() {
+    let input = "Reference[^my-note].\n[^my-note]: Named footnote content.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+#[tokio::test]
+async fn test_footnote_in_blockquote() {
+    let input = "> Quote with footnote[^q].\n[^q]: Footnote for quote.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}
+
+// =============================================================================
+// Combined WeaverBlock + Footnote Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_weaver_block_with_footnote() {
+    let input = "{.aside}\nAside with a footnote[^aside].\n\n[^aside]: Footnote in aside context.";
+    let output = render_markdown(input).await;
+    insta::assert_snapshot!(output);
+}

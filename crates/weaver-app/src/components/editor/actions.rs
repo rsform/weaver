@@ -43,6 +43,7 @@ impl Range {
         self.end.saturating_sub(self.start)
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -65,6 +66,7 @@ impl Range {
 /// These represent semantic operations on the document, decoupled from
 /// how they're triggered (keyboard, mouse, touch, voice, etc.).
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum EditorAction {
     // === Text Insertion ===
     /// Insert text at the given range (replacing any selected content).
@@ -178,6 +180,7 @@ impl EditorAction {
 /// SmolStr to efficiently handle both single characters and composed sequences
 /// (from dead keys, IME, etc.).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum Key {
     /// A character key. The string corresponds to the character typed,
     /// taking into account locale, modifiers, and keyboard mapping.
@@ -460,6 +463,7 @@ pub struct Modifiers {
     pub super_: bool, // `super` is a keyword
 }
 
+#[allow(dead_code)]
 impl Modifiers {
     pub const NONE: Self = Self {
         ctrl: false,
