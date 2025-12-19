@@ -199,8 +199,9 @@
       "bases:Create new base": false
     }
   },
-  "active": "2f6bdb6d2dce13ed",
+  "active": "6029beecc3d03bce",
   "lastOpenFiles": [
+    "test-sidenotes.md",
     "cargo_bloated.png",
     "Writing the AppView Last.md",
     "Untitled.md",
@@ -215,7 +216,6 @@
     "meta.png",
     "Pasted image 20251114125028.png",
     "invalid_record.png",
-    "Pasted image 20251114125031.png",
     "Arch.md",
     "Weaver - Long-form writing.md"
   ]
