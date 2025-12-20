@@ -421,7 +421,7 @@ pub fn use_rendered_markdown(
 ) -> (Resource<Option<String>>, Memo<Option<String>>) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
     let fetcher = fetcher.clone();
-    let res = use_resource(move || {
+    let res = use_resource(use_reactive!(|(content, ident)| {
         let fetcher = fetcher.clone();
         async move {
             let entry = content();
@@ -434,14 +434,14 @@ pub fn use_rendered_markdown(
 
             Some(render_markdown_impl(entry, did, resolved_content).await)
         }
-    });
-    let memo = use_memo(move || {
+    }));
+    let memo = use_memo(use_reactive!(|res| {
         if let Some(Some(value)) = &*res.read() {
             Some(value.clone())
         } else {
             None
         }
-    });
+    }));
     (res, memo)
 }
 

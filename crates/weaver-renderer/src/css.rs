@@ -322,8 +322,9 @@ tr:hover {{
     color: var(--color-primary);
 }}
 
-/* Aside blocks (via WeaverBlock prefix) */
-aside, .aside {{
+/* Aside blocks (via WeaverBlock prefix) - scoped to notebook content */
+.notebook-content aside,
+.notebook-content .aside {{
     float: left;
     width: 40%;
     margin: 0 1.5rem 1rem 0;
@@ -334,19 +335,19 @@ aside, .aside {{
     clear: left;
 }}
 
-aside > *:first-child,
-.aside > *:first-child {{
+.notebook-content aside > *:first-child,
+.notebook-content .aside > *:first-child {{
     margin-top: 0;
 }}
 
-aside > *:last-child,
-.aside > *:last-child {{
+.notebook-content aside > *:last-child,
+.notebook-content .aside > *:last-child {{
     margin-bottom: 0;
 }}
 
 /* Reset blockquote styling inside asides */
-aside > blockquote,
-.aside > blockquote {{
+.notebook-content aside > blockquote,
+.notebook-content .aside > blockquote {{
     border-left: none;
     background: transparent;
     padding: 0;

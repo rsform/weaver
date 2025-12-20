@@ -1,6 +1,6 @@
 /* Entry page layout - centered content with sidenote margin */
 .entry-page {
-    --content-width: 65ch;
+    --content-width: 95ch;
     --sidenote-width: 14rem;
     --sidenote-gap: 1.5rem;
 
@@ -39,14 +39,17 @@
     color: var(--color-primary);
 }
 
-.entry-header .nav-button-prev {
-    flex-shrink: 1;
+.entry-header .nav-button-prev,
+.entry-header .nav-placeholder:first-child {
+    flex: 1;
     min-width: 0;
 }
 
-.entry-header .nav-button-next {
-    flex-shrink: 1;
+.entry-header .nav-button-next,
+.entry-header .nav-placeholder:last-child {
+    flex: 1;
     min-width: 0;
+    justify-content: flex-end;
 }
 
 .entry-header .nav-arrow {
@@ -60,10 +63,10 @@
     text-overflow: ellipsis;
 }
 
-/* Metadata takes center, flexes to fill */
+/* Metadata anchored to content width */
 .entry-header .entry-metadata {
-    flex: 1;
-    max-width: var(--content-width);
+    width: min(var(--content-width), 100%);
+    flex-shrink: 1;
     margin: 0;
     padding: 0;
     border: none;
@@ -80,13 +83,11 @@
 .entry-content-main {
     width: var(--content-width);
     max-width: 100%;
+    border-top: 1px solid var(--color-border);
     position: relative;
 }
 
-/* When sidenotes exist, shift content left to make room */
-.entry-content-main:has(.sidenote) {
-    margin-right: calc(var(--sidenote-width) + var(--sidenote-gap));
-}
+/* Sidenote layout handled by css.rs body padding */
 
 /* Footer navigation */
 .entry-footer-nav {
@@ -295,36 +296,19 @@
     }
 }
 
-/* Responsive: when sidenotes need to squeeze */
-@media (max-width: 1000px) {
-    .entry-content-main:has(.sidenote) {
-        margin-right: calc(var(--sidenote-width) + 0.5rem);
-        margin-left: -3rem;
-    }
-}
-
-/* Responsive: narrower - compress left margin more */
+/* Responsive: narrower */
 @media (max-width: 900px) {
     .entry-header .nav-title {
         max-width: 8rem;
     }
-
-    .entry-content-main:has(.sidenote) {
-        margin-left: -5rem;
-    }
 }
 
-/* Responsive: mobile - sidenotes go inline */
+/* Responsive: mobile */
 @media (max-width: 768px) {
     .entry-header {
         flex-direction: column;
         align-items: stretch;
         gap: 0.5rem;
-    }
-
-    .entry-content-main:has(.sidenote) {
-        margin-left: 0;
-        margin-right: 0;
     }
 
     .entry-footer-nav {

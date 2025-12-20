@@ -212,9 +212,6 @@ fn EntryPageView(
 
     tracing::info!("Entry: {book_title} - {title}");
 
-    let prev_entry = book_entry_view().prev.clone();
-    let next_entry = book_entry_view().next.clone();
-
     rsx! {
         EntryOgMeta {
             title: title.to_string(),
@@ -229,13 +226,15 @@ fn EntryPageView(
         div { class: "entry-page",
             // Header: nav prev + metadata + nav next
             header { class: "entry-header",
-                if let Some(ref prev) = prev_entry {
+                if let Some(ref prev) = book_entry_view().prev {
                     NavButton {
                         direction: "prev",
                         entry: prev.entry.clone(),
                         ident: ident(),
                         book_title: book_title()
                     }
+                } else {
+                    div { class: "nav-placeholder" }
                 }
 
                 {
@@ -253,13 +252,15 @@ fn EntryPageView(
                     }
                 }
 
-                if let Some(ref next) = next_entry {
+                if let Some(ref next) = book_entry_view().next {
                     NavButton {
                         direction: "next",
                         entry: next.entry.clone(),
                         ident: ident(),
                         book_title: book_title()
                     }
+                } else {
+                    div { class: "nav-placeholder" }
                 }
             }
 
@@ -275,7 +276,7 @@ fn EntryPageView(
 
             // Footer navigation
             footer { class: "entry-footer-nav",
-                if let Some(ref prev) = prev_entry {
+                if let Some(ref prev) = book_entry_view().prev {
                     NavButton {
                         direction: "prev",
                         entry: prev.entry.clone(),
@@ -284,7 +285,7 @@ fn EntryPageView(
                     }
                 }
 
-                if let Some(ref next) = next_entry {
+                if let Some(ref next) = book_entry_view().next {
                     NavButton {
                         direction: "next",
                         entry: next.entry.clone(),
@@ -726,7 +727,19 @@ pub struct EntryMarkdownProps {
 
 /// Render some text as markdown.
 pub fn EntryMarkdown(props: EntryMarkdownProps) -> Element {
-    let (_res, processed) = crate::data::use_rendered_markdown(props.content, props.ident);
+    let (mut _res, processed) = crate::data::use_rendered_markdown(props.content, props.ident);
+
+    // Track entry title to detect content change and restart resource
+    let mut last_title = use_signal(|| (props.content)().title.to_string());
+    let current_title = (props.content)().title.to_string();
+    if current_title != last_title() {
+        #[cfg(feature = "fullstack-server")]
+        if let Ok(ref mut r) = _res {
+            r.restart();
+        }
+        last_title.set(current_title);
+    }
+
     #[cfg(feature = "fullstack-server")]
     _res?;
 

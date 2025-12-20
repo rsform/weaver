@@ -139,9 +139,9 @@ pub async fn resolve_notebook(
         .maybe_path(non_empty_cowstr(&notebook_row.path))
         .build();
 
-    // Build entry views
-    let mut entries: Vec<BookEntryView<'static>> = Vec::with_capacity(entry_rows.len());
-    for (idx, entry_row) in entry_rows.iter().enumerate() {
+    // Build entry views (first pass: create EntryViews)
+    let mut entry_views: Vec<EntryView<'static>> = Vec::with_capacity(entry_rows.len());
+    for entry_row in entry_rows.iter() {
         let entry_uri = AtUri::new(&entry_row.uri).map_err(|e| {
             tracing::error!("Invalid entry URI in db: {}", e);
             XrpcErrorResponse::internal_error("Invalid URI stored")
@@ -185,12 +185,26 @@ pub async fn resolve_notebook(
             .maybe_path(non_empty_cowstr(&entry_row.path))
             .build();
 
-        let book_entry = BookEntryView::new()
-            .entry(entry_view)
-            .index(idx as i64)
-            .build();
+        entry_views.push(entry_view);
+    }
 
-        entries.push(book_entry);
+    // Build BookEntryViews with prev/next navigation
+    let mut entries: Vec<BookEntryView<'static>> = Vec::with_capacity(entry_views.len());
+    for (idx, entry_view) in entry_views.iter().enumerate() {
+        let prev = (idx > 0)
+            .then(|| BookEntryRef::new().entry(entry_views[idx - 1].clone()).build());
+        let next = entry_views
+            .get(idx + 1)
+            .map(|e| BookEntryRef::new().entry(e.clone()).build());
+
+        entries.push(
+            BookEntryView::new()
+                .entry(entry_view.clone())
+                .index(idx as i64)
+                .maybe_prev(prev)
+                .maybe_next(next)
+                .build(),
+        );
     }
 
     // Build cursor for pagination (position-based)

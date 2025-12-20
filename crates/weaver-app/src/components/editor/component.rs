@@ -26,7 +26,9 @@ use super::sync::{SyncStatus, load_and_merge_document};
 use super::toolbar::EditorToolbar;
 use super::visibility::update_syntax_visibility;
 #[allow(unused_imports)]
-use super::writer::{EditorImageResolver, SyntaxSpanInfo};
+use super::writer::EditorImageResolver;
+#[allow(unused_imports)]
+use super::writer::SyntaxSpanInfo;
 use crate::auth::AuthState;
 use crate::components::collab::CollaboratorAvatars;
 use crate::components::editor::ReportButton;
