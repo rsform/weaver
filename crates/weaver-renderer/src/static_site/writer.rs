@@ -546,10 +546,10 @@ impl<
                 self.pending_footnote = Some((name.into_static(), number));
             }
             TaskListMarker(true) => {
-                self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n")?;
+                self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\" aria-label=\"Completed task\"/>\n")?;
             }
             TaskListMarker(false) => {
-                self.write("<input disabled=\"\" type=\"checkbox\"/>\n")?;
+                self.write("<input disabled=\"\" type=\"checkbox\" aria-label=\"Incomplete task\"/>\n")?;
             }
             WeaverBlock(text) => {
                 // Buffer WeaverBlock content for parsing on End

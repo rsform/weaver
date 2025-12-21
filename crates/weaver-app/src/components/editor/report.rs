@@ -140,18 +140,22 @@ pub fn ReportButton(props: ReportButtonProps) -> Element {
         if show_dialog() {
             div {
                 class: "report-dialog-overlay",
+                role: "dialog",
+                aria_modal: "true",
+                aria_labelledby: "report-dialog-title",
                 onclick: close_dialog,
 
                 div {
                     class: "report-dialog",
                     onclick: move |e| e.stop_propagation(),
 
-                    h2 { "Report a Bug" }
+                    h2 { id: "report-dialog-title", "Report a Bug" }
 
                     div { class: "report-section",
                         label { "Describe the issue:" }
                         textarea {
                             class: "report-comment",
+                            aria_label: "Describe the issue",
                             placeholder: "What happened? What did you expect?",
                             value: "{comment}",
                             oninput: move |e| comment.set(e.value()),

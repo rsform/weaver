@@ -157,10 +157,10 @@ where
                     self.write("</a></sup>")?;
                 }
                 TaskListMarker(true) => {
-                    self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n")?;
+                    self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\" aria-label=\"Completed task\"/>\n")?;
                 }
                 TaskListMarker(false) => {
-                    self.write("<input disabled=\"\" type=\"checkbox\"/>\n")?;
+                    self.write("<input disabled=\"\" type=\"checkbox\" aria-label=\"Incomplete task\"/>\n")?;
                 }
                 WeaverBlock(_text) => {}
             }

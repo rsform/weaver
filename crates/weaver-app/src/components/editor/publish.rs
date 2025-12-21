@@ -594,13 +594,16 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
         if show_dialog() {
             div {
                 class: "publish-dialog-overlay",
+                role: "dialog",
+                aria_modal: "true",
+                aria_labelledby: "publish-dialog-title",
                 onclick: close_dialog,
 
                 div {
                     class: "publish-dialog",
                     onclick: move |e| e.stop_propagation(),
 
-                    h2 { "Publish Entry" }
+                    h2 { id: "publish-dialog-title", "Publish Entry" }
 
                     if let Some(uri) = success_uri() {
                         {
@@ -663,6 +666,7 @@ pub fn PublishButton(props: PublishButtonProps) -> Element {
                                     input {
                                         r#type: "text",
                                         class: "publish-input",
+                                        aria_label: "Notebook title",
                                         placeholder: "Notebook title...",
                                         value: "{notebook_title}",
                                         oninput: move |e| notebook_title.set(e.value()),

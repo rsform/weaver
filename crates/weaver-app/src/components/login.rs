@@ -100,6 +100,7 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
                 }
                 DialogTitle { "Sign In with AT Protocol" }
                     Input {
+                        aria_label: "Handle",
                         oninput: move |e: FormEvent| handle_input.set(e.value()),
                         onkeypress: move |k: KeyboardEvent| {
                             if k.key() == Key::Enter {

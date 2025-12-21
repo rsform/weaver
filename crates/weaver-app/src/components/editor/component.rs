@@ -1072,6 +1072,7 @@ fn MarkdownEditorInner(
                     input {
                         r#type: "text",
                         class: "title-input",
+                        aria_label: "Entry title",
                         placeholder: "Entry title...",
                         value: "{document.title()}",
                         oninput: {
@@ -1090,6 +1091,7 @@ fn MarkdownEditorInner(
                             input {
                                 r#type: "text",
                                 class: "path-input",
+                                aria_label: "URL path",
                                 placeholder: "url-slug",
                                 value: "{document.path()}",
                                 oninput: {
@@ -1110,6 +1112,7 @@ fn MarkdownEditorInner(
                                         "{tag}"
                                         button {
                                             class: "tag-remove",
+                                            aria_label: "Remove tag {tag}",
                                             onclick: {
                                                 let doc = document.clone();
                                                 let tag_to_remove = tag.clone();
@@ -1124,6 +1127,7 @@ fn MarkdownEditorInner(
                                 input {
                                     r#type: "text",
                                     class: "tag-input",
+                                    aria_label: "Add tag",
                                     placeholder: "Add tag...",
                                     value: "{new_tag}",
                                     oninput: move |e| new_tag.set(e.value()),
@@ -1228,6 +1232,9 @@ fn MarkdownEditorInner(
                             id: "{editor_id}",
                             class: "editor-content",
                             contenteditable: "true",
+                            role: "textbox",
+                            aria_multiline: "true",
+                            aria_label: "Document content",
 
                             onkeydown: {
                             let mut doc = document.clone();

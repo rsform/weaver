@@ -487,9 +487,9 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
             }
             TaskListMarker(checked) => {
                 if checked {
-                    self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n")?;
+                    self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\" aria-label=\"Completed task\"/>\n")?;
                 } else {
-                    self.write("<input disabled=\"\" type=\"checkbox\"/>\n")?;
+                    self.write("<input disabled=\"\" type=\"checkbox\" aria-label=\"Incomplete task\"/>\n")?;
                 }
             }
             WeaverBlock(text) => {

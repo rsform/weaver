@@ -108,6 +108,7 @@ pub fn ImageUploadButton(props: ImageUploadButtonProps) -> Element {
         label {
             class: "toolbar-button",
             title: "Image",
+            aria_label: "Add image",
             input {
                 r#type: "file",
                 accept: "image/*",

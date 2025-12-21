@@ -1824,6 +1824,8 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
         div {
             class: "{class}",
             title: "{title}",
+            role: "status",
+            aria_live: "polite",
             onclick: on_sync_click,
             onpointerdown: on_pointer_down,
             onpointerup: on_pointer_up,
