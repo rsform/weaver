@@ -496,9 +496,7 @@ pub fn update_paragraph_dom(
             }
 
             if needs_update {
-                // TESTING: Force innerHTML update to measure timing cost
-                // TODO: Remove this flag after benchmarking
-                const FORCE_INNERHTML_UPDATE: bool = true;
+                use super::FORCE_INNERHTML_UPDATE;
 
                 // For cursor paragraph: only update if syntax/formatting changed
                 // This prevents destroying browser selection during fast typing
@@ -549,6 +547,17 @@ pub fn update_paragraph_dom(
                     // Update hash - browser native editing has the correct content
                     let _ = existing_elem.set_attribute("data-hash", &new_hash);
                 } else {
+                    // Log old innerHTML before replacement to see what browser did
+                    if tracing::enabled!(tracing::Level::TRACE) {
+                        let old_inner = existing_elem.inner_html();
+                        tracing::trace!(
+                            para_id = %para_id,
+                            old_inner = %old_inner.escape_debug(),
+                            new_html = %new_para.html.escape_debug(),
+                            "update_paragraph_dom: replacing innerHTML"
+                        );
+                    }
+
                     // Timing instrumentation for innerHTML update cost
                     let start = web_sys::window()
                         .and_then(|w| w.performance())

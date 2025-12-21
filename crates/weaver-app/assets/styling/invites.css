@@ -72,7 +72,7 @@
     margin: 0.5rem 0 0 0;
     padding: 0.5rem;
     background: var(--color-background);
-    border-left: 3px solid var(--color-primary);
+    border-inline-start: 3px solid var(--color-primary);
     font-style: italic;
 }
 

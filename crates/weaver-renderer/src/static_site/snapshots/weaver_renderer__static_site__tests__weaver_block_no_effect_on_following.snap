@@ -3,6 +3,6 @@ source: crates/weaver-renderer/src/static_site/tests.rs
 expression: output
 ---
 <aside>
-<p>First paragraph in aside.</p>
+<p dir="ltr">First paragraph in aside.</p>
 </aside>
-<p>Second paragraph NOT in aside.</p>
+<p dir="ltr">Second paragraph NOT in aside.</p>

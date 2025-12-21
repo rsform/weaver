@@ -132,8 +132,8 @@ html {{
 /* When sidenotes exist, body padding creates the gutter */
 /* Left padding shrinks first as viewport narrows, right stays for sidenotes */
 body:has(.sidenote) {{
-    padding-left: clamp(0rem, calc((100vw - 95ch - 15.5rem - 2rem) / 2), 15.5rem);
-    padding-right: 15.5rem;
+    padding-inline-start: clamp(0rem, calc((100vw - 95ch - 15.5rem - 2rem) / 2), 15.5rem);
+    padding-inline-end: 15.5rem;
 }}
 
 /* Typography */
@@ -202,7 +202,7 @@ a {{
 
 /* Lists */
 ul, ol {{
-    margin-left: 1rem;
+    margin-inline-start: 1rem;
     margin-bottom: 1rem;
 }}
 
@@ -250,10 +250,10 @@ pre code {{
 
 /* Blockquotes */
 blockquote {{
-    border-left: 2px solid var(--color-secondary);
+    border-inline-start: 2px solid var(--color-secondary);
     background: var(--color-surface);
-    padding-left: 1rem;
-    padding-right: 1rem;
+    padding-inline-start: 1rem;
+    padding-inline-end: 1rem;
     padding-top: 0.5rem;
     padding-bottom: 0.04rem;
     margin: 1rem 0;
@@ -276,7 +276,7 @@ table {{
 th, td {{
     border: 1px solid var(--color-border);
     padding: 0.5rem;
-    text-align: left;
+    text-align: start;
 }}
 
 th {{
@@ -318,21 +318,21 @@ tr:hover {{
 
 .footnote-definition-label {{
     font-weight: 600;
-    margin-right: 0.5rem;
+    margin-inline-end: 0.5rem;
     color: var(--color-primary);
 }}
 
 /* Aside blocks (via WeaverBlock prefix) - scoped to notebook content */
 .notebook-content aside,
 .notebook-content .aside {{
-    float: left;
+    float: inline-start;
     width: 40%;
     margin: 0 1.5rem 1rem 0;
     padding: 1rem;
     background: var(--color-surface);
-    border-right: 3px solid var(--color-primary);
+    border-inline-end: 3px solid var(--color-primary);
     font-size: 0.9em;
-    clear: left;
+    clear: inline-start;
 }}
 
 .notebook-content aside > *:first-child,
@@ -348,7 +348,7 @@ tr:hover {{
 /* Reset blockquote styling inside asides */
 .notebook-content aside > blockquote,
 .notebook-content .aside > blockquote {{
-    border-left: none;
+    border-inline-start: none;
     background: transparent;
     padding: 0;
     margin: 0;
@@ -356,9 +356,9 @@ tr:hover {{
 }}
 
 /* Indent utilities */
-.indent-1 {{ margin-left: 1em; }}
-.indent-2 {{ margin-left: 2em; }}
-.indent-3 {{ margin-left: 3em; }}
+.indent-1 {{ margin-inline-start: 1em; }}
+.indent-2 {{ margin-inline-start: 2em; }}
+.indent-3 {{ margin-inline-start: 3em; }}
 
 /* Tufte-style Sidenotes */
 /* Hide checkbox for sidenote toggle */
@@ -377,14 +377,14 @@ tr:hover {{
     position: relative;
     top: -0.5em;
     color: var(--color-primary);
-    padding-left: 0.1em;
+    padding-inline-start: 0.1em;
 }}
 
 /* Sidenote content (margin notes on wide screens) */
 .sidenote {{
-    float: right;
-    clear: right;
-    margin-right: -15.5rem;
+    float: inline-end;
+    clear: inline-end;
+    margin-inline-end: -15.5rem;
     width: 14rem;
     margin-top: 0.3rem;
     margin-bottom: 1rem;
@@ -402,7 +402,7 @@ tr:hover {{
 @media (max-width: 900px) {{
     /* Reset sidenote gutter on mobile */
     body:has(.sidenote) {{
-        padding-right: 0;
+        padding-inline-end: 0;
     }}
 
     aside, .aside {{
@@ -422,7 +422,7 @@ tr:hover {{
         margin: 0.5rem 2.5%;
         padding: 0.5rem;
         background: var(--color-surface);
-        border-left: 2px solid var(--color-primary);
+        border-inline-start: 2px solid var(--color-primary);
     }}
 
     label.sidenote-number {{
@@ -460,19 +460,19 @@ img {{
     margin: 1rem 0;
     padding: 1rem;
     background: var(--color-surface);
-    border-left: 2px solid var(--color-secondary);
+    border-inline-start: 2px solid var(--color-secondary);
     box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text) 8%, transparent);
 }}
 
 .atproto-embed:hover {{
-    border-left-color: var(--color-primary);
+    border-inline-start-color: var(--color-primary);
 }}
 
 @media (prefers-color-scheme: dark) {{
     .atproto-embed {{
         box-shadow: none;
         border: 1px solid var(--color-border);
-        border-left: 2px solid var(--color-secondary);
+        border-inline-start: 2px solid var(--color-secondary);
     }}
 }}
 
@@ -649,8 +649,8 @@ a.embed-author-name:hover {{
 }}
 
 .embed-external:hover {{
-    border-left: 2px solid var(--color-primary);
-    margin-left: -1px;
+    border-inline-start: 2px solid var(--color-primary);
+    margin-inline-start: -1px;
 }}
 
 @media (prefers-color-scheme: dark) {{
@@ -659,8 +659,8 @@ a.embed-author-name:hover {{
     }}
 
     .embed-external:hover {{
-        border-left: 2px solid var(--color-primary);
-        margin-left: -1px;
+        border-inline-start: 2px solid var(--color-primary);
+        margin-inline-start: -1px;
     }}
 }}
 
@@ -746,13 +746,13 @@ a.embed-author-name:hover {{
     margin-top: 0.5rem;
     padding: 0.75rem;
     background: var(--color-overlay);
-    border-left: 2px solid var(--color-tertiary);
+    border-inline-start: 2px solid var(--color-tertiary);
 }}
 
 @media (prefers-color-scheme: dark) {{
     .embed-quote {{
         border: 1px solid var(--color-border);
-        border-left: 2px solid var(--color-tertiary);
+        border-inline-start: 2px solid var(--color-tertiary);
     }}
 }}
 
@@ -783,7 +783,7 @@ a.embed-author-name:hover {{
     display: block;
     padding: 1rem;
     background: var(--color-overlay);
-    border-left: 2px solid var(--color-border);
+    border-inline-start: 2px solid var(--color-border);
     color: var(--color-muted);
     font-style: italic;
     margin-top: 0.5rem;
@@ -807,7 +807,7 @@ a.embed-author-name:hover {{
     margin-top: 0.5rem;
     padding: 0.75rem;
     background: var(--color-overlay);
-    border-left: 2px solid var(--color-tertiary);
+    border-inline-start: 2px solid var(--color-tertiary);
 }}
 
 .embed-record-card > .embed-author-name {{
@@ -850,9 +850,9 @@ a.embed-author-name:hover {{
 .embed-fields .embed-fields {{
     display: block;
     margin-top: 0.5rem;
-    margin-left: 1rem;
-    padding-left: 0.5rem;
-    border-left: 1px solid var(--color-border);
+    margin-inline-start: 1rem;
+    padding-inline-start: 0.5rem;
+    border-inline-start: 1px solid var(--color-border);
 }}
 
 /* Type label inside fields should be block with spacing */
@@ -967,19 +967,19 @@ a.embed-author-name:hover {{
     padding: 0;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-left: 1px solid var(--color-border);
+    border-inline-start: 1px solid var(--color-border);
     box-shadow: none;
     overflow: hidden;
 }}
 
 .atproto-entry:hover {{
-    border-left-color: var(--color-border);
+    border-inline-start-color: var(--color-border);
 }}
 
 @media (prefers-color-scheme: dark) {{
     .atproto-entry {{
         border: 1px solid var(--color-border);
-        border-left: 1px solid var(--color-border);
+        border-inline-start: 1px solid var(--color-border);
     }}
 }}
 
@@ -1075,8 +1075,8 @@ hr {{
     h3 {{ font-size: 1.2rem; }}
 
     blockquote {{
-        margin-left: 0;
-        margin-right: 0;
+        margin-inline-start: 0;
+        margin-inline-end: 0;
     }}
 }}
 
@@ -1091,8 +1091,8 @@ hr {{
     h3 {{ font-size: 1.1rem; }}
 
     blockquote {{
-        padding-left: 0.75rem;
-        padding-right: 0.75rem;
+        padding-inline-start: 0.75rem;
+        padding-inline-end: 0.75rem;
     }}
 }}
 "#,

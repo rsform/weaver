@@ -48,6 +48,8 @@ pub struct StaticPageWriter<'input, I: Iterator<Item = Event<'input>>, A: AgentS
     in_sidenote: bool,
     /// Whether we're deferring paragraph close for sidenote handling
     defer_paragraph_close: bool,
+    /// Buffered paragraph opening tag (without closing `>`) for dir attribute emission
+    pending_paragraph_open: Option<String>,
 }
 
 impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
@@ -72,6 +74,7 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
             pending_footnote_content: String::new(),
             in_sidenote: false,
             defer_paragraph_close: false,
+            pending_paragraph_open: None,
         }
     }
 
@@ -130,6 +133,11 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
     /// Close deferred paragraph if we're in that state.
     /// Called when a non-paragraph block element starts.
     fn close_deferred_paragraph(&mut self) -> Result<(), W::Error> {
+        // Also flush any pending paragraph open (shouldn't happen in normal flow, but be defensive)
+        if let Some(opening) = self.pending_paragraph_open.take() {
+            self.write(&opening)?;
+            self.write(">")?;
+        }
         if self.defer_paragraph_close {
             // Flush pending footnote as traditional before closing
             self.flush_pending_footnote()?;
@@ -252,6 +260,11 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
                     self.close_wrapper()?;
                     self.defer_paragraph_close = false;
                 } else {
+                    // Flush any pending paragraph open (for empty paragraphs)
+                    if let Some(opening) = self.pending_paragraph_open.take() {
+                        self.write(&opening)?;
+                        self.write(">")?;
+                    }
                     self.write("</p>\n")?;
                     self.block_depth -= 1;
                     self.close_wrapper()?;
@@ -465,6 +478,18 @@ impl<
                     // Buffer text while waiting to see if footnote def follows
                     self.pending_footnote_content.push_str(&text);
                 } else if !self.in_non_writing_block {
+                    // Flush pending paragraph with dir attribute if needed
+                    if let Some(opening) = self.pending_paragraph_open.take() {
+                        if let Some(dir) = crate::utils::detect_text_direction(&text) {
+                            self.write(&opening)?;
+                            self.write(" dir=\"")?;
+                            self.write(dir)?;
+                            self.write("\">")?;
+                        } else {
+                            self.write(&opening)?;
+                            self.write(">")?;
+                        }
+                    }
                     escape_html_body_text(&mut self.writer, &text)?;
                     self.end_newline = text.ends_with('\n');
                 }
@@ -601,11 +626,14 @@ impl<
                     self.flush_pending_footnote()?;
                     self.emit_wrapper_start()?;
                     self.block_depth += 1;
-                    if self.end_newline {
-                        self.write("<p>")
+                    // Buffer paragraph opening for dir attribute detection
+                    let opening = if self.end_newline {
+                        String::from("<p")
                     } else {
-                        self.write("\n<p>")
-                    }
+                        String::from("\n<p")
+                    };
+                    self.pending_paragraph_open = Some(opening);
+                    Ok(())
                 }
             }
             Tag::Heading {

@@ -19,6 +19,7 @@ thiserror.workspace = true
 tracing.workspace = true
 miette.workspace = true
 unicode-normalization = "0.1.24"
+unicode-bidi = "0.3"
 yaml-rust2 = { version = "0.10.2" }
 bitflags = "2.9.1"
 dashmap = "6.1.0"

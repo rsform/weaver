@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 24
-  html: "<span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"8\" spellcheck=\"false\">```rust</span>\n<pre data-node-id=\"n0\"><code class=\"wvc-code language-Rust\"><span class=\"wvc-source wvc-rust\"><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-storage wvc-type wvc-function wvc-rust\">fn</span> </span><span class=\"wvc-entity wvc-name wvc-function wvc-rust\">main</span></span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-parameters wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-parameters wvc-begin wvc-rust\">(</span></span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-parameters wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-parameters wvc-end wvc-rust\">)</span></span></span></span><span class=\"wvc-meta wvc-function wvc-rust\"> </span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-block wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-block wvc-begin wvc-rust\">{</span></span><span class=\"wvc-meta wvc-block wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-block wvc-end wvc-rust\">}</span></span></span>\n</span></code></pre><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"21\" data-char-end=\"24\" spellcheck=\"false\">```</span>"
+  html: "<span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"8\" spellcheck=\"false\">```rust</span>\n<pre data-node-id=\"p-0-n0\"><code class=\"wvc-code language-Rust\"><span class=\"wvc-source wvc-rust\"><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-storage wvc-type wvc-function wvc-rust\">fn</span> </span><span class=\"wvc-entity wvc-name wvc-function wvc-rust\">main</span></span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-parameters wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-parameters wvc-begin wvc-rust\">(</span></span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-function wvc-parameters wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-parameters wvc-end wvc-rust\">)</span></span></span></span><span class=\"wvc-meta wvc-function wvc-rust\"> </span><span class=\"wvc-meta wvc-function wvc-rust\"><span class=\"wvc-meta wvc-block wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-block wvc-begin wvc-rust\">{</span></span><span class=\"wvc-meta wvc-block wvc-rust\"><span class=\"wvc-punctuation wvc-section wvc-block wvc-end wvc-rust\">}</span></span></span>\n</span></code></pre><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"21\" data-char-end=\"24\" spellcheck=\"false\">```</span>"
   offset_map:
     - byte_range:
         - 8
@@ -16,7 +16,7 @@ expression: result
       char_range:
         - 8
         - 21
-      node_id: n0
+      node_id: p-0-n0
       char_offset_in_node: 0
       child_index: ~
       utf16_len: 13

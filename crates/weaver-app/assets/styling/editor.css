@@ -159,6 +159,8 @@
     background: var(--color-base);
     border: 1px solid var(--color-overlay);
     color: var(--color-text);
+    /* break-spaces ensures trailing whitespace takes up space and allows cursor placement */
+    white-space-collapse: break-spaces;
 }
 
 .editor-content:focus {
@@ -201,7 +203,7 @@
 
 .editor-debug {
     padding: 8px;
-    padding-right: 0;
+    padding-inline-end: 0;
     background: var(--color-base);
     font-family: var(--font-mono);
     font-size: 12px;
@@ -296,7 +298,7 @@ li:has(.md-syntax-block:not(.hidden)) {
 
 /* Editor page header with report button */
 .editor-header {
-    padding-left: 6rem;
+    padding-inline-start: 6rem;
     background: var(--color-base);
 }
 
@@ -323,9 +325,8 @@ li:has(.md-syntax-block:not(.hidden)) {
 
 .report-dialog-overlay {
     position: fixed;
+    inset-inline: 0;
     top: 0;
-    left: 0;
-    right: 0;
     bottom: 0;
     background: rgba(0, 0, 0, 0.6);
     display: flex;
@@ -440,7 +441,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-left: auto;
+    margin-inline-start: auto;
     flex-shrink: 0;
 }
 
@@ -466,9 +467,8 @@ li:has(.md-syntax-block:not(.hidden)) {
 
 .publish-dialog-overlay {
     position: fixed;
+    inset-inline: 0;
     top: 0;
-    left: 0;
-    right: 0;
     bottom: 0;
     background: rgba(0, 0, 0, 0.6);
     display: flex;
@@ -795,7 +795,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     font-weight: 500;
     font-family: var(--font-mono);
     text-transform: uppercase;
-    margin-left: -6px;
+    margin-inline-start: -6px;
     position: relative;
     overflow: hidden;
 }
@@ -808,7 +808,7 @@ li:has(.md-syntax-block:not(.hidden)) {
 }
 
 .collab-avatar:first-child {
-    margin-left: 0;
+    margin-inline-start: 0;
 }
 
 .collab-avatar.collab-overflow {
@@ -832,9 +832,8 @@ li:has(.md-syntax-block:not(.hidden)) {
 /* Collaborators panel overlay */
 .collaborators-overlay {
     position: fixed;
+    inset-inline: 0;
     top: 0;
-    left: 0;
-    right: 0;
     bottom: 0;
     background: rgba(0, 0, 0, 0.4);
     display: flex;
@@ -953,9 +952,8 @@ li:has(.md-syntax-block:not(.hidden)) {
 
 .invite-dialog-overlay {
     position: fixed;
+    inset-inline: 0;
     top: 0;
-    left: 0;
-    right: 0;
     bottom: 0;
     background: rgba(0, 0, 0, 0.4);
     display: flex;
@@ -1123,7 +1121,7 @@ li:has(.md-syntax-block:not(.hidden)) {
     margin: 6px 0 0 0;
     padding: 8px;
     background: var(--color-overlay);
-    border-left: 2px solid var(--color-border);
+    border-inline-start: 2px solid var(--color-border);
 }
 
 .invite-actions,
@@ -1174,9 +1172,8 @@ li:has(.md-syntax-block:not(.hidden)) {
 
 .remote-cursors-overlay {
     position: absolute;
+    inset-inline: 0;
     top: 0;
-    left: 0;
-    right: 0;
     bottom: 0;
     pointer-events: none;
     z-index: 10;
@@ -1225,4 +1222,39 @@ li:has(.md-syntax-block:not(.hidden)) {
     50% {
         opacity: 0.5;
     }
+}
+
+/* ==========================================================================
+   Footnotes (Editor Mode) - styled but visible, no reordering
+   ========================================================================== */
+
+/* Inline footnote reference [^name] */
+.footnote-ref {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--color-subtle);
+    background: color-mix(in srgb, var(--color-surface) 10%, transparent);
+    padding: 0 2px;
+}
+
+/* Footnote definition wrapper - stays in place, no reordering */
+.footnote-def-editor {
+    margin-bottom: 1rem;
+    margin-top: -1rem;
+    margin-inline-start: 2rem;
+    padding: 0 0.5rem;
+    border-inline-start: 2px solid var(--color-border);
+}
+
+/* The [^name]: prefix in definitions */
+.footnote-def-syntax {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--color-subtle);
+}
+
+/* Inner paragraphs in footnote defs */
+.footnote-def-editor p {
+    margin: 0;
+    display: inline;
 }

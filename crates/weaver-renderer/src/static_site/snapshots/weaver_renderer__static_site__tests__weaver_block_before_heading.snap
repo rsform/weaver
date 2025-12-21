@@ -4,5 +4,5 @@ expression: output
 ---
 <aside>
 <h2>Heading in aside</h2>
-<p>Paragraph also in aside.</p>
+<p dir="ltr">Paragraph also in aside.</p>
 </aside>

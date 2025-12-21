@@ -17,7 +17,7 @@ use jacquard::error::ClientError;
 use jacquard::prelude::*;
 use jacquard::smol_str::SmolStr;
 use jacquard::types::blob::{BlobRef, MimeType};
-use jacquard::types::string::{AtUri, Did, RecordKey, Rkey};
+use jacquard::types::string::{AtUri, Datetime, Did, RecordKey, Rkey};
 #[allow(unused_imports)]
 use jacquard::types::tid::Tid;
 use jacquard::types::uri::Uri;
@@ -138,8 +138,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
         async move {
             use weaver_api::sh_weaver::notebook::book::Book;
 
-            let at_uri = AtUri::new(uri)
-                .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid notebook URI: {}", e)))?;
+            let at_uri = AtUri::new(uri).map_err(|e| {
+                WeaverError::InvalidNotebook(format!("Invalid notebook URI: {}", e))
+            })?;
 
             let response = match self.get_record::<Book>(&at_uri).await {
                 Ok(r) => r,
@@ -352,6 +353,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
                                 e.content = entry.content.clone();
                                 e.embeds = entry.embeds.clone();
                                 e.tags = entry.tags.clone();
+                                e.updated_at = Some(Datetime::now());
                             })
                             .await?;
                         let updated_ref = StrongRef::new()

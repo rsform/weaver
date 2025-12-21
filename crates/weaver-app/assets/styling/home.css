@@ -25,12 +25,12 @@
 .pinned-items .entry-card,
 .pinned-items .feed-entry-card,
 .pinned-items .notebook-card {
-    border-left: 3px solid var(--color-primary) !important;
+    border-inline-start: 3px solid var(--color-primary) !important;
 }
 
 .pinned-items .feed-entry-card:hover {
-    border-left: 3px solid var(--color-secondary) !important;
-    margin-left: 0;
+    border-inline-start: 3px solid var(--color-secondary) !important;
+    margin-inline-start: 0;
 }
 
 .feed-section {

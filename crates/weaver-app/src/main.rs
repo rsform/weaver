@@ -29,7 +29,7 @@ fn main() {
         use tracing_subscriber::layer::SubscriberExt;
 
         let console_level = if cfg!(debug_assertions) {
-            Level::DEBUG
+            Level::TRACE
         } else {
             Level::INFO
         };
@@ -41,8 +41,9 @@ fn main() {
         );
 
         // Filter out noisy crates
+        // Use weaver_app=trace for detailed editor debugging
         let filter = EnvFilter::new(
-            "debug,loro_internal=warn,jacquard_identity=info,jacquard_common=info,iroh=info",
+            "debug,weaver_app=trace,loro_internal=warn,jacquard_identity=info,jacquard_common=info,iroh=info",
         );
 
         let reg = Registry::default()

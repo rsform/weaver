@@ -38,6 +38,8 @@ struct HtmlWriter<'a, I, W> {
     table_alignments: Vec<Alignment>,
     table_cell_index: usize,
     numbers: HashMap<CowStr<'a>, usize>,
+    /// Buffered paragraph opening tag (without closing `>`) for dir attribute emission
+    pending_paragraph_open: Option<String>,
 }
 
 impl<'a, I, W> HtmlWriter<'a, I, W>
@@ -55,6 +57,7 @@ where
             table_alignments: vec![],
             table_cell_index: 0,
             numbers: HashMap::new(),
+            pending_paragraph_open: None,
         }
     }
 
@@ -87,6 +90,18 @@ where
                 }
                 Text(text) => {
                     if !self.in_non_writing_block {
+                        // Flush pending paragraph with dir attribute if needed
+                        if let Some(opening) = self.pending_paragraph_open.take() {
+                            if let Some(dir) = crate::utils::detect_text_direction(&text) {
+                                self.write(&opening)?;
+                                self.write(" dir=\"")?;
+                                self.write(dir)?;
+                                self.write("\">")?;
+                            } else {
+                                self.write(&opening)?;
+                                self.write(">")?;
+                            }
+                        }
                         escape_html_body_text(&mut self.writer, &text)?;
                         self.end_newline = text.ends_with('\n');
                     }
@@ -158,11 +173,14 @@ where
         match tag {
             Tag::HtmlBlock => Ok(()),
             Tag::Paragraph(_) => {
-                if self.end_newline {
-                    self.write("<p>")
+                // Buffer paragraph opening for dir attribute detection
+                let opening = if self.end_newline {
+                    String::from("<p")
                 } else {
-                    self.write("\n<p>")
-                }
+                    String::from("\n<p")
+                };
+                self.pending_paragraph_open = Some(opening);
+                Ok(())
             }
             Tag::Heading {
                 level,
@@ -458,6 +476,11 @@ where
         match tag {
             TagEnd::HtmlBlock => {}
             TagEnd::Paragraph(_) => {
+                // Flush any pending paragraph open (for empty paragraphs)
+                if let Some(opening) = self.pending_paragraph_open.take() {
+                    self.write(&opening)?;
+                    self.write(">")?;
+                }
                 self.write("</p>\n")?;
             }
             TagEnd::Heading(level) => {

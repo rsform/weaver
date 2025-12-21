@@ -3,5 +3,5 @@ source: crates/weaver-renderer/src/atproto/tests.rs
 expression: output
 ---
 <div class="foo" width="300px" data-test="value">
-<p>Paragraph with class and attributes.</p>
+<p dir="ltr">Paragraph with class and attributes.</p>
 </div>

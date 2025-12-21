@@ -1,4 +1,4 @@
-use markdown_weaver::{CodeBlockKind, CowStr, Event, Tag};
+use markdown_weaver::CowStr;
 use miette::IntoDiagnostic;
 use n0_future::TryFutureExt;
 use std::{path::Path, sync::OnceLock};
@@ -11,6 +11,7 @@ use regex_lite::Regex;
 use markdown_weaver::BrokenLink;
 use std::path::PathBuf;
 use std::sync::Arc;
+use unicode_bidi::{get_base_direction, Direction};
 use unicode_normalization::UnicodeNormalization;
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
@@ -205,5 +206,53 @@ impl<'input> markdown_weaver::BrokenLinkCallback<'input> for VaultBrokenLinkCall
         } else {
             None
         }
+    }
+}
+
+/// Detect text direction from first strong directional character.
+/// Returns Some("rtl") for Hebrew/Arabic/etc, Some("ltr") for Latin, None if no strong char found.
+pub fn detect_text_direction(text: &str) -> Option<&'static str> {
+    match get_base_direction(text) {
+        Direction::Ltr => Some("ltr"),
+        Direction::Rtl => Some("rtl"),
+        Direction::Mixed => None, // neutral/unknown - let browser decide
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_text_direction_ltr() {
+        assert_eq!(detect_text_direction("Hello World"), Some("ltr"));
+        assert_eq!(detect_text_direction("Привет мир"), Some("ltr"));
+        assert_eq!(detect_text_direction("你好世界"), Some("ltr"));
+        assert_eq!(detect_text_direction("Γειά σου κόσμε"), Some("ltr"));
+    }
+
+    #[test]
+    fn test_detect_text_direction_rtl() {
+        // Hebrew
+        assert_eq!(detect_text_direction("שלום עולם"), Some("rtl"));
+        // Arabic
+        assert_eq!(detect_text_direction("مرحبا بالعالم"), Some("rtl"));
+        // Mixed with leading whitespace and punctuation
+        assert_eq!(detect_text_direction("   123... שלום"), Some("rtl"));
+        assert_eq!(detect_text_direction("   456!!! مرحبا"), Some("rtl"));
+    }
+
+    #[test]
+    fn test_detect_text_direction_neutral_only() {
+        assert_eq!(detect_text_direction("   "), None);
+        assert_eq!(detect_text_direction("123456"), None);
+        assert_eq!(detect_text_direction("!!!..."), None);
+        assert_eq!(detect_text_direction(""), None);
+    }
+
+    #[test]
+    fn test_detect_text_direction_leading_neutrals() {
+        assert_eq!(detect_text_direction("   123... Hello"), Some("ltr"));
+        assert_eq!(detect_text_direction("!!!456 שלום"), Some("rtl"));
     }
 }

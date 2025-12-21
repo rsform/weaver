@@ -8,7 +8,7 @@
 @media (min-width: 1400px) {
     .notebook-cover {
         border-top: 1px solid var(--color-border);
-        border-right: 1px solid var(--color-border);
+        border-inline-end: 1px solid var(--color-border);
         border-bottom: 1px solid var(--color-border);
         padding: 1.25rem;
     }
@@ -105,6 +105,6 @@
 
 .notebook-cover-actions .button {
     width: 100%;
-    text-align: left;
+    text-align: start;
     border-radius: 0;
 }

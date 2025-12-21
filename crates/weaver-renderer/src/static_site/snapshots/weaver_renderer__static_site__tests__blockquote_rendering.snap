@@ -3,6 +3,6 @@ source: crates/weaver-renderer/src/static_site/tests.rs
 expression: output
 ---
 <blockquote>
-<p>This is a quote</p>
-<p>With multiple lines</p>
+<p dir="ltr">This is a quote</p>
+<p dir="ltr">With multiple lines</p>
 </blockquote>

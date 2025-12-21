@@ -3,5 +3,5 @@ source: crates/weaver-renderer/src/atproto/tests.rs
 expression: output
 ---
 <aside>
-<p>This paragraph should be in an aside.</p>
+<p dir="ltr">This paragraph should be in an aside.</p>
 </aside>

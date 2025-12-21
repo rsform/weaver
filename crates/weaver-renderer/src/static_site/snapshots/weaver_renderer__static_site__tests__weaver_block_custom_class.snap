@@ -3,5 +3,5 @@ source: crates/weaver-renderer/src/static_site/tests.rs
 expression: output
 ---
 <div class="highlight">
-<p>This paragraph has a custom class.</p>
+<p dir="ltr">This paragraph has a custom class.</p>
 </div>

@@ -73,7 +73,7 @@
 .metadata-label::after {
     content: ":";
     font-size: 0.8rem;
-    margin-left: 0.25rem;
+    margin-inline-start: 0.25rem;
 }
 
 .metadata-value {
@@ -140,11 +140,11 @@
 }
 
 .tab-button.edit-button {
-    margin-left: auto;
+    margin-inline-start: auto;
 }
 
 .action-buttons-group {
-    margin-left: auto;
+    margin-inline-start: auto;
     display: flex;
     gap: 0;
     align-items: center;
@@ -182,7 +182,7 @@
     padding: 0.5rem 1rem;
     background: transparent;
     border: none;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
     color: var(--color-text);
     font-family: var(--font-mono);
@@ -200,22 +200,22 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    border-left: 1px dashed var(--color-subtle);
+    border-inline-start: 1px dashed var(--color-subtle);
 }
 
 .record-field {
     display: flex;
     flex-direction: column;
     padding: 0rem 0 0rem 1rem;
-    padding-right: 1rem;
-    margin-left: -1px;
-    border-left: 2px solid var(--color-secondary);
+    padding-inline-end: 1rem;
+    margin-inline-start: -1px;
+    border-inline-start: 2px solid var(--color-secondary);
     border-bottom: 1px dashed var(--color-subtle);
     z-index: 1;
 }
 
 .record-field.field-error {
-    border-left-color: var(--color-error);
+    border-inline-start-color: var(--color-error);
     background-color: rgba(255, 107, 107, 0.05);
 }
 
@@ -224,11 +224,11 @@
     font-size: 0.85rem;
     color: var(--color-error);
     padding: 0.25rem 0;
-    border-left: 2px solid var(--color-error);
+    border-inline-start: 2px solid var(--color-error);
     border-bottom: 1px dashed var(--color-error);
-    padding-left: 0.5rem;
+    padding-inline-start: 0.5rem;
     word-wrap: break-word;
-    margin-left: -1px;
+    margin-inline-start: -1px;
     word-break: break-word;
     overflow-wrap: break-word;
 }
@@ -254,7 +254,7 @@
     color: var(--color-subtle);
     font-size: 0.9rem;
     font-weight: 400;
-    padding-left: 0.125rem;
+    padding-inline-start: 0.125rem;
     padding-top: 0.5rem;
 }
 
@@ -285,18 +285,18 @@
 
 .record-section {
     position: relative;
-    margin-left: 1.5rem;
-    border-left: 1px dashed var(--color-border);
+    margin-inline-start: 1.5rem;
+    border-inline-start: 1px dashed var(--color-border);
 }
 
 .section-content .record-section {
     position: relative;
-    border-left: 1px dashed var(--color-border);
+    border-inline-start: 1px dashed var(--color-border);
 }
 
 .array-item .record-section {
     position: relative;
-    border-left: 1px dashed var(--color-border);
+    border-inline-start: 1px dashed var(--color-border);
 }
 
 .section-label {
@@ -304,11 +304,11 @@
     color: var(--color-primary);
     font-size: 1rem;
     font-weight: 600;
-    padding-left: 1rem;
+    padding-inline-start: 1rem;
     padding-top: 0.5rem;
     padding-bottom: 0.25rem;
-    margin-left: -1px;
-    border-left: 2px solid var(--color-primary);
+    margin-inline-start: -1px;
+    border-inline-start: 2px solid var(--color-primary);
     border-bottom: 1px dashed var(--color-muted);
 }
 
@@ -317,21 +317,21 @@
     color: var(--color-tertiary);
     font-size: 0.9rem;
     font-weight: 600;
-    padding-left: 1rem;
+    padding-inline-start: 1rem;
     padding-top: 0.5rem;
-    margin-left: -1px;
-    border-left: 2px solid var(--color-secondary);
+    margin-inline-start: -1px;
+    border-inline-start: 2px solid var(--color-secondary);
 }
 
 .section-content {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    padding-right: 1rem;
+    padding-inline-end: 1rem;
 }
 
 .section-content .record-field {
-    border-left-color: var(--color-secondary);
+    border-inline-start-color: var(--color-secondary);
     opacity: 0.95;
     align-self: stretch;
     width: 100%;
@@ -536,8 +536,8 @@
 
 .validation-errors .error {
     padding: 0.25rem 0;
-    border-left: 2px solid var(--color-error);
-    padding-left: 0.5rem;
+    border-inline-start: 2px solid var(--color-error);
+    padding-inline-start: 0.5rem;
     margin: 0.25rem 0;
     word-wrap: break-word;
     word-break: break-word;
@@ -574,7 +574,7 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    margin-left: 1.48rem;
+    margin-inline-start: 1.48rem;
 }
 
 /* Pretty Editor Input Fields */
@@ -627,7 +627,7 @@
 .record-field textarea::-webkit-resizer {
     background: transparent;
     border: 2px solid var(--color-border);
-    border-left: none;
+    border-inline-start: none;
     border-bottom: none;
     border-top: none;
 }
@@ -657,7 +657,7 @@
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     padding: 0.25rem 0.25rem;
-    margin-right: 0.5rem;
+    margin-inline-end: 0.5rem;
     margin-bottom: 0.2rem;
     cursor: pointer;
     transition:
@@ -694,8 +694,8 @@
     align-items: center;
     padding: 0.75rem 0 0rem 0rem;
     margin-bottom: 1rem;
-    margin-left: 1.5rem;
-    border-left: 1px solid var(--color-border);
+    margin-inline-start: 1.5rem;
+    border-inline-start: 1px solid var(--color-border);
 }
 
 .add-field-widget input[type="text"] {
@@ -705,7 +705,7 @@
     background: var(--color-background-alt, rgba(0, 0, 0, 0.2));
     border: 1px solid var(--color-border);
     padding: 0.3rem 0.5rem;
-    margin-left: -1px;
+    margin-inline-start: -1px;
     outline: none;
 }
 
@@ -719,7 +719,7 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.3rem 0.75rem;
-    margin-left: -1px;
+    margin-inline-start: -1px;
     background: transparent;
     border: 1px solid var(--color-border);
     color: var(--color-primary);
@@ -733,7 +733,7 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 0.36rem 0.75rem;
-    margin-left: -1px;
+    margin-inline-start: -1px;
     background: transparent;
     border: 1px solid var(--color-primary);
     color: var(--color-primary);
@@ -799,7 +799,7 @@
     background: var(--color-surface);
     border: 1px dashed var(--color-border);
     padding: 0.25rem 0.5rem;
-    margin-right: 0.5rem;
+    margin-inline-end: 0.5rem;
     margin-bottom: -0.2rem;
     cursor: pointer;
     transition:
@@ -933,19 +933,19 @@
 
 .accordion-content {
     grid-template-rows: 1fr;
-    padding-left: 46px;
+    padding-inline-start: 46px;
 }
 
 .accordion-content .section-content {
-    margin-left: -1px;
+    margin-inline-start: -1px;
 }
 
 .accordion-content .record-field {
-    margin-left: 0px;
+    margin-inline-start: 0px;
 }
 
 .accordion-content .array-item {
-    margin-left: 0px;
+    margin-inline-start: 0px;
 }
 
 .accordion-content .array-item .section-content {
@@ -953,15 +953,15 @@
 }
 
 .accordion-content .array-item .record-section {
-    margin-left: 1.5rem;
+    margin-inline-start: 1.5rem;
 }
 
 .accordion-content .array-item .record-section .record-field {
-    margin-left: -1px;
+    margin-inline-start: -1px;
 }
 
 .accordion-content .array-item .record-section .accordion-trigger .section-label {
-    margin-left: -2px;
+    margin-inline-start: -2px;
 }
 
 .accordion-trigger {
@@ -969,5 +969,5 @@
 }
 
 .accordion {
-    margin-left: -46px;
+    margin-inline-start: -46px;
 }

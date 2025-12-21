@@ -12,7 +12,7 @@
     display: block;
     background: var(--color-surface);
     box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text) 6%, transparent);
-    border-left: 2px solid transparent;
+    border-inline-start: 2px solid transparent;
     padding: 1.25rem;
     text-decoration: none;
     color: var(--color-text);
@@ -23,7 +23,7 @@
 
 .entry-card-link:hover {
     box-shadow: 0 2px 4px color-mix(in srgb, var(--color-text) 10%, transparent);
-    border-left-color: var(--color-secondary);
+    border-inline-start-color: var(--color-secondary);
 }
 
 .entry-card-link:hover .entry-card-title {
@@ -83,8 +83,8 @@
 }
 
 .feed-entry-card:hover {
-    border-left: 2px solid var(--color-secondary);
-    margin-left: -1px;
+    border-inline-start: 2px solid var(--color-secondary);
+    margin-inline-start: -1px;
 }
 
 .feed-entry-card:hover .entry-card-title {
@@ -103,12 +103,12 @@
 }
 
 .feed-entry-card .entry-card-byline .entry-card-date {
-    margin-left: auto;
+    margin-inline-start: auto;
 }
 
 /* Date in header (no author) aligns right */
 .feed-entry-card .entry-card-header .entry-card-date {
-    margin-left: auto;
+    margin-inline-start: auto;
 }
 
 .entry-card-stats {
@@ -121,7 +121,7 @@
 
 .entry-card-stats .word-count::after {
     content: "·";
-    margin-left: 0.5rem;
+    margin-inline-start: 0.5rem;
 }
 
 .entry-card-tags {
@@ -178,8 +178,8 @@
     font-size: 0.875rem;
     font-weight: 600;
     margin-top: 0.5rem;
-    margin-left: 0;
-    margin-right: 0;
+    margin-inline-start: 0;
+    margin-inline-end: 0;
 }
 
 .entry-card-preview p {
@@ -201,10 +201,10 @@
     .feed-entry-card {
         box-shadow: none;
         border-top: 1px solid var(--color-border);
-        border-right: 1px solid var(--color-border);
+        border-inline-end: 1px solid var(--color-border);
         border-bottom: 1px solid var(--color-border);
 
-        border-left: 1px solid var(--color-border);
-        /* Keep border-left as accent */
+        border-inline-start: 1px solid var(--color-border);
+        /* Keep border-inline-start as accent */
     }
 }

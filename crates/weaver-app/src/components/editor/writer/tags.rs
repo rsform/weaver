@@ -16,6 +16,19 @@ use crate::components::editor::{
 impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider, R: ImageResolver>
     EditorWriter<'a, I, E, R>
 {
+    /// Detect text direction by scanning source from a byte offset.
+    /// Looks for the first strong directional character.
+    /// Returns Some("rtl") for RTL scripts, Some("ltr") for LTR, None if no strong char found.
+    fn detect_paragraph_direction(&self, start_byte: usize) -> Option<&'static str> {
+        if start_byte >= self.source.len() {
+            return None;
+        }
+
+        // Scan from start_byte through the source looking for first strong directional char
+        let text = &self.source[start_byte..];
+        weaver_renderer::utils::detect_text_direction(text)
+    }
+
     pub(crate) fn start_tag(
         &mut self,
         tag: Tag<'_>,
@@ -128,8 +141,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             // HTML blocks get their own paragraph to try and corral them better
             Tag::HtmlBlock => {
                 // Record paragraph start for boundary tracking
-                // BUT skip if inside a list - list owns the paragraph boundary
-                if self.list_depth == 0 {
+                // Skip if inside a list or footnote def - they own their paragraph boundary
+                if self.list_depth == 0 && !self.in_footnote_def {
                     self.current_paragraph_start =
                         Some((self.last_byte_offset, self.last_char_offset));
                 }
@@ -170,17 +183,29 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.emit_wrapper_start()?;
 
                 // Record paragraph start for boundary tracking
-                // BUT skip if inside a list - list owns the paragraph boundary
-                if self.list_depth == 0 {
+                // Skip if inside a list or footnote def - they own their paragraph boundary
+                if self.list_depth == 0 && !self.in_footnote_def {
                     self.current_paragraph_start =
                         Some((self.last_byte_offset, self.last_char_offset));
                 }
 
                 let node_id = self.gen_node_id();
+
+                // Detect text direction for this paragraph
+                let dir = self.detect_paragraph_direction(self.last_byte_offset);
+
                 if self.end_newline {
-                    write!(&mut self.writer, "<p id=\"{}\">", node_id)?;
+                    if let Some(dir_value) = dir {
+                        write!(&mut self.writer, "<p id=\"{}\" dir=\"{}\">", node_id, dir_value)?;
+                    } else {
+                        write!(&mut self.writer, "<p id=\"{}\">", node_id)?;
+                    }
                 } else {
-                    write!(&mut self.writer, "\n<p id=\"{}\">", node_id)?;
+                    if let Some(dir_value) = dir {
+                        write!(&mut self.writer, "\n<p id=\"{}\" dir=\"{}\">", node_id, dir_value)?;
+                    } else {
+                        write!(&mut self.writer, "\n<p id=\"{}\">", node_id)?;
+                    }
                 }
                 self.begin_node(node_id.clone());
 
@@ -244,6 +269,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 // Generate node ID for offset tracking
                 let node_id = self.gen_node_id();
 
+                // Detect text direction for this heading
+                let dir = self.detect_paragraph_direction(self.last_byte_offset);
+
                 self.write("<")?;
                 write!(&mut self.writer, "{}", level)?;
 
@@ -267,6 +295,14 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                     }
                     self.write("\"")?;
                 }
+
+                // Add dir attribute if text direction was detected
+                if let Some(dir_value) = dir {
+                    self.write(" dir=\"")?;
+                    self.write(dir_value)?;
+                    self.write("\"")?;
+                }
+
                 for (attr, value) in attrs {
                     self.write(" ")?;
                     escape_html(&mut self.writer, &attr)?;
@@ -868,63 +904,83 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 Ok(())
             }
             Tag::FootnoteDefinition(name) => {
-                // Emit the [^name]: prefix as a hideable syntax span
-                // The source should have "[^name]: " at the start
-                let prefix = format!("[^{}]: ", name);
-                let char_start = self.last_char_offset;
-                let prefix_char_len = prefix.chars().count();
-                let char_end = char_start + prefix_char_len;
-                let syn_id = self.gen_syn_id();
+                // Track as paragraph-level block for incremental rendering
+                self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
+                // Suppress inner paragraph boundaries (footnote def owns its paragraph)
+                self.in_footnote_def = true;
 
                 if !self.end_newline {
                     self.write("\n")?;
                 }
 
+                // Generate node ID for cursor tracking
+                let node_id = self.gen_node_id();
+
+                // Emit wrapper div with NEW class (not footnote-definition which has order:9999)
+                // This keeps footnotes in-place instead of reordering to bottom
                 write!(
                     &mut self.writer,
-                    "<span class=\"md-syntax-block\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
-                    syn_id, char_start, char_end
+                    "<div class=\"footnote-def-editor\" data-node-id=\"{}\">",
+                    node_id
                 )?;
-                escape_html(&mut self.writer, &prefix)?;
+
+                // Begin node tracking BEFORE emitting prefix
+                self.begin_node(node_id.clone());
+
+                // Map the start position (before any content)
+                let fn_start_char = self.last_char_offset;
+                let mapping = OffsetMapping {
+                    byte_range: range.start..range.start,
+                    char_range: fn_start_char..fn_start_char,
+                    node_id,
+                    char_offset_in_node: 0,
+                    child_index: Some(0),
+                    utf16_len: 0,
+                };
+                self.offset_maps.push(mapping);
+
+                // Extract ACTUAL prefix from source (not constructed string)
+                // This ensures byte offsets match reality
+                let raw_text = &self.source[range.clone()];
+                let prefix_end = raw_text
+                    .find("]:")
+                    .map(|p| {
+                        // Include ]: and any single trailing space
+                        let after_colon = p + 2;
+                        if raw_text.get(after_colon..after_colon + 1) == Some(" ") {
+                            after_colon + 1
+                        } else {
+                            after_colon
+                        }
+                    })
+                    .unwrap_or(0);
+                let prefix = &raw_text[..prefix_end];
+                let prefix_byte_len = prefix.len();
+                let prefix_char_len = prefix.chars().count();
+
+                let char_start = self.last_char_offset;
+                let char_end = char_start + prefix_char_len;
+
+                write!(
+                    &mut self.writer,
+                    "<span class=\"footnote-def-syntax\" data-char-start=\"{}\" data-char-end=\"{}\">",
+                    char_start, char_end
+                )?;
+                escape_html(&mut self.writer, prefix)?;
                 self.write("</span>")?;
 
-                // Track this span for linking with the footnote reference
-                let def_span_index = self.syntax_spans.len();
-                self.syntax_spans.push(SyntaxSpanInfo {
-                    syn_id,
-                    char_range: char_start..char_end,
-                    syntax_type: SyntaxType::Block,
-                    formatted_range: None, // Set at FootnoteDefinition end
-                });
+                // Store the definition info (no longer tracking syntax spans for hide/show)
+                self.current_footnote_def = Some((name.to_string(), 0, char_start));
 
-                // Store the definition info for linking at end
-                self.current_footnote_def = Some((name.to_string(), def_span_index, char_start));
-
-                // Record offset mapping for the syntax span
+                // Record offset mapping for the prefix
                 self.record_mapping(
-                    range.start..range.start + prefix.len(),
+                    range.start..range.start + prefix_byte_len,
                     char_start..char_end,
                 );
 
                 // Update tracking for the prefix
                 self.last_char_offset = char_end;
-                self.last_byte_offset = range.start + prefix.len();
-
-                // Emit the definition container
-                write!(
-                    &mut self.writer,
-                    "<div class=\"footnote-definition\" id=\"fn-{}\">",
-                    name
-                )?;
-
-                // Get/create footnote number for the label
-                let len = self.numbers.len() + 1;
-                let number = *self.numbers.entry(name.to_string()).or_insert(len);
-                write!(
-                    &mut self.writer,
-                    "<sup class=\"footnote-definition-label\">{}</sup>",
-                    number
-                )?;
+                self.last_byte_offset = range.start + prefix_byte_len;
 
                 Ok(())
             }
@@ -946,8 +1002,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
         let result = match tag {
             TagEnd::HtmlBlock => {
                 // Capture paragraph boundary info BEFORE writing closing HTML
-                // Skip if inside a list - list owns the paragraph boundary
-                let para_boundary = if self.list_depth == 0 {
+                // Skip if inside a list or footnote def - they own their paragraph boundary
+                let para_boundary = if self.list_depth == 0 && !self.in_footnote_def {
                     self.current_paragraph_start
                         .take()
                         .map(|(byte_start, char_start)| {
@@ -972,8 +1028,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             }
             TagEnd::Paragraph(_) => {
                 // Capture paragraph boundary info BEFORE writing closing HTML
-                // Skip if inside a list - list owns the paragraph boundary
-                let para_boundary = if self.list_depth == 0 {
+                // Skip if inside a list or footnote def - they own their paragraph boundary
+                let para_boundary = if self.list_depth == 0 && !self.in_footnote_def {
                     self.current_paragraph_start
                         .take()
                         .map(|(byte_start, char_start)| {
@@ -1418,30 +1474,19 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 Ok(())
             }
             TagEnd::FootnoteDefinition => {
+                // End node tracking (inner paragraphs may have already cleared it)
+                self.end_node();
                 self.write("</div>\n")?;
 
-                // Link the footnote definition span with its reference span
-                if let Some((name, def_span_index, _def_char_start)) =
-                    self.current_footnote_def.take()
-                {
-                    let def_char_end = self.last_char_offset;
+                // Clear footnote tracking
+                self.current_footnote_def.take();
+                self.in_footnote_def = false;
 
-                    // Look up the reference span
-                    if let Some(&(ref_span_index, ref_char_start)) =
-                        self.footnote_ref_spans.get(&name)
-                    {
-                        // Create formatted_range spanning from ref start to def end
-                        let formatted_range = ref_char_start..def_char_end;
-
-                        // Update both spans with the same formatted_range
-                        // so they show/hide together based on cursor proximity
-                        if let Some(ref_span) = self.syntax_spans.get_mut(ref_span_index) {
-                            ref_span.formatted_range = Some(formatted_range.clone());
-                        }
-                        if let Some(def_span) = self.syntax_spans.get_mut(def_span_index) {
-                            def_span.formatted_range = Some(formatted_range);
-                        }
-                    }
+                // Finalize paragraph boundary for incremental rendering
+                if let Some((byte_start, char_start)) = self.current_paragraph_start.take() {
+                    let byte_range = byte_start..self.last_byte_offset;
+                    let char_range = char_start..self.last_char_offset;
+                    self.finalize_paragraph(byte_range, char_range);
                 }
 
                 Ok(())

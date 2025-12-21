@@ -10,18 +10,16 @@ pub mod segmented;
 pub mod syntax;
 pub mod tags;
 
+use super::offset_map::OffsetMapping;
 use crate::components::editor::writer::segmented::SegmentedWriter;
 pub use embed::{EditorImageResolver, EmbedContentProvider, ImageResolver};
-pub use syntax::{SyntaxSpanInfo, SyntaxType};
-
-#[allow(unused_imports)]
-use super::offset_map::{OffsetMapping, RenderResult};
 use loro::LoroText;
 use markdown_weaver::{Alignment, CowStr, Event, WeaverAttributes};
 use markdown_weaver_escape::{StrWrite, escape_html, escape_html_body_text_with_char_count};
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
+pub use syntax::{SyntaxSpanInfo, SyntaxType};
 use weaver_common::EntryIndex;
 
 /// Result of rendering with the EditorWriter.
@@ -117,6 +115,7 @@ pub struct EditorWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E = (
     paragraph_ranges: Vec<(Range<usize>, Range<usize>)>, // (byte_range, char_range)
     current_paragraph_start: Option<(usize, usize)>,     // (byte_offset, char_offset)
     list_depth: usize, // Track nesting depth to avoid paragraph boundary override inside lists
+    in_footnote_def: bool, // Suppress inner paragraph boundaries in footnote definitions
 
     // Syntax span tracking for conditional visibility - current paragraph
     syntax_spans: Vec<SyntaxSpanInfo>,
@@ -157,159 +156,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
 {
     pub fn new(source: &'a str, source_text: &'a LoroText, events: I) -> Self {
         Self::new_with_all_offsets(source, source_text, events, 0, 0, 0, 0)
-    }
-
-    pub fn new_with_all_offsets(
-        source: &'a str,
-        source_text: &'a LoroText,
-        events: I,
-        node_id_offset: usize,
-        syn_id_offset: usize,
-        char_offset_base: usize,
-        byte_offset_base: usize,
-    ) -> Self {
-        Self {
-            source,
-            source_text,
-            events,
-            writer: SegmentedWriter::new(),
-            last_byte_offset: byte_offset_base,
-            last_char_offset: char_offset_base,
-            end_newline: true,
-            in_non_writing_block: false,
-            table_state: TableState::Head,
-            table_alignments: vec![],
-            table_cell_index: 0,
-            numbers: HashMap::new(),
-            embed_provider: None,
-            image_resolver: None,
-            entry_index: None,
-            code_buffer: None,
-            code_buffer_byte_range: None,
-            code_buffer_char_range: None,
-            code_block_char_start: None,
-            code_block_opening_span_idx: None,
-            pending_blockquote_range: None,
-            render_tables_as_markdown: true,
-            table_start_offset: None,
-            offset_maps: Vec::new(),
-            node_id_prefix: None,
-            auto_increment_prefix: None,
-            static_prefix_override: None,
-            current_paragraph_index: 0,
-            next_node_id: node_id_offset,
-            current_node_id: None,
-            current_node_char_offset: 0,
-            current_node_child_count: 0,
-            utf16_checkpoints: vec![(0, 0)],
-            paragraph_ranges: Vec::new(),
-            current_paragraph_start: None,
-            list_depth: 0,
-            syntax_spans: Vec::new(),
-            next_syn_id: syn_id_offset,
-            pending_inline_formats: Vec::new(),
-            ref_collector: weaver_common::RefCollector::new(),
-            offset_maps_by_para: Vec::new(),
-            syntax_spans_by_para: Vec::new(),
-            refs_by_para: Vec::new(),
-            pending_block_attrs: None,
-            active_wrapper: None,
-            weaver_block_buffer: String::new(),
-            weaver_block_char_start: None,
-            footnote_ref_spans: HashMap::new(),
-            current_footnote_def: None,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-
-    /// Add an embed content provider
-    pub fn with_embed_provider(mut self, provider: E) -> EditorWriter<'a, I, E, R> {
-        self.embed_provider = Some(provider);
-        self
-    }
-
-    /// Add an image resolver for mapping markdown image URLs to CDN URLs
-    pub fn with_image_resolver<R2: ImageResolver>(
-        self,
-        resolver: R2,
-    ) -> EditorWriter<'a, I, E, R2> {
-        EditorWriter {
-            source: self.source,
-            source_text: self.source_text,
-            events: self.events,
-            writer: self.writer,
-            last_byte_offset: self.last_byte_offset,
-            last_char_offset: self.last_char_offset,
-            end_newline: self.end_newline,
-            in_non_writing_block: self.in_non_writing_block,
-            table_state: self.table_state,
-            table_alignments: self.table_alignments,
-            table_cell_index: self.table_cell_index,
-            numbers: self.numbers,
-            embed_provider: self.embed_provider,
-            image_resolver: Some(resolver),
-            entry_index: self.entry_index,
-            code_buffer: self.code_buffer,
-            code_buffer_byte_range: self.code_buffer_byte_range,
-            code_buffer_char_range: self.code_buffer_char_range,
-            code_block_char_start: self.code_block_char_start,
-            code_block_opening_span_idx: self.code_block_opening_span_idx,
-            pending_blockquote_range: self.pending_blockquote_range,
-            render_tables_as_markdown: self.render_tables_as_markdown,
-            table_start_offset: self.table_start_offset,
-            offset_maps: self.offset_maps,
-            node_id_prefix: self.node_id_prefix,
-            auto_increment_prefix: self.auto_increment_prefix,
-            static_prefix_override: self.static_prefix_override,
-            current_paragraph_index: self.current_paragraph_index,
-            next_node_id: self.next_node_id,
-            current_node_id: self.current_node_id,
-            current_node_char_offset: self.current_node_char_offset,
-            current_node_child_count: self.current_node_child_count,
-            utf16_checkpoints: self.utf16_checkpoints,
-            paragraph_ranges: self.paragraph_ranges,
-            current_paragraph_start: self.current_paragraph_start,
-            list_depth: self.list_depth,
-            syntax_spans: self.syntax_spans,
-            next_syn_id: self.next_syn_id,
-            pending_inline_formats: self.pending_inline_formats,
-            ref_collector: self.ref_collector,
-            offset_maps_by_para: self.offset_maps_by_para,
-            syntax_spans_by_para: self.syntax_spans_by_para,
-            refs_by_para: self.refs_by_para,
-            pending_block_attrs: self.pending_block_attrs,
-            active_wrapper: self.active_wrapper,
-            weaver_block_buffer: self.weaver_block_buffer,
-            weaver_block_char_start: self.weaver_block_char_start,
-            footnote_ref_spans: self.footnote_ref_spans,
-            current_footnote_def: self.current_footnote_def,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-
-    /// Add an entry index for wikilink resolution feedback
-    pub fn with_entry_index(mut self, index: &'a EntryIndex) -> Self {
-        self.entry_index = Some(index);
-        self
-    }
-
-    /// Set a prefix for node IDs (typically the paragraph ID).
-    /// This makes node IDs paragraph-scoped and stable across re-renders.
-    /// Use this for single-paragraph renders where the paragraph ID is known.
-    pub fn with_node_id_prefix(mut self, prefix: &str) -> Self {
-        self.node_id_prefix = Some(prefix.to_string());
-        self.next_node_id = 0; // Reset counter since each paragraph is independent
-        self
-    }
-
-    /// Enable auto-incrementing paragraph prefixes for multi-paragraph renders.
-    /// Each paragraph gets prefix "p-{N}" where N starts at `start_id` and increments.
-    /// Node IDs reset to 0 for each paragraph, giving "p-{N}-n0", "p-{N}-n1", etc.
-    pub fn with_auto_incrementing_prefix(mut self, start_id: usize) -> Self {
-        self.auto_increment_prefix = Some(start_id);
-        self.node_id_prefix = Some(format!("p-{}", start_id));
-        self.next_node_id = 0;
-        self
     }
 
     /// Get the next paragraph ID that would be assigned (for tracking allocations).
@@ -1139,7 +985,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
 
                 // Emit space for cursor positioning - this gives the browser somewhere
                 // to place the cursor when navigating to this line
-                self.write(" ")?;
+                self.write("\u{200B}")?;
                 self.current_node_child_count += 1;
 
                 // Map the space to the newline position - cursor landing here means
@@ -1193,7 +1039,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                     self.current_node_child_count += 1;
 
                     // After <br>, emit plain zero-width space for cursor positioning
-                    self.write(" ")?;
+                    self.write("\u{200B}")?;
 
                     // Count the zero-width space text node as a child
                     self.current_node_child_count += 1;
@@ -1215,8 +1061,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                         self.current_node_char_offset += 1;
                     }
 
-                    // DO NOT increment last_char_offset - zero-width space is not in source
-                    // The \n itself IS in source, so we already accounted for it
                     self.last_char_offset = char_start + spaces_char_len + 1; // +1 for \n
                 } else {
                     // Fallback: just <br>
@@ -1259,48 +1103,26 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.write("<div class=\"toggle-block\"><hr /></div>\n")?;
             }
             FootnoteReference(name) => {
-                // Get/create footnote number
-                let len = self.numbers.len() + 1;
-                let number = *self.numbers.entry(name.to_string()).or_insert(len);
-
-                // Emit the [^name] syntax as a hideable syntax span
+                // Emit [^name] as styled (but NOT hidden) inline span
                 let raw_text = &self.source[range.clone()];
                 let char_start = self.last_char_offset;
                 let syntax_char_len = raw_text.chars().count();
                 let char_end = char_start + syntax_char_len;
-                let syn_id = self.gen_syn_id();
 
+                // Use footnote-ref class for styling, not md-syntax-inline (which hides)
                 write!(
                     &mut self.writer,
-                    "<span class=\"md-syntax-inline\" data-syn-id=\"{}\" data-char-start=\"{}\" data-char-end=\"{}\" spellcheck=\"false\">",
-                    syn_id, char_start, char_end
+                    "<span class=\"footnote-ref\" data-char-start=\"{}\" data-char-end=\"{}\" data-footnote=\"{}\">",
+                    char_start, char_end, name
                 )?;
                 escape_html(&mut self.writer, raw_text)?;
                 self.write("</span>")?;
 
-                // Track this span for linking with the footnote definition later
-                let span_index = self.syntax_spans.len();
-                self.syntax_spans.push(SyntaxSpanInfo {
-                    syn_id,
-                    char_range: char_start..char_end,
-                    syntax_type: SyntaxType::Inline,
-                    formatted_range: None, // Set when we see the definition
-                });
-                self.footnote_ref_spans
-                    .insert(name.to_string(), (span_index, char_start));
-
-                // Record offset mapping for the syntax span content
+                // Record offset mapping
                 self.record_mapping(range.clone(), char_start..char_end);
 
                 // Count as child
                 self.current_node_child_count += 1;
-
-                // Emit the visible footnote reference (superscript number)
-                write!(
-                    &mut self.writer,
-                    "<sup class=\"footnote-reference\"><a href=\"#fn-{}\">{}</a></sup>",
-                    name, number
-                )?;
 
                 // Update tracking
                 self.last_char_offset = char_end;
@@ -1348,5 +1170,160 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             }
         }
         Ok(())
+    }
+
+    pub fn new_with_all_offsets(
+        source: &'a str,
+        source_text: &'a LoroText,
+        events: I,
+        node_id_offset: usize,
+        syn_id_offset: usize,
+        char_offset_base: usize,
+        byte_offset_base: usize,
+    ) -> Self {
+        Self {
+            source,
+            source_text,
+            events,
+            writer: SegmentedWriter::new(),
+            last_byte_offset: byte_offset_base,
+            last_char_offset: char_offset_base,
+            end_newline: true,
+            in_non_writing_block: false,
+            table_state: TableState::Head,
+            table_alignments: vec![],
+            table_cell_index: 0,
+            numbers: HashMap::new(),
+            embed_provider: None,
+            image_resolver: None,
+            entry_index: None,
+            code_buffer: None,
+            code_buffer_byte_range: None,
+            code_buffer_char_range: None,
+            code_block_char_start: None,
+            code_block_opening_span_idx: None,
+            pending_blockquote_range: None,
+            render_tables_as_markdown: true,
+            table_start_offset: None,
+            offset_maps: Vec::new(),
+            node_id_prefix: None,
+            auto_increment_prefix: None,
+            static_prefix_override: None,
+            current_paragraph_index: 0,
+            next_node_id: node_id_offset,
+            current_node_id: None,
+            current_node_char_offset: 0,
+            current_node_child_count: 0,
+            utf16_checkpoints: vec![(0, 0)],
+            paragraph_ranges: Vec::new(),
+            current_paragraph_start: None,
+            list_depth: 0,
+            in_footnote_def: false,
+            syntax_spans: Vec::new(),
+            next_syn_id: syn_id_offset,
+            pending_inline_formats: Vec::new(),
+            ref_collector: weaver_common::RefCollector::new(),
+            offset_maps_by_para: Vec::new(),
+            syntax_spans_by_para: Vec::new(),
+            refs_by_para: Vec::new(),
+            pending_block_attrs: None,
+            active_wrapper: None,
+            weaver_block_buffer: String::new(),
+            weaver_block_char_start: None,
+            footnote_ref_spans: HashMap::new(),
+            current_footnote_def: None,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Add an embed content provider
+    pub fn with_embed_provider(mut self, provider: E) -> EditorWriter<'a, I, E, R> {
+        self.embed_provider = Some(provider);
+        self
+    }
+
+    /// Add an image resolver for mapping markdown image URLs to CDN URLs
+    pub fn with_image_resolver<R2: ImageResolver>(
+        self,
+        resolver: R2,
+    ) -> EditorWriter<'a, I, E, R2> {
+        EditorWriter {
+            source: self.source,
+            source_text: self.source_text,
+            events: self.events,
+            writer: self.writer,
+            last_byte_offset: self.last_byte_offset,
+            last_char_offset: self.last_char_offset,
+            end_newline: self.end_newline,
+            in_non_writing_block: self.in_non_writing_block,
+            table_state: self.table_state,
+            table_alignments: self.table_alignments,
+            table_cell_index: self.table_cell_index,
+            numbers: self.numbers,
+            embed_provider: self.embed_provider,
+            image_resolver: Some(resolver),
+            entry_index: self.entry_index,
+            code_buffer: self.code_buffer,
+            code_buffer_byte_range: self.code_buffer_byte_range,
+            code_buffer_char_range: self.code_buffer_char_range,
+            code_block_char_start: self.code_block_char_start,
+            code_block_opening_span_idx: self.code_block_opening_span_idx,
+            pending_blockquote_range: self.pending_blockquote_range,
+            render_tables_as_markdown: self.render_tables_as_markdown,
+            table_start_offset: self.table_start_offset,
+            offset_maps: self.offset_maps,
+            node_id_prefix: self.node_id_prefix,
+            auto_increment_prefix: self.auto_increment_prefix,
+            static_prefix_override: self.static_prefix_override,
+            current_paragraph_index: self.current_paragraph_index,
+            next_node_id: self.next_node_id,
+            current_node_id: self.current_node_id,
+            current_node_char_offset: self.current_node_char_offset,
+            current_node_child_count: self.current_node_child_count,
+            utf16_checkpoints: self.utf16_checkpoints,
+            paragraph_ranges: self.paragraph_ranges,
+            current_paragraph_start: self.current_paragraph_start,
+            list_depth: self.list_depth,
+            in_footnote_def: self.in_footnote_def,
+            syntax_spans: self.syntax_spans,
+            next_syn_id: self.next_syn_id,
+            pending_inline_formats: self.pending_inline_formats,
+            ref_collector: self.ref_collector,
+            offset_maps_by_para: self.offset_maps_by_para,
+            syntax_spans_by_para: self.syntax_spans_by_para,
+            refs_by_para: self.refs_by_para,
+            pending_block_attrs: self.pending_block_attrs,
+            active_wrapper: self.active_wrapper,
+            weaver_block_buffer: self.weaver_block_buffer,
+            weaver_block_char_start: self.weaver_block_char_start,
+            footnote_ref_spans: self.footnote_ref_spans,
+            current_footnote_def: self.current_footnote_def,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Add an entry index for wikilink resolution feedback
+    pub fn with_entry_index(mut self, index: &'a EntryIndex) -> Self {
+        self.entry_index = Some(index);
+        self
+    }
+
+    /// Set a prefix for node IDs (typically the paragraph ID).
+    /// This makes node IDs paragraph-scoped and stable across re-renders.
+    /// Use this for single-paragraph renders where the paragraph ID is known.
+    pub fn with_node_id_prefix(mut self, prefix: &str) -> Self {
+        self.node_id_prefix = Some(prefix.to_string());
+        self.next_node_id = 0; // Reset counter since each paragraph is independent
+        self
+    }
+
+    /// Enable auto-incrementing paragraph prefixes for multi-paragraph renders.
+    /// Each paragraph gets prefix "p-{N}" where N starts at `start_id` and increments.
+    /// Node IDs reset to 0 for each paragraph, giving "p-{N}-n0", "p-{N}-n1", etc.
+    pub fn with_auto_incrementing_prefix(mut self, start_id: usize) -> Self {
+        self.auto_increment_prefix = Some(start_id);
+        self.node_id_prefix = Some(format!("p-{}", start_id));
+        self.next_node_id = 0;
+        self
     }
 }

@@ -153,8 +153,8 @@
     }
 
     .profile-extras {
-        padding-left: 1rem;
-        border-left: 1.5px dashed var(--color-border);
+        padding-inline-start: 1rem;
+        border-inline-start: 1.5px dashed var(--color-border);
     }
 
     .profile-block {
@@ -175,7 +175,7 @@
     }
 
     .profile-name-section {
-        margin-left: 1rem;
+        margin-inline-start: 1rem;
         margin-top: -0.5rem;
     }
 }
@@ -191,7 +191,7 @@
 @media (min-width: 1400px) {
     .profile-display {
         border-top: 1.5px solid var(--color-border);
-        border-right: 1.5px solid var(--color-border);
+        border-inline-end: 1.5px solid var(--color-border);
     }
 }
 

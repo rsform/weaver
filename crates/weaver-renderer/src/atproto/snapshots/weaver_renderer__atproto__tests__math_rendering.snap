@@ -2,5 +2,5 @@
 source: crates/weaver-renderer/src/atproto/tests.rs
 expression: output
 ---
-<p>Inline <span class="math math-inline"><math display="inline"><msup><mi>x</mi><mn>2</mn></msup></math></span> and display:</p>
-<p><span class="math math-display"><math display="block"><mi>y</mi><mo>=</mo><mi>m</mi><mi>x</mi><mo>+</mo><mi>b</mi></math></span></p>
+<p dir="ltr">Inline <span class="math math-inline"><math display="inline"><msup><mi>x</mi><mn>2</mn></msup></math></span> and display:</p>
+<span class="math math-display"><math display="block"><mi>y</mi><mo>=</mo><mi>m</mi><mi>x</mi><mo>+</mo><mi>b</mi></math></span><p></p>

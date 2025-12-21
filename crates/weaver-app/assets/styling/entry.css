@@ -104,13 +104,13 @@
 
 .entry-footer-nav .nav-button-prev {
     align-items: flex-start;
-    text-align: left;
+    text-align: start;
 }
 
 .entry-footer-nav .nav-button-next {
     align-items: flex-end;
-    text-align: right;
-    margin-left: auto;
+    text-align: end;
+    margin-inline-start: auto;
 }
 
 .entry-footer-nav .nav-arrow {
@@ -176,17 +176,17 @@
 
 .entry-reading-stats {
     color: var(--color-subtle);
-    margin-left: auto;
+    margin-inline-start: auto;
     margin-top: 0.25rem;
 }
 
 .entry-reading-stats .word-count::after {
     content: "·";
-    margin-left: 0.5rem;
+    margin-inline-start: 0.5rem;
 }
 
 .entry-date {
-    margin-left: auto;
+    margin-inline-start: auto;
     font-weight: 400;
     align-items: last baseline;
     color: var(--color-subtle);
@@ -255,7 +255,7 @@
 }
 
 .entry-content-main blockquote {
-    border-left-color: var(--color-secondary);
+    border-inline-start-color: var(--color-secondary);
     background: var(--color-surface);
 }
 
@@ -292,7 +292,7 @@
 
     .entry-header .nav-button-next {
         order: 1;
-        margin-left: auto;
+        margin-inline-start: auto;
     }
 }
 

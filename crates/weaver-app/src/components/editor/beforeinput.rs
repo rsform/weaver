@@ -288,23 +288,40 @@ pub fn handle_beforeinput(
         // === Insertion ===
         InputType::InsertText => {
             if let Some(text) = ctx.data {
-                // Simple text insert - update model, let browser handle DOM
-                // This mirrors the simple delete handling: we track in model,
-                // browser handles visual update, DOM sync skips innerHTML for
-                // cursor paragraph when syntax is unchanged
+                use super::FORCE_INNERHTML_UPDATE;
+
                 let action = EditorAction::Insert {
                     text: text.clone(),
                     range,
                 };
                 execute_action(doc, &action);
-                tracing::trace!(
-                    text_len = text.len(),
-                    range_start = range.start,
-                    range_end = range.end,
-                    cursor_after = doc.cursor.read().offset,
-                    "insertText: updated model, PassThrough to browser"
-                );
-                BeforeInputResult::PassThrough
+
+                // Log model content after insert to detect ZWC contamination
+                if tracing::enabled!(tracing::Level::TRACE) {
+                    let content = doc.content();
+                    tracing::trace!(
+                        text_len = text.len(),
+                        range_start = range.start,
+                        range_end = range.end,
+                        cursor_after = doc.cursor.read().offset,
+                        model_len = content.len(),
+                        model_chars = content.chars().count(),
+                        model_content = %content.escape_debug(),
+                        force_innerhtml = FORCE_INNERHTML_UPDATE,
+                        "insertText: updated model"
+                    );
+                }
+
+                // When FORCE_INNERHTML_UPDATE is true, dom_sync will always replace
+                // innerHTML. We must preventDefault to avoid browser's default action
+                // racing with our innerHTML update and causing double-insertion.
+                if FORCE_INNERHTML_UPDATE {
+                    BeforeInputResult::Handled
+                } else {
+                    // PassThrough: browser handles DOM, we just track in model.
+                    // dom_sync will skip innerHTML for cursor paragraph when syntax unchanged.
+                    BeforeInputResult::PassThrough
+                }
             } else {
                 BeforeInputResult::PassThrough
             }
@@ -372,7 +389,8 @@ pub fn handle_beforeinput(
             };
 
             if needs_special_handling {
-                // Complex delete - we handle everything, prevent browser default
+                // Handle fully when: complex delete OR when dom_sync will replace innerHTML
+                // (FORCE_INNERHTML_UPDATE). PassThrough + innerHTML causes double-deletion.
                 let action = EditorAction::DeleteBackward { range };
                 execute_action(doc, &action);
                 BeforeInputResult::Handled
@@ -388,7 +406,11 @@ pub fn handle_beforeinput(
                     doc.selection.set(None);
                 }
                 tracing::debug!("deleteContentBackward: after model update, returning PassThrough");
-                BeforeInputResult::PassThrough
+                if super::FORCE_INNERHTML_UPDATE {
+                    BeforeInputResult::Handled
+                } else {
+                    BeforeInputResult::PassThrough
+                }
             }
         }
 
@@ -404,6 +426,7 @@ pub fn handle_beforeinput(
             };
 
             if needs_special_handling {
+                // Handle fully when: complex delete OR when dom_sync will replace innerHTML
                 let action = EditorAction::DeleteForward { range };
                 execute_action(doc, &action);
                 BeforeInputResult::Handled
@@ -413,7 +436,11 @@ pub fn handle_beforeinput(
                     let _ = doc.remove_tracked(range.start, 1);
                     doc.selection.set(None);
                 }
-                BeforeInputResult::PassThrough
+                if super::FORCE_INNERHTML_UPDATE {
+                    BeforeInputResult::Handled
+                } else {
+                    BeforeInputResult::PassThrough
+                }
             }
         }
 

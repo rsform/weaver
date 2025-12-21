@@ -726,7 +726,7 @@ fn test_blockquote_needs_space_or_newline() {
       char_range:
         - 0
         - 6
-      html: "<blockquote>\n<p id=\"n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"1\">&gt;</span>quote</p>\n</blockquote>\n"
+      html: "<blockquote>\n<p id=\"p-0-n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"1\">&gt;</span>quote</p>\n"
       offset_map:
         - byte_range:
             - 1
@@ -734,7 +734,7 @@ fn test_blockquote_needs_space_or_newline() {
           char_range:
             - 0
             - 0
-          node_id: n0
+          node_id: p-0-n0
           char_offset_in_node: 0
           child_index: 0
           utf16_len: 0
@@ -744,7 +744,7 @@ fn test_blockquote_needs_space_or_newline() {
           char_range:
             - 0
             - 1
-          node_id: n0
+          node_id: p-0-n0
           char_offset_in_node: 0
           child_index: ~
           utf16_len: 1
@@ -754,7 +754,7 @@ fn test_blockquote_needs_space_or_newline() {
           char_range:
             - 1
             - 6
-          node_id: n0
+          node_id: p-0-n0
           char_offset_in_node: 1
           child_index: ~
           utf16_len: 5
@@ -1088,4 +1088,61 @@ fn test_loro_ascii_fast_path() {
             i
         );
     }
+}
+
+// =============================================================================
+// Text Direction Tests
+// =============================================================================
+
+#[test]
+fn test_paragraph_dir_ltr() {
+    let result = render_test("Hello world");
+    // Verify HTML contains dir="ltr"
+    assert!(result[0].html.contains("dir=\"ltr\""));
+}
+
+#[test]
+fn test_paragraph_dir_rtl_hebrew() {
+    let result = render_test("שלום עולם");
+    // Verify HTML contains dir="rtl"
+    assert!(result[0].html.contains("dir=\"rtl\""));
+}
+
+#[test]
+fn test_paragraph_dir_rtl_arabic() {
+    let result = render_test("مرحبا بالعالم");
+    // Verify HTML contains dir="rtl"
+    assert!(result[0].html.contains("dir=\"rtl\""));
+}
+
+#[test]
+fn test_paragraph_dir_mixed_leading_neutrals() {
+    // Leading numbers and punctuation should be skipped, Hebrew should be detected
+    let result = render_test("123... שלום");
+    assert!(result[0].html.contains("dir=\"rtl\""));
+}
+
+#[test]
+fn test_heading_dir_rtl() {
+    let result = render_test("# שלום");
+    // Verify heading has dir="rtl"
+    assert!(result[0].html.contains("dir=\"rtl\""));
+}
+
+#[test]
+fn test_heading_dir_ltr() {
+    let result = render_test("# Hello");
+    // Verify heading has dir="ltr"
+    assert!(result[0].html.contains("dir=\"ltr\""));
+}
+
+#[test]
+fn test_multiple_paragraphs_different_directions() {
+    let result = render_test("Hello world\n\nשלום עולם\n\nBack to English");
+    // First paragraph should be LTR
+    assert!(result[0].html.contains("dir=\"ltr\""));
+    // Second paragraph should be RTL
+    assert!(result[1].html.contains("dir=\"rtl\""));
+    // Third paragraph should be LTR
+    assert!(result[2].html.contains("dir=\"ltr\""));
 }

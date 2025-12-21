@@ -32,6 +32,15 @@ mod writer;
 #[cfg(test)]
 mod tests;
 
+/// When true, always update innerHTML even for cursor paragraph during typing.
+/// This ensures syntax/formatting changes are immediately visible, but requires
+/// using `Handled` (preventDefault) for InsertText to avoid double-insertion
+/// from browser's default action racing with our innerHTML update.
+///
+/// TODO: Replace with granular detection of syntax/formatting changes to allow
+/// PassThrough optimization when only text content changes.
+pub(crate) const FORCE_INNERHTML_UPDATE: bool = true;
+
 // Main component
 pub use component::MarkdownEditor;
 

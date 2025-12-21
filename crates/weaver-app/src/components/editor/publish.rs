@@ -250,6 +250,7 @@ pub async fn publish_entry(
             .title(doc.title())
             .path(path)
             .created_at(Datetime::now())
+            .updated_at(Datetime::now())
             .maybe_tags(tags)
             .maybe_embeds(entry_embeds)
             .build();
@@ -400,6 +401,7 @@ pub async fn publish_entry(
             .title(doc.title())
             .path(path)
             .created_at(Datetime::now())
+            .updated_at(Datetime::now())
             .maybe_tags(tags)
             .maybe_embeds(entry_embeds)
             .build();

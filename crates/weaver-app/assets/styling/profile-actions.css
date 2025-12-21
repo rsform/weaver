@@ -7,7 +7,7 @@
 
 .profile-actions-container {
     padding-top: 2.25rem;
-    padding-right: 5rem;
+    padding-inline-end: 5rem;
 }
 
 .profile-actions-title {
@@ -33,7 +33,7 @@
 /* Match notebook-add-entry styling */
 .profile-actions-list .button {
     width: 100%;
-    text-align: left;
+    text-align: start;
     font-size: 0.85rem;
     color: var(--color-primary);
     background: transparent;

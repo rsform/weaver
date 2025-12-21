@@ -184,6 +184,17 @@ pub fn render_paragraphs_incremental(
     let fn_start = crate::perf::now();
     let source = text.to_string();
 
+    // Log source entering renderer to detect ZWC/space issues
+    if tracing::enabled!(target: "weaver::render", tracing::Level::TRACE) {
+        tracing::trace!(
+            target: "weaver::render",
+            source_len = source.len(),
+            source_chars = source.chars().count(),
+            source_content = %source.escape_debug(),
+            "render_paragraphs: source entering renderer"
+        );
+    }
+
     // Handle empty document
     if source.is_empty() {
         let empty_node_id = "n0".to_string();

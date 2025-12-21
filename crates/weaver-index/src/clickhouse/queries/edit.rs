@@ -208,19 +208,22 @@ impl Client {
     ///
     /// Compares edit_heads to draft_titles to find drafts where the current
     /// head doesn't match the head used for title extraction.
-    pub async fn get_stale_draft_titles(&self, limit: i64) -> Result<Vec<StaleDraftRow>, IndexError> {
+    pub async fn get_stale_draft_titles(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<StaleDraftRow>, IndexError> {
         // Join drafts -> edit_heads (for current head) -> draft_titles (to check staleness)
         // edit_heads uses resource_type='draft' and resource_did/resource_rkey to link
         let query = r#"
             SELECT
-                d.did,
-                d.rkey,
-                h.head_did,
-                h.head_rkey,
-                h.head_cid,
-                h.root_did,
-                h.root_rkey,
-                h.root_cid
+                d.did as did,
+                d.rkey as rkey,
+                h.head_did as head_did,
+                h.head_rkey as head_rkey,
+                h.head_cid as head_cid,
+                h.root_did as root_did,
+                h.root_rkey as root_rkey,
+                h.root_cid as root_cid
             FROM drafts d FINAL
             INNER JOIN edit_heads h FINAL
                 ON h.resource_did = d.did

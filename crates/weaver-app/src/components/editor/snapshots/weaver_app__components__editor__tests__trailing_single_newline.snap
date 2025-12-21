@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 6
-  html: "<p id=\"n0\">Hello\n</p>\n"
+  html: "<p id=\"p-0-n0\" dir=\"ltr\">Hello\n</p>\n"
   offset_map:
     - byte_range:
         - 0
@@ -16,7 +16,7 @@ expression: result
       char_range:
         - 0
         - 0
-      node_id: n0
+      node_id: p-0-n0
       char_offset_in_node: 0
       child_index: 0
       utf16_len: 0
@@ -26,7 +26,7 @@ expression: result
       char_range:
         - 0
         - 5
-      node_id: n0
+      node_id: p-0-n0
       char_offset_in_node: 0
       child_index: ~
       utf16_len: 5
@@ -36,7 +36,7 @@ expression: result
       char_range:
         - 5
         - 6
-      node_id: n0
+      node_id: p-0-n0
       char_offset_in_node: 5
       child_index: ~
       utf16_len: 1

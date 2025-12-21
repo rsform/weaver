@@ -22,7 +22,6 @@ One thing these all have in common is length. Part of the reason I only really g
 
 {.aside}
 > **On Platform Decay**
->
 > Through all of this I was never really satisfied with the options that were out there for long-form writing. Wordpress required too much setup. Tumblr's system for comments remains insane. Hosting my own seemed like too much money to burn on something nobody might read.
 
 But at the same time, Substack's success proves that there is very much a desire for long-form writing, enough that people will pay for it, and that investors will back it. There are thoughts and forms of writing that you simply cannot fit into a post or even a thread of posts.

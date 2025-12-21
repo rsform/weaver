@@ -92,6 +92,8 @@ pub struct ClientWriter<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E = ()> 
     in_sidenote: bool,
     /// Whether we're deferring paragraph close for sidenote handling
     defer_paragraph_close: bool,
+    /// Buffered paragraph opening tag (without closing `>`) for dir attribute emission
+    pending_paragraph_open: Option<String>,
 
     _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -126,6 +128,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite> ClientWriter<'a, I, W> {
             pending_footnote_content: self.pending_footnote_content,
             in_sidenote: self.in_sidenote,
             defer_paragraph_close: self.defer_paragraph_close,
+            pending_paragraph_open: self.pending_paragraph_open,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -153,6 +156,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
             pending_footnote_content: String::new(),
             in_sidenote: false,
             defer_paragraph_close: false,
+            pending_paragraph_open: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -191,6 +195,11 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
     /// Close deferred paragraph if we're in that state.
     /// Called when a non-paragraph block element starts.
     fn close_deferred_paragraph(&mut self) -> Result<(), W::Error> {
+        // Also flush any pending paragraph open (shouldn't happen in normal flow, but be defensive)
+        if let Some(opening) = self.pending_paragraph_open.take() {
+            self.write(&opening)?;
+            self.write(">")?;
+        }
         if self.defer_paragraph_close {
             // Flush pending footnote as traditional before closing
             self.flush_pending_footnote()?;
@@ -397,6 +406,18 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                     // Buffer text while waiting to see if footnote def follows
                     self.pending_footnote_content.push_str(&text);
                 } else if !self.in_non_writing_block {
+                    // Flush pending paragraph with dir attribute if needed
+                    if let Some(opening) = self.pending_paragraph_open.take() {
+                        if let Some(dir) = crate::utils::detect_text_direction(&text) {
+                            self.write(&opening)?;
+                            self.write(" dir=\"")?;
+                            self.write(dir)?;
+                            self.write("\">")?;
+                        } else {
+                            self.write(&opening)?;
+                            self.write(">")?;
+                        }
+                    }
                     escape_html_body_text(&mut self.writer, &text)?;
                     self.end_newline = text.ends_with('\n');
                 }
@@ -495,11 +516,14 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 } else {
                     self.flush_pending_footnote()?;
                     self.emit_wrapper_start()?;
-                    if self.end_newline {
-                        self.write("<p>")
+                    // Buffer paragraph opening for dir attribute detection
+                    let opening = if self.end_newline {
+                        String::from("<p")
                     } else {
-                        self.write("\n<p>")
-                    }
+                        String::from("\n<p")
+                    };
+                    self.pending_paragraph_open = Some(opening);
+                    Ok(())
                 }
             }
             Tag::Heading {
@@ -857,6 +881,11 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                     self.defer_paragraph_close = false;
                     Ok(())
                 } else {
+                    // Flush any pending paragraph open (for empty paragraphs)
+                    if let Some(opening) = self.pending_paragraph_open.take() {
+                        self.write(&opening)?;
+                        self.write(">")?;
+                    }
                     self.write("</p>\n")?;
                     self.close_wrapper()
                 }

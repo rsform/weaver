@@ -1,5 +1,4 @@
 //! Weaver App library.
-
 #[allow(unused)]
 use dioxus::{CapturedError, prelude::*};
 

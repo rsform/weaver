@@ -2,5 +2,5 @@
 source: crates/weaver-renderer/src/static_site/tests.rs
 expression: output
 ---
-<p>This is a paragraph.</p>
-<p>This is another paragraph.</p>
+<p dir="ltr">This is a paragraph.</p>
+<p dir="ltr">This is another paragraph.</p>
