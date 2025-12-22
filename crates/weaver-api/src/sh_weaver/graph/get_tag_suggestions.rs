@@ -151,7 +151,7 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct GetTagSuggestionsOutput<'a> {
     #[serde(borrow)]
-    pub suggestions: Vec<jacquard_common::types::value::Data<'a>>,
+    pub suggestions: Vec<crate::sh_weaver::graph::TagView<'a>>,
 }
 
 /// Response type for

@@ -1,3 +1,5 @@
+#[cfg(feature = "use-index")]
+use jacquard::types::ident::AtIdentifier;
 // Re-export view types for use elsewhere
 pub use weaver_api::sh_weaver::notebook::{
     AuthorListView, BookEntryRef, BookEntryView, EntryView, NotebookView, PermissionGrant,
@@ -922,7 +924,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     #[cfg(feature = "use-index")]
     fn hydrate_profile_view(
         &self,
-        did: &Did<'_>,
+        ident: &AtIdentifier<'_>,
     ) -> impl Future<
         Output = Result<
             (
@@ -936,7 +938,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             use weaver_api::sh_weaver::actor::get_profile::GetProfile;
 
             let resp = self
-                .send(GetProfile::new().actor(did.clone()).build())
+                .send(GetProfile::new().actor(ident.clone()).build())
                 .await
                 .map_err(|e| AgentError::from(ClientError::from(e)))?;
 
@@ -1293,7 +1295,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             let contributor_dids = self.find_contributors_for_resource(&page_uri).await?;
             let mut authors = Vec::new();
             for (index, did) in contributor_dids.iter().enumerate() {
-                let (profile_uri, profile_view) = self.hydrate_profile_view(did).await?;
+                let (profile_uri, profile_view) = self
+                    .hydrate_profile_view(&AtIdentifier::Did(did.clone()))
+                    .await?;
                 authors.push(
                     AuthorListView::new()
                         .maybe_uri(profile_uri)

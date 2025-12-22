@@ -252,7 +252,7 @@ pub struct GetTaggedResourcesOutput<'a> {
     pub resources: Vec<GetTaggedResourcesOutputResourcesItem<'a>>,
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub tag: std::option::Option<jacquard_common::types::value::Data<'a>>,
+    pub tag: std::option::Option<crate::sh_weaver::graph::TagView<'a>>,
 }
 
 #[jacquard_derive::open_union]

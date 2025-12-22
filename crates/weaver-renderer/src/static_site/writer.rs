@@ -6,6 +6,7 @@ use markdown_weaver::{
 };
 use markdown_weaver_escape::{StrWrite, escape_href, escape_html, escape_html_body_text};
 use n0_future::StreamExt;
+use std::ops::Range;
 use weaver_common::jacquard::{client::AgentSession, prelude::*};
 
 /// Tracks the type of wrapper element emitted for WeaverBlock prefix
@@ -15,10 +16,12 @@ enum WrapperElement {
     Div,
 }
 
-pub struct StaticPageWriter<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
+pub struct StaticPageWriter<'input, I: Iterator<Item = (Event<'input>, Range<usize>)>, A: AgentSession, W: StrWrite>
 {
     context: NotebookProcessor<'input, I, StaticSiteContext<A>>,
     writer: W,
+    /// Source text for gap detection
+    source: &'input str,
     /// Whether or not the last write wrote a newline.
     end_newline: bool,
 
@@ -50,15 +53,22 @@ pub struct StaticPageWriter<'input, I: Iterator<Item = Event<'input>>, A: AgentS
     defer_paragraph_close: bool,
     /// Buffered paragraph opening tag (without closing `>`) for dir attribute emission
     pending_paragraph_open: Option<String>,
+    /// Byte offset where last sidenote ended (for gap detection)
+    sidenote_end_offset: Option<usize>,
 }
 
-impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
+impl<'input, I: Iterator<Item = (Event<'input>, Range<usize>)>, A: AgentSession, W: StrWrite>
     StaticPageWriter<'input, I, A, W>
 {
-    pub fn new(context: NotebookProcessor<'input, I, StaticSiteContext<A>>, writer: W) -> Self {
+    pub fn new(
+        context: NotebookProcessor<'input, I, StaticSiteContext<A>>,
+        writer: W,
+        source: &'input str,
+    ) -> Self {
         Self {
             context,
             writer,
+            source,
             end_newline: true,
             in_non_writing_block: false,
             table_state: TableState::Head,
@@ -75,6 +85,7 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
             in_sidenote: false,
             defer_paragraph_close: false,
             pending_paragraph_open: None,
+            sidenote_end_offset: None,
         }
     }
 
@@ -241,7 +252,7 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
         Ok(())
     }
 
-    fn end_tag(&mut self, tag: markdown_weaver::TagEnd) -> Result<(), W::Error> {
+    fn end_tag(&mut self, tag: markdown_weaver::TagEnd, range: Range<usize>) -> Result<(), W::Error> {
         use markdown_weaver::TagEnd;
         match tag {
             TagEnd::HtmlBlock => {}
@@ -414,6 +425,8 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
                 if self.in_sidenote {
                     self.write("</span>")?;
                     self.in_sidenote = false;
+                    // Record where sidenote ended for gap detection
+                    self.sidenote_end_offset = Some(range.end);
                     // Write any buffered content that came after the ref
                     if !self.pending_footnote_content.is_empty() {
                         let content = std::mem::take(&mut self.pending_footnote_content);
@@ -434,14 +447,14 @@ impl<'input, I: Iterator<Item = Event<'input>>, A: AgentSession, W: StrWrite>
 
 impl<
     'input,
-    I: Iterator<Item = Event<'input>>,
+    I: Iterator<Item = (Event<'input>, Range<usize>)>,
     A: AgentSession + IdentityResolver + 'input,
     W: StrWrite,
 > StaticPageWriter<'input, I, A, W>
 {
     pub async fn run(mut self) -> Result<(), W::Error> {
-        while let Some(event) = self.context.next().await {
-            self.process_event(event).await?
+        while let Some((event, range)) = self.context.next().await {
+            self.process_event(event, range).await?
         }
         self.finalize()
     }
@@ -460,15 +473,15 @@ impl<
         Ok(())
     }
 
-    async fn process_event(&mut self, event: Event<'input>) -> Result<(), W::Error> {
+    async fn process_event(&mut self, event: Event<'input>, range: Range<usize>) -> Result<(), W::Error> {
         use markdown_weaver::Event::*;
         match event {
             Start(tag) => {
                 println!("Start tag: {:?}", tag);
-                self.start_tag(tag).await?;
+                self.start_tag(tag, range).await?;
             }
             End(tag) => {
-                self.end_tag(tag)?;
+                self.end_tag(tag, range)?;
             }
             Text(text) => {
                 // If buffering code, append to buffer instead of writing
@@ -564,7 +577,7 @@ impl<
     async fn raw_text(&mut self) -> Result<(), W::Error> {
         use markdown_weaver::Event::*;
         let mut nest = 0;
-        while let Some(event) = self.context.next().await {
+        while let Some((event, _range)) = self.context.next().await {
             match event {
                 Start(_) => nest += 1,
                 End(_) => {
@@ -609,7 +622,10 @@ impl<
     }
 
     /// Writes the start of an HTML tag.
-    async fn start_tag(&mut self, tag: Tag<'input>) -> Result<(), W::Error> {
+    async fn start_tag(&mut self, tag: Tag<'input>, range: Range<usize>) -> Result<(), W::Error> {
+        /// Minimum gap size that indicates a paragraph break (represents \n\n)
+        const MIN_PARAGRAPH_GAP: usize = 2;
+
         match tag {
             Tag::HtmlBlock => Ok(()),
             Tag::Paragraph(_) => {
@@ -617,10 +633,33 @@ impl<
                     // Inside sidenote span - don't emit paragraph tags
                     Ok(())
                 } else if self.defer_paragraph_close {
-                    // We're continuing a virtual paragraph after a sidenote
-                    // Don't emit <p> or increment block_depth (already counted)
-                    // Clear defer flag - we'll set it again at end if another sidenote follows
-                    self.defer_paragraph_close = false;
+                    // Check gap size to decide whether to continue or start new paragraph
+                    if let Some(sidenote_end) = self.sidenote_end_offset.take() {
+                        let gap = range.start.saturating_sub(sidenote_end);
+                        if gap > MIN_PARAGRAPH_GAP {
+                            // Large gap - close deferred paragraph and start new one
+                            self.write("</p>\n")?;
+                            self.block_depth -= 1;
+                            self.close_wrapper()?;
+                            self.defer_paragraph_close = false;
+                            // Now start the new paragraph normally
+                            self.flush_pending_footnote()?;
+                            self.emit_wrapper_start()?;
+                            self.block_depth += 1;
+                            let opening = if self.end_newline {
+                                String::from("<p")
+                            } else {
+                                String::from("\n<p")
+                            };
+                            self.pending_paragraph_open = Some(opening);
+                        } else {
+                            // Small gap - continue same paragraph, just clear defer flag
+                            self.defer_paragraph_close = false;
+                        }
+                    } else {
+                        // No sidenote offset recorded, fall back to old behavior
+                        self.defer_paragraph_close = false;
+                    }
                     Ok(())
                 } else {
                     self.flush_pending_footnote()?;

@@ -10,6 +10,7 @@ use markdown_weaver::{
 };
 use markdown_weaver_escape::{StrWrite, escape_href, escape_html, escape_html_body_text};
 use std::collections::HashMap;
+use std::ops::Range;
 use weaver_common::ResolvedContent;
 
 /// Tracks the type of wrapper element emitted for WeaverBlock prefix
@@ -62,9 +63,11 @@ impl EmbedContentProvider for ResolvedContent {
 ///
 /// This writer is designed for client-side rendering where embeds may have
 /// pre-rendered content in their attributes.
-pub struct ClientWriter<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E = ()> {
+pub struct ClientWriter<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E = ()> {
     events: I,
     writer: W,
+    /// Source text for gap detection
+    source: &'a str,
     end_newline: bool,
     in_non_writing_block: bool,
 
@@ -94,6 +97,8 @@ pub struct ClientWriter<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E = ()> 
     defer_paragraph_close: bool,
     /// Buffered paragraph opening tag (without closing `>`) for dir attribute emission
     pending_paragraph_open: Option<String>,
+    /// Byte offset where last sidenote ended (for gap detection)
+    sidenote_end_offset: Option<usize>,
 
     _phantom: std::marker::PhantomData<&'a ()>,
 }
@@ -104,7 +109,7 @@ enum TableState {
     Body,
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite> ClientWriter<'a, I, W> {
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite> ClientWriter<'a, I, W> {
     /// Add an embed content provider
     pub fn with_embed_provider<E: EmbedContentProvider>(
         self,
@@ -113,6 +118,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite> ClientWriter<'a, I, W> {
         ClientWriter {
             events: self.events,
             writer: self.writer,
+            source: self.source,
             end_newline: self.end_newline,
             in_non_writing_block: self.in_non_writing_block,
             table_state: self.table_state,
@@ -129,18 +135,20 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite> ClientWriter<'a, I, W> {
             in_sidenote: self.in_sidenote,
             defer_paragraph_close: self.defer_paragraph_close,
             pending_paragraph_open: self.pending_paragraph_open,
+            sidenote_end_offset: self.sidenote_end_offset,
             _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedContentProvider>
     ClientWriter<'a, I, W, E>
 {
-    pub fn new(events: I, writer: W) -> Self {
+    pub fn new(events: I, writer: W, source: &'a str) -> Self {
         Self {
             events,
             writer,
+            source,
             end_newline: true,
             in_non_writing_block: false,
             table_state: TableState::Head,
@@ -157,6 +165,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
             in_sidenote: false,
             defer_paragraph_close: false,
             pending_paragraph_open: None,
+            sidenote_end_offset: None,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -308,8 +317,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
 
     /// Process markdown events and write HTML
     pub fn run(mut self) -> Result<W, W::Error> {
-        while let Some(event) = self.events.next() {
-            self.process_event(event)?;
+        while let Some((event, range)) = self.events.next() {
+            self.process_event(event, range)?;
         }
         self.finalize()?;
         Ok(self.writer)
@@ -333,7 +342,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
     fn consume_until_end(&mut self) {
         use Event::*;
         let mut nest = 0;
-        while let Some(event) = self.events.next() {
+        while let Some((event, _range)) = self.events.next() {
             match event {
                 Start(_) => nest += 1,
                 End(_) => {
@@ -351,7 +360,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
     fn raw_text(&mut self) -> Result<(), W::Error> {
         use Event::*;
         let mut nest = 0;
-        while let Some(event) = self.events.next() {
+        while let Some((event, _range)) = self.events.next() {
             match event {
                 Start(_) => nest += 1,
                 End(_) => {
@@ -393,11 +402,11 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
         Ok(())
     }
 
-    fn process_event(&mut self, event: Event<'_>) -> Result<(), W::Error> {
+    fn process_event(&mut self, event: Event<'_>, range: Range<usize>) -> Result<(), W::Error> {
         use Event::*;
         match event {
-            Start(tag) => self.start_tag(tag)?,
-            End(tag) => self.end_tag(tag)?,
+            Start(tag) => self.start_tag(tag, range)?,
+            End(tag) => self.end_tag(tag, range)?,
             Text(text) => {
                 // If buffering code, append to buffer instead of writing
                 if let Some((_, ref mut buffer)) = self.code_buffer {
@@ -500,7 +509,10 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
         Ok(())
     }
 
-    fn start_tag(&mut self, tag: Tag<'_>) -> Result<(), W::Error> {
+    fn start_tag(&mut self, tag: Tag<'_>, range: Range<usize>) -> Result<(), W::Error> {
+        /// Minimum gap size that indicates a paragraph break (represents \n\n)
+        const MIN_PARAGRAPH_GAP: usize = 2;
+
         match tag {
             Tag::HtmlBlock => self.write(r#"<span class="html-embed html-embed-block">"#),
             Tag::Paragraph(_) => {
@@ -508,10 +520,31 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                     // Inside sidenote span - don't emit paragraph tags
                     Ok(())
                 } else if self.defer_paragraph_close {
-                    // We're continuing a virtual paragraph after a sidenote
-                    // Don't emit <p> (already open)
-                    // Clear defer flag - we'll set it again at end if another sidenote follows
-                    self.defer_paragraph_close = false;
+                    // Check gap size to decide whether to continue or start new paragraph
+                    if let Some(sidenote_end) = self.sidenote_end_offset.take() {
+                        let gap = range.start.saturating_sub(sidenote_end);
+                        if gap > MIN_PARAGRAPH_GAP {
+                            // Large gap - close deferred paragraph and start new one
+                            self.write("</p>\n")?;
+                            self.close_wrapper()?;
+                            self.defer_paragraph_close = false;
+                            // Now start the new paragraph normally
+                            self.flush_pending_footnote()?;
+                            self.emit_wrapper_start()?;
+                            let opening = if self.end_newline {
+                                String::from("<p")
+                            } else {
+                                String::from("\n<p")
+                            };
+                            self.pending_paragraph_open = Some(opening);
+                        } else {
+                            // Small gap - continue same paragraph, just clear defer flag
+                            self.defer_paragraph_close = false;
+                        }
+                    } else {
+                        // No sidenote offset recorded, fall back to old behavior
+                        self.defer_paragraph_close = false;
+                    }
                     Ok(())
                 } else {
                     self.flush_pending_footnote()?;
@@ -861,7 +894,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
         }
     }
 
-    fn end_tag(&mut self, tag: markdown_weaver::TagEnd) -> Result<(), W::Error> {
+    fn end_tag(&mut self, tag: markdown_weaver::TagEnd, range: Range<usize>) -> Result<(), W::Error> {
         use markdown_weaver::TagEnd;
         match tag {
             TagEnd::HtmlBlock => self.write("</span>\n"),
@@ -999,6 +1032,8 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
                 if self.in_sidenote {
                     self.write("</span>")?;
                     self.in_sidenote = false;
+                    // Record where sidenote ended for gap detection
+                    self.sidenote_end_offset = Some(range.end);
                     // Write any buffered content that came after the ref
                     if !self.pending_footnote_content.is_empty() {
                         let content = std::mem::take(&mut self.pending_footnote_content);
@@ -1018,7 +1053,7 @@ impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
     }
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>, W: StrWrite, E: EmbedContentProvider>
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedContentProvider>
     ClientWriter<'a, I, W, E>
 {
     fn write_embed(

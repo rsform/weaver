@@ -15,6 +15,7 @@ use super::error::AtProtoPreprocessError;
 use jacquard::{
     Data, IntoStatic,
     client::AgentSessionExt,
+    cowstr::ToCowStr,
     types::{ident::AtIdentifier, string::AtUri},
 };
 use weaver_api::app_bsky::{
@@ -40,24 +41,9 @@ pub async fn fetch_and_render_profile<A>(
 where
     A: AgentSessionExt,
 {
-    use jacquard::types::string::Did;
-
-    // Resolve to DID if we have a handle
-    let did = match ident {
-        AtIdentifier::Did(d) => d.clone(),
-        AtIdentifier::Handle(h) => {
-            let did_str = agent.resolve_handle(h).await.map_err(|e| {
-                AtProtoPreprocessError::FetchFailed(format!("resolving handle {:?}", e))
-            })?;
-            Did::new(&did_str)
-                .map_err(|e| AtProtoPreprocessError::InvalidUri(format!("{:?}", e)))?
-                .into_static()
-        }
-    };
-
     // Use WeaverExt to get hydrated profile (tries weaver profile first, falls back to bsky)
     let (_uri, profile_view) = agent
-        .hydrate_profile_view(&did)
+        .hydrate_profile_view(&ident)
         .await
         .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("{:?}", e)))?;
 
@@ -140,9 +126,10 @@ where
         .map_err(|e| AtProtoPreprocessError::FetchFailed(e.to_string()))?;
 
     // Render the markdown content to HTML
-    let parser = Parser::new_ext(entry.content.as_ref(), default_md_options());
+    let content = entry.content.as_ref();
+    let parser = Parser::new_ext(content, default_md_options()).into_offset_iter();
     let mut content_html = String::new();
-    ClientWriter::<_, _, ()>::new(parser, &mut content_html)
+    ClientWriter::<_, _, ()>::new(parser, &mut content_html, content)
         .run()
         .map_err(|e| {
             AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {:?}", e))
@@ -200,6 +187,102 @@ where
     Ok(html)
 }
 
+/// Fetch and render a notebook entry with full markdown rendering
+///
+/// Renders the entry content as HTML in a scrollable container with title and author info.
+pub async fn fetch_and_render_whitewind_entry<A>(
+    uri: &AtUri<'_>,
+    agent: &A,
+) -> Result<String, AtProtoPreprocessError>
+where
+    A: AgentSessionExt,
+{
+    use crate::atproto::writer::ClientWriter;
+    use crate::default_md_options;
+    use markdown_weaver::Parser;
+    use weaver_api::com_whtwnd::blog::entry::Entry as WhitewindEntry;
+    use weaver_common::agent::WeaverExt;
+
+    let (_, profile) = agent
+        .hydrate_profile_view(uri.authority())
+        .await
+        .map_err(|e| {
+            AtProtoPreprocessError::FetchFailed(format!("Profile fetch failed: {:?}", e))
+        })?;
+    let entry_uri = WhitewindEntry::uri(uri.to_cowstr()).map_err(|e| {
+        AtProtoPreprocessError::FetchFailed(format!("Entry URI incorrect: {:?}", e))
+    })?;
+    let entry = agent
+        .fetch_record(&entry_uri)
+        .await
+        .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("Entry fetch failed: {:?}", e)))?;
+
+    // Render the markdown content to HTML
+    let content = entry.value.content.as_ref();
+    let parser = Parser::new_ext(content, default_md_options()).into_offset_iter();
+    let mut content_html = String::new();
+    ClientWriter::<_, _, ()>::new(parser, &mut content_html, content)
+        .run()
+        .map_err(|e| {
+            AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {:?}", e))
+        })?;
+
+    // Generate unique ID for the toggle checkbox
+    let toggle_id = format!(
+        "entry-toggle-{}",
+        entry.uri.rkey().expect("valid rkey").as_ref()
+    );
+    let entry = entry.value;
+
+    // Build the embed HTML
+    let mut html = String::new();
+    html.push_str("<div class=\"atproto-embed atproto-entry\" contenteditable=\"false\">");
+
+    // Hidden checkbox for expand/collapse (must come before content for CSS sibling selector)
+    html.push_str("<input type=\"checkbox\" class=\"embed-entry-toggle\" id=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\">");
+
+    // Header with title and author
+    html.push_str("<div class=\"embed-entry-header\">");
+
+    // Title
+    html.push_str("<span class=\"embed-entry-title\">");
+    html.push_str(&html_escape(
+        entry.title.as_ref().unwrap_or(&"".to_cowstr()),
+    ));
+    html.push_str("</span>");
+
+    // Author info - just show handle (keep it simple for entry embeds)
+    let handle = match &profile.inner {
+        ProfileDataViewInner::ProfileView(p) => p.handle.as_ref(),
+        ProfileDataViewInner::ProfileViewDetailed(p) => p.handle.as_ref(),
+        ProfileDataViewInner::TangledProfileView(p) => p.handle.as_ref(),
+        ProfileDataViewInner::Unknown(_) => "",
+    };
+    if !handle.is_empty() {
+        html.push_str("<span class=\"embed-entry-author\">@");
+        html.push_str(&html_escape(handle));
+        html.push_str("</span>");
+    }
+
+    html.push_str("</div>"); // end header
+
+    // Scrollable content container
+    html.push_str("<div class=\"embed-entry-content\">");
+    html.push_str(&content_html);
+    html.push_str("</div>");
+
+    // Expand/collapse label (clickable, targets the checkbox)
+    html.push_str("<label class=\"embed-entry-expand\" for=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\"></label>");
+
+    html.push_str("</div>");
+
+    Ok(html)
+}
+
 /// Fetch and render any AT URI, dispatching to the appropriate renderer based on collection.
 ///
 /// Uses typed fetchers for known collections (posts, profiles) and falls back to
@@ -223,6 +306,7 @@ where
             fetch_and_render_profile(uri.authority(), agent).await
         }
         Some("sh.weaver.notebook.entry") => fetch_and_render_entry(uri, agent).await,
+        Some("com.whtwnd.blog.entry") => fetch_and_render_whitewind_entry(uri, agent).await,
         None => fetch_and_render_profile(uri.authority(), agent).await,
         _ => fetch_and_render_generic(uri, agent).await,
     }

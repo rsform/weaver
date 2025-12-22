@@ -167,6 +167,35 @@
     border: 1px solid var(--color-border);
 }
 
+/* Override entry CSS margins - break-spaces already renders newlines visually */
+.editor-content p {
+    margin-bottom: 0 !important;
+}
+
+.editor-content h1,
+.editor-content h2,
+.editor-content h3,
+.editor-content h4,
+.editor-content h5,
+.editor-content h6 {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.editor-content pre {
+    margin-bottom: 0 !important;
+}
+
+.editor-content blockquote {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.editor-content ul,
+.editor-content ol {
+    margin-bottom: 0 !important;
+}
+
 .editor-toolbar {
     grid-column: 2;
     grid-row: 3;

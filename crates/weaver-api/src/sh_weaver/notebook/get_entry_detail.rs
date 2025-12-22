@@ -175,7 +175,7 @@ pub struct GetEntryDetailOutput<'a> {
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum GetEntryDetailError<'a> {
     #[serde(rename = "EntryNotFound")]
-    EntryNotFound(std::option::Option<String>),
+    EntryNotFound(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for GetEntryDetailError<'_> {

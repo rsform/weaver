@@ -190,7 +190,7 @@ pub struct GetChapterOutput<'a> {
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum GetChapterError<'a> {
     #[serde(rename = "ChapterNotFound")]
-    ChapterNotFound(std::option::Option<String>),
+    ChapterNotFound(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for GetChapterError<'_> {

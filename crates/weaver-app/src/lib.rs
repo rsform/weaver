@@ -36,7 +36,7 @@ use config::{Config, OAuthConfig};
 use views::{
     AboutPage, Callback, DraftEdit, DraftsList, Editor, Home, InvitesPage, Navbar, NewDraft,
     Notebook, NotebookEntryByRkey, NotebookEntryEdit, NotebookIndex, NotebookPage, PrivacyPage,
-    RecordIndex, RecordPage, StandaloneEntry, StandaloneEntryEdit, TermsPage,
+    RecordIndex, RecordPage, StandaloneEntry, StandaloneEntryEdit, TermsPage, WhiteWindEntry,
 };
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -81,6 +81,9 @@ pub enum Route {
             StandaloneEntry { ident: AtIdentifier<'static>, rkey: SmolStr },
             #[route("/e/:rkey/edit")]
             StandaloneEntryEdit { ident: AtIdentifier<'static>, rkey: SmolStr },
+            // External blog routes
+            #[route("/w/:rkey")]
+            WhiteWindEntry { ident: AtIdentifier<'static>, rkey: SmolStr },
             // Notebook routes
             #[nest("/:book_title")]
               #[layout(Notebook)]

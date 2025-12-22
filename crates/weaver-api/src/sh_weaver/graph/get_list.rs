@@ -166,9 +166,9 @@ pub struct GetListOutput<'a> {
     #[serde(borrow)]
     pub cursor: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
-    pub items: Vec<jacquard_common::types::value::Data<'a>>,
+    pub items: Vec<crate::sh_weaver::graph::ListItemView<'a>>,
     #[serde(borrow)]
-    pub list: jacquard_common::types::value::Data<'a>,
+    pub list: crate::sh_weaver::graph::ListView<'a>,
 }
 
 #[jacquard_derive::open_union]
@@ -187,7 +187,7 @@ pub struct GetListOutput<'a> {
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum GetListError<'a> {
     #[serde(rename = "ListNotFound")]
-    ListNotFound(std::option::Option<String>),
+    ListNotFound(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for GetListError<'_> {

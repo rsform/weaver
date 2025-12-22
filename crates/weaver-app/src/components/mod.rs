@@ -32,7 +32,7 @@ pub mod collab;
 pub use collab::{CollaboratorAvatars, CollaboratorsPanel, InviteDialog, InvitesList};
 
 pub mod author_list;
-pub use author_list::AuthorList;
+pub use author_list::{AuthorList, extract_author_info};
 
 use dioxus::prelude::*;
 

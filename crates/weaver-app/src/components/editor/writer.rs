@@ -587,10 +587,6 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
         if let Some(attrs) = self.pending_block_attrs.take() {
             let is_aside = attrs.classes.iter().any(|c| c.as_ref() == "aside");
 
-            if !self.end_newline {
-                self.write("\n")?;
-            }
-
             if is_aside {
                 self.write("<aside")?;
                 self.active_wrapper = Some(WrapperElement::Aside);
@@ -630,7 +626,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.write("\"")?;
             }
 
-            self.write(">\n")?;
+            self.write(">")?;
             Ok(true)
         } else {
             Ok(false)
@@ -641,8 +637,8 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
     fn close_wrapper(&mut self) -> Result<(), fmt::Error> {
         if let Some(wrapper) = self.active_wrapper.take() {
             match wrapper {
-                WrapperElement::Aside => self.write("</aside>\n")?,
-                WrapperElement::Div => self.write("</div>\n")?,
+                WrapperElement::Aside => self.write("</aside>")?,
+                WrapperElement::Div => self.write("</div>")?,
             }
         }
         Ok(())
@@ -1088,7 +1084,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                             syn_id, char_start, char_end
                         )?;
                         escape_html(&mut self.writer, trimmed)?;
-                        self.write("</span>\n")?;
+                        self.write("</span>")?;
 
                         self.syntax_spans.push(SyntaxSpanInfo {
                             syn_id,
@@ -1100,7 +1096,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 }
 
                 // Wrap <hr /> in toggle-block for future cursor-based toggling
-                self.write("<div class=\"toggle-block\"><hr /></div>\n")?;
+                self.write("<div class=\"toggle-block\"><hr /></div>")?;
             }
             FootnoteReference(name) => {
                 // Emit [^name] as styled (but NOT hidden) inline span
@@ -1159,9 +1155,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 }
 
                 if checked {
-                    self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n")?;
+                    self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\"/>")?;
                 } else {
-                    self.write("<input disabled=\"\" type=\"checkbox\"/>\n")?;
+                    self.write("<input disabled=\"\" type=\"checkbox\"/>")?;
                 }
             }
             WeaverBlock(text) => {

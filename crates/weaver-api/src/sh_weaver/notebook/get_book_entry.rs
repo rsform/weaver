@@ -162,9 +162,9 @@ pub struct GetBookEntryOutput<'a> {
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum GetBookEntryError<'a> {
     #[serde(rename = "NotebookNotFound")]
-    NotebookNotFound(std::option::Option<String>),
+    NotebookNotFound(std::option::Option<jacquard_common::CowStr<'a>>),
     #[serde(rename = "EntryNotFound")]
-    EntryNotFound(std::option::Option<String>),
+    EntryNotFound(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for GetBookEntryError<'_> {

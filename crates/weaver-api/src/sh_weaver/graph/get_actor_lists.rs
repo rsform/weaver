@@ -187,7 +187,7 @@ pub struct GetActorListsOutput<'a> {
     #[serde(borrow)]
     pub cursor: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
-    pub lists: Vec<jacquard_common::types::value::Data<'a>>,
+    pub lists: Vec<crate::sh_weaver::graph::ListView<'a>>,
 }
 
 /// Response type for

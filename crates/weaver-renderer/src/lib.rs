@@ -16,6 +16,7 @@ use regex::Regex;
 use regex_lite::Regex;
 
 use std::iter::Iterator;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -41,13 +42,13 @@ pub static OBSIDIAN_NOTE_LINK_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 #[derive(Debug, Default)]
-pub struct ContextIterator<'a, I: Iterator<Item = Event<'a>>> {
+pub struct ContextIterator<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>> {
     pub context: Option<EventContext>,
     pub iter: I,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>> ContextIterator<'a, I> {
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>> ContextIterator<'a, I> {
     pub fn new(context: EventContext, iter: I) -> Self {
         Self {
             context: Some(context),
@@ -65,14 +66,14 @@ impl<'a, I: Iterator<Item = Event<'a>>> ContextIterator<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>> Iterator for ContextIterator<'a, I> {
-    type Item = (Event<'a>, EventContext);
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>> Iterator for ContextIterator<'a, I> {
+    type Item = (Event<'a>, Range<usize>, EventContext);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(next) = self.iter.next() {
+        if let Some((next, range)) = self.iter.next() {
             let ctxt = EventContext::get_context(&next, self.context.as_ref());
             self.context = Some(ctxt);
-            Some((next, ctxt))
+            Some((next, range, ctxt))
         } else {
             None
         }
@@ -80,14 +81,14 @@ impl<'a, I: Iterator<Item = Event<'a>>> Iterator for ContextIterator<'a, I> {
 }
 
 #[pin_project::pin_project]
-pub struct NotebookProcessor<'a, I: Iterator<Item = Event<'a>>, CTX> {
+pub struct NotebookProcessor<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, CTX> {
     context: CTX,
     iter: ContextIterator<'a, I>,
     #[pin]
-    pending_future: Option<Pin<Box<dyn std::future::Future<Output = Event<'a>> + 'a>>>,
+    pending_future: Option<Pin<Box<dyn std::future::Future<Output = (Event<'a>, Range<usize>)> + 'a>>>,
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>, CTX> NotebookProcessor<'a, I, CTX> {
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, CTX> NotebookProcessor<'a, I, CTX> {
     pub fn new(ctx: CTX, iter: ContextIterator<'a, I>) -> Self {
         Self {
             context: ctx,
@@ -97,10 +98,10 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX> NotebookProcessor<'a, I, CTX> {
     }
 }
 
-impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Stream
+impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, CTX: NotebookContext + Clone + 'a> Stream
     for NotebookProcessor<'a, I, CTX>
 {
-    type Item = Event<'a>;
+    type Item = (Event<'a>, Range<usize>);
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
@@ -112,10 +113,10 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Strea
         // First, poll any pending future to completion
         if let Some(fut) = self.as_mut().project().pending_future.as_mut().as_pin_mut() {
             match fut.poll(cx) {
-                Poll::Ready(event) => {
+                Poll::Ready(event_with_range) => {
                     // Clear the future and return the result
                     self.as_mut().project().pending_future.set(None);
-                    return Poll::Ready(Some(event));
+                    return Poll::Ready(Some(event_with_range));
                 }
                 Poll::Pending => {
                     // Keep the future for next poll
@@ -126,25 +127,26 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Strea
 
         let mut this = self.project();
         let iter: &mut ContextIterator<'a, I> = this.iter;
-        if let Some((event, ctxt)) = iter.next() {
+        if let Some((event, range, ctxt)) = iter.next() {
             match ctxt {
                 EventContext::EmbedLink => match event {
                     Event::Start(ref tag) => match tag {
                         Tag::Embed { .. } => {
                             let tag_clone = tag.clone();
                             let ctx_clone = this.context.clone();
+                            let range_clone = range.clone();
                             let fut = async move {
                                 let processed_tag = ctx_clone.handle_embed(tag_clone).await;
-                                Event::Start(processed_tag.into_static())
+                                (Event::Start(processed_tag.into_static()), range_clone)
                             };
 
                             *this.pending_future = Some(Box::pin(fut));
 
                             if let Some(fut) = this.pending_future.as_mut().as_pin_mut() {
                                 match fut.poll(cx) {
-                                    Poll::Ready(event) => {
+                                    Poll::Ready(event_with_range) => {
                                         *this.pending_future = None;
-                                        Poll::Ready(Some(event))
+                                        Poll::Ready(Some(event_with_range))
                                     }
                                     Poll::Pending => Poll::Pending,
                                 }
@@ -152,31 +154,32 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Strea
                                 unreachable!()
                             }
                         }
-                        _ => Poll::Ready(Some(event)),
+                        _ => Poll::Ready(Some((event, range))),
                     },
-                    _ => Poll::Ready(Some(event)),
+                    _ => Poll::Ready(Some((event, range))),
                 },
-                EventContext::CodeBlock => Poll::Ready(Some(event)),
-                EventContext::Text => Poll::Ready(Some(event)),
-                EventContext::Html => Poll::Ready(Some(event)),
-                EventContext::Heading => Poll::Ready(Some(event)),
+                EventContext::CodeBlock => Poll::Ready(Some((event, range))),
+                EventContext::Text => Poll::Ready(Some((event, range))),
+                EventContext::Html => Poll::Ready(Some((event, range))),
+                EventContext::Heading => Poll::Ready(Some((event, range))),
                 EventContext::Reference => match event {
                     Event::Start(ref tag) => match tag {
                         Tag::Link { .. } => {
                             let tag_clone = tag.clone();
                             let ctx_clone = this.context.clone();
+                            let range_clone = range.clone();
                             let fut = async move {
                                 let processed_tag = ctx_clone.handle_link(tag_clone).await;
-                                Event::Start(processed_tag)
+                                (Event::Start(processed_tag), range_clone)
                             };
 
                             *this.pending_future = Some(Box::pin(fut));
 
                             if let Some(fut) = this.pending_future.as_mut().as_pin_mut() {
                                 match fut.poll(cx) {
-                                    Poll::Ready(event) => {
+                                    Poll::Ready(event_with_range) => {
                                         *this.pending_future = None;
-                                        Poll::Ready(Some(event))
+                                        Poll::Ready(Some(event_with_range))
                                     }
                                     Poll::Pending => Poll::Pending,
                                 }
@@ -184,41 +187,42 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Strea
                                 unreachable!()
                             }
                         }
-                        _ => Poll::Ready(Some(event)),
+                        _ => Poll::Ready(Some((event, range))),
                     },
                     Event::FootnoteReference(ref name) => {
                         this.context.handle_reference(name.clone());
-                        Poll::Ready(Some(event))
+                        Poll::Ready(Some((event, range)))
                     }
-                    _ => Poll::Ready(Some(event)),
+                    _ => Poll::Ready(Some((event, range))),
                 },
                 EventContext::RefDef => match event {
                     Event::Start(ref tag) => match tag {
                         Tag::FootnoteDefinition(name) => {
                             this.context.add_reference(name.clone());
-                            Poll::Ready(Some(event))
+                            Poll::Ready(Some((event, range)))
                         }
-                        _ => Poll::Ready(Some(event)),
+                        _ => Poll::Ready(Some((event, range))),
                     },
-                    _ => Poll::Ready(Some(event)),
+                    _ => Poll::Ready(Some((event, range))),
                 },
                 EventContext::Link => match event {
                     Event::Start(ref tag) => match tag {
                         Tag::Link { .. } => {
                             let tag_clone = tag.clone();
                             let ctx_clone = this.context.clone();
+                            let range_clone = range.clone();
                             let fut = async move {
                                 let processed_tag = ctx_clone.handle_link(tag_clone).await;
-                                Event::Start(processed_tag)
+                                (Event::Start(processed_tag), range_clone)
                             };
 
                             *this.pending_future = Some(Box::pin(fut));
 
                             if let Some(fut) = this.pending_future.as_mut().as_pin_mut() {
                                 match fut.poll(cx) {
-                                    Poll::Ready(event) => {
+                                    Poll::Ready(event_with_range) => {
                                         *this.pending_future = None;
-                                        Poll::Ready(Some(event))
+                                        Poll::Ready(Some(event_with_range))
                                     }
                                     Poll::Pending => Poll::Pending,
                                 }
@@ -226,9 +230,9 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Strea
                                 unreachable!()
                             }
                         }
-                        _ => Poll::Ready(Some(event)),
+                        _ => Poll::Ready(Some((event, range))),
                     },
-                    _ => Poll::Ready(Some(event)),
+                    _ => Poll::Ready(Some((event, range))),
                 },
                 EventContext::Image => match event {
                     Event::Start(ref tag) => match tag {
@@ -236,9 +240,10 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Strea
                             // Create future that handles the image and wraps result in Event::Start
                             let tag_clone = tag.clone();
                             let ctx_clone = this.context.clone();
+                            let range_clone = range.clone();
                             let fut = async move {
                                 let processed_tag = ctx_clone.handle_image(tag_clone).await;
-                                Event::Start(processed_tag)
+                                (Event::Start(processed_tag), range_clone)
                             };
 
                             // Store the future and poll it
@@ -247,9 +252,9 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Strea
                             // Immediately poll the stored future
                             if let Some(fut) = this.pending_future.as_mut().as_pin_mut() {
                                 match fut.poll(cx) {
-                                    Poll::Ready(event) => {
+                                    Poll::Ready(event_with_range) => {
                                         *this.pending_future = None;
-                                        Poll::Ready(Some(event))
+                                        Poll::Ready(Some(event_with_range))
                                     }
                                     Poll::Pending => Poll::Pending,
                                 }
@@ -257,22 +262,22 @@ impl<'a, I: Iterator<Item = Event<'a>>, CTX: NotebookContext + Clone + 'a> Strea
                                 unreachable!()
                             }
                         }
-                        _ => Poll::Ready(Some(event)),
+                        _ => Poll::Ready(Some((event, range))),
                     },
-                    _ => Poll::Ready(Some(event)),
+                    _ => Poll::Ready(Some((event, range))),
                 },
 
-                EventContext::Table => Poll::Ready(Some(event)),
+                EventContext::Table => Poll::Ready(Some((event, range))),
                 EventContext::Metadata => match event {
                     Event::Text(ref text) => {
                         let frontmatter = Frontmatter::new(&text);
                         this.context.set_frontmatter(frontmatter);
-                        Poll::Ready(Some(event))
+                        Poll::Ready(Some((event, range)))
                     }
-                    _ => Poll::Ready(Some(event)),
+                    _ => Poll::Ready(Some((event, range))),
                 },
-                EventContext::Other => Poll::Ready(Some(event)),
-                EventContext::None => Poll::Ready(Some(event)),
+                EventContext::Other => Poll::Ready(Some((event, range))),
+                EventContext::None => Poll::Ready(Some((event, range))),
             }
         } else {
             Poll::Ready(None)

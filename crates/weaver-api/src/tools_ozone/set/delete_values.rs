@@ -182,7 +182,7 @@ where
 pub enum DeleteValuesError<'a> {
     /// set with the given name does not exist
     #[serde(rename = "SetNotFound")]
-    SetNotFound(std::option::Option<String>),
+    SetNotFound(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for DeleteValuesError<'_> {

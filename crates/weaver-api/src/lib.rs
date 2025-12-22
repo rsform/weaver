@@ -13,6 +13,12 @@ pub mod chat_bsky;
 #[cfg(feature = "com_atproto")]
 pub mod com_atproto;
 
+#[cfg(feature = "com_whtwnd")]
+pub mod com_whtwnd;
+
+#[cfg(feature = "pub_leaflet")]
+pub mod pub_leaflet;
+
 #[cfg(feature = "sh_weaver")]
 pub mod sh_weaver;
 

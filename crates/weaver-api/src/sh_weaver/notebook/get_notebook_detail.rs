@@ -190,7 +190,7 @@ pub struct GetNotebookDetailOutput<'a> {
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum GetNotebookDetailError<'a> {
     #[serde(rename = "NotebookNotFound")]
-    NotebookNotFound(std::option::Option<String>),
+    NotebookNotFound(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for GetNotebookDetailError<'_> {

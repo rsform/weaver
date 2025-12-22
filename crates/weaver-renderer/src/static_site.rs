@@ -331,12 +331,14 @@ where
     } else {
         None
     };
-    let parser = Parser::new_with_broken_link_callback(&contents, context.md_options, callback);
+    let parser = Parser::new_with_broken_link_callback(&contents, context.md_options, callback)
+        .into_offset_iter();
     let iterator = ContextIterator::default(parser);
     let mut output = String::new();
     let writer = StaticPageWriter::new(
         NotebookProcessor::new(context, iterator),
         FmtWriter(&mut output),
+        contents,
     );
     writer.run().await.into_diagnostic()?;
     Ok(output)

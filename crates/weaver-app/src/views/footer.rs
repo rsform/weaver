@@ -39,6 +39,9 @@ fn should_show_full_footer(route: &Route) -> bool {
         | Route::EntryPage { ident, .. }
         | Route::NotebookEntryByRkey { ident, .. }
         | Route::NotebookEntryEdit { ident, .. } => is_owner_ident(ident),
+
+        // External content: minimal footer
+        Route::WhiteWindEntry { .. } => false,
     }
 }
 

@@ -490,12 +490,9 @@ pub async fn copy_as_html(markdown: &str) -> Result<(), wasm_bindgen::JsValue> {
     // Render markdown to HTML using ClientWriter
     let parser = markdown_weaver::Parser::new(markdown).into_offset_iter();
     let mut html = String::new();
-    weaver_renderer::atproto::ClientWriter::<_, _, ()>::new(
-        parser.map(|(evt, _range)| evt),
-        &mut html,
-    )
-    .run()
-    .map_err(|e| JsValue::from_str(&format!("render error: {e}")))?;
+    weaver_renderer::atproto::ClientWriter::<_, _, ()>::new(parser, &mut html, markdown)
+        .run()
+        .map_err(|e| JsValue::from_str(&format!("render error: {e}")))?;
 
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let clipboard = window.navigator().clipboard();

@@ -83,7 +83,6 @@
 .entry-content-main {
     width: var(--content-width);
     max-width: 100%;
-    border-top: 1px solid var(--color-border);
     position: relative;
 }
 
@@ -273,6 +272,62 @@
 }
 
 /* TODO: footnote ordering needs non-flex solution for aside reflow to work */
+
+/* Subtitle (for external blog posts like WhiteWind) */
+.entry-subtitle {
+    font-size: 1.1rem;
+    font-style: italic;
+    color: var(--color-subtle);
+    margin: 0 0 1rem 0;
+    line-height: 1.5;
+}
+
+/* Meta row (simpler alternative to entry-meta-info) */
+.entry-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    font-size: 0.95rem;
+    font-family: var(--font-ui);
+    color: var(--color-subtle);
+    align-items: center;
+}
+
+.entry-meta-row .entry-author a {
+    color: var(--color-link);
+    text-decoration: none;
+}
+
+.entry-meta-row .entry-author a:hover {
+    text-decoration: underline;
+}
+
+.entry-meta-row .entry-stats {
+    margin-inline-start: auto;
+}
+
+/* External source badge */
+.entry-source {
+    margin-top: 0.75rem;
+}
+
+.source-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.85rem;
+    font-family: var(--font-ui);
+    color: var(--color-subtle);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    text-decoration: none;
+    transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.source-badge:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
 
 /* Responsive: tablet */
 @media (max-width: 1200px) {

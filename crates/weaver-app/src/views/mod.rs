@@ -43,3 +43,6 @@ pub use footer::Footer;
 
 mod static_page;
 pub use static_page::{AboutPage, PrivacyPage, TermsPage};
+
+mod whitewind;
+pub use whitewind::WhiteWindEntry;

@@ -10,9 +10,9 @@ use markdown_weaver_escape::FmtWriter;
 /// Helper: Render markdown to HTML using ClientWriter
 fn render_markdown(input: &str) -> String {
     let options = crate::default_md_options();
-    let parser = Parser::new_ext(input, options);
+    let parser = Parser::new_ext(input, options).into_offset_iter();
     let mut output = String::new();
-    let writer: ClientWriter<'_, _, _, ()> = ClientWriter::new(parser, FmtWriter(&mut output));
+    let writer: ClientWriter<'_, _, _, ()> = ClientWriter::new(parser, FmtWriter(&mut output), input);
     writer.run().unwrap();
     output
 }

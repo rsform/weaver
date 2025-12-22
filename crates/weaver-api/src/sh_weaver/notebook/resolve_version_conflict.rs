@@ -154,7 +154,7 @@ pub struct ResolveVersionConflictOutput<'a> {
 pub enum ResolveVersionConflictError<'a> {
     /// The URIs don't appear to be related versions
     #[serde(rename = "NoRelatedVersions")]
-    NoRelatedVersions(std::option::Option<String>),
+    NoRelatedVersions(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for ResolveVersionConflictError<'_> {

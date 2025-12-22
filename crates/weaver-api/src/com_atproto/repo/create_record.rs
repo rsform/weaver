@@ -335,7 +335,7 @@ pub struct CreateRecordOutput<'a> {
 pub enum CreateRecordError<'a> {
     /// Indicates that 'swapCommit' didn't match current repo commit.
     #[serde(rename = "InvalidSwap")]
-    InvalidSwap(std::option::Option<String>),
+    InvalidSwap(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for CreateRecordError<'_> {

@@ -1,5 +1,5 @@
-use crate::components::css::DefaultNotebookCss;
 use crate::components::ENTRY_CSS;
+use crate::components::css::DefaultNotebookCss;
 use dioxus::prelude::*;
 use weaver_renderer::atproto::ClientWriter;
 
@@ -8,9 +8,10 @@ const TERMS_MD: &str = include_str!("../../assets/terms.md");
 const PRIVACY_MD: &str = include_str!("../../assets/privacy.md");
 
 fn render_markdown(content: &str) -> String {
-    let parser = markdown_weaver::Parser::new_ext(content, weaver_renderer::default_md_options());
+    let parser = markdown_weaver::Parser::new_ext(content, weaver_renderer::default_md_options())
+        .into_offset_iter();
     let mut html = String::new();
-    let _ = ClientWriter::<_, _, ()>::new(parser, &mut html).run();
+    let _ = ClientWriter::<_, _, ()>::new(parser, &mut html, content).run();
     html
 }
 

@@ -101,7 +101,7 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct GetTrendingTagsOutput<'a> {
     #[serde(borrow)]
-    pub tags: Vec<jacquard_common::types::value::Data<'a>>,
+    pub tags: Vec<crate::sh_weaver::graph::TagView<'a>>,
 }
 
 /// Response type for

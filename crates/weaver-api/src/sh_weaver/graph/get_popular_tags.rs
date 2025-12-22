@@ -129,7 +129,7 @@ pub struct GetPopularTagsOutput<'a> {
     #[serde(borrow)]
     pub cursor: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
-    pub tags: Vec<jacquard_common::types::value::Data<'a>>,
+    pub tags: Vec<crate::sh_weaver::graph::TagView<'a>>,
 }
 
 /// Response type for

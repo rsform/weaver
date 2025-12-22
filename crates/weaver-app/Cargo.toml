@@ -46,7 +46,7 @@ jacquard = { workspace = true}#, features = ["streaming"] }
 jacquard-lexicon = { workspace = true }
 jacquard-identity = { workspace = true }
 jacquard-axum = { workspace = true, optional = true }
-weaver-api = { path = "../weaver-api"}#, features = ["streaming"] }
+weaver-api = { path = "../weaver-api", features = ["com_whtwnd"] }
 markdown-weaver = { workspace = true }
 weaver-renderer = { path = "../weaver-renderer" }
 mini-moka = { git = "https://github.com/moka-rs/mini-moka", rev = "da864e849f5d034f32e02197fee9bb5d5af36d3d" }

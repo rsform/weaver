@@ -125,7 +125,7 @@ where
 pub struct GetResourceTagsOutput<'a> {
     #[serde(flatten)]
     #[serde(borrow)]
-    pub value: jacquard_common::types::value::Data<'a>,
+    pub value: crate::sh_weaver::graph::ResourceTagsView<'a>,
 }
 
 /// Response type for

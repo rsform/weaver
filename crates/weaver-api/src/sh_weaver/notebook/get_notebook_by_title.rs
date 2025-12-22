@@ -181,7 +181,7 @@ pub struct GetNotebookByTitleOutput<'a> {
 #[serde(bound(deserialize = "'de: 'a"))]
 pub enum GetNotebookByTitleError<'a> {
     #[serde(rename = "NotebookNotFound")]
-    NotebookNotFound(std::option::Option<String>),
+    NotebookNotFound(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for GetNotebookByTitleError<'_> {

@@ -197,7 +197,7 @@ pub struct AddMemberOutput<'a> {
 pub enum AddMemberError<'a> {
     /// Member already exists in the team.
     #[serde(rename = "MemberAlreadyExists")]
-    MemberAlreadyExists(std::option::Option<String>),
+    MemberAlreadyExists(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
 impl std::fmt::Display for AddMemberError<'_> {

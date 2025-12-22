@@ -12,11 +12,12 @@ use dioxus::prelude::*;
 use dioxus::{CapturedError, fullstack::extract::Extension};
 use jacquard::{
     IntoStatic,
-    identity::resolver::IdentityError,
     types::{aturi::AtUri, did::Did, string::Handle},
 };
 #[allow(unused_imports)]
 use jacquard::{
+    client::AgentSessionExt,
+    identity::resolver::IdentityError,
     prelude::IdentityResolver,
     smol_str::{SmolStr, format_smolstr},
     types::{cid::Cid, string::AtIdentifier},
@@ -517,14 +518,15 @@ async fn render_markdown_impl(
 
     let ctx = ClientContext::<()>::new(content.clone(), did);
     let parser =
-        markdown_weaver::Parser::new_ext(&content.content, weaver_renderer::default_md_options());
+        markdown_weaver::Parser::new_ext(&content.content, weaver_renderer::default_md_options())
+            .into_offset_iter();
     let iter = ContextIterator::default(parser);
     let processor = NotebookProcessor::new(ctx, iter);
 
     let events: Vec<_> = StreamExt::collect(processor).await;
 
     let mut html_buf = String::new();
-    let writer = ClientWriter::<_, _, ()>::new(events.into_iter(), &mut html_buf)
+    let writer = ClientWriter::<_, _, ()>::new(events.into_iter(), &mut html_buf, &content.content)
         .with_embed_provider(resolved_content);
     writer.run().ok();
     html_buf
@@ -1485,6 +1487,94 @@ pub fn use_notebook_entry_by_rkey(
                 .map(|arc| (*arc).clone())
         }
     });
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
+/// Fetches WhiteWind entry by rkey (SSR)
+#[cfg(feature = "fullstack-server")]
+pub fn use_whitewind_entry_data(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Result<Resource<Option<(serde_json::Value, serde_json::Value)>>, RenderError>,
+    Memo<Option<crate::fetch::WhiteWindEntryData>>,
+) {
+    use weaver_api::com_whtwnd::blog::entry::Entry as WhiteWindEntry;
+
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            use jacquard::client::AgentSessionExt;
+
+            let ident = ident();
+            let rkey = rkey();
+
+            let uri_str = format!("at://{}/com.whtwnd.blog.entry/{}", ident, rkey);
+            let uri = WhiteWindEntry::uri(&uri_str).ok()?;
+            let record = fetcher.fetch_record(&uri).await.ok()?;
+
+            let profile = fetcher.fetch_profile(&ident).await.ok()?;
+
+            Some((
+                serde_json::to_value(&record.value).ok()?,
+                serde_json::to_value(&*profile).ok()?,
+            ))
+        }
+    });
+
+    let memo = use_memo(use_reactive!(|res| {
+        use weaver_api::com_whtwnd::blog::entry::Entry as WhiteWindEntry;
+        use weaver_api::sh_weaver::actor::ProfileDataView;
+
+        let res = res.as_ref().ok()?;
+        if let Some(Some((entry_json, profile_json))) = &*res.read() {
+            let entry = jacquard::from_json_value::<WhiteWindEntry>(entry_json.clone()).ok()?;
+            let profile =
+                jacquard::from_json_value::<ProfileDataView>(profile_json.clone()).ok()?;
+            Some(crate::fetch::WhiteWindEntryData { entry, profile })
+        } else {
+            None
+        }
+    }));
+    (res, memo)
+}
+
+/// Fetches WhiteWind entry by rkey (client-only)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_whitewind_entry_data(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Resource<Option<crate::fetch::WhiteWindEntryData>>,
+    Memo<Option<crate::fetch::WhiteWindEntryData>>,
+) {
+    use jacquard::IntoStatic;
+    use weaver_api::com_whtwnd::blog::entry::Entry as WhiteWindEntry;
+
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            let ident = ident();
+            let rkey = rkey();
+
+            let uri_str = format!("at://{}/com.whtwnd.blog.entry/{}", ident, rkey);
+            let uri = WhiteWindEntry::uri(&uri_str).ok()?;
+            let record = fetcher.fetch_record(&uri).await.ok()?;
+
+            let profile = fetcher.fetch_profile(&ident).await.ok()?;
+
+            Some(crate::fetch::WhiteWindEntryData {
+                entry: record.value.into_static(),
+                profile: (*profile).clone(),
+            })
+        }
+    });
+
     let memo = use_memo(move || res.read().clone().flatten());
     (res, memo)
 }

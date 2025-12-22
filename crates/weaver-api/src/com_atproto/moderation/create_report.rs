@@ -43,37 +43,37 @@ pub mod create_report_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type ReasonType;
         type Subject;
+        type ReasonType;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type ReasonType = Unset;
         type Subject = Unset;
-    }
-    ///State transition - sets the `reason_type` field to Set
-    pub struct SetReasonType<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetReasonType<S> {}
-    impl<S: State> State for SetReasonType<S> {
-        type ReasonType = Set<members::reason_type>;
-        type Subject = S::Subject;
+        type ReasonType = Unset;
     }
     ///State transition - sets the `subject` field to Set
     pub struct SetSubject<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetSubject<S> {}
     impl<S: State> State for SetSubject<S> {
-        type ReasonType = S::ReasonType;
         type Subject = Set<members::subject>;
+        type ReasonType = S::ReasonType;
+    }
+    ///State transition - sets the `reason_type` field to Set
+    pub struct SetReasonType<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetReasonType<S> {}
+    impl<S: State> State for SetReasonType<S> {
+        type Subject = S::Subject;
+        type ReasonType = Set<members::reason_type>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `reason_type` field
-        pub struct reason_type(());
         ///Marker type for the `subject` field
         pub struct subject(());
+        ///Marker type for the `reason_type` field
+        pub struct reason_type(());
     }
 }
 
@@ -187,8 +187,8 @@ where
 impl<'a, S> CreateReportBuilder<'a, S>
 where
     S: create_report_state::State,
-    S::ReasonType: create_report_state::IsSet,
     S::Subject: create_report_state::IsSet,
+    S::ReasonType: create_report_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> CreateReport<'a> {

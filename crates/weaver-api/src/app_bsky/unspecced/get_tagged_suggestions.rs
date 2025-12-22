@@ -90,51 +90,51 @@ pub mod suggestion_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Subject;
         type SubjectType;
         type Tag;
+        type Subject;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Subject = Unset;
         type SubjectType = Unset;
         type Tag = Unset;
-    }
-    ///State transition - sets the `subject` field to Set
-    pub struct SetSubject<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetSubject<S> {}
-    impl<S: State> State for SetSubject<S> {
-        type Subject = Set<members::subject>;
-        type SubjectType = S::SubjectType;
-        type Tag = S::Tag;
+        type Subject = Unset;
     }
     ///State transition - sets the `subject_type` field to Set
     pub struct SetSubjectType<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetSubjectType<S> {}
     impl<S: State> State for SetSubjectType<S> {
-        type Subject = S::Subject;
         type SubjectType = Set<members::subject_type>;
         type Tag = S::Tag;
+        type Subject = S::Subject;
     }
     ///State transition - sets the `tag` field to Set
     pub struct SetTag<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetTag<S> {}
     impl<S: State> State for SetTag<S> {
-        type Subject = S::Subject;
         type SubjectType = S::SubjectType;
         type Tag = Set<members::tag>;
+        type Subject = S::Subject;
+    }
+    ///State transition - sets the `subject` field to Set
+    pub struct SetSubject<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetSubject<S> {}
+    impl<S: State> State for SetSubject<S> {
+        type SubjectType = S::SubjectType;
+        type Tag = S::Tag;
+        type Subject = Set<members::subject>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `subject` field
-        pub struct subject(());
         ///Marker type for the `subject_type` field
         pub struct subject_type(());
         ///Marker type for the `tag` field
         pub struct tag(());
+        ///Marker type for the `subject` field
+        pub struct subject(());
     }
 }
 
@@ -227,9 +227,9 @@ where
 impl<'a, S> SuggestionBuilder<'a, S>
 where
     S: suggestion_state::State,
-    S::Subject: suggestion_state::IsSet,
     S::SubjectType: suggestion_state::IsSet,
     S::Tag: suggestion_state::IsSet,
+    S::Subject: suggestion_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Suggestion<'a> {

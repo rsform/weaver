@@ -76,6 +76,13 @@ pub struct NotebookContext {
     pub book_entry_view: BookEntryView<'static>,
 }
 
+/// Data for a WhiteWind blog entry
+#[derive(Clone, PartialEq)]
+pub struct WhiteWindEntryData {
+    pub entry: weaver_api::com_whtwnd::blog::entry::Entry<'static>,
+    pub profile: ProfileDataView<'static>,
+}
+
 pub struct Client {
     pub oauth_client: Arc<OAuthClient<JacquardResolver, AuthStore>>,
     pub session: RwLock<Option<Arc<Agent<OAuthSession<JacquardResolver, AuthStore>>>>>,
@@ -1088,8 +1095,10 @@ impl Fetcher {
         &self,
         ident: &AtIdentifier<'_>,
     ) -> Result<Arc<ProfileDataView<'static>>> {
+        #[cfg(feature = "server")]
         use jacquard::IntoStatic;
 
+        #[cfg(feature = "server")]
         let ident_static = ident.clone().into_static();
 
         #[cfg(feature = "server")]
@@ -1099,16 +1108,8 @@ impl Fetcher {
 
         let client = self.get_client();
 
-        let did = match ident {
-            AtIdentifier::Did(d) => d.clone(),
-            AtIdentifier::Handle(h) => client
-                .resolve_handle(h)
-                .await
-                .map_err(|e| dioxus::CapturedError::from_display(e))?,
-        };
-
         let (_uri, profile_view) = client
-            .hydrate_profile_view(&did)
+            .hydrate_profile_view(&ident)
             .await
             .map_err(|e| dioxus::CapturedError::from_display(e))?;
 

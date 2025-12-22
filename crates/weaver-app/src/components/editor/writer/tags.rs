@@ -157,7 +157,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 } else {
                     write!(
                         &mut self.writer,
-                        r#"\n<p id="{}" class="html-embed html-embed-block">"#,
+                        r#"<p id="{}" class="html-embed html-embed-block">"#,
                         node_id
                     )?;
                 }
@@ -202,9 +202,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                     }
                 } else {
                     if let Some(dir_value) = dir {
-                        write!(&mut self.writer, "\n<p id=\"{}\" dir=\"{}\">", node_id, dir_value)?;
+                        write!(&mut self.writer, "<p id=\"{}\" dir=\"{}\">", node_id, dir_value)?;
                     } else {
-                        write!(&mut self.writer, "\n<p id=\"{}\">", node_id)?;
+                        write!(&mut self.writer, "<p id=\"{}\">", node_id)?;
                     }
                 }
                 self.begin_node(node_id.clone());
@@ -263,7 +263,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
 
                 if !self.end_newline {
-                    self.write("\n")?;
+                    self.write_newline()?;
                 }
 
                 // Generate node ID for offset tracking
@@ -407,9 +407,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                     Some(BlockQuoteKind::Caution) => " class=\"markdown-alert-caution\"",
                 };
                 if self.end_newline {
-                    write!(&mut self.writer, "<blockquote{}>\n", class_str)?;
+                    write!(&mut self.writer, "<blockquote{}>", class_str)?;
                 } else {
-                    write!(&mut self.writer, "\n<blockquote{}>\n", class_str)?;
+                    write!(&mut self.writer, "<blockquote{}>", class_str)?;
                 }
 
                 // Store range for emitting > inside the next paragraph
@@ -450,7 +450,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                                     syn_id, char_start, char_end
                                 )?;
                                 escape_html(&mut self.writer, syntax)?;
-                                self.write("</span>\n")?;
+                                self.write("</span>")?;
 
                                 // Track opening span index for formatted_range update later
                                 self.code_block_opening_span_idx = Some(self.syntax_spans.len());
@@ -497,9 +497,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
                 self.list_depth += 1;
                 if self.end_newline {
-                    self.write("<ol>\n")
+                    self.write("<ol>")
                 } else {
-                    self.write("\n<ol>\n")
+                    self.write("<ol>")
                 }
             }
             Tag::List(Some(start)) => {
@@ -510,10 +510,10 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 if self.end_newline {
                     self.write("<ol start=\"")?;
                 } else {
-                    self.write("\n<ol start=\"")?;
+                    self.write("<ol start=\"")?;
                 }
                 write!(&mut self.writer, "{}", start)?;
-                self.write("\">\n")
+                self.write("\">")
             }
             Tag::List(None) => {
                 self.emit_wrapper_start()?;
@@ -521,9 +521,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.current_paragraph_start = Some((self.last_byte_offset, self.last_char_offset));
                 self.list_depth += 1;
                 if self.end_newline {
-                    self.write("<ul>\n")
+                    self.write("<ul>")
                 } else {
-                    self.write("\n<ul>\n")
+                    self.write("<ul>")
                 }
             }
             Tag::Item => {
@@ -533,7 +533,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 if self.end_newline {
                     write!(&mut self.writer, "<li data-node-id=\"{}\">", node_id)?;
                 } else {
-                    write!(&mut self.writer, "\n<li data-node-id=\"{}\">", node_id)?;
+                    write!(&mut self.writer, "<li data-node-id=\"{}\">", node_id)?;
                 }
 
                 // Begin node tracking
@@ -626,9 +626,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             Tag::DefinitionList => {
                 self.emit_wrapper_start()?;
                 if self.end_newline {
-                    self.write("<dl>\n")
+                    self.write("<dl>")
                 } else {
-                    self.write("\n<dl>\n")
+                    self.write("<dl>")
                 }
             }
             Tag::DefinitionListTitle => {
@@ -637,7 +637,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 if self.end_newline {
                     write!(&mut self.writer, "<dt data-node-id=\"{}\">", node_id)?;
                 } else {
-                    write!(&mut self.writer, "\n<dt data-node-id=\"{}\">", node_id)?;
+                    write!(&mut self.writer, "<dt data-node-id=\"{}\">", node_id)?;
                 }
 
                 self.begin_node(node_id);
@@ -649,7 +649,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 if self.end_newline {
                     write!(&mut self.writer, "<dd data-node-id=\"{}\">", node_id)?;
                 } else {
-                    write!(&mut self.writer, "\n<dd data-node-id=\"{}\">", node_id)?;
+                    write!(&mut self.writer, "<dd data-node-id=\"{}\">", node_id)?;
                 }
 
                 self.begin_node(node_id);
@@ -910,7 +910,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.in_footnote_def = true;
 
                 if !self.end_newline {
-                    self.write("\n")?;
+                    self.write_newline()?;
                 }
 
                 // Generate node ID for cursor tracking
@@ -1018,7 +1018,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
 
                 // Write closing HTML to current segment
                 self.end_node();
-                self.write("</p>\n")?;
+                self.write("</p>")?;
 
                 // Now finalize paragraph (starts new segment)
                 if let Some((byte_range, char_range)) = para_boundary {
@@ -1044,7 +1044,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
 
                 // Write closing HTML to current segment
                 self.end_node();
-                self.write("</p>\n")?;
+                self.write("</p>")?;
                 self.close_wrapper()?;
 
                 // Now finalize paragraph (starts new segment)
@@ -1069,7 +1069,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 self.end_node();
                 self.write("</")?;
                 write!(&mut self.writer, "{}", level)?;
-                self.write(">\n")?;
+                self.write(">")?;
                 // Note: Don't close wrapper here - headings typically go with following block
 
                 // Now finalize paragraph (starts new segment)
@@ -1088,18 +1088,18 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                         // Wrap in a pre or div for styling
                         self.write("<pre class=\"table-markdown\">")?;
                         escape_html(&mut self.writer, table_text)?;
-                        self.write("</pre>\n")?;
+                        self.write("</pre>")?;
                     }
                     Ok(())
                 } else {
-                    self.write("</tbody></table>\n")
+                    self.write("</tbody></table>")
                 }
             }
             TagEnd::TableHead => {
                 if self.render_tables_as_markdown {
                     Ok(()) // Skip HTML rendering
                 } else {
-                    self.write("</tr></thead><tbody>\n")?;
+                    self.write("</tr></thead><tbody>")?;
                     self.table_state = TableState::Body;
                     Ok(())
                 }
@@ -1108,7 +1108,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                 if self.render_tables_as_markdown {
                     Ok(()) // Skip HTML rendering
                 } else {
-                    self.write("</tr>\n")
+                    self.write("</tr>")
                 }
             }
             TagEnd::TableCell => {
@@ -1152,7 +1152,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                             let syntax = &raw_text[gt_pos..gt_pos + 1];
                             self.emit_inner_syntax(syntax, para_byte_start, SyntaxType::Block)?;
 
-                            self.write("</div>\n")?;
+                            self.write("</div>")?;
                             self.end_node();
 
                             // Capture paragraph boundary for later finalization
@@ -1162,7 +1162,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                         }
                     }
                 }
-                self.write("</blockquote>\n")?;
+                self.write("</blockquote>")?;
                 self.close_wrapper()?;
 
                 // Now finalize paragraph if we had one
@@ -1227,7 +1227,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                                 escape_html(&mut self.writer, lang_str)?;
                                 self.write("\">")?;
                                 escape_html_body_text(&mut self.writer, &buffer)?;
-                                self.write("</code></pre>\n")?;
+                                self.write("</code></pre>")?;
                             }
                         }
                     } else {
@@ -1237,13 +1237,13 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                             self.write("<pre><code>")?;
                         }
                         escape_html_body_text(&mut self.writer, &buffer)?;
-                        self.write("</code></pre>\n")?;
+                        self.write("</code></pre>")?;
                     }
 
                     // End node tracking
                     self.end_node();
                 } else {
-                    self.write("</code></pre>\n")?;
+                    self.write("</code></pre>")?;
                 }
 
                 // Emit closing ``` (emit_gap_before is skipped while buffering)
@@ -1319,7 +1319,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                             )
                         });
 
-                self.write("</ol>\n")?;
+                self.write("</ol>")?;
                 self.close_wrapper()?;
 
                 // Finalize paragraph after closing HTML
@@ -1341,7 +1341,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
                             )
                         });
 
-                self.write("</ul>\n")?;
+                self.write("</ul>")?;
                 self.close_wrapper()?;
 
                 // Finalize paragraph after closing HTML
@@ -1352,19 +1352,19 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             }
             TagEnd::Item => {
                 self.end_node();
-                self.write("</li>\n")
+                self.write("</li>")
             }
             TagEnd::DefinitionList => {
-                self.write("</dl>\n")?;
+                self.write("</dl>")?;
                 self.close_wrapper()
             }
             TagEnd::DefinitionListTitle => {
                 self.end_node();
-                self.write("</dt>\n")
+                self.write("</dt>")
             }
             TagEnd::DefinitionListDefinition => {
                 self.end_node();
-                self.write("</dd>\n")
+                self.write("</dd>")
             }
             TagEnd::Emphasis => {
                 // Write closing tag FIRST, then emit closing syntax OUTSIDE the tag
@@ -1476,7 +1476,7 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, E: EmbedContentProvider,
             TagEnd::FootnoteDefinition => {
                 // End node tracking (inner paragraphs may have already cleared it)
                 self.end_node();
-                self.write("</div>\n")?;
+                self.write("</div>")?;
 
                 // Clear footnote tracking
                 self.current_footnote_def.take();

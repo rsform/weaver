@@ -317,7 +317,8 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
         use markdown_weaver::Parser;
         use weaver_renderer::default_md_options;
         let parser =
-            Parser::new_with_broken_link_callback(&contents, default_md_options(), callback);
+            Parser::new_with_broken_link_callback(&contents, default_md_options(), callback)
+                .into_offset_iter();
         let iterator = weaver_renderer::ContextIterator::default(parser);
 
         // Process through NotebookProcessor
@@ -332,7 +333,7 @@ async fn publish_notebook(source: PathBuf, title: String, store_path: PathBuf) -
         let mut md_writer = MarkdownWriter::new(FmtWriter(&mut output));
 
         // Process all events
-        while let Some(event) = processor.next().await {
+        while let Some((event, _)) = processor.next().await {
             md_writer
                 .write_event(event)
                 .map_err(|e| miette::miette!("Failed to write markdown: {:?}", e))?;

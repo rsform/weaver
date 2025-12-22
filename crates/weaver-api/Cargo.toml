@@ -23,7 +23,7 @@ serde_bytes = "0.11"
 non_snake_case = "allow"
 
 [features]
-default = ["sh_weaver", "com_atproto",  "serde"]
+default = ["sh_weaver", "com_atproto",  "com_whtwnd", "pub_leaflet", "serde"]
 streaming = ["jacquard-common/websocket"]
 serde = ["bytes/serde", "dep:serde_ipld_dagcbor"]
 
@@ -33,5 +33,7 @@ serde = ["bytes/serde", "dep:serde_ipld_dagcbor"]
 app_bsky = []
 chat_bsky = []
 com_atproto = []
+com_whtwnd = []
+pub_leaflet = []
 sh_weaver = ["app_bsky"]
 tools_ozone = ["chat_bsky", "com_atproto"]

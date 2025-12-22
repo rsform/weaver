@@ -91,66 +91,67 @@ fn add_gap_paragraphs(
     let mut prev_end_byte = 0usize;
 
     for para in paragraphs {
-        let gap_size = para.char_range.start.saturating_sub(prev_end_char);
-        if gap_size > MIN_PARAGRAPH_BREAK_INCR {
-            let gap_start_char = prev_end_char + MIN_PARAGRAPH_BREAK_INCR;
-            let gap_end_char = para.char_range.start;
-            let gap_end_byte = para.byte_range.start;
-
-            let gap_node_id = format!("gap-{}-{}", gap_start_char, gap_end_char);
-            let gap_html = format!(r#"<span id="{}">{}</span>"#, gap_node_id, '\u{200B}');
-
-            paragraphs_with_gaps.push(ParagraphRender {
-                id: gap_node_id.clone(),
-                byte_range: prev_end_byte..gap_end_byte,
-                char_range: prev_end_char..gap_end_char,
-                html: gap_html,
-                offset_map: vec![OffsetMapping {
-                    byte_range: prev_end_byte..gap_end_byte,
-                    char_range: prev_end_char..gap_end_char,
-                    node_id: gap_node_id,
-                    char_offset_in_node: 0,
-                    child_index: None,
-                    utf16_len: 1,
-                }],
-                syntax_spans: vec![],
-                source_hash: hash_source(&text_slice_to_string(text, gap_start_char..gap_end_char)),
-            });
-        }
+        // Gap insertion commented out - with break-spaces CSS, whitespace renders naturally
+        // let gap_size = para.char_range.start.saturating_sub(prev_end_char);
+        // if gap_size > MIN_PARAGRAPH_BREAK_INCR {
+        //     let gap_start_char = prev_end_char + MIN_PARAGRAPH_BREAK_INCR;
+        //     let gap_end_char = para.char_range.start;
+        //     let gap_end_byte = para.byte_range.start;
+        //
+        //     let gap_node_id = format!("gap-{}-{}", gap_start_char, gap_end_char);
+        //     let gap_html = format!(r#"<span id="{}">{}</span>"#, gap_node_id, '\u{200B}');
+        //
+        //     paragraphs_with_gaps.push(ParagraphRender {
+        //         id: gap_node_id.clone(),
+        //         byte_range: prev_end_byte..gap_end_byte,
+        //         char_range: prev_end_char..gap_end_char,
+        //         html: gap_html,
+        //         offset_map: vec![OffsetMapping {
+        //             byte_range: prev_end_byte..gap_end_byte,
+        //             char_range: prev_end_char..gap_end_char,
+        //             node_id: gap_node_id,
+        //             char_offset_in_node: 0,
+        //             child_index: None,
+        //             utf16_len: 1,
+        //         }],
+        //         syntax_spans: vec![],
+        //         source_hash: hash_source(&text_slice_to_string(text, gap_start_char..gap_end_char)),
+        //     });
+        // }
 
         prev_end_char = para.char_range.end;
         prev_end_byte = para.byte_range.end;
         paragraphs_with_gaps.push(para);
     }
 
-    // Add trailing gap if needed
-    let has_trailing_newlines = source.ends_with("\n\n") || source.ends_with("\n");
-    if has_trailing_newlines {
-        let doc_end_char = text.len_unicode();
-        let doc_end_byte = text.len_utf8();
-
-        if doc_end_char > prev_end_char {
-            let trailing_node_id = format!("gap-{}-{}", prev_end_char, doc_end_char);
-            let trailing_html = format!(r#"<span id="{}">{}</span>"#, trailing_node_id, '\u{200B}');
-
-            paragraphs_with_gaps.push(ParagraphRender {
-                id: trailing_node_id.clone(),
-                byte_range: prev_end_byte..doc_end_byte,
-                char_range: prev_end_char..doc_end_char,
-                html: trailing_html,
-                offset_map: vec![OffsetMapping {
-                    byte_range: prev_end_byte..doc_end_byte,
-                    char_range: prev_end_char..doc_end_char,
-                    node_id: trailing_node_id,
-                    char_offset_in_node: 0,
-                    child_index: None,
-                    utf16_len: 1,
-                }],
-                syntax_spans: vec![],
-                source_hash: 0,
-            });
-        }
-    }
+    // Trailing gap insertion commented out - with break-spaces CSS, whitespace renders naturally
+    // let has_trailing_newlines = source.ends_with("\n\n") || source.ends_with("\n");
+    // if has_trailing_newlines {
+    //     let doc_end_char = text.len_unicode();
+    //     let doc_end_byte = text.len_utf8();
+    //
+    //     if doc_end_char > prev_end_char {
+    //         let trailing_node_id = format!("gap-{}-{}", prev_end_char, doc_end_char);
+    //         let trailing_html = format!(r#"<span id="{}">{}</span>"#, trailing_node_id, '\u{200B}');
+    //
+    //         paragraphs_with_gaps.push(ParagraphRender {
+    //             id: trailing_node_id.clone(),
+    //             byte_range: prev_end_byte..doc_end_byte,
+    //             char_range: prev_end_char..doc_end_char,
+    //             html: trailing_html,
+    //             offset_map: vec![OffsetMapping {
+    //                 byte_range: prev_end_byte..doc_end_byte,
+    //                 char_range: prev_end_char..doc_end_char,
+    //                 node_id: trailing_node_id,
+    //                 char_offset_in_node: 0,
+    //                 child_index: None,
+    //                 utf16_len: 1,
+    //             }],
+    //             syntax_spans: vec![],
+    //             source_hash: 0,
+    //         });
+    //     }
+    // }
 
     paragraphs_with_gaps
 }
