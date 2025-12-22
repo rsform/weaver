@@ -33,37 +33,37 @@ pub mod linear_document_quote_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Document;
         type Quote;
+        type Document;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Document = Unset;
         type Quote = Unset;
-    }
-    ///State transition - sets the `document` field to Set
-    pub struct SetDocument<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetDocument<S> {}
-    impl<S: State> State for SetDocument<S> {
-        type Document = Set<members::document>;
-        type Quote = S::Quote;
+        type Document = Unset;
     }
     ///State transition - sets the `quote` field to Set
     pub struct SetQuote<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetQuote<S> {}
     impl<S: State> State for SetQuote<S> {
-        type Document = S::Document;
         type Quote = Set<members::quote>;
+        type Document = S::Document;
+    }
+    ///State transition - sets the `document` field to Set
+    pub struct SetDocument<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetDocument<S> {}
+    impl<S: State> State for SetDocument<S> {
+        type Quote = S::Quote;
+        type Document = Set<members::document>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `document` field
-        pub struct document(());
         ///Marker type for the `quote` field
         pub struct quote(());
+        ///Marker type for the `document` field
+        pub struct document(());
     }
 }
 
@@ -136,8 +136,8 @@ where
 impl<'a, S> LinearDocumentQuoteBuilder<'a, S>
 where
     S: linear_document_quote_state::State,
-    S::Document: linear_document_quote_state::IsSet,
     S::Quote: linear_document_quote_state::IsSet,
+    S::Document: linear_document_quote_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> LinearDocumentQuote<'a> {
@@ -444,50 +444,50 @@ pub mod comment_state {
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
         type CreatedAt;
-        type Subject;
         type Plaintext;
+        type Subject;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
         type CreatedAt = Unset;
-        type Subject = Unset;
         type Plaintext = Unset;
+        type Subject = Unset;
     }
     ///State transition - sets the `created_at` field to Set
     pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
     impl<S: State> State for SetCreatedAt<S> {
         type CreatedAt = Set<members::created_at>;
+        type Plaintext = S::Plaintext;
         type Subject = S::Subject;
-        type Plaintext = S::Plaintext;
-    }
-    ///State transition - sets the `subject` field to Set
-    pub struct SetSubject<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetSubject<S> {}
-    impl<S: State> State for SetSubject<S> {
-        type CreatedAt = S::CreatedAt;
-        type Subject = Set<members::subject>;
-        type Plaintext = S::Plaintext;
     }
     ///State transition - sets the `plaintext` field to Set
     pub struct SetPlaintext<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetPlaintext<S> {}
     impl<S: State> State for SetPlaintext<S> {
         type CreatedAt = S::CreatedAt;
-        type Subject = S::Subject;
         type Plaintext = Set<members::plaintext>;
+        type Subject = S::Subject;
+    }
+    ///State transition - sets the `subject` field to Set
+    pub struct SetSubject<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetSubject<S> {}
+    impl<S: State> State for SetSubject<S> {
+        type CreatedAt = S::CreatedAt;
+        type Plaintext = S::Plaintext;
+        type Subject = Set<members::subject>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
         ///Marker type for the `created_at` field
         pub struct created_at(());
-        ///Marker type for the `subject` field
-        pub struct subject(());
         ///Marker type for the `plaintext` field
         pub struct plaintext(());
+        ///Marker type for the `subject` field
+        pub struct subject(());
     }
 }
 
@@ -658,8 +658,8 @@ impl<'a, S> CommentBuilder<'a, S>
 where
     S: comment_state::State,
     S::CreatedAt: comment_state::IsSet,
-    S::Subject: comment_state::IsSet,
     S::Plaintext: comment_state::IsSet,
+    S::Subject: comment_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Comment<'a> {

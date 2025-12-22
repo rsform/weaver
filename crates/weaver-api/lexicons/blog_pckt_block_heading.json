@@ -1,0 +1,33 @@
+{
+  "lexicon": 1,
+  "id": "blog.pckt.block.heading",
+  "description": "A heading block with hierarchical levels (1-6) for document structure.",
+  "defs": {
+    "main": {
+      "type": "object",
+      "required": [
+        "plaintext"
+      ],
+      "properties": {
+        "facets": {
+          "type": "array",
+          "description": "Facets for text formatting and features",
+          "items": {
+            "type": "ref",
+            "ref": "blog.pckt.richtext.facet"
+          }
+        },
+        "level": {
+          "type": "integer",
+          "description": "Heading level from 1 (most important) to 6 (least important)",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "plaintext": {
+          "type": "string",
+          "description": "The plain text content of the heading"
+        }
+      }
+    }
+  }
+}

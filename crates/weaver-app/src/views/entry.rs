@@ -280,3 +280,12 @@ pub fn NotebookEntryByRkey(
         None => rsx! { p { "Loading..." } },
     }
 }
+
+/// NSID route wrapper for StandaloneEntry (allows replacing at:// with https://host/)
+#[component]
+pub fn StandaloneEntryNsid(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> Element {
+    rsx! { StandaloneEntry { ident, rkey } }
+}

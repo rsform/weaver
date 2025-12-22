@@ -1,0 +1,24 @@
+{
+  "lexicon": 1,
+  "id": "blog.pckt.block.codeBlock",
+  "description": "Preformatted code block with optional syntax highlighting.",
+  "defs": {
+    "main": {
+      "type": "object",
+      "required": [
+        "plaintext"
+      ],
+      "properties": {
+        "language": {
+          "type": "string",
+          "description": "Programming language for syntax highlighting",
+          "maxLength": 50
+        },
+        "plaintext": {
+          "type": "string",
+          "description": "The code content"
+        }
+      }
+    }
+  }
+}

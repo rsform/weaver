@@ -59,37 +59,37 @@ pub mod community_tag_count_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Tag;
         type Count;
+        type Tag;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Tag = Unset;
         type Count = Unset;
-    }
-    ///State transition - sets the `tag` field to Set
-    pub struct SetTag<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetTag<S> {}
-    impl<S: State> State for SetTag<S> {
-        type Tag = Set<members::tag>;
-        type Count = S::Count;
+        type Tag = Unset;
     }
     ///State transition - sets the `count` field to Set
     pub struct SetCount<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCount<S> {}
     impl<S: State> State for SetCount<S> {
-        type Tag = S::Tag;
         type Count = Set<members::count>;
+        type Tag = S::Tag;
+    }
+    ///State transition - sets the `tag` field to Set
+    pub struct SetTag<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetTag<S> {}
+    impl<S: State> State for SetTag<S> {
+        type Count = S::Count;
+        type Tag = Set<members::tag>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `tag` field
-        pub struct tag(());
         ///Marker type for the `count` field
         pub struct count(());
+        ///Marker type for the `tag` field
+        pub struct tag(());
     }
 }
 
@@ -162,8 +162,8 @@ where
 impl<'a, S> CommunityTagCountBuilder<'a, S>
 where
     S: community_tag_count_state::State,
-    S::Tag: community_tag_count_state::IsSet,
     S::Count: community_tag_count_state::IsSet,
+    S::Tag: community_tag_count_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> CommunityTagCount<'a> {
@@ -883,37 +883,37 @@ pub mod list_item_view_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Uri;
         type Subject;
+        type Uri;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Uri = Unset;
         type Subject = Unset;
-    }
-    ///State transition - sets the `uri` field to Set
-    pub struct SetUri<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetUri<S> {}
-    impl<S: State> State for SetUri<S> {
-        type Uri = Set<members::uri>;
-        type Subject = S::Subject;
+        type Uri = Unset;
     }
     ///State transition - sets the `subject` field to Set
     pub struct SetSubject<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetSubject<S> {}
     impl<S: State> State for SetSubject<S> {
-        type Uri = S::Uri;
         type Subject = Set<members::subject>;
+        type Uri = S::Uri;
+    }
+    ///State transition - sets the `uri` field to Set
+    pub struct SetUri<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetUri<S> {}
+    impl<S: State> State for SetUri<S> {
+        type Subject = S::Subject;
+        type Uri = Set<members::uri>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `uri` field
-        pub struct uri(());
         ///Marker type for the `subject` field
         pub struct subject(());
+        ///Marker type for the `uri` field
+        pub struct uri(());
     }
 }
 
@@ -1006,8 +1006,8 @@ where
 impl<'a, S> ListItemViewBuilder<'a, S>
 where
     S: list_item_view_state::State,
-    S::Uri: list_item_view_state::IsSet,
     S::Subject: list_item_view_state::IsSet,
+    S::Uri: list_item_view_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> ListItemView<'a> {
@@ -1206,125 +1206,125 @@ pub mod list_view_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Creator;
-        type Uri;
         type Purpose;
+        type Uri;
+        type ItemCount;
         type Name;
         type IndexedAt;
-        type ItemCount;
+        type Creator;
         type Cid;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Creator = Unset;
-        type Uri = Unset;
         type Purpose = Unset;
+        type Uri = Unset;
+        type ItemCount = Unset;
         type Name = Unset;
         type IndexedAt = Unset;
-        type ItemCount = Unset;
+        type Creator = Unset;
         type Cid = Unset;
     }
-    ///State transition - sets the `creator` field to Set
-    pub struct SetCreator<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetCreator<S> {}
-    impl<S: State> State for SetCreator<S> {
-        type Creator = Set<members::creator>;
+    ///State transition - sets the `purpose` field to Set
+    pub struct SetPurpose<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetPurpose<S> {}
+    impl<S: State> State for SetPurpose<S> {
+        type Purpose = Set<members::purpose>;
         type Uri = S::Uri;
-        type Purpose = S::Purpose;
+        type ItemCount = S::ItemCount;
         type Name = S::Name;
         type IndexedAt = S::IndexedAt;
-        type ItemCount = S::ItemCount;
+        type Creator = S::Creator;
         type Cid = S::Cid;
     }
     ///State transition - sets the `uri` field to Set
     pub struct SetUri<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetUri<S> {}
     impl<S: State> State for SetUri<S> {
-        type Creator = S::Creator;
+        type Purpose = S::Purpose;
         type Uri = Set<members::uri>;
-        type Purpose = S::Purpose;
+        type ItemCount = S::ItemCount;
         type Name = S::Name;
         type IndexedAt = S::IndexedAt;
-        type ItemCount = S::ItemCount;
-        type Cid = S::Cid;
-    }
-    ///State transition - sets the `purpose` field to Set
-    pub struct SetPurpose<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetPurpose<S> {}
-    impl<S: State> State for SetPurpose<S> {
         type Creator = S::Creator;
-        type Uri = S::Uri;
-        type Purpose = Set<members::purpose>;
-        type Name = S::Name;
-        type IndexedAt = S::IndexedAt;
-        type ItemCount = S::ItemCount;
-        type Cid = S::Cid;
-    }
-    ///State transition - sets the `name` field to Set
-    pub struct SetName<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetName<S> {}
-    impl<S: State> State for SetName<S> {
-        type Creator = S::Creator;
-        type Uri = S::Uri;
-        type Purpose = S::Purpose;
-        type Name = Set<members::name>;
-        type IndexedAt = S::IndexedAt;
-        type ItemCount = S::ItemCount;
-        type Cid = S::Cid;
-    }
-    ///State transition - sets the `indexed_at` field to Set
-    pub struct SetIndexedAt<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetIndexedAt<S> {}
-    impl<S: State> State for SetIndexedAt<S> {
-        type Creator = S::Creator;
-        type Uri = S::Uri;
-        type Purpose = S::Purpose;
-        type Name = S::Name;
-        type IndexedAt = Set<members::indexed_at>;
-        type ItemCount = S::ItemCount;
         type Cid = S::Cid;
     }
     ///State transition - sets the `item_count` field to Set
     pub struct SetItemCount<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetItemCount<S> {}
     impl<S: State> State for SetItemCount<S> {
-        type Creator = S::Creator;
-        type Uri = S::Uri;
         type Purpose = S::Purpose;
+        type Uri = S::Uri;
+        type ItemCount = Set<members::item_count>;
         type Name = S::Name;
         type IndexedAt = S::IndexedAt;
-        type ItemCount = Set<members::item_count>;
+        type Creator = S::Creator;
+        type Cid = S::Cid;
+    }
+    ///State transition - sets the `name` field to Set
+    pub struct SetName<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetName<S> {}
+    impl<S: State> State for SetName<S> {
+        type Purpose = S::Purpose;
+        type Uri = S::Uri;
+        type ItemCount = S::ItemCount;
+        type Name = Set<members::name>;
+        type IndexedAt = S::IndexedAt;
+        type Creator = S::Creator;
+        type Cid = S::Cid;
+    }
+    ///State transition - sets the `indexed_at` field to Set
+    pub struct SetIndexedAt<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetIndexedAt<S> {}
+    impl<S: State> State for SetIndexedAt<S> {
+        type Purpose = S::Purpose;
+        type Uri = S::Uri;
+        type ItemCount = S::ItemCount;
+        type Name = S::Name;
+        type IndexedAt = Set<members::indexed_at>;
+        type Creator = S::Creator;
+        type Cid = S::Cid;
+    }
+    ///State transition - sets the `creator` field to Set
+    pub struct SetCreator<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetCreator<S> {}
+    impl<S: State> State for SetCreator<S> {
+        type Purpose = S::Purpose;
+        type Uri = S::Uri;
+        type ItemCount = S::ItemCount;
+        type Name = S::Name;
+        type IndexedAt = S::IndexedAt;
+        type Creator = Set<members::creator>;
         type Cid = S::Cid;
     }
     ///State transition - sets the `cid` field to Set
     pub struct SetCid<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCid<S> {}
     impl<S: State> State for SetCid<S> {
-        type Creator = S::Creator;
-        type Uri = S::Uri;
         type Purpose = S::Purpose;
+        type Uri = S::Uri;
+        type ItemCount = S::ItemCount;
         type Name = S::Name;
         type IndexedAt = S::IndexedAt;
-        type ItemCount = S::ItemCount;
+        type Creator = S::Creator;
         type Cid = Set<members::cid>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `creator` field
-        pub struct creator(());
-        ///Marker type for the `uri` field
-        pub struct uri(());
         ///Marker type for the `purpose` field
         pub struct purpose(());
+        ///Marker type for the `uri` field
+        pub struct uri(());
+        ///Marker type for the `item_count` field
+        pub struct item_count(());
         ///Marker type for the `name` field
         pub struct name(());
         ///Marker type for the `indexed_at` field
         pub struct indexed_at(());
-        ///Marker type for the `item_count` field
-        pub struct item_count(());
+        ///Marker type for the `creator` field
+        pub struct creator(());
         ///Marker type for the `cid` field
         pub struct cid(());
     }
@@ -1570,12 +1570,12 @@ impl<'a, S: list_view_state::State> ListViewBuilder<'a, S> {
 impl<'a, S> ListViewBuilder<'a, S>
 where
     S: list_view_state::State,
-    S::Creator: list_view_state::IsSet,
-    S::Uri: list_view_state::IsSet,
     S::Purpose: list_view_state::IsSet,
+    S::Uri: list_view_state::IsSet,
+    S::ItemCount: list_view_state::IsSet,
     S::Name: list_view_state::IsSet,
     S::IndexedAt: list_view_state::IsSet,
-    S::ItemCount: list_view_state::IsSet,
+    S::Creator: list_view_state::IsSet,
     S::Cid: list_view_state::IsSet,
 {
     /// Build the final struct
@@ -1690,51 +1690,51 @@ pub mod resource_tags_view_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type CommunityTags;
         type Resource;
         type AuthorTags;
+        type CommunityTags;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type CommunityTags = Unset;
         type Resource = Unset;
         type AuthorTags = Unset;
-    }
-    ///State transition - sets the `community_tags` field to Set
-    pub struct SetCommunityTags<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetCommunityTags<S> {}
-    impl<S: State> State for SetCommunityTags<S> {
-        type CommunityTags = Set<members::community_tags>;
-        type Resource = S::Resource;
-        type AuthorTags = S::AuthorTags;
+        type CommunityTags = Unset;
     }
     ///State transition - sets the `resource` field to Set
     pub struct SetResource<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetResource<S> {}
     impl<S: State> State for SetResource<S> {
-        type CommunityTags = S::CommunityTags;
         type Resource = Set<members::resource>;
         type AuthorTags = S::AuthorTags;
+        type CommunityTags = S::CommunityTags;
     }
     ///State transition - sets the `author_tags` field to Set
     pub struct SetAuthorTags<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAuthorTags<S> {}
     impl<S: State> State for SetAuthorTags<S> {
-        type CommunityTags = S::CommunityTags;
         type Resource = S::Resource;
         type AuthorTags = Set<members::author_tags>;
+        type CommunityTags = S::CommunityTags;
+    }
+    ///State transition - sets the `community_tags` field to Set
+    pub struct SetCommunityTags<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetCommunityTags<S> {}
+    impl<S: State> State for SetCommunityTags<S> {
+        type Resource = S::Resource;
+        type AuthorTags = S::AuthorTags;
+        type CommunityTags = Set<members::community_tags>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `community_tags` field
-        pub struct community_tags(());
         ///Marker type for the `resource` field
         pub struct resource(());
         ///Marker type for the `author_tags` field
         pub struct author_tags(());
+        ///Marker type for the `community_tags` field
+        pub struct community_tags(());
     }
 }
 
@@ -1847,9 +1847,9 @@ impl<'a, S: resource_tags_view_state::State> ResourceTagsViewBuilder<'a, S> {
 impl<'a, S> ResourceTagsViewBuilder<'a, S>
 where
     S: resource_tags_view_state::State,
-    S::CommunityTags: resource_tags_view_state::IsSet,
     S::Resource: resource_tags_view_state::IsSet,
     S::AuthorTags: resource_tags_view_state::IsSet,
+    S::CommunityTags: resource_tags_view_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> ResourceTagsView<'a> {
@@ -1946,67 +1946,67 @@ pub mod tag_application_view_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Uri;
-        type Tag;
-        type CreatedAt;
         type AppliedBy;
+        type CreatedAt;
+        type Tag;
+        type Uri;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Uri = Unset;
-        type Tag = Unset;
-        type CreatedAt = Unset;
         type AppliedBy = Unset;
-    }
-    ///State transition - sets the `uri` field to Set
-    pub struct SetUri<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetUri<S> {}
-    impl<S: State> State for SetUri<S> {
-        type Uri = Set<members::uri>;
-        type Tag = S::Tag;
-        type CreatedAt = S::CreatedAt;
-        type AppliedBy = S::AppliedBy;
-    }
-    ///State transition - sets the `tag` field to Set
-    pub struct SetTag<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetTag<S> {}
-    impl<S: State> State for SetTag<S> {
-        type Uri = S::Uri;
-        type Tag = Set<members::tag>;
-        type CreatedAt = S::CreatedAt;
-        type AppliedBy = S::AppliedBy;
-    }
-    ///State transition - sets the `created_at` field to Set
-    pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
-    impl<S: State> State for SetCreatedAt<S> {
-        type Uri = S::Uri;
-        type Tag = S::Tag;
-        type CreatedAt = Set<members::created_at>;
-        type AppliedBy = S::AppliedBy;
+        type CreatedAt = Unset;
+        type Tag = Unset;
+        type Uri = Unset;
     }
     ///State transition - sets the `applied_by` field to Set
     pub struct SetAppliedBy<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAppliedBy<S> {}
     impl<S: State> State for SetAppliedBy<S> {
-        type Uri = S::Uri;
-        type Tag = S::Tag;
-        type CreatedAt = S::CreatedAt;
         type AppliedBy = Set<members::applied_by>;
+        type CreatedAt = S::CreatedAt;
+        type Tag = S::Tag;
+        type Uri = S::Uri;
+    }
+    ///State transition - sets the `created_at` field to Set
+    pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
+    impl<S: State> State for SetCreatedAt<S> {
+        type AppliedBy = S::AppliedBy;
+        type CreatedAt = Set<members::created_at>;
+        type Tag = S::Tag;
+        type Uri = S::Uri;
+    }
+    ///State transition - sets the `tag` field to Set
+    pub struct SetTag<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetTag<S> {}
+    impl<S: State> State for SetTag<S> {
+        type AppliedBy = S::AppliedBy;
+        type CreatedAt = S::CreatedAt;
+        type Tag = Set<members::tag>;
+        type Uri = S::Uri;
+    }
+    ///State transition - sets the `uri` field to Set
+    pub struct SetUri<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetUri<S> {}
+    impl<S: State> State for SetUri<S> {
+        type AppliedBy = S::AppliedBy;
+        type CreatedAt = S::CreatedAt;
+        type Tag = S::Tag;
+        type Uri = Set<members::uri>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `uri` field
-        pub struct uri(());
-        ///Marker type for the `tag` field
-        pub struct tag(());
-        ///Marker type for the `created_at` field
-        pub struct created_at(());
         ///Marker type for the `applied_by` field
         pub struct applied_by(());
+        ///Marker type for the `created_at` field
+        pub struct created_at(());
+        ///Marker type for the `tag` field
+        pub struct tag(());
+        ///Marker type for the `uri` field
+        pub struct uri(());
     }
 }
 
@@ -2119,10 +2119,10 @@ where
 impl<'a, S> TagApplicationViewBuilder<'a, S>
 where
     S: tag_application_view_state::State,
-    S::Uri: tag_application_view_state::IsSet,
-    S::Tag: tag_application_view_state::IsSet,
-    S::CreatedAt: tag_application_view_state::IsSet,
     S::AppliedBy: tag_application_view_state::IsSet,
+    S::CreatedAt: tag_application_view_state::IsSet,
+    S::Tag: tag_application_view_state::IsSet,
+    S::Uri: tag_application_view_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> TagApplicationView<'a> {

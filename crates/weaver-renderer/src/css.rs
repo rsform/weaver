@@ -1095,6 +1095,40 @@ hr {{
         padding-inline-end: 0.75rem;
     }}
 }}
+
+/* Leaflet document embeds */
+.atproto-leaflet {{
+    max-width: none;
+    width: 100%;
+    margin: 1rem 0;
+}}
+
+.leaflet-document {{
+    display: block;
+}}
+
+.leaflet-text {{
+    margin: 0.5rem 0;
+}}
+
+.leaflet-button {{
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: var(--color-primary);
+    color: var(--color-base);
+    text-decoration: none;
+    border-radius: 4px;
+    margin: 0.5rem 0;
+}}
+
+.leaflet-button:hover {{
+    opacity: 0.9;
+}}
+
+/* Alignment utilities */
+.align-center {{ text-align: center; }}
+.align-right {{ text-align: right; }}
+.align-justify {{ text-align: justify; }}
 "#,
         // Light mode colours
         light.base,

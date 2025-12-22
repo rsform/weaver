@@ -1,4 +1,3 @@
-#[cfg(feature = "use-index")]
 use jacquard::types::ident::AtIdentifier;
 // Re-export view types for use elsewhere
 pub use weaver_api::sh_weaver::notebook::{
@@ -506,7 +505,8 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             };
 
             for (index, author) in notebook.value.authors.iter().enumerate() {
-                let (profile_uri, profile_view) = self.hydrate_profile_view(&author.did).await?;
+                let ident = AtIdentifier::Did(author.did.clone());
+                let (profile_uri, profile_view) = self.hydrate_profile_view(&ident).await?;
                 authors.push(
                     AuthorListView::new()
                         .maybe_uri(profile_uri)
@@ -663,7 +663,8 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             let contributor_dids = self.find_contributors_for_resource(&entry_uri).await?;
             let mut authors = Vec::new();
             for (index, did) in contributor_dids.iter().enumerate() {
-                let (profile_uri, profile_view) = self.hydrate_profile_view(did).await?;
+                let ident = AtIdentifier::Did(did.clone());
+                let (profile_uri, profile_view) = self.hydrate_profile_view(&ident).await?;
                 authors.push(
                     AuthorListView::new()
                         .maybe_uri(profile_uri)
@@ -868,8 +869,9 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
 
                         let mut authors = Vec::new();
                         for (index, author) in notebook.authors.iter().enumerate() {
+                            let ident = AtIdentifier::Did(author.did.clone());
                             let (profile_uri, profile_view) =
-                                self.hydrate_profile_view(&author.did).await?;
+                                self.hydrate_profile_view(&ident).await?;
                             authors.push(
                                 AuthorListView::new()
                                     .maybe_uri(profile_uri)
@@ -958,7 +960,7 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     #[cfg(not(feature = "use-index"))]
     fn hydrate_profile_view(
         &self,
-        did: &Did<'_>,
+        ident: &AtIdentifier<'_>,
     ) -> impl Future<
         Output = Result<
             (
@@ -970,17 +972,27 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
     > {
         async move {
             use weaver_api::app_bsky::actor::{
-                ProfileViewDetailed, get_profile::GetProfile, profile::Profile as BskyProfile,
+                get_profile::GetProfile, profile::Profile as BskyProfile,
             };
             use weaver_api::sh_weaver::actor::{
                 ProfileDataView, ProfileDataViewInner, ProfileView,
                 profile::Profile as WeaverProfile,
             };
 
-            let handles = self.resolve_did_doc_owned(&did).await?.handles();
-            let handle = handles.first().ok_or_else(|| {
-                AgentError::from(ClientError::invalid_request("couldn't resolve handle"))
-            })?;
+            // Resolve identifier to DID and handle
+            let (did, handle) = match ident {
+                AtIdentifier::Did(d) => {
+                    let handles = self.resolve_did_doc_owned(d).await?.handles();
+                    let h = handles.first().ok_or_else(|| {
+                        AgentError::from(ClientError::invalid_request("couldn't resolve handle"))
+                    })?;
+                    (d.clone().into_static(), h.clone())
+                }
+                AtIdentifier::Handle(h) => {
+                    let d = self.resolve_handle(h).await?;
+                    (d.into_static(), h.clone().into_static())
+                }
+            };
 
             // Try weaver profile first
             let weaver_uri =
@@ -1529,7 +1541,8 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             let contributor_dids = self.find_contributors_for_resource(&entry_uri).await?;
             let mut authors = Vec::new();
             for (index, did) in contributor_dids.iter().enumerate() {
-                let (profile_uri, profile_view) = self.hydrate_profile_view(did).await?;
+                let ident = AtIdentifier::Did(did.clone());
+                let (profile_uri, profile_view) = self.hydrate_profile_view(&ident).await?;
                 authors.push(
                     AuthorListView::new()
                         .maybe_uri(profile_uri)

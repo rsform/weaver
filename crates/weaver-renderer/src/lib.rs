@@ -28,7 +28,11 @@ pub mod atproto;
 pub mod base_html;
 pub mod code_pretty;
 pub mod css;
+pub mod facet;
+pub mod leaflet;
 pub mod math;
+#[cfg(feature = "pckt")]
+pub mod pckt;
 #[cfg(not(target_family = "wasm"))]
 pub mod static_site;
 pub mod theme;
@@ -85,7 +89,8 @@ pub struct NotebookProcessor<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, 
     context: CTX,
     iter: ContextIterator<'a, I>,
     #[pin]
-    pending_future: Option<Pin<Box<dyn std::future::Future<Output = (Event<'a>, Range<usize>)> + 'a>>>,
+    pending_future:
+        Option<Pin<Box<dyn std::future::Future<Output = (Event<'a>, Range<usize>)> + 'a>>>,
 }
 
 impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, CTX> NotebookProcessor<'a, I, CTX> {

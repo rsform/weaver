@@ -83,6 +83,25 @@ pub struct WhiteWindEntryData {
     pub profile: ProfileDataView<'static>,
 }
 
+/// Data for a Leaflet document
+#[derive(Clone, PartialEq)]
+pub struct LeafletDocumentData {
+    pub document: weaver_api::pub_leaflet::document::Document<'static>,
+    pub profile: ProfileDataView<'static>,
+    /// Publication base_path for constructing external URL (e.g., "connectedplaces.leaflet.pub")
+    pub publication_base_path: Option<String>,
+}
+
+/// Data for a site.standard / blog.pckt document
+#[cfg(feature = "pckt")]
+#[derive(Clone, PartialEq)]
+pub struct PcktDocumentData {
+    pub document: weaver_api::site_standard::document::Document<'static>,
+    pub profile: ProfileDataView<'static>,
+    /// Publication URL for constructing external URL (e.g., "https://crypto.pckt.blog")
+    pub publication_url: Option<String>,
+}
+
 pub struct Client {
     pub oauth_client: Arc<OAuthClient<JacquardResolver, AuthStore>>,
     pub session: RwLock<Option<Arc<Agent<OAuthSession<JacquardResolver, AuthStore>>>>>,

@@ -18,6 +18,8 @@
 )]
 #[serde(rename_all = "camelCase")]
 pub struct Publication<'a> {
+    // NOTE: Leaflet uses snake_case here, breaking ATProto camelCase convention
+    #[serde(rename = "base_path")]
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
     pub base_path: std::option::Option<jacquard_common::CowStr<'a>>,

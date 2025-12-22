@@ -23,7 +23,7 @@ serde_bytes = "0.11"
 non_snake_case = "allow"
 
 [features]
-default = ["sh_weaver", "com_atproto",  "com_whtwnd", "pub_leaflet", "serde"]
+default = ["sh_weaver", "com_atproto",  "com_whtwnd", "pub_leaflet", "blog_pckt", "serde"]
 streaming = ["jacquard-common/websocket"]
 serde = ["bytes/serde", "dep:serde_ipld_dagcbor"]
 
@@ -31,9 +31,11 @@ serde = ["bytes/serde", "dep:serde_ipld_dagcbor"]
 # --- generated ---
 # Generated namespace features
 app_bsky = []
+blog_pckt = ["site_standard"]
 chat_bsky = []
 com_atproto = []
 com_whtwnd = []
 pub_leaflet = []
 sh_weaver = ["app_bsky"]
+site_standard = []
 tools_ozone = ["chat_bsky", "com_atproto"]

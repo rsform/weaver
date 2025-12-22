@@ -1,0 +1,22 @@
+{
+  "lexicon": 1,
+  "id": "blog.pckt.document",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "document"
+        ],
+        "properties": {
+          "document": {
+            "type": "ref",
+            "ref": "site.standard.document"
+          }
+        }
+      }
+    }
+  }
+}

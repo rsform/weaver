@@ -1,0 +1,28 @@
+{
+  "lexicon": 1,
+  "id": "blog.pckt.block.orderedList",
+  "description": "Ordered numbered list. Each item can contain rich content including nested lists.",
+  "defs": {
+    "main": {
+      "type": "object",
+      "required": [
+        "content"
+      ],
+      "properties": {
+        "content": {
+          "type": "array",
+          "description": "Array of list items",
+          "items": {
+            "type": "ref",
+            "ref": "blog.pckt.block.listItem"
+          }
+        },
+        "start": {
+          "type": "integer",
+          "description": "Starting number for the ordered list (default: 1)",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

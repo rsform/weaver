@@ -1579,6 +1579,340 @@ pub fn use_whitewind_entry_data(
     (res, memo)
 }
 
+/// Fetches Leaflet document by rkey (SSR)
+#[cfg(feature = "fullstack-server")]
+pub fn use_leaflet_document_data(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<String>)>>, RenderError>,
+    Memo<Option<crate::fetch::LeafletDocumentData>>,
+) {
+    use weaver_api::pub_leaflet::document::Document;
+
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            use jacquard::client::AgentSessionExt;
+            use weaver_api::pub_leaflet::publication::Publication;
+
+            let ident = ident();
+            let rkey = rkey();
+
+            let uri_str = format!("at://{}/pub.leaflet.document/{}", ident, rkey);
+            let uri = Document::uri(&uri_str).ok()?;
+            let record = fetcher.fetch_record(&uri).await.ok()?;
+
+            // Fetch publication to get base_path if document has one
+            let publication_base_path = if let Some(pub_uri) = &record.value.publication {
+                tracing::debug!("Leaflet doc has publication: {}", pub_uri.as_ref());
+                match Publication::uri(pub_uri.as_ref()) {
+                    Ok(typed_uri) => {
+                        tracing::debug!("Parsed publication URI successfully");
+                        match fetcher.fetch_record(&typed_uri).await {
+                            Ok(pub_record) => {
+                                // Try typed field first, fall back to extra_data (handles snake_case mismatch)
+                                let bp = pub_record
+                                    .value
+                                    .base_path
+                                    .as_ref()
+                                    .map(|p| p.as_ref().to_string())
+                                    .or_else(|| {
+                                        pub_record
+                                            .value
+                                            .extra_data
+                                            .as_ref()
+                                            .and_then(|m| m.get("base_path"))
+                                            .and_then(|v| jacquard::from_data::<String>(v).ok())
+                                    });
+                                tracing::debug!("Publication base_path: {:?}", bp);
+                                bp
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to fetch publication: {:?}", e);
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse publication URI: {:?}", e);
+                        None
+                    }
+                }
+            } else {
+                tracing::debug!("Leaflet doc has no publication");
+                None
+            };
+
+            let profile = fetcher.fetch_profile(&ident).await.ok()?;
+
+            Some((
+                serde_json::to_value(&record.value).ok()?,
+                serde_json::to_value(&*profile).ok()?,
+                publication_base_path,
+            ))
+        }
+    });
+
+    let memo = use_memo(use_reactive!(|res| {
+        use weaver_api::pub_leaflet::document::Document;
+        use weaver_api::sh_weaver::actor::ProfileDataView;
+
+        let res = res.as_ref().ok()?;
+        if let Some(Some((doc_json, profile_json, base_path))) = &*res.read() {
+            let document = jacquard::from_json_value::<Document>(doc_json.clone()).ok()?;
+            let profile =
+                jacquard::from_json_value::<ProfileDataView>(profile_json.clone()).ok()?;
+            Some(crate::fetch::LeafletDocumentData {
+                document,
+                profile,
+                publication_base_path: base_path.clone(),
+            })
+        } else {
+            None
+        }
+    }));
+    (res, memo)
+}
+
+/// Fetches Leaflet document by rkey (client-only)
+#[cfg(not(feature = "fullstack-server"))]
+pub fn use_leaflet_document_data(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Resource<Option<crate::fetch::LeafletDocumentData>>,
+    Memo<Option<crate::fetch::LeafletDocumentData>>,
+) {
+    use jacquard::IntoStatic;
+    use weaver_api::pub_leaflet::document::Document;
+    use weaver_api::pub_leaflet::publication::Publication;
+
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            let ident = ident();
+            let rkey = rkey();
+
+            let uri_str = format!("at://{}/pub.leaflet.document/{}", ident, rkey);
+            let uri = Document::uri(&uri_str).ok()?;
+            let record = fetcher.fetch_record(&uri).await.ok()?;
+
+            // Fetch publication to get base_path if document has one
+            let publication_base_path = if let Some(pub_uri) = &record.value.publication {
+                if let Ok(typed_uri) = Publication::uri(pub_uri.as_ref()) {
+                    if let Ok(pub_record) = fetcher.fetch_record(&typed_uri).await {
+                        // Try typed field first, fall back to extra_data (handles snake_case mismatch)
+                        pub_record
+                            .value
+                            .base_path
+                            .as_ref()
+                            .map(|p| p.as_ref().to_string())
+                            .or_else(|| {
+                                pub_record
+                                    .value
+                                    .extra_data
+                                    .as_ref()
+                                    .and_then(|m| m.get("base_path"))
+                                    .and_then(|v| jacquard::from_data::<String>(v).ok())
+                            })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let profile = fetcher.fetch_profile(&ident).await.ok()?;
+
+            Some(crate::fetch::LeafletDocumentData {
+                document: record.value.into_static(),
+                profile: (*profile).clone(),
+                publication_base_path,
+            })
+        }
+    });
+
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
+/// Fetches site.standard/blog.pckt document by rkey (SSR)
+///
+/// Supports both `site.standard.document` and `blog.pckt.document` collections.
+/// For blog.pckt.document, unwraps the inner site.standard.document.
+#[cfg(all(feature = "fullstack-server", feature = "pckt"))]
+pub fn use_pckt_document_data(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<String>)>>, RenderError>,
+    Memo<Option<crate::fetch::PcktDocumentData>>,
+) {
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    let res = use_server_future(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            use jacquard::client::AgentSessionExt;
+            use weaver_api::site_standard::document::Document as SiteStandardDocument;
+            use weaver_api::site_standard::publication::Publication;
+
+            let ident = ident();
+            let rkey = rkey();
+
+            // Try site.standard.document first, then blog.pckt.document
+            use jacquard::types::aturi::AtUri;
+
+            let doc = {
+                let uri_str = format!("at://{}/site.standard.document/{}", ident, rkey);
+                if let Ok(uri) = AtUri::new(&uri_str) {
+                    if let Ok(output) = fetcher.fetch_record_slingshot(&uri).await {
+                        jacquard::from_data::<SiteStandardDocument>(&output.value)
+                            .ok()
+                            .map(|d| d.into_static())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+
+            let doc = if let Some(d) = doc {
+                d
+            } else {
+                // Try blog.pckt.document
+                use weaver_api::blog_pckt::document::Document as PcktDocument;
+                let uri_str = format!("at://{}/blog.pckt.document/{}", ident, rkey);
+                let uri = PcktDocument::uri(&uri_str).ok()?;
+                let record = fetcher.fetch_record(&uri).await.ok()?;
+                record.value.document.into_static()
+            };
+
+            // Fetch publication to get base URL
+            let publication_url =
+                if let Ok(pub_record) = fetcher.fetch_record_slingshot(&doc.publication).await {
+                    jacquard::from_data::<Publication>(&pub_record.value)
+                        .ok()
+                        .map(|p| p.url.as_ref().to_string())
+                } else {
+                    None
+                };
+
+            let profile = fetcher.fetch_profile(&ident).await.ok()?;
+
+            Some((
+                serde_json::to_value(&doc).ok()?,
+                serde_json::to_value(&*profile).ok()?,
+                publication_url,
+            ))
+        }
+    });
+
+    let memo = use_memo(use_reactive!(|res| {
+        use weaver_api::sh_weaver::actor::ProfileDataView;
+        use weaver_api::site_standard::document::Document as SiteStandardDocument;
+
+        let res = res.as_ref().ok()?;
+        if let Some(Some((doc_json, profile_json, publication_url))) = &*res.read() {
+            let document =
+                jacquard::from_json_value::<SiteStandardDocument>(doc_json.clone()).ok()?;
+            let profile =
+                jacquard::from_json_value::<ProfileDataView>(profile_json.clone()).ok()?;
+            Some(crate::fetch::PcktDocumentData {
+                document,
+                profile,
+                publication_url: publication_url.clone(),
+            })
+        } else {
+            None
+        }
+    }));
+    (res, memo)
+}
+
+/// Fetches site.standard/blog.pckt document by rkey (client-only)
+#[cfg(all(not(feature = "fullstack-server"), feature = "pckt"))]
+pub fn use_pckt_document_data(
+    ident: ReadSignal<AtIdentifier<'static>>,
+    rkey: ReadSignal<SmolStr>,
+) -> (
+    Resource<Option<crate::fetch::PcktDocumentData>>,
+    Memo<Option<crate::fetch::PcktDocumentData>>,
+) {
+    use jacquard::IntoStatic;
+    use weaver_api::site_standard::document::Document as SiteStandardDocument;
+    use weaver_api::site_standard::publication::Publication;
+
+    let fetcher = use_context::<crate::fetch::Fetcher>();
+
+    let res = use_resource(move || {
+        let fetcher = fetcher.clone();
+        async move {
+            let ident = ident();
+            let rkey = rkey();
+
+            // Try site.standard.document first, then blog.pckt.document
+            use jacquard::types::aturi::AtUri;
+
+            let doc = {
+                let uri_str = format!("at://{}/site.standard.document/{}", ident, rkey);
+                if let Ok(uri) = AtUri::new(&uri_str) {
+                    if let Ok(output) = fetcher.fetch_record_slingshot(&uri).await {
+                        jacquard::from_data::<SiteStandardDocument>(&output.value)
+                            .ok()
+                            .map(|d| d.into_static())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+
+            let doc = if let Some(d) = doc {
+                d
+            } else {
+                // Try blog.pckt.document
+                use weaver_api::blog_pckt::document::Document as PcktDocument;
+                let uri_str = format!("at://{}/blog.pckt.document/{}", ident, rkey);
+                let uri = PcktDocument::uri(&uri_str).ok()?;
+                let record = fetcher.fetch_record(&uri).await.ok()?;
+                record.value.document.into_static()
+            };
+
+            // Fetch publication to get base URL
+            let publication_url =
+                if let Ok(pub_record) = fetcher.fetch_record_slingshot(&doc.publication).await {
+                    jacquard::from_data::<Publication>(&pub_record.value)
+                        .ok()
+                        .map(|p| p.url.as_ref().to_string())
+                } else {
+                    None
+                };
+
+            let profile = fetcher.fetch_profile(&ident).await.ok()?;
+
+            Some(crate::fetch::PcktDocumentData {
+                document: doc,
+                profile: (*profile).clone(),
+                publication_url,
+            })
+        }
+    });
+
+    let memo = use_memo(move || res.read().clone().flatten());
+    (res, memo)
+}
+
 #[cfg(feature = "fullstack-server")]
 #[put("/cache/{ident}/{cid}?name", cache: Extension<Arc<BlobCache>>)]
 pub async fn cache_blob(ident: SmolStr, cid: SmolStr, name: Option<SmolStr>) -> Result<()> {

@@ -884,6 +884,16 @@ mod embed_worker_impl {
                     let scope = scope.clone();
 
                     wasm_bindgen_futures::spawn_local(async move {
+                        // Use weaver-index when use-index feature is enabled
+                        #[cfg(feature = "use-index")]
+                        {
+                            use jacquard::xrpc::XrpcClient;
+                            use jacquard::url::Url;
+                            if let Ok(url) = Url::parse("https://index.weaver.sh") {
+                                session.set_base_uri(url).await;
+                            }
+                        }
+
                         let fetch_start = crate::perf::now();
 
                         for (uri_str, at_uri) in to_fetch {

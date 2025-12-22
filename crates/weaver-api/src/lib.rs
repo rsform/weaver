@@ -5,6 +5,9 @@
 
 #[cfg(feature = "app_bsky")]
 pub mod app_bsky;
+
+#[cfg(feature = "blog_pckt")]
+pub mod blog_pckt;
 pub mod builder_types;
 
 #[cfg(feature = "chat_bsky")]
@@ -21,6 +24,9 @@ pub mod pub_leaflet;
 
 #[cfg(feature = "sh_weaver")]
 pub mod sh_weaver;
+
+#[cfg(feature = "site_standard")]
+pub mod site_standard;
 
 #[cfg(feature = "tools_ozone")]
 pub mod tools_ozone;

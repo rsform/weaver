@@ -1,5 +1,10 @@
 use super::{error::ClientRenderError, types::BlobName};
-use crate::{Frontmatter, NotebookContext};
+use crate::{
+    Frontmatter, NotebookContext,
+    atproto::embed_renderer::{
+        fetch_and_render_entry, fetch_and_render_leaflet, fetch_and_render_whitewind_entry,
+    },
+};
 use jacquard::{
     client::{Agent, AgentSession},
     prelude::IdentityResolver,
@@ -75,6 +80,24 @@ impl<A: AgentSession + IdentityResolver> EmbedResolver for DefaultEmbedResolver<
                         }
                     })
                 }
+                "sh.weaver.notebook.entry" => fetch_and_render_entry(uri, &*self.agent)
+                    .await
+                    .map_err(|e| ClientRenderError::EntryFetch {
+                        uri: uri.as_ref().to_string(),
+                        source: Box::new(e),
+                    }),
+                "pub.leaflet.document" => fetch_and_render_leaflet(uri, &*self.agent)
+                    .await
+                    .map_err(|e| ClientRenderError::EntryFetch {
+                        uri: uri.as_ref().to_string(),
+                        source: Box::new(e),
+                    }),
+                "com.whtwnd.blog.entry" => fetch_and_render_whitewind_entry(uri, &*self.agent)
+                    .await
+                    .map_err(|e| ClientRenderError::EntryFetch {
+                        uri: uri.as_ref().to_string(),
+                        source: Box::new(e),
+                    }),
                 _ => fetch_and_render_generic(uri, &*self.agent)
                     .await
                     .map_err(|e| ClientRenderError::EntryFetch {
@@ -341,6 +364,15 @@ fn at_uri_to_web_url(at_uri: &AtUri<'_>) -> String {
             }
             "app.bsky.graph.starterpack" => {
                 format!("https://bsky.app/starter-pack/{}/{}", authority, rkey_str)
+            }
+            "sh.weaver.notebook.entry" => {
+                format!("https://alpha.weaver.sh/{}/e/{}", authority, rkey_str)
+            }
+            "pub.leaflet.document" => {
+                format!("https://alpha.weaver.sh/{}/p/{}", authority, rkey_str)
+            }
+            "com.whtwnd.blog.entry" => {
+                format!("https://alpha.weaver.sh/{}/w/{}", authority, rkey_str)
             }
             // Weaver records and unknown collections go to weaver.sh
             _ => {

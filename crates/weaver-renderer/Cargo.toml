@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+pckt = []
+
 [dependencies]
 n0-future.workspace = true
 weaver-common = { path = "../weaver-common" }

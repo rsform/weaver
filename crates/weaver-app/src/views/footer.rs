@@ -34,6 +34,7 @@ fn should_show_full_footer(route: &Route) -> bool {
         | Route::NewDraft { ident, .. }
         | Route::InvitesPage { ident }
         | Route::StandaloneEntry { ident, .. }
+        | Route::StandaloneEntryNsid { ident, .. }
         | Route::StandaloneEntryEdit { ident, .. }
         | Route::NotebookIndex { ident, .. }
         | Route::EntryPage { ident, .. }
@@ -41,7 +42,13 @@ fn should_show_full_footer(route: &Route) -> bool {
         | Route::NotebookEntryEdit { ident, .. } => is_owner_ident(ident),
 
         // External content: minimal footer
-        Route::WhiteWindEntry { .. } => false,
+        Route::WhiteWindEntry { .. }
+        | Route::WhiteWindEntryNsid { .. }
+        | Route::LeafletEntry { .. }
+        | Route::LeafletEntryNsid { .. }
+        | Route::PcktEntry { .. }
+        | Route::PcktEntryNsid { .. }
+        | Route::PcktEntryBlogNsid { .. } => false,
     }
 }
 

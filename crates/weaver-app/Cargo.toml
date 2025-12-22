@@ -26,6 +26,8 @@ required-features = ["web"]
 default = ["web", "fullstack-server", "use-index"]
 # Fullstack mode with SSR and server functions
 fullstack-server = ["dioxus/fullstack"]
+# Enable pckt/site.standard document rendering
+pckt = ["weaver-renderer/pckt"]
 wasm-split = ["dioxus/wasm-split"]
 # Use weaver-index for reads (proxied when authenticated)
 use-index = ["weaver-common/use-index"]

@@ -283,6 +283,301 @@ where
     Ok(html)
 }
 
+/// Fetch and render a Leaflet document as HTML
+///
+/// Renders the document's pages (currently only LinearDocument is supported).
+pub async fn fetch_and_render_leaflet<A>(
+    uri: &AtUri<'_>,
+    agent: &A,
+) -> Result<String, AtProtoPreprocessError>
+where
+    A: AgentSessionExt,
+{
+    use crate::leaflet::{LeafletRenderContext, render_linear_document};
+    use weaver_api::pub_leaflet::document::{Document, DocumentPagesItem};
+    use weaver_api::pub_leaflet::publication::Publication;
+
+    let doc_uri = Document::uri(uri.to_cowstr()).map_err(|e| {
+        AtProtoPreprocessError::FetchFailed(format!("Invalid document URI: {:?}", e))
+    })?;
+
+    let doc = agent.fetch_record(&doc_uri).await.map_err(|e| {
+        AtProtoPreprocessError::FetchFailed(format!("Document fetch failed: {:?}", e))
+    })?;
+
+    // Fetch publication to get base_path for external link
+    let publication_base_path: Option<String> = if let Some(pub_uri) = &doc.value.publication {
+        if let Ok(pub_typed_uri) = Publication::uri(pub_uri.as_ref()) {
+            agent
+                .fetch_record(&pub_typed_uri)
+                .await
+                .ok()
+                .and_then(|rec| rec.value.base_path.as_ref().map(|p| p.as_ref().to_string()))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Get author DID and handle
+    use jacquard::types::string::{Did, Handle};
+    let (author_did, author_handle): (Did<'static>, Option<Handle<'static>>) =
+        match &doc.value.author {
+            AtIdentifier::Did(d) => {
+                let did = d.clone().into_static();
+                let handle = agent
+                    .resolve_did_doc_owned(d)
+                    .await
+                    .ok()
+                    .and_then(|doc| doc.handles().first().cloned());
+                (did, handle)
+            }
+            AtIdentifier::Handle(h) => {
+                let handle = Some(h.clone().into_static());
+                let did = agent
+                    .resolve_handle(h)
+                    .await
+                    .map(|d| d.into_static())
+                    .map_err(|e| {
+                        AtProtoPreprocessError::FetchFailed(format!(
+                            "Handle resolution failed: {:?}",
+                            e
+                        ))
+                    })?;
+                (did, handle)
+            }
+        };
+
+    let ctx = LeafletRenderContext::new(author_did);
+
+    // Generate unique toggle ID
+    let rkey = uri.rkey().map(|r| r.as_ref()).unwrap_or("unknown");
+    let toggle_id = format!("leaflet-toggle-{}", rkey);
+
+    let mut html = String::new();
+    html.push_str("<div class=\"atproto-embed atproto-entry\" contenteditable=\"false\">");
+
+    // Hidden checkbox for expand/collapse
+    html.push_str("<input type=\"checkbox\" class=\"embed-entry-toggle\" id=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\">");
+
+    // Header with title and author
+    html.push_str("<div class=\"embed-entry-header\">");
+
+    // Title as link if we have the publication base_path
+    if let Some(base_path) = &publication_base_path {
+        html.push_str("<a class=\"embed-entry-title\" href=\"https://");
+        html.push_str(&html_escape(base_path));
+        html.push('/');
+        html.push_str(&html_escape(rkey));
+        html.push_str("\" target=\"_blank\" rel=\"noopener\">");
+        html.push_str(&html_escape(doc.value.title.as_ref()));
+        html.push_str("</a>");
+    } else {
+        html.push_str("<span class=\"embed-entry-title\">");
+        html.push_str(&html_escape(doc.value.title.as_ref()));
+        html.push_str("</span>");
+    }
+
+    // Author info
+    if let Some(handle) = &author_handle {
+        html.push_str("<span class=\"embed-entry-author\">@");
+        html.push_str(&html_escape(handle.as_ref()));
+        html.push_str("</span>");
+    }
+
+    html.push_str("</div>"); // end header
+
+    // Scrollable content container
+    html.push_str("<div class=\"embed-entry-content\">");
+
+    // Render each page
+    for page in &doc.value.pages {
+        match page {
+            DocumentPagesItem::LinearDocument(linear_doc) => {
+                html.push_str(&render_linear_document(linear_doc, &ctx, agent).await);
+            }
+            DocumentPagesItem::Canvas(_) => {
+                html.push_str("<div class=\"embed-video-placeholder\">[Canvas layout not yet supported]</div>");
+            }
+            DocumentPagesItem::Unknown(_) => {
+                html.push_str("<div class=\"embed-video-placeholder\">[Unknown page type]</div>");
+            }
+        }
+    }
+
+    html.push_str("</div>"); // end content
+
+    // Expand/collapse label
+    html.push_str("<label class=\"embed-entry-expand\" for=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\"></label>");
+
+    html.push_str("</div>");
+
+    Ok(html)
+}
+
+#[cfg(feature = "pckt")]
+/// Fetch and render a pckt/site.standard document as HTML
+///
+/// Renders the document's content blocks using the pckt block renderer.
+/// Supports both `site.standard.document` and `blog.pckt.document` (which wraps site.standard).
+///
+/// TODO: site.standard.document is designed to be a shared envelope for different block formats.
+/// Currently hardcoded to use pckt block renderer, but should probe the first block's $type
+/// and dispatch to the appropriate renderer (blog.pckt.block.* → pckt, pub.leaflet.blocks.* → leaflet,
+/// sh.weaver.block.* → weaver, etc).
+pub async fn fetch_and_render_pckt<A>(
+    uri: &AtUri<'_>,
+    agent: &A,
+) -> Result<String, AtProtoPreprocessError>
+where
+    A: AgentSessionExt,
+{
+    use crate::pckt::{PcktRenderContext, render_content_blocks};
+    use weaver_api::site_standard::document::Document as SiteStandardDocument;
+
+    // Fetch the record as untyped first to check the structure
+    let output = agent
+        .fetch_record_slingshot(uri)
+        .await
+        .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("{:?}", e)))?;
+
+    // Extract the site.standard.document - either directly or from blog.pckt.document wrapper
+    let doc: SiteStandardDocument<'_> = if output
+        .value
+        .type_discriminator()
+        .map(|t| t == "blog.pckt.document")
+        .unwrap_or(false)
+    {
+        // blog.pckt.document wraps site.standard.document in a "document" field
+        let pckt_doc = jacquard::from_data::<weaver_api::blog_pckt::document::Document>(&output.value)
+            .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("Parse error: {:?}", e)))?;
+        pckt_doc.document
+    } else {
+        // Direct site.standard.document
+        jacquard::from_data::<SiteStandardDocument>(&output.value)
+            .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("Parse error: {:?}", e)))?
+    };
+
+    // Fetch publication to get base URL for external link
+    use weaver_api::site_standard::publication::Publication;
+    let publication_url: Option<String> = agent
+        .fetch_record_slingshot(&doc.publication)
+        .await
+        .ok()
+        .and_then(|rec| {
+            jacquard::from_data::<Publication>(&rec.value)
+                .ok()
+                .map(|pub_rec| pub_rec.url.as_ref().to_string())
+        });
+
+    // Get author DID and handle from URI authority
+    use jacquard::types::string::{Did, Handle};
+    let (author_did, author_handle): (Did<'static>, Option<Handle<'static>>) =
+        match uri.authority() {
+            jacquard::types::ident::AtIdentifier::Did(d) => {
+                let did = d.clone().into_static();
+                let handle = agent
+                    .resolve_did_doc_owned(d)
+                    .await
+                    .ok()
+                    .and_then(|doc| doc.handles().first().cloned());
+                (did, handle)
+            }
+            jacquard::types::ident::AtIdentifier::Handle(h) => {
+                let handle = Some(h.clone().into_static());
+                let did = agent
+                    .resolve_handle(h)
+                    .await
+                    .map(|d| d.into_static())
+                    .map_err(|e| {
+                        AtProtoPreprocessError::FetchFailed(format!(
+                            "Handle resolution failed: {:?}",
+                            e
+                        ))
+                    })?;
+                (did, handle)
+            }
+        };
+
+    let ctx = PcktRenderContext::new(author_did);
+
+    // Generate unique toggle ID
+    let rkey = uri.rkey().map(|r| r.as_ref()).unwrap_or("unknown");
+    let toggle_id = format!("pckt-toggle-{}", rkey);
+
+    // Document path for URL (use path field if present, otherwise rkey)
+    let doc_path = doc
+        .path
+        .as_ref()
+        .map(|p| p.as_ref())
+        .unwrap_or(rkey);
+
+    let mut html = String::new();
+    html.push_str("<div class=\"atproto-embed atproto-entry\" contenteditable=\"false\">");
+
+    // Hidden checkbox for expand/collapse
+    html.push_str("<input type=\"checkbox\" class=\"embed-entry-toggle\" id=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\">");
+
+    // Header with title and author
+    html.push_str("<div class=\"embed-entry-header\">");
+
+    // Title as link if we have the publication URL
+    if let Some(base_url) = &publication_url {
+        let base_url = base_url.trim_end_matches('/');
+        html.push_str("<a class=\"embed-entry-title\" href=\"");
+        html.push_str(&html_escape(base_url));
+        html.push('/');
+        html.push_str(&html_escape(doc_path));
+        html.push_str("\" target=\"_blank\" rel=\"noopener\">");
+        html.push_str(&html_escape(doc.title.as_ref()));
+        html.push_str("</a>");
+    } else {
+        html.push_str("<span class=\"embed-entry-title\">");
+        html.push_str(&html_escape(doc.title.as_ref()));
+        html.push_str("</span>");
+    }
+
+    // Author info
+    if let Some(handle) = &author_handle {
+        html.push_str("<span class=\"embed-entry-author\">@");
+        html.push_str(&html_escape(handle.as_ref()));
+        html.push_str("</span>");
+    }
+
+    html.push_str("</div>"); // end header
+
+    // Scrollable content container
+    html.push_str("<div class=\"embed-entry-content\">");
+
+    // Render content blocks if present
+    if let Some(content) = &doc.content {
+        html.push_str(&render_content_blocks(content, &ctx, agent).await);
+    } else if let Some(text_content) = &doc.text_content {
+        // Fallback to text_content if no structured content
+        html.push_str("<p>");
+        html.push_str(&html_escape(text_content.as_ref()));
+        html.push_str("</p>");
+    }
+
+    html.push_str("</div>"); // end content
+
+    // Expand/collapse label
+    html.push_str("<label class=\"embed-entry-expand\" for=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\"></label>");
+
+    html.push_str("</div>");
+
+    Ok(html)
+}
+
 /// Fetch and render any AT URI, dispatching to the appropriate renderer based on collection.
 ///
 /// Uses typed fetchers for known collections (posts, profiles) and falls back to
@@ -307,6 +602,11 @@ where
         }
         Some("sh.weaver.notebook.entry") => fetch_and_render_entry(uri, agent).await,
         Some("com.whtwnd.blog.entry") => fetch_and_render_whitewind_entry(uri, agent).await,
+        Some("pub.leaflet.document") => fetch_and_render_leaflet(uri, agent).await,
+        #[cfg(feature = "pckt")]
+        Some("site.standard.document") | Some("blog.pckt.document") => {
+            fetch_and_render_pckt(uri, agent).await
+        }
         None => fetch_and_render_profile(uri.authority(), agent).await,
         _ => fetch_and_render_generic(uri, agent).await,
     }

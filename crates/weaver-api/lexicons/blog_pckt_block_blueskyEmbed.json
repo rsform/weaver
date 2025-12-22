@@ -1,0 +1,20 @@
+{
+  "lexicon": 1,
+  "id": "blog.pckt.block.blueskyEmbed",
+  "description": "Embedded Bluesky social media post. References a Bluesky post via AT Protocol strongRef.",
+  "defs": {
+    "main": {
+      "type": "object",
+      "required": [
+        "postRef"
+      ],
+      "properties": {
+        "postRef": {
+          "type": "ref",
+          "description": "Strong reference to the Bluesky post",
+          "ref": "com.atproto.repo.strongRef"
+        }
+      }
+    }
+  }
+}

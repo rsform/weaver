@@ -34,9 +34,11 @@ use components::{EntryPage, Repository, RepositoryIndex};
 use config::{Config, OAuthConfig};
 #[allow(unused)]
 use views::{
-    AboutPage, Callback, DraftEdit, DraftsList, Editor, Home, InvitesPage, Navbar, NewDraft,
-    Notebook, NotebookEntryByRkey, NotebookEntryEdit, NotebookIndex, NotebookPage, PrivacyPage,
-    RecordIndex, RecordPage, StandaloneEntry, StandaloneEntryEdit, TermsPage, WhiteWindEntry,
+    AboutPage, Callback, DraftEdit, DraftsList, Editor, Home, InvitesPage, LeafletEntry,
+    LeafletEntryNsid, Navbar, NewDraft, Notebook, NotebookEntryByRkey, NotebookEntryEdit,
+    NotebookIndex, NotebookPage, PcktEntry, PcktEntryBlogNsid, PcktEntryNsid, PrivacyPage,
+    RecordIndex, RecordPage, StandaloneEntry, StandaloneEntryEdit, StandaloneEntryNsid, TermsPage,
+    WhiteWindEntry, WhiteWindEntryNsid,
 };
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -79,11 +81,26 @@ pub enum Route {
             // Standalone entry routes
             #[route("/e/:rkey")]
             StandaloneEntry { ident: AtIdentifier<'static>, rkey: SmolStr },
+            #[route("/sh.weaver.notebook.entry/:rkey")]
+            StandaloneEntryNsid { ident: AtIdentifier<'static>, rkey: SmolStr },
             #[route("/e/:rkey/edit")]
             StandaloneEntryEdit { ident: AtIdentifier<'static>, rkey: SmolStr },
-            // External blog routes
+            // External blog routes (short paths)
             #[route("/w/:rkey")]
             WhiteWindEntry { ident: AtIdentifier<'static>, rkey: SmolStr },
+            #[route("/l/:rkey")]
+            LeafletEntry { ident: AtIdentifier<'static>, rkey: SmolStr },
+            #[route("/sd/:rkey")]
+            PcktEntry { ident: AtIdentifier<'static>, rkey: SmolStr },
+            // External blog routes (NSID paths - replace at:// with https://host/)
+            #[route("/com.whtwnd.blog.entry/:rkey")]
+            WhiteWindEntryNsid { ident: AtIdentifier<'static>, rkey: SmolStr },
+            #[route("/pub.leaflet.document/:rkey")]
+            LeafletEntryNsid { ident: AtIdentifier<'static>, rkey: SmolStr },
+            #[route("/site.standard.document/:rkey")]
+            PcktEntryNsid { ident: AtIdentifier<'static>, rkey: SmolStr },
+            #[route("/blog.pckt.document/:rkey")]
+            PcktEntryBlogNsid { ident: AtIdentifier<'static>, rkey: SmolStr },
             // Notebook routes
             #[nest("/:book_title")]
               #[layout(Notebook)]

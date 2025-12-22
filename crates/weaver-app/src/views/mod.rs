@@ -33,7 +33,7 @@ mod drafts;
 pub use drafts::{DraftEdit, DraftsList, NewDraft, NotebookEntryEdit, StandaloneEntryEdit};
 
 mod entry;
-pub use entry::{NotebookEntryByRkey, StandaloneEntry};
+pub use entry::{NotebookEntryByRkey, StandaloneEntry, StandaloneEntryNsid};
 
 mod invites;
 pub use invites::InvitesPage;
@@ -44,5 +44,8 @@ pub use footer::Footer;
 mod static_page;
 pub use static_page::{AboutPage, PrivacyPage, TermsPage};
 
-mod whitewind;
-pub use whitewind::WhiteWindEntry;
+mod external;
+pub use external::{
+    LeafletEntry, LeafletEntryNsid, PcktEntry, PcktEntryBlogNsid, PcktEntryNsid, WhiteWindEntry,
+    WhiteWindEntryNsid,
+};
