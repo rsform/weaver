@@ -28,6 +28,10 @@ default = ["web", "fullstack-server", "use-index"]
 fullstack-server = ["dioxus/fullstack"]
 # Enable pckt/site.standard document rendering
 pckt = ["weaver-renderer/pckt"]
+# Route-based WASM bundle splitting. Currently broken: causes server/client serialization
+# mismatches (bool vs String) in use_server_future, especially in navbar. Possibly related
+# to SmolStr niche optimization or type registry getting confused across module boundaries.
+# Revisit when dioxus matures this feature. Run with: dx serve --wasm-split
 wasm-split = ["dioxus/wasm-split"]
 # Use weaver-index for reads (proxied when authenticated)
 use-index = ["weaver-common/use-index"]

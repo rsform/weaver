@@ -80,15 +80,18 @@ strip = "symbols"
 [profile.wasm-dev]
 inherits = "dev"
 debug = true
+lto = true
 
 [profile.server-dev]
 inherits = "dev"
 debug = true
+lto = true
 
 
 [profile.server-release]
 inherits = "release"
 opt-level = 2
+lto = true
 
 [profile.android-dev]
 inherits = "dev"
