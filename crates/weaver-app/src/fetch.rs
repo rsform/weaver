@@ -90,6 +90,8 @@ pub struct LeafletDocumentData {
     pub profile: ProfileDataView<'static>,
     /// Publication base_path for constructing external URL (e.g., "connectedplaces.leaflet.pub")
     pub publication_base_path: Option<String>,
+    /// Pre-rendered HTML content
+    pub rendered_html: Option<String>,
 }
 
 /// Data for a site.standard / blog.pckt document
@@ -100,6 +102,8 @@ pub struct PcktDocumentData {
     pub profile: ProfileDataView<'static>,
     /// Publication URL for constructing external URL (e.g., "https://crypto.pckt.blog")
     pub publication_url: Option<String>,
+    /// Pre-rendered HTML content
+    pub rendered_html: Option<String>,
 }
 
 pub struct Client {

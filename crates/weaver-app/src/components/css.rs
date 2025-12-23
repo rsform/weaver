@@ -88,25 +88,9 @@ pub fn NotebookCss(ident: SmolStr, notebook: SmolStr) -> Element {
 
 #[component]
 pub fn DefaultNotebookCss() -> Element {
-    use weaver_renderer::css::{generate_base_css, generate_syntax_css};
-    use weaver_renderer::theme::default_resolved_theme;
-
-    let css_content = use_resource(move || async move {
-        let resolved_theme = default_resolved_theme();
-
-        let mut css = generate_base_css(&resolved_theme);
-        css.push_str(
-            &generate_syntax_css(&resolved_theme)
-                .await
-                .unwrap_or_default(),
-        );
-
-        Some(css)
-    });
-
-    match css_content() {
-        Some(Some(css)) => rsx! { document::Style { {css} } },
-        _ => rsx! {},
+    rsx! {
+        document::Stylesheet { href: asset!("/assets/styling/theme-defaults.css") }
+        document::Stylesheet { href: asset!("/assets/styling/notebook-defaults.css") }
     }
 }
 
@@ -155,5 +139,37 @@ pub async fn css(ident: SmolStr, notebook: SmolStr) -> Result<Response> {
             .unwrap_or_default(),
     );
 
+    let css = minify_css(&css).unwrap_or(css);
+
     Ok(([(CONTENT_TYPE, "text/css")], css).into_response())
+}
+
+#[cfg(feature = "server")]
+fn minify_css(css: &str) -> Option<String> {
+    use lightningcss::printer::PrinterOptions;
+    use lightningcss::stylesheet::{MinifyOptions, ParserOptions, StyleSheet};
+
+    let stylesheet = match StyleSheet::parse(css, ParserOptions::default()) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("CSS parse error: {:?}", e);
+            return None;
+        }
+    };
+    let mut stylesheet = stylesheet;
+    if let Err(e) = stylesheet.minify(MinifyOptions::default()) {
+        tracing::warn!("CSS minify error: {:?}", e);
+        return None;
+    }
+    let result = match stylesheet.to_css(PrinterOptions {
+        minify: true,
+        ..Default::default()
+    }) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("CSS print error: {:?}", e);
+            return None;
+        }
+    };
+    Some(result.code)
 }

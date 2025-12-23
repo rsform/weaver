@@ -35,7 +35,7 @@ use-index = ["weaver-common/use-index"]
 web = ["dioxus/web", "dioxus-primitives/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
-server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum", "dep:resvg", "dep:usvg", "dep:tiny-skia", "dep:textwrap", "dep:askama", "dep:fontdb"]
+server = [ "dioxus/server", "dep:jacquard-axum", "dep:axum", "dep:resvg", "dep:usvg", "dep:tiny-skia", "dep:textwrap", "dep:askama", "dep:fontdb", "dep:lightningcss"]
 collab-worker = ["weaver-common/iroh"]
 
 
@@ -87,6 +87,9 @@ tiny-skia = { version = "0.11", optional = true }
 textwrap = { version = "0.16", optional = true }
 askama = { version = "0.12", optional = true }
 fontdb = { version = "0.22", optional = true }
+
+# CSS minification (server-only)
+lightningcss = { version = "1.0.0-alpha.68", optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 webbrowser = "1.0.6"

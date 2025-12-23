@@ -1585,7 +1585,7 @@ pub fn use_leaflet_document_data(
     ident: ReadSignal<AtIdentifier<'static>>,
     rkey: ReadSignal<SmolStr>,
 ) -> (
-    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<String>)>>, RenderError>,
+    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<String>, Option<String>)>>, RenderError>,
     Memo<Option<crate::fetch::LeafletDocumentData>>,
 ) {
     use weaver_api::pub_leaflet::document::Document;
@@ -1595,8 +1595,12 @@ pub fn use_leaflet_document_data(
     let res = use_server_future(move || {
         let fetcher = fetcher.clone();
         async move {
+            use jacquard::IntoStatic;
             use jacquard::client::AgentSessionExt;
+            use jacquard::prelude::IdentityResolver;
+            use weaver_api::pub_leaflet::document::DocumentPagesItem;
             use weaver_api::pub_leaflet::publication::Publication;
+            use weaver_renderer::leaflet::{LeafletRenderContext, render_linear_document};
 
             let ident = ident();
             let rkey = rkey();
@@ -1646,12 +1650,37 @@ pub fn use_leaflet_document_data(
                 None
             };
 
+            // Render HTML
+            let rendered_html = {
+                let author_did = match &record.value.author {
+                    AtIdentifier::Did(d) => d.clone().into_static(),
+                    AtIdentifier::Handle(h) => fetcher.resolve_handle(h).await.ok()?.into_static(),
+                };
+                let ctx = LeafletRenderContext::new(author_did);
+                let mut html = String::new();
+                for page in &record.value.pages {
+                    match page {
+                        DocumentPagesItem::LinearDocument(linear_doc) => {
+                            html.push_str(&render_linear_document(linear_doc, &ctx, &fetcher).await);
+                        }
+                        DocumentPagesItem::Canvas(_) => {
+                            html.push_str("<div class=\"embed-video-placeholder\">[Canvas layout not yet supported]</div>");
+                        }
+                        DocumentPagesItem::Unknown(_) => {
+                            html.push_str("<div class=\"embed-video-placeholder\">[Unknown page type]</div>");
+                        }
+                    }
+                }
+                Some(html)
+            };
+
             let profile = fetcher.fetch_profile(&ident).await.ok()?;
 
             Some((
                 serde_json::to_value(&record.value).ok()?,
                 serde_json::to_value(&*profile).ok()?,
                 publication_base_path,
+                rendered_html,
             ))
         }
     });
@@ -1661,7 +1690,7 @@ pub fn use_leaflet_document_data(
         use weaver_api::sh_weaver::actor::ProfileDataView;
 
         let res = res.as_ref().ok()?;
-        if let Some(Some((doc_json, profile_json, base_path))) = &*res.read() {
+        if let Some(Some((doc_json, profile_json, base_path, rendered_html))) = &*res.read() {
             let document = jacquard::from_json_value::<Document>(doc_json.clone()).ok()?;
             let profile =
                 jacquard::from_json_value::<ProfileDataView>(profile_json.clone()).ok()?;
@@ -1669,6 +1698,7 @@ pub fn use_leaflet_document_data(
                 document,
                 profile,
                 publication_base_path: base_path.clone(),
+                rendered_html: rendered_html.clone(),
             })
         } else {
             None
@@ -1687,8 +1717,10 @@ pub fn use_leaflet_document_data(
     Memo<Option<crate::fetch::LeafletDocumentData>>,
 ) {
     use jacquard::IntoStatic;
-    use weaver_api::pub_leaflet::document::Document;
+    use jacquard::prelude::IdentityResolver;
+    use weaver_api::pub_leaflet::document::{Document, DocumentPagesItem};
     use weaver_api::pub_leaflet::publication::Publication;
+    use weaver_renderer::leaflet::{LeafletRenderContext, render_linear_document};
 
     let fetcher = use_context::<crate::fetch::Fetcher>();
 
@@ -1730,12 +1762,37 @@ pub fn use_leaflet_document_data(
                 None
             };
 
+            // Render HTML
+            let rendered_html = {
+                let author_did = match &record.value.author {
+                    AtIdentifier::Did(d) => d.clone().into_static(),
+                    AtIdentifier::Handle(h) => fetcher.resolve_handle(h).await.ok()?.into_static(),
+                };
+                let ctx = LeafletRenderContext::new(author_did);
+                let mut html = String::new();
+                for page in &record.value.pages {
+                    match page {
+                        DocumentPagesItem::LinearDocument(linear_doc) => {
+                            html.push_str(&render_linear_document(linear_doc, &ctx, &fetcher).await);
+                        }
+                        DocumentPagesItem::Canvas(_) => {
+                            html.push_str("<div class=\"embed-video-placeholder\">[Canvas layout not yet supported]</div>");
+                        }
+                        DocumentPagesItem::Unknown(_) => {
+                            html.push_str("<div class=\"embed-video-placeholder\">[Unknown page type]</div>");
+                        }
+                    }
+                }
+                Some(html)
+            };
+
             let profile = fetcher.fetch_profile(&ident).await.ok()?;
 
             Some(crate::fetch::LeafletDocumentData {
                 document: record.value.into_static(),
                 profile: (*profile).clone(),
                 publication_base_path,
+                rendered_html,
             })
         }
     });
@@ -1753,7 +1810,7 @@ pub fn use_pckt_document_data(
     ident: ReadSignal<AtIdentifier<'static>>,
     rkey: ReadSignal<SmolStr>,
 ) -> (
-    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<String>)>>, RenderError>,
+    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<String>, Option<String>)>>, RenderError>,
     Memo<Option<crate::fetch::PcktDocumentData>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();
@@ -1761,9 +1818,12 @@ pub fn use_pckt_document_data(
     let res = use_server_future(move || {
         let fetcher = fetcher.clone();
         async move {
+            use jacquard::IntoStatic;
             use jacquard::client::AgentSessionExt;
+            use jacquard::prelude::IdentityResolver;
             use weaver_api::site_standard::document::Document as SiteStandardDocument;
             use weaver_api::site_standard::publication::Publication;
+            use weaver_renderer::pckt::{PcktRenderContext, render_content_blocks};
 
             let ident = ident();
             let rkey = rkey();
@@ -1807,12 +1867,27 @@ pub fn use_pckt_document_data(
                     None
                 };
 
+            // Render HTML
+            let rendered_html = {
+                let author_did = match &ident {
+                    AtIdentifier::Did(d) => d.clone().into_static(),
+                    AtIdentifier::Handle(h) => fetcher.resolve_handle(h).await.ok()?.into_static(),
+                };
+                let ctx = PcktRenderContext::new(author_did);
+                if let Some(blocks) = &doc.content {
+                    Some(render_content_blocks(blocks, &ctx, &fetcher).await)
+                } else {
+                    Some(String::from("<p>No content</p>"))
+                }
+            };
+
             let profile = fetcher.fetch_profile(&ident).await.ok()?;
 
             Some((
                 serde_json::to_value(&doc).ok()?,
                 serde_json::to_value(&*profile).ok()?,
                 publication_url,
+                rendered_html,
             ))
         }
     });
@@ -1822,7 +1897,7 @@ pub fn use_pckt_document_data(
         use weaver_api::site_standard::document::Document as SiteStandardDocument;
 
         let res = res.as_ref().ok()?;
-        if let Some(Some((doc_json, profile_json, publication_url))) = &*res.read() {
+        if let Some(Some((doc_json, profile_json, publication_url, rendered_html))) = &*res.read() {
             let document =
                 jacquard::from_json_value::<SiteStandardDocument>(doc_json.clone()).ok()?;
             let profile =
@@ -1831,6 +1906,7 @@ pub fn use_pckt_document_data(
                 document,
                 profile,
                 publication_url: publication_url.clone(),
+                rendered_html: rendered_html.clone(),
             })
         } else {
             None
@@ -1849,8 +1925,10 @@ pub fn use_pckt_document_data(
     Memo<Option<crate::fetch::PcktDocumentData>>,
 ) {
     use jacquard::IntoStatic;
+    use jacquard::prelude::IdentityResolver;
     use weaver_api::site_standard::document::Document as SiteStandardDocument;
     use weaver_api::site_standard::publication::Publication;
+    use weaver_renderer::pckt::{PcktRenderContext, render_content_blocks};
 
     let fetcher = use_context::<crate::fetch::Fetcher>();
 
@@ -1899,12 +1977,27 @@ pub fn use_pckt_document_data(
                     None
                 };
 
+            // Render HTML
+            let rendered_html = {
+                let author_did = match &ident {
+                    AtIdentifier::Did(d) => d.clone().into_static(),
+                    AtIdentifier::Handle(h) => fetcher.resolve_handle(h).await.ok()?.into_static(),
+                };
+                let ctx = PcktRenderContext::new(author_did);
+                if let Some(blocks) = &doc.content {
+                    Some(render_content_blocks(blocks, &ctx, &fetcher).await)
+                } else {
+                    Some(String::from("<p>No content</p>"))
+                }
+            };
+
             let profile = fetcher.fetch_profile(&ident).await.ok()?;
 
             Some(crate::fetch::PcktDocumentData {
                 document: doc,
                 profile: (*profile).clone(),
                 publication_url,
+                rendered_html,
             })
         }
     });

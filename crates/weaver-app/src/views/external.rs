@@ -7,7 +7,6 @@ use weaver_api::sh_weaver::notebook::AuthorListView;
 
 use crate::components::css::DefaultNotebookCss;
 use crate::components::{AuthorList, extract_author_info};
-use crate::fetch::Fetcher;
 
 #[component]
 pub fn WhiteWindEntry(
@@ -71,7 +70,7 @@ pub fn WhiteWindEntry(
                 document::Link { rel: "stylesheet", href: ENTRY_CSS }
                 DefaultNotebookCss {}
 
-                div { class: "entry-page-layout",
+                div { class: "entry-page",
                     div { class: "entry-content-main notebook-content",
                         header { class: "entry-metadata",
                             div { class: "entry-header-row",
@@ -141,7 +140,6 @@ pub fn LeafletEntry(
     rkey: ReadSignal<SmolStr>,
 ) -> Element {
     use crate::components::{ENTRY_CSS, EntryOgMeta};
-    use weaver_api::pub_leaflet::document::DocumentPagesItem;
 
     let (entry_res, entry_data) = crate::data::use_leaflet_document_data(ident, rkey);
 
@@ -170,9 +168,6 @@ pub fn LeafletEntry(
                 .record(data.profile.clone())
                 .build();
 
-            let pages = data.document.pages.clone();
-            let author_did = data.document.author.clone();
-
             rsx! {
                 EntryOgMeta {
                     title: title.to_string(),
@@ -184,7 +179,7 @@ pub fn LeafletEntry(
                 document::Link { rel: "stylesheet", href: ENTRY_CSS }
                 DefaultNotebookCss {}
 
-                div { class: "entry-page-layout",
+                div { class: "entry-page",
                     div { class: "entry-content-main notebook-content",
                         header { class: "entry-metadata",
                             div { class: "entry-header-row",
@@ -206,78 +201,19 @@ pub fn LeafletEntry(
                                 }
                             }
                         }
-                        LeafletContent {
-                            pages: pages,
-                            author_did: author_did,
+                        if let Some(ref html) = data.rendered_html {
+                            div {
+                                class: "entry leaflet-document",
+                                dangerous_inner_html: "{html}"
+                            }
+                        } else {
+                            p { "Rendering..." }
                         }
                     }
                 }
             }
         }
         None => rsx! { p { "Loading..." } },
-    }
-}
-
-#[component]
-fn LeafletContent(
-    pages: Vec<weaver_api::pub_leaflet::document::DocumentPagesItem<'static>>,
-    author_did: jacquard::types::string::AtIdentifier<'static>,
-) -> Element {
-    use jacquard::IntoStatic;
-    use jacquard::prelude::*;
-    use weaver_api::pub_leaflet::document::DocumentPagesItem;
-    use weaver_renderer::leaflet::{LeafletRenderContext, render_linear_document};
-
-    let fetcher = use_context::<Fetcher>();
-
-    let html = use_resource(move || {
-        let pages = pages.clone();
-        let author_did = author_did.clone();
-        let fetcher = fetcher.clone();
-        async move {
-            let mut html = String::new();
-
-            // Resolve author DID
-            let did = match &author_did {
-                jacquard::types::string::AtIdentifier::Did(d) => d.clone().into_static(),
-                jacquard::types::string::AtIdentifier::Handle(h) => {
-                    match fetcher.resolve_handle(h).await {
-                        Ok(d) => d.into_static(),
-                        Err(_) => return String::from("<p>Failed to resolve author</p>"),
-                    }
-                }
-            };
-
-            let ctx = LeafletRenderContext::new(did);
-
-            for page in &pages {
-                match page {
-                    DocumentPagesItem::LinearDocument(linear_doc) => {
-                        html.push_str(&render_linear_document(linear_doc, &ctx, &fetcher).await);
-                    }
-                    DocumentPagesItem::Canvas(_) => {
-                        html.push_str("<div class=\"embed-video-placeholder\">[Canvas layout not yet supported]</div>");
-                    }
-                    DocumentPagesItem::Unknown(_) => {
-                        html.push_str(
-                            "<div class=\"embed-video-placeholder\">[Unknown page type]</div>",
-                        );
-                    }
-                }
-            }
-
-            html
-        }
-    });
-
-    match &*html.read() {
-        Some(content) => rsx! {
-            div {
-                class: "entry leaflet-document",
-                dangerous_inner_html: "{content}"
-            }
-        },
-        None => rsx! { p { "Rendering..." } },
     }
 }
 
@@ -327,9 +263,6 @@ pub fn PcktEntry(ident: ReadSignal<AtIdentifier<'static>>, rkey: ReadSignal<Smol
                 .format("%B %d, %Y")
                 .to_string();
 
-            let content = data.document.content.clone();
-            let author_did = ident();
-
             // Build external URL from publication URL + path (or rkey)
             let doc_path = data
                 .document
@@ -349,7 +282,7 @@ pub fn PcktEntry(ident: ReadSignal<AtIdentifier<'static>>, rkey: ReadSignal<Smol
                 document::Link { rel: "stylesheet", href: ENTRY_CSS }
                 DefaultNotebookCss {}
 
-                div { class: "entry-page-layout",
+                div { class: "entry-page",
                     div { class: "entry-content-main notebook-content",
                         header { class: "entry-metadata",
                             div { class: "entry-header-row",
@@ -379,62 +312,19 @@ pub fn PcktEntry(ident: ReadSignal<AtIdentifier<'static>>, rkey: ReadSignal<Smol
                                 }
                             }
                         }
-                        PcktContent {
-                            content: content,
-                            author_did: author_did,
+                        if let Some(ref html) = data.rendered_html {
+                            div {
+                                class: "entry pckt-document",
+                                dangerous_inner_html: "{html}"
+                            }
+                        } else {
+                            p { "Rendering..." }
                         }
                     }
                 }
             }
         }
         None => rsx! { p { "Loading..." } },
-    }
-}
-
-#[cfg(feature = "pckt")]
-#[component]
-fn PcktContent(
-    content: Option<Vec<jacquard::types::value::Data<'static>>>,
-    author_did: AtIdentifier<'static>,
-) -> Element {
-    use jacquard::IntoStatic;
-    use jacquard::prelude::*;
-    use weaver_renderer::pckt::{PcktRenderContext, render_content_blocks};
-
-    let fetcher = use_context::<Fetcher>();
-
-    let html = use_resource(move || {
-        let content = content.clone();
-        let author_did = author_did.clone();
-        let fetcher = fetcher.clone();
-        async move {
-            // Resolve author DID
-            let did = match &author_did {
-                AtIdentifier::Did(d) => d.clone().into_static(),
-                AtIdentifier::Handle(h) => match fetcher.resolve_handle(h).await {
-                    Ok(d) => d.into_static(),
-                    Err(_) => return String::from("<p>Failed to resolve author</p>"),
-                },
-            };
-
-            let ctx = PcktRenderContext::new(did);
-
-            if let Some(blocks) = &content {
-                render_content_blocks(blocks, &ctx, &fetcher).await
-            } else {
-                String::from("<p>No content</p>")
-            }
-        }
-    });
-
-    match &*html.read() {
-        Some(content) => rsx! {
-            div {
-                class: "entry pckt-document",
-                dangerous_inner_html: "{content}"
-            }
-        },
-        None => rsx! { p { "Rendering..." } },
     }
 }
 

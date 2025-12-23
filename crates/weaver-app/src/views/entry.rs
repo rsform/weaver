@@ -77,7 +77,7 @@ pub fn StandaloneEntry(
                     document::Link { rel: "stylesheet", href: ENTRY_CSS }
                     NotebookCss { ident: ident().to_smolstr(),  notebook: book_title.clone() }
 
-                    div { class: "entry-page-layout",
+                    div { class: "entry-page",
                         if let Some(ref prev) = book_entry_view.prev {
                             div { class: "nav-gutter nav-prev",
                                 NavButton {
@@ -133,7 +133,7 @@ pub fn StandaloneEntry(
                     DefaultNotebookCss {}
 
 
-                    div { class: "entry-page-layout",
+                    div { class: "entry-page",
                         div { class: "entry-content-main notebook-content",
                             {
                                 let (word_count, reading_time_mins) = calculate_reading_stats(&entry_record.content);
@@ -234,7 +234,7 @@ pub fn NotebookEntryByRkey(
                 document::Link { rel: "stylesheet", href: ENTRY_CSS }
                 NotebookCss { ident: ident().to_smolstr(),  notebook: book_title() }
 
-                div { class: "entry-page-layout",
+                div { class: "entry-page",
                     if let Some(ref prev) = book_entry_view.prev {
                         div { class: "nav-gutter nav-prev",
                             NavButton {

@@ -132,7 +132,7 @@ html {{
 /* When sidenotes exist, body padding creates the gutter */
 /* Left padding shrinks first as viewport narrows, right stays for sidenotes */
 body:has(.sidenote) {{
-    padding-inline-start: clamp(0rem, calc((100vw - 95ch - 15.5rem - 2rem) / 2), 15.5rem);
+    padding-inline-start: clamp(1rem, calc((100vw - 95ch - 15.5rem - 2rem) / 2), 15.5rem);
     padding-inline-end: 15.5rem;
 }}
 
@@ -260,7 +260,6 @@ blockquote {{
     font-size: 0.95em;
     border-bottom-right-radius: 5px;
     border-top-right-radius: 5px;
-}}
 }}
 
 /* Tables */
