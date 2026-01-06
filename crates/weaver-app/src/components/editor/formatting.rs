@@ -1,6 +1,7 @@
 //! Formatting actions and utilities for applying markdown formatting.
 
-use super::document::EditorDocument;
+use crate::components::editor::SignalEditorDocument;
+
 #[allow(unused_imports)]
 use super::input::{ListContext, detect_list_context, find_line_end};
 use dioxus::prelude::*;
@@ -47,7 +48,7 @@ pub fn find_word_boundaries(text: &loro::LoroText, offset: usize) -> (usize, usi
 /// Apply formatting to document.
 ///
 /// If there's a selection, wrap it. Otherwise, expand to word boundaries and wrap.
-pub fn apply_formatting(doc: &mut EditorDocument, action: FormatAction) {
+pub fn apply_formatting(doc: &mut SignalEditorDocument, action: FormatAction) {
     let cursor_offset = doc.cursor.read().offset;
     let (start, end) = if let Some(sel) = *doc.selection.read() {
         // Use selection

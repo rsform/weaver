@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use super::document::{EditorDocument, LoadedDocState};
+use super::document::{LoadedDocState, SignalEditorDocument};
 use crate::fetch::Fetcher;
 use jacquard::IntoStatic;
 use jacquard::prelude::*;
@@ -214,7 +214,7 @@ pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>,
 /// Wraps the crdt crate's create_edit_root with Fetcher support.
 pub async fn create_edit_root(
     fetcher: &Fetcher,
-    doc: &EditorDocument,
+    doc: &SignalEditorDocument,
     draft_key: &str,
     entry_uri: Option<&AtUri<'_>>,
     entry_cid: Option<&Cid<'_>>,
@@ -235,7 +235,7 @@ pub async fn create_edit_root(
 /// Wraps the crdt crate's create_diff with Fetcher support.
 pub async fn create_diff(
     fetcher: &Fetcher,
-    doc: &EditorDocument,
+    doc: &SignalEditorDocument,
     root_uri: &AtUri<'_>,
     root_cid: &Cid<'_>,
     prev_diff: Option<(&AtUri<'_>, &Cid<'_>)>,
@@ -264,7 +264,7 @@ pub async fn create_diff(
 /// Updates the document's sync state on success.
 pub async fn sync_to_pds(
     fetcher: &Fetcher,
-    doc: &mut EditorDocument,
+    doc: &mut SignalEditorDocument,
     draft_key: &str,
 ) -> Result<SyncResult, WeaverError> {
     let fn_start = crate::perf::now();
@@ -415,7 +415,7 @@ pub async fn load_all_edit_states_from_pds(
 ///
 /// Loads from localStorage and PDS (if available), then merges both using Loro's
 /// CRDT merge. The result is a pre-merged LoroDoc that can be converted to an
-/// EditorDocument inside a reactive context using `use_hook`.
+/// SignalEditorDocument inside a reactive context using `use_hook`.
 ///
 /// For unpublished drafts, attempts to discover edit state via Constellation
 /// using the synthetic draft URI.
@@ -603,7 +603,7 @@ pub enum SyncState {
 #[derive(Props, Clone, PartialEq)]
 pub struct SyncStatusProps {
     /// The editor document to sync
-    pub document: EditorDocument,
+    pub document: SignalEditorDocument,
     /// Draft key for this document
     pub draft_key: String,
     /// Auto-sync interval in milliseconds (0 to disable, default disabled)
@@ -707,8 +707,8 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
     // Note: We use peek() to avoid creating a reactive dependency on sync_state
     let doc_for_effect = doc.clone();
     use_effect(move || {
-        // Check for unsynced changes (reads last_edit signal for reactivity)
-        let _edit = doc_for_effect.last_edit();
+        // Read content_changed to create reactive dependency on document changes
+        let _ = doc_for_effect.content_changed.read();
 
         // Use peek to avoid reactive loop
         let current_state = *sync_state.peek();

@@ -227,6 +227,31 @@ impl TextBuffer for LoroTextBuffer {
         });
     }
 
+    fn replace(&mut self, char_range: Range<usize>, text: &str) {
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(char_range.start);
+        let delete_has_newline = self
+            .slice(char_range.clone())
+            .map(|s| s.contains('\n'))
+            .unwrap_or(false);
+        let deleted_len = char_range.len();
+        let inserted_len = text.chars().count();
+
+        // Use Loro's atomic splice operation
+        self.content
+            .splice(char_range.start, deleted_len, text)
+            .ok();
+
+        self.inner.borrow_mut().last_edit = Some(EditInfo {
+            edit_char_pos: char_range.start,
+            inserted_len,
+            deleted_len,
+            contains_newline: delete_has_newline || text.contains('\n'),
+            in_block_syntax_zone,
+            doc_len_after: self.content.len_unicode(),
+            timestamp: Instant::now(),
+        });
+    }
+
     fn slice(&self, char_range: Range<usize>) -> Option<SmolStr> {
         if char_range.end > self.content.len_unicode() {
             return None;

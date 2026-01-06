@@ -55,9 +55,9 @@ fn rewrite_draft_paths_for_notebook(content: &str, notebook_key: &str) -> String
 }
 
 use crate::auth::AuthState;
+use crate::components::editor::SignalEditorDocument;
 use crate::fetch::Fetcher;
 
-use super::document::EditorDocument;
 use super::storage::{delete_draft, save_to_storage};
 
 /// Result of a publish operation.
@@ -161,7 +161,7 @@ pub async fn load_entry_for_editing(
 /// On successful create, sets `doc.entry_uri` so subsequent publishes update the same record.
 pub async fn publish_entry(
     fetcher: &Fetcher,
-    doc: &mut EditorDocument,
+    doc: &mut SignalEditorDocument,
     notebook_title: Option<&str>,
     draft_key: &str,
 ) -> Result<PublishResult, WeaverError> {
@@ -484,7 +484,7 @@ fn slugify(title: &str) -> String {
 #[derive(Props, Clone, PartialEq)]
 pub struct PublishButtonProps {
     /// The editor document
-    pub document: EditorDocument,
+    pub document: SignalEditorDocument,
     /// Storage key for the draft
     pub draft_key: String,
     /// Pre-selected notebook (from URL param)

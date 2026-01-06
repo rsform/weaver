@@ -1,11 +1,11 @@
 //! Editor actions and keybinding system.
 //!
 //! This module re-exports core types and provides Dioxus-specific conversions
-//! and the concrete execute_action implementation for EditorDocument.
+//! and the concrete execute_action implementation for SignalEditorDocument.
 
 use dioxus::prelude::*;
 
-use super::document::EditorDocument;
+use super::document::SignalEditorDocument;
 use super::platform::Platform;
 
 // Re-export core types.
@@ -133,7 +133,7 @@ pub fn default_keybindings(platform: &Platform) -> KeybindingConfig {
 ///
 /// This is the central dispatch point for all editor operations.
 /// Returns true if the action was handled and the document was modified.
-pub fn execute_action(doc: &mut EditorDocument, action: &EditorAction) -> bool {
+pub fn execute_action(doc: &mut SignalEditorDocument, action: &EditorAction) -> bool {
     use super::formatting::{self, FormatAction};
     use super::input::{
         detect_list_context, find_line_end, find_line_start, get_char_at, is_list_item_empty,
@@ -573,7 +573,7 @@ pub fn execute_action(doc: &mut EditorDocument, action: &EditorAction) -> bool {
 }
 
 /// Find word boundary backward from cursor.
-fn find_word_boundary_backward(doc: &EditorDocument, cursor: usize) -> usize {
+fn find_word_boundary_backward(doc: &SignalEditorDocument, cursor: usize) -> usize {
     use super::input::get_char_at;
 
     if cursor == 0 {
@@ -603,7 +603,7 @@ fn find_word_boundary_backward(doc: &EditorDocument, cursor: usize) -> usize {
 }
 
 /// Find word boundary forward from cursor.
-fn find_word_boundary_forward(doc: &EditorDocument, cursor: usize) -> usize {
+fn find_word_boundary_forward(doc: &SignalEditorDocument, cursor: usize) -> usize {
     use super::input::get_char_at;
 
     let len = doc.len_chars();
@@ -639,7 +639,7 @@ fn find_word_boundary_forward(doc: &EditorDocument, cursor: usize) -> usize {
 /// are handled by beforeinput. Navigation (arrows, etc.) is passed
 /// through to the browser.
 pub fn handle_keydown_with_bindings(
-    doc: &mut EditorDocument,
+    doc: &mut SignalEditorDocument,
     config: &KeybindingConfig,
     combo: KeyCombo,
     range: Range,

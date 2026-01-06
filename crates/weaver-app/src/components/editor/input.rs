@@ -4,7 +4,7 @@
 
 use dioxus::prelude::*;
 
-use super::document::EditorDocument;
+use super::document::SignalEditorDocument;
 use super::formatting::{self, FormatAction};
 use weaver_editor_core::SnapDirection;
 
@@ -52,7 +52,7 @@ pub fn should_intercept_key(evt: &Event<KeyboardData>) -> bool {
 
 /// Handle keyboard events and update document state.
 #[allow(unused)]
-pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut EditorDocument) {
+pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut SignalEditorDocument) {
     use dioxus::prelude::keyboard_types::Key;
 
     let key = evt.key();
@@ -326,18 +326,13 @@ pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut EditorDocument) {
 
     // Sync Loro cursor when edits affect paragraph boundaries
     // This ensures cursor position is tracked correctly through structural changes
-    if doc
-        .last_edit
-        .read()
-        .as_ref()
-        .is_some_and(|e| e.contains_newline)
-    {
+    if doc.last_edit().is_some_and(|e| e.contains_newline) {
         doc.sync_loro_cursor();
     }
 }
 
 /// Handle paste events and insert text at cursor.
-pub fn handle_paste(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
+pub fn handle_paste(evt: Event<ClipboardData>, doc: &mut SignalEditorDocument) {
     evt.prevent_default();
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let _ = doc;
@@ -379,7 +374,7 @@ pub fn handle_paste(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
 }
 
 /// Handle cut events - extract text, write to clipboard, then delete.
-pub fn handle_cut(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
+pub fn handle_cut(evt: Event<ClipboardData>, doc: &mut SignalEditorDocument) {
     evt.prevent_default();
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let _ = doc;
@@ -440,7 +435,7 @@ pub fn handle_cut(evt: Event<ClipboardData>, doc: &mut EditorDocument) {
 }
 
 /// Handle copy events - extract text, clean it up, write to clipboard.
-pub fn handle_copy(evt: Event<ClipboardData>, doc: &EditorDocument) {
+pub fn handle_copy(evt: Event<ClipboardData>, doc: &SignalEditorDocument) {
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         use dioxus::web::WebEventExt;

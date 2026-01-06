@@ -29,7 +29,7 @@ use loro::cursor::Cursor;
 use serde::{Deserialize, Serialize};
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 
-use super::document::EditorDocument;
+use super::document::SignalEditorDocument;
 
 /// Prefix for all draft storage keys.
 pub const DRAFT_KEY_PREFIX: &str = "weaver_draft:";
@@ -89,7 +89,7 @@ fn storage_key(key: &str) -> String {
 /// Save editor state to LocalStorage (WASM only).
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn save_to_storage(
-    doc: &EditorDocument,
+    doc: &SignalEditorDocument,
     key: &str,
 ) -> Result<(), gloo_storage::errors::StorageError> {
     let export_start = crate::perf::now();
@@ -108,7 +108,7 @@ pub fn save_to_storage(
         content: doc.content(),
         title: doc.title().into(),
         snapshot: snapshot_b64,
-        cursor: doc.loro_cursor().cloned(),
+        cursor: doc.loro_cursor(),
         cursor_offset: doc.cursor.read().offset,
         editing_uri: doc.entry_ref().map(|r| r.uri.to_smolstr()),
         editing_cid: doc.entry_ref().map(|r| r.cid.to_smolstr()),
@@ -132,10 +132,10 @@ pub fn save_to_storage(
 
 /// Load editor state from LocalStorage (WASM only).
 ///
-/// Returns an EditorDocument restored from CRDT snapshot if available,
+/// Returns an SignalEditorDocument restored from CRDT snapshot if available,
 /// otherwise falls back to just the text content.
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
+pub fn load_from_storage(key: &str) -> Option<SignalEditorDocument> {
     let snapshot: EditorSnapshot = LocalStorage::get(storage_key(key)).ok()?;
 
     // Parse entry_ref from the snapshot (requires both URI and CID)
@@ -152,7 +152,7 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     // Try to restore from CRDT snapshot first
     if let Some(ref snapshot_b64) = snapshot.snapshot {
         if let Ok(snapshot_bytes) = BASE64.decode(snapshot_b64) {
-            let mut doc = EditorDocument::from_snapshot(
+            let mut doc = SignalEditorDocument::from_snapshot(
                 &snapshot_bytes,
                 snapshot.cursor.clone(),
                 snapshot.cursor_offset,
@@ -170,7 +170,7 @@ pub fn load_from_storage(key: &str) -> Option<EditorDocument> {
     }
 
     // Fallback: create new doc from text content
-    let mut doc = EditorDocument::new(snapshot.content);
+    let mut doc = SignalEditorDocument::new(snapshot.content);
     doc.cursor.write().offset = snapshot.cursor_offset.min(doc.len_chars());
     doc.sync_loro_cursor();
     doc.set_entry_ref(entry_ref);
@@ -192,7 +192,7 @@ pub struct LocalSnapshotData {
 
 /// Load snapshot data from LocalStorage (WASM only).
 ///
-/// Unlike `load_from_storage`, this doesn't create an EditorDocument and is safe
+/// Unlike `load_from_storage`, this doesn't create an SignalEditorDocument and is safe
 /// to call outside of reactive context. Use with `load_and_merge_document`.
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub fn load_snapshot_from_storage(key: &str) -> Option<LocalSnapshotData> {
@@ -344,12 +344,12 @@ pub fn clear_all_drafts() {
 
 // Stub implementations for non-WASM targets
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
-pub fn save_to_storage(_doc: &EditorDocument, _key: &str) -> Result<(), String> {
+pub fn save_to_storage(_doc: &SignalEditorDocument, _key: &str) -> Result<(), String> {
     Ok(())
 }
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
-pub fn load_from_storage(_key: &str) -> Option<EditorDocument> {
+pub fn load_from_storage(_key: &str) -> Option<SignalEditorDocument> {
     None
 }
 

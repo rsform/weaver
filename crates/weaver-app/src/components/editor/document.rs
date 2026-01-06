@@ -7,18 +7,13 @@
 //!
 //! Individual fields are wrapped in Dioxus Signals for fine-grained reactivity:
 //! - Cursor/selection changes don't trigger content re-renders
-//! - Content changes (via `last_edit`) trigger paragraph memo re-evaluation
+//! - Content changes bump `content_changed` Signal to trigger paragraph re-renders
 //! - The document struct itself is NOT wrapped in a Signal - use `use_hook`
-
-use std::borrow::Cow;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 use dioxus::prelude::*;
 use loro::{
-    ExportMode, Frontiers, LoroDoc, LoroList, LoroMap, LoroResult, LoroText, LoroValue, ToJson,
-    UndoManager, VersionVector,
-    cursor::{Cursor, Side},
+    Frontiers, LoroDoc, LoroList, LoroMap, LoroResult, LoroText, LoroValue, ToJson, VersionVector,
+    cursor::Cursor,
 };
 
 use jacquard::IntoStatic;
@@ -28,10 +23,12 @@ use jacquard::types::string::AtUri;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::embed::images::Image;
 use weaver_api::sh_weaver::embed::records::RecordEmbed;
-pub use weaver_editor_core::{
-    Affinity, CompositionState, CursorState, EditInfo, Selection, BLOCK_SYNTAX_ZONE,
-};
 use weaver_api::sh_weaver::notebook::entry::Entry;
+use weaver_editor_core::EditorDocument;
+use weaver_editor_core::TextBuffer;
+use weaver_editor_core::UndoManager;
+pub use weaver_editor_core::{Affinity, CompositionState, CursorState, EditInfo, Selection};
+use weaver_editor_crdt::LoroTextBuffer;
 
 /// Helper for working with editor images.
 /// Constructed from LoroMap data, NOT serialized directly.
@@ -47,7 +44,7 @@ pub struct EditorImage {
 
 /// Single source of truth for editor state.
 ///
-/// Contains the document text (backed by Loro CRDT), cursor position,
+/// Contains the document text (backed by Loro CRDT via LoroTextBuffer), cursor position,
 /// selection, and IME composition state. Mirrors the `sh.weaver.notebook.entry`
 /// schema with CRDT containers for each field.
 ///
@@ -56,23 +53,22 @@ pub struct EditorImage {
 /// The document itself is NOT wrapped in a Signal. Instead, individual fields
 /// that need reactivity are wrapped in Signals:
 /// - `cursor`, `selection`, `composition` - high-frequency, cursor-only updates
-/// - `last_edit` - triggers paragraph re-renders when content changes
+/// - `content_changed` - bumped to trigger paragraph re-renders when content changes
 ///
-/// Use `use_hook(|| EditorDocument::new(...))` in components, not `use_signal`.
+/// Use `use_hook(|| SignalEditorDocument::new(...))` in components, not `use_signal`.
 ///
 /// # Cloning
 ///
-/// EditorDocument is cheap to clone - Loro types are Arc-backed handles,
+/// SignalEditorDocument is cheap to clone - LoroTextBuffer and Loro types are Arc-backed,
 /// and Signals are Copy. Closures can capture clones without overhead.
 #[derive(Clone)]
-pub struct EditorDocument {
-    /// The Loro document containing all editor state.
-    doc: LoroDoc,
+pub struct SignalEditorDocument {
+    /// The text buffer wrapping LoroDoc with undo/redo and cursor tracking.
+    /// Access the underlying LoroDoc via `buffer.doc()`.
+    buffer: LoroTextBuffer,
 
     // --- Entry schema containers (Loro handles interior mutability) ---
-    /// Markdown content (maps to entry.content)
-    content: LoroText,
-
+    // These are obtained from buffer.doc() but cached for convenience.
     /// Entry title (maps to entry.title)
     title: LoroText,
 
@@ -119,14 +115,6 @@ pub struct EditorDocument {
     /// The diff rkey (TID) is time-sortable, so we skip diffs with rkey <= this.
     pub last_seen_diffs: Signal<std::collections::HashMap<AtUri<'static>, AtUri<'static>>>,
 
-    // --- Editor state (non-reactive) ---
-    /// Undo manager for the document.
-    undo_mgr: Rc<RefCell<UndoManager>>,
-
-    /// CRDT-aware cursor that tracks position through remote edits and undo/redo.
-    /// Recreated after our own edits, queried after undo/redo/remote edits.
-    loro_cursor: Option<Cursor>,
-
     // --- Reactive editor state (Signal-wrapped for fine-grained updates) ---
     /// Current cursor position. Signal so cursor changes don't dirty content memos.
     pub cursor: Signal<CursorState>,
@@ -141,9 +129,9 @@ pub struct EditorDocument {
     /// Used for Safari workaround: ignore Enter keydown within 500ms of compositionend.
     pub composition_ended_at: Signal<Option<web_time::Instant>>,
 
-    /// Most recent edit info for incremental rendering optimization.
-    /// Signal so paragraphs memo can subscribe to content changes only.
-    pub last_edit: Signal<Option<EditInfo>>,
+    /// Bumped when content changes to trigger paragraph re-renders.
+    /// Actual EditInfo is obtained from `buffer.last_edit()`.
+    pub content_changed: Signal<()>,
 
     /// Pending snap direction for cursor restoration after edits.
     /// Set by input handlers, consumed by cursor restoration.
@@ -154,14 +142,11 @@ pub struct EditorDocument {
     pub collected_refs: Signal<Vec<weaver_common::ExtractedRef>>,
 }
 
-// CursorState, Affinity, Selection, CompositionState, EditInfo, and BLOCK_SYNTAX_ZONE
-// are imported from weaver_editor_core.
-
 /// Pre-loaded document state that can be created outside of reactive context.
 ///
 /// This struct holds the raw LoroDoc (which is safe outside reactive context)
-/// along with sync state metadata. Use `EditorDocument::from_loaded_state()`
-/// inside a `use_hook` to convert this into a reactive EditorDocument.
+/// along with sync state metadata. Use `SignalEditorDocument::from_loaded_state()`
+/// inside a `use_hook` to convert this into a reactive SignalEditorDocument.
 ///
 /// Note: Clone is a shallow/reference clone for LoroDoc (Arc-backed).
 /// PartialEq always returns false since we can't meaningfully compare docs.
@@ -197,36 +182,19 @@ impl PartialEq for LoadedDocState {
     }
 }
 
-impl EditorDocument {
-    /// Check if a character position is within the block-syntax zone of its line.
-    fn is_in_block_syntax_zone(&self, pos: usize) -> bool {
-        if pos <= BLOCK_SYNTAX_ZONE {
-            return true;
-        }
-
-        // Search backwards from pos-1, only need to check BLOCK_SYNTAX_ZONE + 1 chars.
-        let search_start = pos.saturating_sub(BLOCK_SYNTAX_ZONE + 1);
-        for i in (search_start..pos).rev() {
-            if self.content.char_at(i).ok() == Some('\n') {
-                // Found newline at i, distance from line start is pos - i - 1.
-                return (pos - i - 1) <= BLOCK_SYNTAX_ZONE;
-            }
-        }
-        // No newline found in search range, and pos > BLOCK_SYNTAX_ZONE, so not in zone.
-        false
-    }
-
+impl SignalEditorDocument {
     /// Create a new editor document with the given content.
     /// Sets `created_at` to current time.
     ///
     /// # Note
     /// This creates Dioxus Signals for reactive fields. Call from within
-    /// a component using `use_hook(|| EditorDocument::new(...))`.
+    /// a component using `use_hook(|| SignalEditorDocument::new(...))`.
     pub fn new(initial_content: String) -> Self {
-        let doc = LoroDoc::new();
+        // Create the LoroTextBuffer which owns the LoroDoc
+        let mut buffer = LoroTextBuffer::new();
+        let doc = buffer.doc().clone();
 
-        // Get all containers
-        let content = doc.get_text("content");
+        // Get other containers from the doc
         let title = doc.get_text("title");
         let path = doc.get_text("path");
         let created_at = doc.get_text("created_at");
@@ -235,9 +203,7 @@ impl EditorDocument {
 
         // Insert initial content if any
         if !initial_content.is_empty() {
-            content
-                .insert(0, &initial_content)
-                .expect("failed to insert initial content");
+            buffer.insert(0, &initial_content);
         }
 
         // Set created_at to current time (ISO 8601)
@@ -246,17 +212,8 @@ impl EditorDocument {
             .insert(0, &now)
             .expect("failed to set created_at");
 
-        // Set up undo manager with merge interval for batching keystrokes
-        let mut undo_mgr = UndoManager::new(&doc);
-        undo_mgr.set_merge_interval(300); // 300ms merge window
-        undo_mgr.set_max_undo_steps(100);
-
-        // Create initial Loro cursor at position 0
-        let loro_cursor = content.get_cursor(0, Side::default());
-
         Self {
-            doc,
-            content,
+            buffer,
             title,
             path,
             created_at,
@@ -268,9 +225,6 @@ impl EditorDocument {
             last_diff: Signal::new(None),
             last_synced_version: Signal::new(None),
             last_seen_diffs: Signal::new(std::collections::HashMap::new()),
-            undo_mgr: Rc::new(RefCell::new(undo_mgr)),
-            loro_cursor,
-            // Reactive editor state - wrapped in Signals
             cursor: Signal::new(CursorState {
                 offset: 0,
                 affinity: Affinity::Before,
@@ -278,13 +232,13 @@ impl EditorDocument {
             selection: Signal::new(None),
             composition: Signal::new(None),
             composition_ended_at: Signal::new(None),
-            last_edit: Signal::new(None),
+            content_changed: Signal::new(()),
             pending_snap: Signal::new(None),
             collected_refs: Signal::new(Vec::new()),
         }
     }
 
-    /// Create an EditorDocument from a fetched Entry.
+    /// Create a SignalEditorDocument from a fetched Entry.
     ///
     /// MUST be called from within a reactive context (e.g., `use_hook`) to
     /// properly initialize Dioxus Signals.
@@ -341,44 +295,54 @@ impl EditorDocument {
 
     /// Get the underlying LoroText for read operations on content.
     pub fn loro_text(&self) -> &LoroText {
-        &self.content
+        self.buffer.content()
     }
 
     /// Get the underlying LoroDoc for subscriptions and advanced operations.
     pub fn loro_doc(&self) -> &LoroDoc {
-        &self.doc
+        self.buffer.doc()
+    }
+
+    /// Get direct access to the LoroTextBuffer.
+    pub fn buffer(&self) -> &LoroTextBuffer {
+        &self.buffer
+    }
+
+    /// Get mutable access to the LoroTextBuffer.
+    pub fn buffer_mut(&mut self) -> &mut LoroTextBuffer {
+        &mut self.buffer
     }
 
     // --- Content accessors ---
 
     /// Get the markdown content as a string.
     pub fn content(&self) -> String {
-        self.content.to_string()
+        weaver_editor_core::TextBuffer::to_string(&self.buffer)
     }
 
     /// Convert the document content to a string (alias for content()).
     pub fn to_string(&self) -> String {
-        self.content.to_string()
+        weaver_editor_core::TextBuffer::to_string(&self.buffer)
     }
 
     /// Get the length of the content in characters.
     pub fn len_chars(&self) -> usize {
-        self.content.len_unicode()
+        weaver_editor_core::TextBuffer::len_chars(&self.buffer)
     }
 
     /// Get the length of the content in UTF-8 bytes.
     pub fn len_bytes(&self) -> usize {
-        self.content.len_utf8()
+        weaver_editor_core::TextBuffer::len_bytes(&self.buffer)
     }
 
     /// Get the length of the content in UTF-16 code units.
     pub fn len_utf16(&self) -> usize {
-        self.content.len_utf16()
+        self.buffer.content().len_utf16()
     }
 
     /// Check if the content is empty.
     pub fn is_empty(&self) -> bool {
-        self.content.len_unicode() == 0
+        weaver_editor_core::TextBuffer::len_chars(&self.buffer) == 0
     }
 
     // --- Entry metadata accessors ---
@@ -652,91 +616,35 @@ impl EditorDocument {
             .map(|r| r.into_static())
     }
 
-    /// Insert text into content and record edit info for incremental rendering.
+    /// Insert text into content and bump content_changed for re-rendering.
+    /// Edit info is tracked automatically by the buffer.
     pub fn insert_tracked(&mut self, pos: usize, text: &str) -> LoroResult<()> {
-        let in_block_syntax_zone = self.is_in_block_syntax_zone(pos);
-        let len_before = self.content.len_unicode();
-        let result = self.content.insert(pos, text);
-        let len_after = self.content.len_unicode();
-        self.last_edit.set(Some(EditInfo {
-            edit_char_pos: pos,
-            inserted_len: len_after.saturating_sub(len_before),
-            deleted_len: 0,
-            contains_newline: text.contains('\n'),
-            in_block_syntax_zone,
-            doc_len_after: len_after,
-            timestamp: web_time::Instant::now(),
-        }));
-        result
+        self.buffer.insert(pos, text);
+        self.content_changed.set(());
+        Ok(())
     }
 
     /// Push text to end of content. Faster than insert for appending.
     pub fn push_tracked(&mut self, text: &str) -> LoroResult<()> {
-        let pos = self.content.len_unicode();
-        let in_block_syntax_zone = self.is_in_block_syntax_zone(pos);
-        let result = self.content.push_str(text);
-        let len_after = self.content.len_unicode();
-        self.last_edit.set(Some(EditInfo {
-            edit_char_pos: pos,
-            inserted_len: text.chars().count(),
-            deleted_len: 0,
-            contains_newline: text.contains('\n'),
-            in_block_syntax_zone,
-            doc_len_after: len_after,
-            timestamp: web_time::Instant::now(),
-        }));
-        result
+        let pos = weaver_editor_core::TextBuffer::len_chars(&self.buffer);
+        self.buffer.insert(pos, text);
+        self.content_changed.set(());
+        Ok(())
     }
 
-    /// Remove text range from content and record edit info for incremental rendering.
+    /// Remove text range from content and bump content_changed for re-rendering.
+    /// Edit info is tracked automatically by the buffer.
     pub fn remove_tracked(&mut self, start: usize, len: usize) -> LoroResult<()> {
-        let contains_newline = self
-            .content
-            .slice(start, start + len)
-            .map(|s| s.contains('\n'))
-            .unwrap_or(false);
-        let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
-
-        let result = self.content.delete(start, len);
-        self.last_edit.set(Some(EditInfo {
-            edit_char_pos: start,
-            inserted_len: 0,
-            deleted_len: len,
-            contains_newline,
-            in_block_syntax_zone,
-            doc_len_after: self.content.len_unicode(),
-            timestamp: web_time::Instant::now(),
-        }));
-        result
+        self.buffer.delete(start..start + len);
+        self.content_changed.set(());
+        Ok(())
     }
 
-    /// Replace text in content (delete then insert) and record combined edit info.
+    /// Replace text in content (atomic splice) and bump content_changed.
+    /// Edit info is tracked automatically by the buffer.
     pub fn replace_tracked(&mut self, start: usize, len: usize, text: &str) -> LoroResult<()> {
-        let delete_has_newline = self
-            .content
-            .slice(start, start + len)
-            .map(|s| s.contains('\n'))
-            .unwrap_or(false);
-        let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
-
-        let len_before = self.content.len_unicode();
-        // Use splice for atomic replace
-        self.content.splice(start, len, text)?;
-        let len_after = self.content.len_unicode();
-
-        // inserted_len = (len_after - len_before) + deleted_len
-        // because: len_after = len_before - deleted + inserted
-        let inserted_len = (len_after + len).saturating_sub(len_before);
-
-        self.last_edit.set(Some(EditInfo {
-            edit_char_pos: start,
-            inserted_len,
-            deleted_len: len,
-            contains_newline: delete_has_newline || text.contains('\n'),
-            in_block_syntax_zone,
-            doc_len_after: len_after,
-            timestamp: web_time::Instant::now(),
-        }));
+        self.buffer.replace(start..start + len, text);
+        self.content_changed.set(());
         Ok(())
     }
 
@@ -746,12 +654,12 @@ impl EditorDocument {
         // so it tracks through the undo operation
         self.sync_loro_cursor();
 
-        let result = self.undo_mgr.borrow_mut().undo()?;
+        let result = self.buffer.undo();
         if result {
             // After undo, query Loro cursor for new position
             self.sync_cursor_from_loro();
             // Signal content change for re-render
-            self.last_edit.set(None);
+            self.content_changed.set(());
         }
         Ok(result)
     }
@@ -761,30 +669,30 @@ impl EditorDocument {
         // Sync Loro cursor to current position BEFORE redo
         self.sync_loro_cursor();
 
-        let result = self.undo_mgr.borrow_mut().redo()?;
+        let result = self.buffer.redo();
         if result {
             // After redo, query Loro cursor for new position
             self.sync_cursor_from_loro();
             // Signal content change for re-render
-            self.last_edit.set(None);
+            self.content_changed.set(());
         }
         Ok(result)
     }
 
     /// Check if undo is available.
     pub fn can_undo(&self) -> bool {
-        self.undo_mgr.borrow().can_undo()
+        UndoManager::can_undo(&self.buffer)
     }
 
     /// Check if redo is available.
     pub fn can_redo(&self) -> bool {
-        self.undo_mgr.borrow().can_redo()
+        UndoManager::can_redo(&self.buffer)
     }
 
     /// Get a slice of the content text.
     /// Returns None if the range is invalid.
-    pub fn slice(&self, start: usize, end: usize) -> Option<String> {
-        self.content.slice(start, end).ok()
+    pub fn slice(&self, start: usize, end: usize) -> Option<SmolStr> {
+        self.buffer.slice(start..end)
     }
 
     /// Sync the Loro cursor to the current cursor.offset position.
@@ -792,18 +700,20 @@ impl EditorDocument {
     pub fn sync_loro_cursor(&mut self) {
         let offset = self.cursor.read().offset;
         tracing::debug!(offset, "sync_loro_cursor: saving cursor position to Loro");
-        self.loro_cursor = self.content.get_cursor(offset, Side::default());
+        self.buffer.sync_cursor(offset);
     }
 
     /// Update cursor.offset from the Loro cursor's tracked position.
     /// Call this after undo/redo or remote edits where the position may have shifted.
     /// Returns the new offset, or None if the cursor couldn't be resolved.
     pub fn sync_cursor_from_loro(&mut self) -> Option<usize> {
-        let loro_cursor = self.loro_cursor.as_ref()?;
-        let result = self.doc.get_cursor_pos(loro_cursor).ok()?;
         let old_offset = self.cursor.read().offset;
-        let new_offset = result.current.pos.min(self.len_chars());
-        let jump = if new_offset > old_offset { new_offset - old_offset } else { old_offset - new_offset };
+        let new_offset = self.buffer.resolve_cursor()?;
+        let jump = if new_offset > old_offset {
+            new_offset - old_offset
+        } else {
+            old_offset - new_offset
+        };
         if jump > 100 {
             tracing::warn!(
                 old_offset,
@@ -812,22 +722,26 @@ impl EditorDocument {
                 "sync_cursor_from_loro: LARGE CURSOR JUMP detected"
             );
         }
-        tracing::debug!(old_offset, new_offset, "sync_cursor_from_loro: updating cursor from Loro");
+        tracing::debug!(
+            old_offset,
+            new_offset,
+            "sync_cursor_from_loro: updating cursor from Loro"
+        );
         self.cursor.with_mut(|c| c.offset = new_offset);
         Some(new_offset)
     }
 
     /// Get the Loro cursor for serialization.
-    pub fn loro_cursor(&self) -> Option<&Cursor> {
-        self.loro_cursor.as_ref()
+    pub fn loro_cursor(&self) -> Option<Cursor> {
+        self.buffer.loro_cursor()
     }
 
     /// Set the Loro cursor (used when restoring from storage).
     pub fn set_loro_cursor(&mut self, cursor: Option<Cursor>) {
         tracing::debug!(has_cursor = cursor.is_some(), "set_loro_cursor called");
-        self.loro_cursor = cursor;
+        self.buffer.set_loro_cursor(cursor);
         // Sync cursor.offset from the restored Loro cursor
-        if self.loro_cursor.is_some() {
+        if self.buffer.loro_cursor().is_some() {
             self.sync_cursor_from_loro();
         }
     }
@@ -835,24 +749,30 @@ impl EditorDocument {
     /// Export the document as a binary snapshot.
     /// This captures all CRDT state including undo history.
     pub fn export_snapshot(&self) -> Vec<u8> {
-        self.doc.export(ExportMode::Snapshot).unwrap_or_default()
+        self.buffer.export_snapshot()
     }
 
     /// Get the current state frontiers for change detection.
     /// Frontiers represent the "version" of the document state.
     pub fn state_frontiers(&self) -> Frontiers {
-        self.doc.state_frontiers()
+        self.buffer.doc().state_frontiers()
     }
 
     /// Get the current version vector.
     pub fn version_vector(&self) -> VersionVector {
-        self.doc.oplog_vv()
+        self.buffer.version()
     }
 
     /// Get the last edit info for incremental rendering.
-    /// Reading this creates a reactive dependency on content changes.
+    /// This comes from the buffer's internal tracking.
     pub fn last_edit(&self) -> Option<EditInfo> {
-        self.last_edit.read().clone()
+        self.buffer.last_edit()
+    }
+
+    /// Bump the content_changed signal to trigger re-renders.
+    /// Call this after remote imports or other external content changes.
+    pub fn notify_content_changed(&mut self) {
+        self.content_changed.set(());
     }
 
     // --- Collected refs accessors ---
@@ -916,7 +836,7 @@ impl EditorDocument {
     /// Check if there are unsynced changes since the last PDS sync.
     pub fn has_unsynced_changes(&self) -> bool {
         match &*self.last_synced_version.read() {
-            Some(synced_vv) => self.doc.oplog_vv() != *synced_vv,
+            Some(synced_vv) => self.buffer.version() != *synced_vv,
             None => true, // Never synced, so there are changes
         }
     }
@@ -926,44 +846,27 @@ impl EditorDocument {
     /// After successful upload, call `mark_synced()` to update the sync marker.
     pub fn export_updates_since_sync(&self) -> Option<Vec<u8>> {
         let from_vv = self.last_synced_version.read().clone().unwrap_or_default();
-        let current_vv = self.doc.oplog_vv();
-
-        // No changes since last sync
-        if from_vv == current_vv {
-            return None;
-        }
-
-        let updates = self
-            .doc
-            .export(ExportMode::Updates {
-                from: Cow::Owned(from_vv),
-            })
-            .ok()?;
-
-        // Don't return empty updates
-        if updates.is_empty() {
-            return None;
-        }
-
-        Some(updates)
+        self.buffer.export_updates_since(&from_vv)
     }
 
     /// Mark the current state as synced.
     /// Call this after successfully uploading a diff to the PDS.
     pub fn mark_synced(&mut self) {
-        self.last_synced_version.set(Some(self.doc.oplog_vv()));
+        self.last_synced_version.set(Some(self.buffer.version()));
     }
 
     /// Import updates from a PDS diff blob.
     /// Used when loading edit history from the PDS.
     pub fn import_updates(&mut self, updates: &[u8]) -> LoroResult<()> {
-        let len_before = self.content.len_unicode();
-        let vv_before = self.doc.oplog_vv();
+        let len_before = weaver_editor_core::TextBuffer::len_chars(&self.buffer);
+        let vv_before = self.buffer.version();
 
-        self.doc.import(updates)?;
+        self.buffer
+            .import(updates)
+            .map_err(|e| loro::LoroError::DecodeError(e.to_string().into()))?;
 
-        let len_after = self.content.len_unicode();
-        let vv_after = self.doc.oplog_vv();
+        let len_after = weaver_editor_core::TextBuffer::len_chars(&self.buffer);
+        let vv_after = self.buffer.version();
         let vv_changed = vv_before != vv_after;
         let len_changed = len_before != len_after;
 
@@ -977,7 +880,7 @@ impl EditorDocument {
 
         // Only trigger re-render if something actually changed
         if vv_changed {
-            self.last_edit.set(None);
+            self.content_changed.set(());
         }
         Ok(())
     }
@@ -985,25 +888,7 @@ impl EditorDocument {
     /// Export updates since the given version vector.
     /// Used for real-time P2P sync where we track broadcast version separately from PDS sync.
     pub fn export_updates_from(&self, from_vv: &VersionVector) -> Option<Vec<u8>> {
-        let current_vv = self.doc.oplog_vv();
-
-        // No changes since the given version
-        if *from_vv == current_vv {
-            return None;
-        }
-
-        let updates = self
-            .doc
-            .export(ExportMode::Updates {
-                from: Cow::Borrowed(from_vv),
-            })
-            .ok()?;
-
-        if updates.is_empty() {
-            return None;
-        }
-
-        Some(updates)
+        self.buffer.export_updates_since(from_vv)
     }
 
     /// Set the sync state when loading from PDS.
@@ -1016,10 +901,10 @@ impl EditorDocument {
     ) {
         self.edit_root.set(Some(edit_root));
         self.last_diff.set(last_diff);
-        self.last_synced_version.set(Some(self.doc.oplog_vv()));
+        self.last_synced_version.set(Some(self.buffer.version()));
     }
 
-    /// Create a new EditorDocument from a binary snapshot.
+    /// Create a new SignalEditorDocument from a binary snapshot.
     /// Falls back to empty document if import fails.
     ///
     /// If `loro_cursor` is provided, it will be used to restore the cursor position.
@@ -1037,29 +922,30 @@ impl EditorDocument {
         loro_cursor: Option<Cursor>,
         fallback_offset: usize,
     ) -> Self {
-        let doc = LoroDoc::new();
-
-        if !snapshot.is_empty() {
-            if let Err(e) = doc.import(snapshot) {
-                tracing::warn!("Failed to import snapshot: {:?}, creating empty doc", e);
+        // Create buffer from snapshot
+        let buffer = if snapshot.is_empty() {
+            LoroTextBuffer::new()
+        } else {
+            match LoroTextBuffer::from_snapshot(snapshot) {
+                Ok(buf) => buf,
+                Err(e) => {
+                    tracing::warn!("Failed to import snapshot: {:?}, creating empty doc", e);
+                    LoroTextBuffer::new()
+                }
             }
-        }
+        };
 
-        // Get all containers (they will contain data from the snapshot if import succeeded)
-        let content = doc.get_text("content");
+        let doc = buffer.doc().clone();
+
+        // Get other containers from the doc
         let title = doc.get_text("title");
         let path = doc.get_text("path");
         let created_at = doc.get_text("created_at");
         let tags = doc.get_list("tags");
         let embeds = doc.get_map("embeds");
 
-        // Set up undo manager - tracks operations from this point forward only
-        let mut undo_mgr = UndoManager::new(&doc);
-        undo_mgr.set_merge_interval(300);
-        undo_mgr.set_max_undo_steps(100);
-
         // Try to restore cursor from Loro cursor, fall back to offset
-        let max_offset = content.len_unicode();
+        let max_offset = weaver_editor_core::TextBuffer::len_chars(&buffer);
         let cursor_offset = if let Some(ref lc) = loro_cursor {
             doc.get_cursor_pos(lc)
                 .map(|r| r.current.pos)
@@ -1073,13 +959,16 @@ impl EditorDocument {
             affinity: Affinity::Before,
         };
 
-        // If no Loro cursor provided, create one at the restored position
-        let loro_cursor =
-            loro_cursor.or_else(|| content.get_cursor(cursor_state.offset, Side::default()));
+        // Set up the Loro cursor
+        let buffer = buffer;
+        if let Some(lc) = loro_cursor {
+            buffer.set_loro_cursor(Some(lc));
+        } else {
+            buffer.sync_cursor(cursor_state.offset);
+        }
 
         Self {
-            doc,
-            content,
+            buffer,
             title,
             path,
             created_at,
@@ -1091,20 +980,17 @@ impl EditorDocument {
             last_diff: Signal::new(None),
             last_synced_version: Signal::new(None),
             last_seen_diffs: Signal::new(std::collections::HashMap::new()),
-            undo_mgr: Rc::new(RefCell::new(undo_mgr)),
-            loro_cursor,
-            // Reactive editor state - wrapped in Signals
             cursor: Signal::new(cursor_state),
             selection: Signal::new(None),
             composition: Signal::new(None),
             composition_ended_at: Signal::new(None),
-            last_edit: Signal::new(None),
+            content_changed: Signal::new(()),
             pending_snap: Signal::new(None),
             collected_refs: Signal::new(Vec::new()),
         }
     }
 
-    /// Create an EditorDocument from pre-loaded state.
+    /// Create a SignalEditorDocument from pre-loaded state.
     ///
     /// Use this when loading from PDS/localStorage merge outside reactive context.
     /// The `LoadedDocState` contains a pre-merged LoroDoc; this method wraps it
@@ -1113,32 +999,30 @@ impl EditorDocument {
     /// # Note
     /// This creates Dioxus Signals. Call from within a component using `use_hook`.
     pub fn from_loaded_state(state: LoadedDocState) -> Self {
-        let doc = state.doc;
+        // Create buffer from the loaded doc
+        let buffer = LoroTextBuffer::from_doc(state.doc.clone(), "content");
+        let doc = buffer.doc().clone();
 
-        // Get all containers from the loaded doc
-        let content = doc.get_text("content");
+        // Get other containers from the doc
         let title = doc.get_text("title");
         let path = doc.get_text("path");
         let created_at = doc.get_text("created_at");
         let tags = doc.get_list("tags");
         let embeds = doc.get_map("embeds");
 
-        // Set up undo manager
-        let mut undo_mgr = UndoManager::new(&doc);
-        undo_mgr.set_merge_interval(300);
-        undo_mgr.set_max_undo_steps(100);
-
         // Position cursor at end of content
-        let cursor_offset = content.len_unicode();
+        let cursor_offset = weaver_editor_core::TextBuffer::len_chars(&buffer);
         let cursor_state = CursorState {
             offset: cursor_offset,
             affinity: Affinity::Before,
         };
-        let loro_cursor = content.get_cursor(cursor_offset, Side::default());
+
+        // Set up the Loro cursor
+        let buffer = buffer;
+        buffer.sync_cursor(cursor_offset);
 
         Self {
-            doc,
-            content,
+            buffer,
             title,
             path,
             created_at,
@@ -1151,28 +1035,26 @@ impl EditorDocument {
             // Use the synced version from state (tracks the PDS version vector)
             last_synced_version: Signal::new(state.synced_version),
             last_seen_diffs: Signal::new(state.last_seen_diffs),
-            undo_mgr: Rc::new(RefCell::new(undo_mgr)),
-            loro_cursor,
             cursor: Signal::new(cursor_state),
             selection: Signal::new(None),
             composition: Signal::new(None),
             composition_ended_at: Signal::new(None),
-            last_edit: Signal::new(None),
+            content_changed: Signal::new(()),
             pending_snap: Signal::new(None),
             collected_refs: Signal::new(Vec::new()),
         }
     }
 }
 
-impl PartialEq for EditorDocument {
+impl PartialEq for SignalEditorDocument {
     fn eq(&self, _other: &Self) -> bool {
-        // EditorDocument uses interior mutability, so we can't meaningfully compare.
+        // SignalEditorDocument uses interior mutability, so we can't meaningfully compare.
         // Return false to ensure components re-render when passed as props.
         false
     }
 }
 
-impl weaver_editor_crdt::CrdtDocument for EditorDocument {
+impl weaver_editor_crdt::CrdtDocument for SignalEditorDocument {
     fn export_snapshot(&self) -> Vec<u8> {
         self.export_snapshot()
     }
@@ -1191,26 +1073,72 @@ impl weaver_editor_crdt::CrdtDocument for EditorDocument {
     }
 
     fn edit_root(&self) -> Option<StrongRef<'static>> {
-        self.edit_root()
+        SignalEditorDocument::edit_root(self)
     }
 
     fn set_edit_root(&mut self, root: Option<StrongRef<'static>>) {
-        self.set_edit_root(root);
+        SignalEditorDocument::set_edit_root(self, root);
     }
 
     fn last_diff(&self) -> Option<StrongRef<'static>> {
-        self.last_diff()
+        SignalEditorDocument::last_diff(self)
     }
 
     fn set_last_diff(&mut self, diff: Option<StrongRef<'static>>) {
-        self.set_last_diff(diff);
+        SignalEditorDocument::set_last_diff(self, diff);
     }
 
     fn mark_synced(&mut self) {
-        self.mark_synced();
+        SignalEditorDocument::mark_synced(self);
     }
 
     fn has_unsynced_changes(&self) -> bool {
-        self.has_unsynced_changes()
+        SignalEditorDocument::has_unsynced_changes(self)
+    }
+}
+
+impl EditorDocument for SignalEditorDocument {
+    type Buffer = LoroTextBuffer;
+
+    fn buffer(&self) -> &Self::Buffer {
+        &self.buffer
+    }
+
+    fn buffer_mut(&mut self) -> &mut Self::Buffer {
+        &mut self.buffer
+    }
+
+    fn cursor(&self) -> CursorState {
+        *self.cursor.read()
+    }
+
+    fn set_cursor(&mut self, cursor: CursorState) {
+        self.cursor.set(cursor);
+    }
+
+    fn selection(&self) -> Option<Selection> {
+        self.selection.read().clone()
+    }
+
+    fn set_selection(&mut self, selection: Option<Selection>) {
+        self.selection.set(selection);
+    }
+
+    fn last_edit(&self) -> Option<EditInfo> {
+        self.buffer.last_edit()
+    }
+
+    fn set_last_edit(&mut self, _edit: Option<EditInfo>) {
+        // Buffer tracks edit info internally. We use this hook to
+        // bump content_changed for reactive re-rendering.
+        self.content_changed.set(());
+    }
+
+    fn composition(&self) -> Option<CompositionState> {
+        self.composition.read().clone()
+    }
+
+    fn set_composition(&mut self, composition: Option<CompositionState>) {
+        self.composition.set(composition);
     }
 }

@@ -44,7 +44,7 @@ pub use component::MarkdownEditor;
 // Document types
 #[allow(unused_imports)]
 pub use document::{
-    Affinity, CompositionState, CursorState, EditorDocument, LoadedDocState, Selection,
+    Affinity, CompositionState, CursorState, LoadedDocState, Selection, SignalEditorDocument,
 };
 
 // Formatting

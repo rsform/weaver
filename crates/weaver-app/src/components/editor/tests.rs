@@ -1,11 +1,11 @@
 //! Snapshot tests for the markdown editor rendering pipeline.
 
-use weaver_editor_core::{OffsetMapping, find_mapping_for_char};
 use super::paragraph::ParagraphRender;
 use super::render::render_paragraphs_incremental;
-use loro::LoroDoc;
 use serde::Serialize;
 use weaver_common::ResolvedContent;
+use weaver_editor_core::{OffsetMapping, TextBuffer, find_mapping_for_char};
+use weaver_editor_crdt::LoroTextBuffer;
 
 /// Serializable version of ParagraphRender for snapshot testing.
 #[derive(Debug, Serialize)]
@@ -55,11 +55,10 @@ impl From<&OffsetMapping> for TestOffsetMapping {
 
 /// Helper: render markdown and convert to serializable test output.
 fn render_test(input: &str) -> Vec<TestParagraph> {
-    let doc = LoroDoc::new();
-    let text = doc.get_text("content");
-    text.insert(0, input).unwrap();
+    let mut buffer = LoroTextBuffer::new();
+    buffer.insert(0, input);
     let (paragraphs, _cache, _refs) =
-        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&buffer, None, 0, None, None, None, &ResolvedContent::default());
     paragraphs.iter().map(TestParagraph::from).collect()
 }
 
@@ -640,15 +639,13 @@ fn test_heading_to_non_heading_transition() {
     // Simulates typing: start with "#" (heading), then add "t" to make "#t" (not heading)
     // This tests that the syntax spans are correctly updated on content change.
     use super::render::render_paragraphs_incremental;
-    use loro::LoroDoc;
 
-    let doc = LoroDoc::new();
-    let text = doc.get_text("content");
+    let mut buffer = LoroTextBuffer::new();
 
     // Initial state: "#" is a valid empty heading
-    text.insert(0, "#").unwrap();
+    buffer.insert(0, "#");
     let (paras1, cache1, _refs1) =
-        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&buffer, None, 0, None, None, None, &ResolvedContent::default());
 
     eprintln!("State 1 ('#'): {}", paras1[0].html);
     assert!(paras1[0].html.contains("<h1"), "# alone should be heading");
@@ -658,9 +655,9 @@ fn test_heading_to_non_heading_transition() {
     );
 
     // Transition: add "t" to make "#t" - no longer a heading
-    text.insert(1, "t").unwrap();
+    buffer.insert(1, "t");
     let (paras2, _cache2, _refs2) = render_paragraphs_incremental(
-        &text,
+        &buffer,
         Some(&cache1),
         0,
         None,
@@ -773,11 +770,10 @@ fn test_char_range_coverage_allows_paragraph_breaks() {
     // cursor snaps to adjacent paragraphs for standard breaks.
     // Only EXTRA whitespace beyond \n\n gets gap elements.
     let input = "Hello\n\nWorld";
-    let doc = LoroDoc::new();
-    let text = doc.get_text("content");
-    text.insert(0, input).unwrap();
+    let mut buffer = LoroTextBuffer::new();
+    buffer.insert(0, input);
     let (paragraphs, _cache, _refs) =
-        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&buffer, None, 0, None, None, None, &ResolvedContent::default());
 
     // With standard \n\n break, we expect 2 paragraphs (no gap element)
     // Paragraph ranges include some trailing whitespace from markdown parsing
@@ -803,11 +799,10 @@ fn test_char_range_coverage_with_extra_whitespace() {
     // Extra whitespace beyond MIN_PARAGRAPH_BREAK (2) gets gap elements
     // Plain paragraphs don't consume trailing newlines like headings do
     let input = "Hello\n\n\n\nWorld"; // 4 newlines = gap of 4 > 2
-    let doc = LoroDoc::new();
-    let text = doc.get_text("content");
-    text.insert(0, input).unwrap();
+    let mut buffer = LoroTextBuffer::new();
+    buffer.insert(0, input);
     let (paragraphs, _cache, _refs) =
-        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&buffer, None, 0, None, None, None, &ResolvedContent::default());
 
     // With extra newlines, we expect 3 elements: para, gap, para
     assert_eq!(
@@ -903,17 +898,16 @@ fn test_offset_mappings_reference_own_paragraph() {
 fn test_incremental_cache_reuse() {
     // Verify cache is populated and can be reused
     let input = "First para\n\nSecond para";
-    let doc = LoroDoc::new();
-    let text = doc.get_text("content");
-    text.insert(0, input).unwrap();
+    let mut buffer = LoroTextBuffer::new();
+    buffer.insert(0, input);
 
     let (paras1, cache1, _refs1) =
-        render_paragraphs_incremental(&text, None, 0, None, None, None, &ResolvedContent::default());
+        render_paragraphs_incremental(&buffer, None, 0, None, None, None, &ResolvedContent::default());
     assert!(!cache1.paragraphs.is_empty(), "Cache should be populated");
 
     // Second render with same content should reuse cache
     let (paras2, _cache2, _refs2) = render_paragraphs_incremental(
-        &text,
+        &buffer,
         Some(&cache1),
         0,
         None,

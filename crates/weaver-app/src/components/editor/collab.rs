@@ -11,12 +11,12 @@
 
 // Only compile for WASM - no-op stub provided at end
 
-use super::document::EditorDocument;
+use super::document::SignalEditorDocument;
 
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
-use jacquard::smol_str::{format_smolstr, SmolStr};
+use jacquard::smol_str::{SmolStr, format_smolstr};
 #[cfg(target_arch = "wasm32")]
 use jacquard::types::string::AtUri;
 
@@ -38,7 +38,7 @@ const PEER_DISCOVERY_INTERVAL_MS: u32 = 30 * 1000; // 30 seconds
 #[derive(Props, Clone, PartialEq)]
 pub struct CollabCoordinatorProps {
     /// The editor document to sync
-    pub document: EditorDocument,
+    pub document: SignalEditorDocument,
     /// Resource URI for the document being edited
     pub resource_uri: String,
     /// Presence state signal (updated by coordinator)
@@ -239,7 +239,8 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                                 let strong_ref = match fetcher.confirm_record_ref(&uri).await {
                                     Ok(r) => r,
                                     Err(e) => {
-                                        let err = format_smolstr!("Failed to get resource ref: {e}");
+                                        let err =
+                                            format_smolstr!("Failed to get resource ref: {e}");
                                         debug_state
                                             .with_mut(|ds| ds.last_error = Some(err.clone()));
                                         state.set(CoordinatorState::Error(err));
@@ -336,7 +337,9 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                                                     })
                                                     .await
                                                 {
-                                                    tracing::error!("CollabCoordinator: AddPeers send failed: {e}");
+                                                    tracing::error!(
+                                                        "CollabCoordinator: AddPeers send failed: {e}"
+                                                    );
                                                 }
                                             } else {
                                                 tracing::error!("CollabCoordinator: sink is None!");
@@ -395,29 +398,37 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                             let fetcher = fetcher.clone();
 
                             // Get our profile info and send BroadcastJoin
-                            let (our_did, our_display_name): (SmolStr, SmolStr) = match fetcher.current_did().await {
+                            let (our_did, our_display_name): (SmolStr, SmolStr) = match fetcher
+                                .current_did()
+                                .await
+                            {
                                 Some(did) => {
-                                    let display_name: SmolStr = match fetcher.fetch_profile(&did.clone().into()).await {
-                                        Ok(profile) => {
-                                            match &profile.inner {
-                                                ProfileDataViewInner::ProfileView(p) => {
-                                                    p.display_name.as_ref().map(|s| s.as_ref().into()).unwrap_or_else(|| did.as_ref().into())
-                                                }
-                                                ProfileDataViewInner::ProfileViewDetailed(p) => {
-                                                    p.display_name.as_ref().map(|s| s.as_ref().into()).unwrap_or_else(|| did.as_ref().into())
-                                                }
+                                    let display_name: SmolStr =
+                                        match fetcher.fetch_profile(&did.clone().into()).await {
+                                            Ok(profile) => match &profile.inner {
+                                                ProfileDataViewInner::ProfileView(p) => p
+                                                    .display_name
+                                                    .as_ref()
+                                                    .map(|s| s.as_ref().into())
+                                                    .unwrap_or_else(|| did.as_ref().into()),
+                                                ProfileDataViewInner::ProfileViewDetailed(p) => p
+                                                    .display_name
+                                                    .as_ref()
+                                                    .map(|s| s.as_ref().into())
+                                                    .unwrap_or_else(|| did.as_ref().into()),
                                                 ProfileDataViewInner::TangledProfileView(p) => {
                                                     p.handle.as_ref().into()
                                                 }
                                                 _ => did.as_ref().into(),
-                                            }
-                                        }
-                                        Err(_) => did.as_ref().into(),
-                                    };
+                                            },
+                                            Err(_) => did.as_ref().into(),
+                                        };
                                     (did.as_ref().into(), display_name)
                                 }
                                 None => {
-                                    tracing::warn!("CollabCoordinator: no current DID for Join message");
+                                    tracing::warn!(
+                                        "CollabCoordinator: no current DID for Join message"
+                                    );
                                     ("unknown".into(), "Anonymous".into())
                                 }
                             };
@@ -430,7 +441,9 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                                     })
                                     .await
                                 {
-                                    tracing::error!("CollabCoordinator: BroadcastJoin send failed: {e}");
+                                    tracing::error!(
+                                        "CollabCoordinator: BroadcastJoin send failed: {e}"
+                                    );
                                 }
                             }
                         }
@@ -460,11 +473,18 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
             let position = cursor.offset;
             let sel = selection.map(|s| (s.anchor, s.head));
 
-            tracing::debug!(position, ?sel, "CollabCoordinator: cursor changed, broadcasting");
+            tracing::debug!(
+                position,
+                ?sel,
+                "CollabCoordinator: cursor changed, broadcasting"
+            );
 
             spawn(async move {
                 if let Some(ref mut s) = *worker_sink.write() {
-                    tracing::debug!(position, "CollabCoordinator: sending BroadcastCursor to worker");
+                    tracing::debug!(
+                        position,
+                        "CollabCoordinator: sending BroadcastCursor to worker"
+                    );
                     if let Err(e) = s
                         .send(WorkerInput::BroadcastCursor {
                             position,
@@ -475,7 +495,10 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                         tracing::warn!("Failed to send BroadcastCursor to worker: {e}");
                     }
                 } else {
-                    tracing::debug!(position, "CollabCoordinator: worker sink not ready, skipping cursor broadcast");
+                    tracing::debug!(
+                        position,
+                        "CollabCoordinator: worker sink not ready, skipping cursor broadcast"
+                    );
                 }
             });
         });

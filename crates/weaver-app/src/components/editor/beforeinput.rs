@@ -17,7 +17,7 @@
 use dioxus::prelude::*;
 
 use super::actions::{EditorAction, execute_action};
-use super::document::EditorDocument;
+use super::document::SignalEditorDocument;
 use super::platform::Platform;
 
 // Re-export types from extracted crates.
@@ -33,7 +33,7 @@ pub use weaver_editor_browser::StaticRange;
 /// Returns whether the event was handled and default should be prevented.
 #[allow(dead_code)]
 pub fn handle_beforeinput(
-    doc: &mut EditorDocument,
+    doc: &mut SignalEditorDocument,
     ctx: BeforeInputContext<'_>,
 ) -> BeforeInputResult {
     // During composition, let the browser handle most things.
@@ -316,7 +316,7 @@ pub fn handle_beforeinput(
 }
 
 /// Get the current range based on cursor and selection state.
-fn get_current_range(doc: &EditorDocument) -> Range {
+fn get_current_range(doc: &SignalEditorDocument) -> Range {
     if let Some(sel) = *doc.selection.read() {
         let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
         Range::new(start, end)

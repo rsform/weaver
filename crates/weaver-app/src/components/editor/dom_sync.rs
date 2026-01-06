@@ -8,7 +8,9 @@
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::cursor::restore_cursor_position;
 #[allow(unused_imports)]
-use super::document::{EditorDocument, Selection};
+use super::document::Selection;
+#[allow(unused_imports)]
+use super::document::SignalEditorDocument;
 use super::paragraph::ParagraphRender;
 #[allow(unused_imports)]
 use dioxus::prelude::*;
@@ -25,7 +27,7 @@ pub use weaver_editor_browser::dom_position_to_text_offset;
 /// Pass `SnapDirection::Backward` for left/up arrow keys, `SnapDirection::Forward` for right/down.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub fn sync_cursor_from_dom(
-    doc: &mut EditorDocument,
+    doc: &mut SignalEditorDocument,
     editor_id: &str,
     paragraphs: &[ParagraphRender],
 ) {
@@ -37,7 +39,7 @@ pub fn sync_cursor_from_dom(
 /// Use this when handling arrow keys to ensure cursor snaps in the expected direction.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub fn sync_cursor_from_dom_with_direction(
-    doc: &mut EditorDocument,
+    doc: &mut SignalEditorDocument,
     editor_id: &str,
     paragraphs: &[ParagraphRender],
     direction_hint: Option<SnapDirection>,
@@ -133,7 +135,7 @@ pub fn sync_cursor_from_dom_with_direction(
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn sync_cursor_from_dom(
-    _document: &mut EditorDocument,
+    _document: &mut SignalEditorDocument,
     _editor_id: &str,
     _paragraphs: &[ParagraphRender],
 ) {
@@ -141,7 +143,7 @@ pub fn sync_cursor_from_dom(
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn sync_cursor_from_dom_with_direction(
-    _document: &mut EditorDocument,
+    _document: &mut SignalEditorDocument,
     _editor_id: &str,
     _paragraphs: &[ParagraphRender],
     _direction_hint: Option<SnapDirection>,
@@ -332,11 +334,9 @@ pub fn update_paragraph_dom(
                     if is_cursor_para {
                         // Restore cursor synchronously - don't wait for rAF
                         // This prevents race conditions with fast typing
-                        if let Err(e) = restore_cursor_position(
-                            cursor_offset,
-                            &new_para.offset_map,
-                            None,
-                        ) {
+                        if let Err(e) =
+                            restore_cursor_position(cursor_offset, &new_para.offset_map, None)
+                        {
                             tracing::warn!("Synchronous cursor restore failed: {:?}", e);
                         }
                         cursor_para_updated = true;

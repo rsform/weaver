@@ -9,7 +9,7 @@ use super::actions::{
 use super::beforeinput::{BeforeInputContext, BeforeInputResult, InputType, handle_beforeinput};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::beforeinput::{get_data_from_event, get_target_range_from_event};
-use super::document::{CompositionState, EditorDocument, LoadedDocState};
+use super::document::{CompositionState, LoadedDocState, SignalEditorDocument};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::dom_sync::update_paragraph_dom;
 use super::dom_sync::{sync_cursor_from_dom, sync_cursor_from_dom_with_direction};
@@ -421,7 +421,7 @@ fn MarkdownEditorInner(
 
     #[allow(unused_mut)]
     let mut document = use_hook(|| {
-        let mut doc = EditorDocument::from_loaded_state(loaded_state.clone());
+        let mut doc = SignalEditorDocument::from_loaded_state(loaded_state.clone());
 
         // Seed collected_refs with existing record embeds so they get fetched/rendered
         let record_embeds = doc.record_embeds();
@@ -469,6 +469,8 @@ fn MarkdownEditorInner(
     let entry_index_for_memo = entry_index.clone();
     #[allow(unused_mut)]
     let mut paragraphs = use_memo(move || {
+        // Read content_changed to establish reactive dependency
+        let _ = doc_for_memo.content_changed.read();
         let edit = doc_for_memo.last_edit();
         let cache = render_cache.peek();
         let resolver = image_resolver();
@@ -481,7 +483,7 @@ fn MarkdownEditorInner(
 
         let cursor_offset = doc_for_memo.cursor.read().offset;
         let (paras, new_cache, refs) = render::render_paragraphs_incremental(
-            doc_for_memo.loro_text(),
+            doc_for_memo.buffer(),
             Some(&cache),
             cursor_offset,
             edit.as_ref(),
@@ -501,9 +503,9 @@ fn MarkdownEditorInner(
     // Background fetch for AT embeds via worker
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
-        use weaver_embed_worker::{EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput};
         use dioxus::prelude::Writable;
         use gloo_worker::Spawnable;
+        use weaver_embed_worker::{EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput};
 
         let resolved_content_for_fetch = resolved_content;
         let mut embed_worker_bridge: Signal<Option<gloo_worker::WorkerBridge<EmbedWorker>>> =
@@ -559,7 +561,7 @@ fn MarkdownEditorInner(
                 .filter_map(|r| match r {
                     weaver_common::ExtractedRef::AtEmbed { uri, .. } => {
                         // Skip if already resolved
-                        if let Ok(at_uri) = jacquard::types::string::AtUri::new(uri) {
+                        if let Ok(at_uri) = jacquard::types::string::AtUri::new_owned(uri) {
                             if current_resolved.get_embed_content(&at_uri).is_none() {
                                 return Some(uri.clone());
                             }
@@ -598,7 +600,7 @@ fn MarkdownEditorInner(
                 .filter_map(|r| match r {
                     weaver_common::ExtractedRef::AtEmbed { uri, .. } => {
                         // Skip if already resolved
-                        if let Ok(at_uri) = jacquard::types::string::AtUri::new(uri) {
+                        if let Ok(at_uri) = jacquard::types::string::AtUri::new_owned(uri) {
                             if current_resolved.get_embed_content(&at_uri).is_none() {
                                 return Some(uri.clone());
                             }
@@ -731,10 +733,10 @@ fn MarkdownEditorInner(
     // Worker-based autosave (offloads export + encode to worker thread)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
-        use weaver_editor_crdt::{EditorReactor, WorkerInput, WorkerOutput};
         use gloo_storage::Storage;
         use gloo_worker::Spawnable;
         use gloo_worker::reactor::ReactorBridge;
+        use weaver_editor_crdt::{EditorReactor, WorkerInput, WorkerOutput};
 
         use futures_util::stream::{SplitSink, SplitStream};
 
@@ -1810,7 +1812,7 @@ fn MarkdownEditorInner(
 #[component]
 fn RemoteCursors(
     presence: Signal<weaver_common::transport::PresenceSnapshot>,
-    document: EditorDocument,
+    document: SignalEditorDocument,
     render_cache: Signal<render::RenderCache>,
 ) -> Element {
     let presence_read = presence.read();
