@@ -1,6 +1,6 @@
 //! Snapshot tests for the markdown editor rendering pipeline.
 
-use super::offset_map::{OffsetMapping, find_mapping_for_char};
+use weaver_editor_core::{OffsetMapping, find_mapping_for_char};
 use super::paragraph::ParagraphRender;
 use super::render::render_paragraphs_incremental;
 use loro::LoroDoc;
@@ -45,7 +45,7 @@ impl From<&OffsetMapping> for TestOffsetMapping {
         TestOffsetMapping {
             byte_range: (m.byte_range.start, m.byte_range.end),
             char_range: (m.char_range.start, m.char_range.end),
-            node_id: m.node_id.clone(),
+            node_id: m.node_id.to_string(),
             char_offset_in_node: m.char_offset_in_node,
             child_index: m.child_index,
             utf16_len: m.utf16_len,
@@ -246,7 +246,7 @@ fn test_find_mapping_exact_start() {
     let mappings = vec![OffsetMapping {
         byte_range: 0..5,
         char_range: 0..5,
-        node_id: "n0".to_string(),
+        node_id: "n0".into(),
         char_offset_in_node: 0,
         child_index: None,
         utf16_len: 5,
@@ -264,7 +264,7 @@ fn test_find_mapping_exact_end_inclusive() {
     let mappings = vec![OffsetMapping {
         byte_range: 0..5,
         char_range: 0..5,
-        node_id: "n0".to_string(),
+        node_id: "n0".into(),
         char_offset_in_node: 0,
         child_index: None,
         utf16_len: 5,
@@ -280,7 +280,7 @@ fn test_find_mapping_middle() {
     let mappings = vec![OffsetMapping {
         byte_range: 0..10,
         char_range: 0..10,
-        node_id: "n0".to_string(),
+        node_id: "n0".into(),
         char_offset_in_node: 0,
         child_index: None,
         utf16_len: 10,
@@ -295,7 +295,7 @@ fn test_find_mapping_before_first() {
     let mappings = vec![OffsetMapping {
         byte_range: 5..10,
         char_range: 5..10,
-        node_id: "n0".to_string(),
+        node_id: "n0".into(),
         char_offset_in_node: 0,
         child_index: None,
         utf16_len: 5,
@@ -311,7 +311,7 @@ fn test_find_mapping_after_last() {
     let mappings = vec![OffsetMapping {
         byte_range: 0..5,
         char_range: 0..5,
-        node_id: "n0".to_string(),
+        node_id: "n0".into(),
         char_offset_in_node: 0,
         child_index: None,
         utf16_len: 5,
@@ -335,7 +335,7 @@ fn test_find_mapping_invisible_snaps() {
     let mappings = vec![OffsetMapping {
         byte_range: 0..2,
         char_range: 0..2,
-        node_id: "n0".to_string(),
+        node_id: "n0".into(),
         char_offset_in_node: 0,
         child_index: None,
         utf16_len: 0, // invisible
@@ -726,7 +726,7 @@ fn test_blockquote_needs_space_or_newline() {
       char_range:
         - 0
         - 6
-      html: "<blockquote>\n<p id=\"p-0-n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"1\">&gt;</span>quote</p>\n"
+      html: "<blockquote><p id=\"p-0-n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"1\">&gt;</span>quote</p>"
       offset_map:
         - byte_range:
             - 1

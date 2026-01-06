@@ -14,8 +14,9 @@ use crate::syntax::{SyntaxSpanInfo, SyntaxType};
 use super::{EditorWriter, WriterResult};
 
 // Main run loop
-impl<'a, I, E, R, W> EditorWriter<'a, I, E, R, W>
+impl<'a, T, I, E, R, W> EditorWriter<'a, T, I, E, R, W>
 where
+    T: crate::TextBuffer,
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
     E: EmbedContentProvider,
     R: ImageResolver,
@@ -84,7 +85,7 @@ where
         // Handle unmapped trailing content (stripped by parser)
         // This includes trailing spaces that markdown ignores
         let doc_byte_len = self.source.len();
-        let doc_char_len = self.source_len_chars;
+        let doc_char_len = self.text_buffer.len_chars();
 
         if self.last_byte_offset < doc_byte_len || self.last_char_offset < doc_char_len {
             // Emit the trailing content as visible syntax

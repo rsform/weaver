@@ -94,17 +94,19 @@ impl markdown_weaver_escape::StrWrite for SegmentedWriter {
 /// HTML writer that preserves markdown formatting characters.
 ///
 /// Generic over:
+/// - `T`: Text buffer for efficient offset conversions
 /// - `I`: Iterator of markdown events with byte ranges
 /// - `E`: Embed content provider (optional)
 /// - `R`: Image resolver (optional)
 /// - `W`: Wikilink validator (optional)
-pub struct EditorWriter<'a, I, E = (), R = (), W = ()>
+pub struct EditorWriter<'a, T, I, E = (), R = (), W = ()>
 where
+    T: crate::TextBuffer,
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
 {
     // === Input ===
     source: &'a str,
-    source_len_chars: usize,
+    text_buffer: &'a T,
     events: I,
 
     // === Output ===
@@ -146,19 +148,20 @@ where
     ref_collector: weaver_common::RefCollector,
 }
 
-impl<'a, I, E, R, W> EditorWriter<'a, I, E, R, W>
+impl<'a, T, I, E, R, W> EditorWriter<'a, T, I, E, R, W>
 where
+    T: crate::TextBuffer,
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
 {
     /// Create a new EditorWriter.
     ///
-    /// `source` is the markdown source text.
-    /// `source_len_chars` is the length in Unicode chars (for bounds checking).
+    /// `source` is the markdown source text (should match text_buffer content).
+    /// `text_buffer` provides efficient offset conversions.
     /// `events` is the markdown parser event iterator.
-    pub fn new(source: &'a str, source_len_chars: usize, events: I) -> Self {
+    pub fn new(source: &'a str, text_buffer: &'a T, events: I) -> Self {
         Self {
             source,
-            source_len_chars,
+            text_buffer,
             events,
             writer: SegmentedWriter::new(),
             last_byte_offset: 0,
@@ -232,10 +235,10 @@ where
     pub fn with_embed_provider<E2: EmbedContentProvider>(
         self,
         provider: E2,
-    ) -> EditorWriter<'a, I, E2, R, W> {
+    ) -> EditorWriter<'a, T, I, E2, R, W> {
         EditorWriter {
             source: self.source,
-            source_len_chars: self.source_len_chars,
+            text_buffer: self.text_buffer,
             events: self.events,
             writer: self.writer,
             last_byte_offset: self.last_byte_offset,
@@ -268,10 +271,10 @@ where
     pub fn with_image_resolver<R2: ImageResolver>(
         self,
         resolver: R2,
-    ) -> EditorWriter<'a, I, E, R2, W> {
+    ) -> EditorWriter<'a, T, I, E, R2, W> {
         EditorWriter {
             source: self.source,
-            source_len_chars: self.source_len_chars,
+            text_buffer: self.text_buffer,
             events: self.events,
             writer: self.writer,
             last_byte_offset: self.last_byte_offset,
@@ -304,10 +307,10 @@ where
     pub fn with_wikilink_validator<W2: WikilinkValidator>(
         self,
         validator: W2,
-    ) -> EditorWriter<'a, I, E, R, W2> {
+    ) -> EditorWriter<'a, T, I, E, R, W2> {
         EditorWriter {
             source: self.source,
-            source_len_chars: self.source_len_chars,
+            text_buffer: self.text_buffer,
             events: self.events,
             writer: self.writer,
             last_byte_offset: self.last_byte_offset,
@@ -344,8 +347,9 @@ where
 }
 
 // Core helper methods
-impl<'a, I, E, R, W> EditorWriter<'a, I, E, R, W>
+impl<'a, T, I, E, R, W> EditorWriter<'a, T, I, E, R, W>
 where
+    T: crate::TextBuffer,
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
 {
     /// Write a string to the output.

@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 27
-  html: "<ol>\n<li data-node-id=\"p-0-n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"3\" spellcheck=\"false\">1. </span>First\n</li>\n<li data-node-id=\"p-0-n1\"><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"9\" data-char-end=\"12\" spellcheck=\"false\">2. </span>Second\n</li>\n<li data-node-id=\"p-0-n2\"><span class=\"md-syntax-block\" data-syn-id=\"s2\" data-char-start=\"19\" data-char-end=\"22\" spellcheck=\"false\">3. </span>Third</li>\n</ol>\n"
+  html: "<ol><li data-node-id=\"p-0-n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"3\" spellcheck=\"false\">1. </span>First\n</li><li data-node-id=\"p-0-n1\"><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"9\" data-char-end=\"12\" spellcheck=\"false\">2. </span>Second\n</li><li data-node-id=\"p-0-n2\"><span class=\"md-syntax-block\" data-syn-id=\"s2\" data-char-start=\"19\" data-char-end=\"22\" spellcheck=\"false\">3. </span>Third</li></ol>"
   offset_map:
     - byte_range:
         - 0

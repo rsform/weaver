@@ -15,7 +15,6 @@ use super::dom_sync::update_paragraph_dom;
 use super::dom_sync::{sync_cursor_from_dom, sync_cursor_from_dom_with_direction};
 use super::formatting;
 use super::input::{get_char_at, handle_copy, handle_cut, handle_paste};
-use super::offset_map::SnapDirection;
 use super::paragraph::ParagraphRender;
 use super::platform;
 #[allow(unused_imports)]
@@ -45,6 +44,7 @@ use jacquard::types::blob::BlobRef;
 use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::embed::images::Image;
 use weaver_common::WeaverExt;
+use weaver_editor_core::SnapDirection;
 
 /// Result of loading document state.
 enum LoadResult {
@@ -1868,7 +1868,7 @@ fn RemoteCursorIndicator(
     position: usize,
     selection: Option<(usize, usize)>,
     color: u32,
-    offset_map: Vec<super::offset_map::OffsetMapping>,
+    offset_map: Vec<weaver_editor_core::OffsetMapping>,
 ) -> Element {
     use super::cursor::{get_cursor_rect_relative, get_selection_rects_relative};
 

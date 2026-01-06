@@ -5,15 +5,15 @@
 //! Uses EditorWriter which tracks gaps in offset_iter to preserve formatting characters.
 
 use super::document::EditInfo;
-#[allow(unused_imports)]
-use super::offset_map::{OffsetMapping, RenderResult};
 use super::paragraph::{ParagraphRender, hash_source, make_paragraph_id, text_slice_to_string};
-#[allow(unused_imports)]
-use super::writer::{EditorImageResolver, EditorWriter, ImageResolver, SyntaxSpanInfo};
+use super::writer::embed::EditorImageResolver;
 use loro::LoroText;
 use markdown_weaver::Parser;
 use std::ops::Range;
 use weaver_common::{EntryIndex, ResolvedContent};
+use weaver_editor_core::{
+    EditorRope, EditorWriter, EmbedContentProvider, ImageResolver, OffsetMapping, SyntaxSpanInfo,
+};
 
 /// Cache for incremental paragraph rendering.
 /// Stores previously rendered paragraphs to avoid re-rendering unchanged content.
@@ -413,18 +413,17 @@ pub fn render_paragraphs_incremental(
                 let parser = Parser::new_ext(&para_source, weaver_renderer::default_md_options())
                     .into_offset_iter();
 
-                let para_doc = loro::LoroDoc::new();
-                let para_text = para_doc.get_text("content");
-                let _ = para_text.insert(0, &para_source);
+                let para_rope = EditorRope::from(para_source.as_str());
 
-                let mut writer = EditorWriter::<_, &ResolvedContent, &EditorImageResolver>::new(
-                    &para_source,
-                    &para_text,
-                    parser,
-                )
-                .with_node_id_prefix(&cached_para.id)
-                .with_image_resolver(&resolver)
-                .with_embed_provider(resolved_content);
+                let mut writer =
+                    EditorWriter::<_, _, &ResolvedContent, &EditorImageResolver, ()>::new(
+                        &para_source,
+                        &para_rope,
+                        parser,
+                    )
+                    .with_node_id_prefix(&cached_para.id)
+                    .with_image_resolver(&resolver)
+                    .with_embed_provider(resolved_content);
 
                 if let Some(idx) = entry_index {
                     writer = writer.with_entry_index(idx);
@@ -613,10 +612,8 @@ pub fn render_paragraphs_incremental(
     // Use provided resolver or empty default
     let resolver = image_resolver.cloned().unwrap_or_default();
 
-    // Create a temporary LoroText for the slice (needed by writer)
-    let slice_doc = loro::LoroDoc::new();
-    let slice_text = slice_doc.get_text("content");
-    let _ = slice_text.insert(0, parse_slice);
+    // Create EditorRope for efficient offset conversions
+    let slice_rope = EditorRope::from(parse_slice);
 
     // Determine starting paragraph ID for freshly parsed paragraphs
     // This MUST match the IDs we assign later - the writer bakes node ID prefixes into HTML
@@ -665,9 +662,9 @@ pub fn render_paragraphs_incremental(
     });
 
     // Build writer with all resolvers and auto-incrementing paragraph prefixes
-    let mut writer = EditorWriter::<_, &ResolvedContent, &EditorImageResolver>::new(
+    let mut writer = EditorWriter::<_, _, &ResolvedContent, &EditorImageResolver, ()>::new(
         parse_slice,
-        &slice_text,
+        &slice_rope,
         parser,
     )
     .with_auto_incrementing_prefix(parsed_para_id_start)

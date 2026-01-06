@@ -15,7 +15,6 @@ mod formatting;
 mod image_upload;
 mod input;
 mod log_buffer;
-mod offset_map;
 mod paragraph;
 mod platform;
 mod publish;
@@ -54,15 +53,19 @@ pub use document::{
 #[allow(unused_imports)]
 pub use formatting::{FormatAction, apply_formatting, find_word_boundaries};
 
-// Rendering
+// Rendering - re-export core types
 #[allow(unused_imports)]
-pub use offset_map::{OffsetMapping, RenderResult, find_mapping_for_byte};
+pub use weaver_editor_core::{
+    EditorRope, EditorWriter, EmbedContentProvider, ImageResolver, OffsetMapping, RenderResult,
+    SegmentedWriter, SyntaxSpanInfo, SyntaxType, TextBuffer, WriterResult, find_mapping_for_byte,
+};
 #[allow(unused_imports)]
 pub use paragraph::ParagraphRender;
 #[allow(unused_imports)]
 pub use render::{RenderCache, render_paragraphs_incremental};
+// App-specific image resolver
 #[allow(unused_imports)]
-pub use writer::{EditorImageResolver, ImageResolver, SyntaxSpanInfo, SyntaxType, WriterResult};
+pub use writer::embed::EditorImageResolver;
 
 // Storage
 #[allow(unused_imports)]

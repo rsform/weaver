@@ -8,7 +8,7 @@ use super::cursor::restore_cursor_position;
 #[allow(unused_imports)]
 use super::document::{EditorDocument, Selection};
 #[allow(unused_imports)]
-use super::offset_map::{SnapDirection, find_nearest_valid_position, is_valid_cursor_position};
+use weaver_editor_core::{SnapDirection, find_nearest_valid_position, is_valid_cursor_position};
 use super::paragraph::ParagraphRender;
 #[allow(unused_imports)]
 use dioxus::prelude::*;

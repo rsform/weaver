@@ -6,7 +6,7 @@ use dioxus::prelude::*;
 
 use super::document::EditorDocument;
 use super::formatting::{self, FormatAction};
-use super::offset_map::SnapDirection;
+use weaver_editor_core::SnapDirection;
 
 /// Check if we need to intercept this key event.
 /// Returns true for content-modifying operations, false for navigation.

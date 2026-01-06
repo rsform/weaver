@@ -7,9 +7,9 @@
 //! 3. Walking text nodes to find the UTF-16 offset within the element
 //! 4. Setting cursor with web_sys Selection API
 
-use super::offset_map::OffsetMapping;
+use weaver_editor_core::OffsetMapping;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-use super::offset_map::{SnapDirection, find_mapping_for_char, find_nearest_valid_position};
+use weaver_editor_core::{SnapDirection, find_mapping_for_char, find_nearest_valid_position};
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen::JsCast;

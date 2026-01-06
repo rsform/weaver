@@ -13,8 +13,9 @@ use crate::syntax::{SyntaxSpanInfo, SyntaxType, classify_syntax};
 
 use super::{EditorWriter, TableState};
 
-impl<'a, I, E, R, W> EditorWriter<'a, I, E, R, W>
+impl<'a, T, I, E, R, W> EditorWriter<'a, T, I, E, R, W>
 where
+    T: crate::TextBuffer,
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
     E: EmbedContentProvider,
     R: ImageResolver,
@@ -747,14 +748,15 @@ where
                 if matches!(link_type, LinkType::WikiLink { .. })
                     && (url.starts_with("at://") || url.starts_with("did:"))
                 {
-                    return self.write_embed(
-                        range,
-                        EmbedType::Other, // AT embeds - disambiguated via NSID later
+                    // Construct an Embed tag from the Image fields
+                    let embed_tag = Tag::Embed {
+                        embed_type: EmbedType::Other,
                         dest_url,
                         title,
                         id,
                         attrs,
-                    );
+                    };
+                    return self.write_embed(range, embed_tag);
                 }
 
                 // Image rendering: all syntax elements share one syn_id for visibility toggling
@@ -906,13 +908,7 @@ where
 
                 Ok(())
             }
-            Tag::Embed {
-                embed_type,
-                dest_url,
-                title,
-                id,
-                attrs,
-            } => self.write_embed(range, embed_type, dest_url, title, id, attrs),
+            tag @ Tag::Embed { .. } => self.write_embed(range, tag),
             Tag::WeaverBlock(_, attrs) => {
                 self.in_non_writing_block = true;
                 self.weaver_block.buffer.clear();

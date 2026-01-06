@@ -753,7 +753,7 @@ pub fn execute_action(doc: &mut EditorDocument, action: &EditorAction) -> bool {
     use super::input::{
         detect_list_context, find_line_end, find_line_start, get_char_at, is_list_item_empty,
     };
-    use super::offset_map::SnapDirection;
+    use weaver_editor_core::SnapDirection;
 
     match action {
         EditorAction::Insert { text, range } => {

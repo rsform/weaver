@@ -3,31 +3,12 @@ source: crates/weaver-app/src/components/editor/tests.rs
 expression: result
 ---
 - byte_range:
-    - 0
-    - 11
-  char_range:
-    - 0
-    - 11
-  html: "<span id=\"gap-2-11\">​</span>"
-  offset_map:
-    - byte_range:
-        - 0
-        - 11
-      char_range:
-        - 0
-        - 11
-      node_id: gap-2-11
-      char_offset_in_node: 0
-      child_index: ~
-      utf16_len: 1
-  source_hash: 10732713550789592057
-- byte_range:
     - 11
     - 33
   char_range:
     - 11
     - 33
-  html: "<ul>\n<li data-node-id=\"p-0-n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\" spellcheck=\"false\">- </span>Parent\n  \n<ul>\n<li data-node-id=\"p-0-n1\"><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"11\" data-char-end=\"13\" spellcheck=\"false\">- </span>Child 1\n</li>\n<span id=\"p-0-n2\">  </span>\n<li data-node-id=\"p-0-n3\"><span class=\"md-syntax-block\" data-syn-id=\"s2\" data-char-start=\"23\" data-char-end=\"25\" spellcheck=\"false\">- </span>Child 2\n</li>\n</ul>\n"
+  html: "<ul><li data-node-id=\"p-0-n0\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\" spellcheck=\"false\">- </span>Parent\n  <ul><li data-node-id=\"p-0-n1\"><span class=\"md-syntax-block\" data-syn-id=\"s1\" data-char-start=\"11\" data-char-end=\"13\" spellcheck=\"false\">- </span>Child 1\n</li><span id=\"p-0-n2\">  </span><li data-node-id=\"p-0-n3\"><span class=\"md-syntax-block\" data-syn-id=\"s2\" data-char-start=\"23\" data-char-end=\"25\" spellcheck=\"false\">- </span>Child 2\n</li></ul>"
   offset_map:
     - byte_range:
         - 0

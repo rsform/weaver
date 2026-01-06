@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 4
-  html: "<p id=\"p-0-n0\" dir=\"ltr\">你好世界</p>\n"
+  html: "<p id=\"p-0-n0\" dir=\"ltr\">你好世界</p>"
   offset_map:
     - byte_range:
         - 0

@@ -3,6 +3,8 @@
 //! Implements Obsidian-style formatting character visibility: syntax markers
 //! are hidden when cursor is not near them, revealed when cursor approaches.
 
+use weaver_editor_core::SmolStr;
+
 use super::document::Selection;
 use super::paragraph::ParagraphRender;
 use super::writer::{SyntaxSpanInfo, SyntaxType};
@@ -13,7 +15,7 @@ use std::ops::Range;
 #[derive(Debug, Clone, Default)]
 pub struct VisibilityState {
     /// Set of syn_ids that should be visible
-    pub visible_span_ids: HashSet<String>,
+    pub visible_span_ids: HashSet<SmolStr>,
 }
 
 impl VisibilityState {
@@ -253,7 +255,7 @@ mod tests {
         syntax_type: SyntaxType,
     ) -> SyntaxSpanInfo {
         SyntaxSpanInfo {
-            syn_id: syn_id.to_string(),
+            syn_id: syn_id.into(),
             char_range: start..end,
             syntax_type,
             formatted_range: None,
@@ -268,7 +270,7 @@ mod tests {
         formatted_range: Range<usize>,
     ) -> SyntaxSpanInfo {
         SyntaxSpanInfo {
-            syn_id: syn_id.to_string(),
+            syn_id: syn_id.into(),
             char_range: start..end,
             syntax_type,
             formatted_range: Some(formatted_range),

@@ -47,15 +47,25 @@ struct EditOperation {
 ///
 /// This is the standard way to get undo support for local editing.
 /// All mutations go through this wrapper, which records them for undo.
-#[derive(Clone)]
-pub struct UndoableBuffer<T: TextBuffer> {
+pub struct UndoableBuffer<T> {
     buffer: T,
     undo_stack: Vec<EditOperation>,
     redo_stack: Vec<EditOperation>,
     max_steps: usize,
 }
 
-impl<T: TextBuffer> Default for UndoableBuffer<T> {
+impl<T: Clone> Clone for UndoableBuffer<T> {
+    fn clone(&self) -> Self {
+        Self {
+            buffer: self.buffer.clone(),
+            undo_stack: self.undo_stack.clone(),
+            redo_stack: self.redo_stack.clone(),
+            max_steps: self.max_steps,
+        }
+    }
+}
+
+impl<T: TextBuffer + Default> Default for UndoableBuffer<T> {
     fn default() -> Self {
         Self::new(T::default(), 100)
     }

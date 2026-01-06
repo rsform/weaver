@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 6
-  html: "<p id=\"p-0-n0\" dir=\"ltr\">Hello\n</p>\n"
+  html: "<p id=\"p-0-n0\" dir=\"ltr\">Hello\n</p>"
   offset_map:
     - byte_range:
         - 0
@@ -41,22 +41,3 @@ expression: result
       child_index: ~
       utf16_len: 1
   source_hash: 1280328235052234789
-- byte_range:
-    - 6
-    - 7
-  char_range:
-    - 6
-    - 7
-  html: "<span id=\"gap-6-7\">​</span>"
-  offset_map:
-    - byte_range:
-        - 6
-        - 7
-      char_range:
-        - 6
-        - 7
-      node_id: gap-6-7
-      char_offset_in_node: 0
-      child_index: ~
-      utf16_len: 1
-  source_hash: 0

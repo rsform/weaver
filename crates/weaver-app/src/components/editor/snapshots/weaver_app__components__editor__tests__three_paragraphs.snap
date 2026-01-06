@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 5
-  html: "<p id=\"p-0-n0\" dir=\"ltr\">One.\n</p>\n"
+  html: "<p id=\"p-0-n0\" dir=\"ltr\">One.\n</p>"
   offset_map:
     - byte_range:
         - 0
@@ -47,7 +47,7 @@ expression: result
   char_range:
     - 6
     - 11
-  html: "<span id=\"p-1-n0\">\n</span>\n<p id=\"p-1-n1\" dir=\"ltr\">Two.\n</p>\n"
+  html: "<span id=\"p-1-n0\">\n</span><p id=\"p-1-n1\" dir=\"ltr\">Two.\n</p>"
   offset_map:
     - byte_range:
         - 5
@@ -96,7 +96,7 @@ expression: result
   char_range:
     - 12
     - 18
-  html: "<span id=\"p-2-n0\">\n</span>\n<p id=\"p-2-n1\" dir=\"ltr\">Three.</p>\n"
+  html: "<span id=\"p-2-n0\">\n</span><p id=\"p-2-n1\" dir=\"ltr\">Three.</p>"
   offset_map:
     - byte_range:
         - 11

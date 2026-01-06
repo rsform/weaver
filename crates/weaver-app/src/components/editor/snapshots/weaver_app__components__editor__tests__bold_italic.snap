@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 27
-  html: "<p id=\"p-0-n0\" dir=\"ltr\">Some <span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"5\" data-char-end=\"6\">*</span><em><span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"6\" data-char-end=\"8\">**</span><strong>bold italic</strong><span class=\"md-syntax-inline\" data-syn-id=\"s2\" data-char-start=\"19\" data-char-end=\"21\">**</span></em><span class=\"md-syntax-inline\" data-syn-id=\"s3\" data-char-start=\"21\" data-char-end=\"22\">*</span> text</p>\n"
+  html: "<p id=\"p-0-n0\" dir=\"ltr\">Some <span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"5\" data-char-end=\"6\">*</span><em><span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"6\" data-char-end=\"8\">**</span><strong>bold italic</strong><span class=\"md-syntax-inline\" data-syn-id=\"s2\" data-char-start=\"19\" data-char-end=\"21\">**</span></em><span class=\"md-syntax-inline\" data-syn-id=\"s3\" data-char-start=\"21\" data-char-end=\"22\">*</span> text</p>"
   offset_map:
     - byte_range:
         - 0

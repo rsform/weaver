@@ -10,7 +10,7 @@ use std::ops::Range;
 /// A text buffer that supports efficient editing and offset conversion.
 ///
 /// All offsets are in Unicode scalar values (chars), not bytes or UTF-16.
-pub trait TextBuffer: Default + Clone {
+pub trait TextBuffer {
     /// Total length in bytes (UTF-8).
     fn len_bytes(&self) -> usize;
 

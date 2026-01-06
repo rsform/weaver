@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use jacquard::IntoStatic;
 use jacquard::types::{ident::AtIdentifier, string::Rkey};
-use markdown_weaver::{CowStr, EmbedType, Event};
+use markdown_weaver::{CowStr, Event, Tag};
 use markdown_weaver_escape::{StrWrite, escape_html};
 use smol_str::SmolStr;
 
@@ -65,8 +65,10 @@ impl EditorImageResolver {
         blob_rkey: Rkey<'static>,
         ident: AtIdentifier<'static>,
     ) {
-        self.images
-            .insert(SmolStr::new(name), ResolvedImage::Draft { blob_rkey, ident });
+        self.images.insert(
+            SmolStr::new(name),
+            ResolvedImage::Draft { blob_rkey, ident },
+        );
     }
 
     /// Add an already-uploaded draft image.
@@ -160,8 +162,9 @@ impl ImageResolver for EditorImageResolver {
 }
 
 // write_embed implementation
-impl<'a, I, E, R, W> EditorWriter<'a, I, E, R, W>
+impl<'a, T, I, E, R, W> EditorWriter<'a, T, I, E, R, W>
 where
+    T: crate::TextBuffer,
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
     E: EmbedContentProvider,
     R: ImageResolver,
@@ -170,12 +173,18 @@ where
     pub(crate) fn write_embed(
         &mut self,
         range: Range<usize>,
-        _embed_type: EmbedType,
-        dest_url: CowStr<'_>,
-        title: CowStr<'_>,
-        _id: CowStr<'_>,
-        attrs: Option<markdown_weaver::WeaverAttributes<'_>>,
+        tag: Tag<'_>,
     ) -> Result<(), fmt::Error> {
+        let Tag::Embed {
+            dest_url,
+            title,
+            attrs,
+            ..
+        } = &tag
+        else {
+            return Ok(());
+        };
+
         // Embed rendering: all syntax elements share one syn_id for visibility toggling
         // Structure: ![[  url-as-link  ]]  <embed-content>
         let raw_text = &self.source[range.clone()];
@@ -279,7 +288,7 @@ where
 
         // 4. Emit the actual embed content
         // Try to get content from attributes first
-        let content_from_attrs = if let Some(ref attrs) = attrs {
+        let content_from_attrs = if let Some(attrs) = attrs {
             attrs
                 .attrs
                 .iter()
@@ -290,12 +299,10 @@ where
         };
 
         // If no content in attrs, try provider
-        // Convert to owned to avoid borrow checker issues with self.write()
-        // TODO: figure out a way to do this that doesn't involve cloning
         let content: Option<String> = if content_from_attrs.is_some() {
             content_from_attrs
         } else if let Some(ref provider) = self.embed_provider {
-            provider.get_embed_html(url).map(|s| s.to_string())
+            provider.get_embed_content(&tag)
         } else {
             None
         };

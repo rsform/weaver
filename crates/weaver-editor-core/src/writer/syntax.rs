@@ -11,8 +11,9 @@ use crate::syntax::{SyntaxSpanInfo, SyntaxType, classify_syntax};
 
 use super::EditorWriter;
 
-impl<'a, I, E, R, W> EditorWriter<'a, I, E, R, W>
+impl<'a, T, I, E, R, W> EditorWriter<'a, T, I, E, R, W>
 where
+    T: crate::TextBuffer,
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
     E: EmbedContentProvider,
     R: ImageResolver,

@@ -3,10 +3,9 @@
 //! Paragraphs are discovered during markdown rendering by tracking
 //! Tag::Paragraph events. This allows updating only changed paragraphs in the DOM.
 
-use super::offset_map::OffsetMapping;
-use super::writer::SyntaxSpanInfo;
 use loro::LoroText;
 use std::ops::Range;
+use weaver_editor_core::{OffsetMapping, SyntaxSpanInfo};
 
 /// A rendered paragraph with its source range and offset mappings.
 #[derive(Debug, Clone, PartialEq)]

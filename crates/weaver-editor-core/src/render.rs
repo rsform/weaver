@@ -7,21 +7,26 @@
 //!
 //! Implementations are provided by the consuming application (e.g., weaver-app).
 
+use markdown_weaver::Tag;
+
 /// Provides HTML content for embedded resources.
 ///
 /// When rendering markdown with embeds (e.g., `![[at://...]]`), this trait
 /// is consulted to get the pre-rendered HTML for the embed.
+///
+/// The full `Tag::Embed` is provided so implementations can access all context:
+/// embed_type, dest_url, title, id, and attrs.
 pub trait EmbedContentProvider {
-    /// Get HTML content for an embed URL.
+    /// Get HTML content for an embed tag.
     ///
     /// Returns `Some(html)` if the embed content is available,
     /// `None` to render a placeholder.
-    fn get_embed_html(&self, url: &str) -> Option<&str>;
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String>;
 }
 
 /// Unit type implementation - no embeds available.
 impl EmbedContentProvider for () {
-    fn get_embed_html(&self, _url: &str) -> Option<&str> {
+    fn get_embed_content(&self, _tag: &Tag<'_>) -> Option<String> {
         None
     }
 }
@@ -63,8 +68,8 @@ impl WikilinkValidator for () {
 /// Reference implementations for common patterns.
 
 impl<T: EmbedContentProvider> EmbedContentProvider for &T {
-    fn get_embed_html(&self, url: &str) -> Option<&str> {
-        (*self).get_embed_html(url)
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String> {
+        (*self).get_embed_content(tag)
     }
 }
 
@@ -81,8 +86,8 @@ impl<T: WikilinkValidator> WikilinkValidator for &T {
 }
 
 impl<T: EmbedContentProvider> EmbedContentProvider for Option<T> {
-    fn get_embed_html(&self, url: &str) -> Option<&str> {
-        self.as_ref().and_then(|p| p.get_embed_html(url))
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String> {
+        self.as_ref().and_then(|p| p.get_embed_content(tag))
     }
 }
 
@@ -98,19 +103,39 @@ impl<T: WikilinkValidator> WikilinkValidator for Option<T> {
     }
 }
 
+/// Implementation for ResolvedContent from weaver-common.
+///
+/// Resolves AT Protocol embeds by looking up the content in the ResolvedContent map.
+impl EmbedContentProvider for weaver_common::ResolvedContent {
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String> {
+        if let Tag::Embed { dest_url, .. } = tag {
+            let url = dest_url.as_ref();
+            if url.starts_with("at://") {
+                if let Ok(at_uri) = jacquard::types::string::AtUri::new(url) {
+                    return weaver_common::ResolvedContent::get_embed_content(self, &at_uri)
+                        .map(|s| s.to_string());
+                }
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use markdown_weaver::EmbedType;
 
     struct TestEmbedProvider;
 
     impl EmbedContentProvider for TestEmbedProvider {
-        fn get_embed_html(&self, url: &str) -> Option<&str> {
-            if url == "at://test/embed" {
-                Some("<div>Test Embed</div>")
-            } else {
-                None
+        fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String> {
+            if let Tag::Embed { dest_url, .. } = tag {
+                if dest_url.as_ref() == "at://test/embed" {
+                    return Some("<div>Test Embed</div>".to_string());
+                }
             }
+            None
         }
     }
 
@@ -136,14 +161,24 @@ mod tests {
         }
     }
 
+    fn make_embed_tag(url: &str) -> Tag<'_> {
+        Tag::Embed {
+            embed_type: EmbedType::Other,
+            dest_url: url.into(),
+            title: "".into(),
+            id: "".into(),
+            attrs: None,
+        }
+    }
+
     #[test]
     fn test_embed_provider() {
         let provider = TestEmbedProvider;
         assert_eq!(
-            provider.get_embed_html("at://test/embed"),
-            Some("<div>Test Embed</div>")
+            provider.get_embed_content(&make_embed_tag("at://test/embed")),
+            Some("<div>Test Embed</div>".to_string())
         );
-        assert_eq!(provider.get_embed_html("at://other"), None);
+        assert_eq!(provider.get_embed_content(&make_embed_tag("at://other")), None);
     }
 
     #[test]
@@ -169,7 +204,7 @@ mod tests {
     #[test]
     fn test_unit_impls() {
         let embed: () = ();
-        assert_eq!(embed.get_embed_html("anything"), None);
+        assert_eq!(embed.get_embed_content(&make_embed_tag("anything")), None);
 
         let image: () = ();
         assert_eq!(image.resolve_image_url("anything"), None);
@@ -182,11 +217,11 @@ mod tests {
     fn test_option_impls() {
         let some_provider: Option<TestEmbedProvider> = Some(TestEmbedProvider);
         assert_eq!(
-            some_provider.get_embed_html("at://test/embed"),
-            Some("<div>Test Embed</div>")
+            some_provider.get_embed_content(&make_embed_tag("at://test/embed")),
+            Some("<div>Test Embed</div>".to_string())
         );
 
         let none_provider: Option<TestEmbedProvider> = None;
-        assert_eq!(none_provider.get_embed_html("at://test/embed"), None);
+        assert_eq!(none_provider.get_embed_content(&make_embed_tag("at://test/embed")), None);
     }
 }

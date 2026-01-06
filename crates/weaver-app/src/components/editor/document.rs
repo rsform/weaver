@@ -144,7 +144,7 @@ pub struct EditorDocument {
 
     /// Pending snap direction for cursor restoration after edits.
     /// Set by input handlers, consumed by cursor restoration.
-    pub pending_snap: Signal<Option<super::offset_map::SnapDirection>>,
+    pub pending_snap: Signal<Option<weaver_editor_core::SnapDirection>>,
 
     /// Collected refs (wikilinks, AT embeds) from the most recent render.
     /// Updated by the render pipeline, read by publish for populating records.

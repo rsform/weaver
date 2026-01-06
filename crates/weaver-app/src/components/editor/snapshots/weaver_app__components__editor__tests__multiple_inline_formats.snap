@@ -8,7 +8,7 @@ expression: result
   char_range:
     - 0
     - 32
-  html: "<p id=\"p-0-n0\" dir=\"ltr\"><span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\">**</span><strong>Bold</strong><span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"6\" data-char-end=\"8\">**</span> and <span class=\"md-syntax-inline\" data-syn-id=\"s2\" data-char-start=\"13\" data-char-end=\"14\">*</span><em>italic</em><span class=\"md-syntax-inline\" data-syn-id=\"s3\" data-char-start=\"20\" data-char-end=\"21\">*</span> and <span class=\"md-syntax-inline\" data-syn-id=\"s4\" data-char-start=\"26\" data-char-end=\"27\" spellcheck=\"false\">`</span><code>code</code><span class=\"md-syntax-inline\" data-syn-id=\"s5\" data-char-start=\"31\" data-char-end=\"32\" spellcheck=\"false\">`</span></p>\n"
+  html: "<p id=\"p-0-n0\" dir=\"ltr\"><span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\">**</span><strong>Bold</strong><span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"6\" data-char-end=\"8\">**</span> and <span class=\"md-syntax-inline\" data-syn-id=\"s2\" data-char-start=\"13\" data-char-end=\"14\">*</span><em>italic</em><span class=\"md-syntax-inline\" data-syn-id=\"s3\" data-char-start=\"20\" data-char-end=\"21\">*</span> and <span class=\"md-syntax-inline\" data-syn-id=\"s4\" data-char-start=\"26\" data-char-end=\"27\" spellcheck=\"false\">`</span><code>code</code><span class=\"md-syntax-inline\" data-syn-id=\"s5\" data-char-start=\"31\" data-char-end=\"32\" spellcheck=\"false\">`</span></p>"
   offset_map:
     - byte_range:
         - 0
