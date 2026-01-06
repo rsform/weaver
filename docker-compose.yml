@@ -1,4 +1,32 @@
 services:
+  # ClickHouse - analytics database (internal only, no host ports exposed)
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.11
+    container_name: weaver-clickhouse
+    # No ports exposed to host - only accessible via docker network
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ~/data/clickhouse:/var/lib/clickhouse
+      - ~/data/clickhouse-logs:/var/log/clickhouse-server
+      - ~/data/clickhouse-config:/etc/clickhouse-server/config.d
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DATABASE:-weaver}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
   # Docker registry for local image hosting
   registry:
     image: registry:2
@@ -45,9 +73,9 @@ services:
       - index_data:/app/data
     environment:
       RUST_LOG: info,weaver_index=debug,hyper_util::client::legacy::pool=info
-      CLICKHOUSE_URL: ${CLICKHOUSE_URL}
+      CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-weaver}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       INDEXER_SOURCE: tap
       TAP_URL: ws://tap:2480/channel
@@ -56,6 +84,8 @@ services:
       INDEXER_COLLECTIONS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*,net.anisota.*,place.stream.*"
     depends_on:
       tap:
+        condition: service_healthy
+      clickhouse:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/xrpc/_health"]
