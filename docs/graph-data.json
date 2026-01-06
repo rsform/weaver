@@ -1528,6 +1528,83 @@
       "created_at": "2026-01-06T12:54:14.487538586-05:00",
       "updated_at": "2026-01-06T12:54:14.487538586-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 141,
+      "change_id": "2dee8fd9-9f20-40a5-8ca4-21c5da31b32a",
+      "node_type": "outcome",
+      "title": "Unified dom_position_to_text_offset - added tracing to browser crate, app now re-exports from browser. Fixed browser tests for new BeforeInputContext API. All 10 WASM tests pass.",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T13:16:55.759301790-05:00",
+      "updated_at": "2026-01-06T13:16:55.759301790-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 142,
+      "change_id": "bffbf307-e150-4c9f-a98a-9c5950bf6aab",
+      "node_type": "outcome",
+      "title": "Deduplicated input.rs - ListContext from core, write_clipboard_with_custom_type from browser. Loro-specific text helpers remain (different trait interface).",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T13:20:00.050902081-05:00",
+      "updated_at": "2026-01-06T13:20:00.050902081-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 143,
+      "change_id": "507d7c90-1370-4602-91c3-466d060eadb0",
+      "node_type": "action",
+      "title": "Migrate copy_as_html to browser crate",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T13:20:26.751565101-05:00",
+      "updated_at": "2026-01-06T13:20:26.751565101-05:00",
+      "metadata_json": "{\"confidence\":90,\"prompt\":\"User said: copy_as_html should also be migrated\"}"
+    },
+    {
+      "id": 144,
+      "change_id": "2106143f-2b41-4132-a02e-0d5f106f55e7",
+      "node_type": "outcome",
+      "title": "copy_as_html migrated to browser crate - core now re-exports markdown_weaver and weaver_renderer",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T13:23:19.174527414-05:00",
+      "updated_at": "2026-01-06T13:23:19.174527414-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 145,
+      "change_id": "3c662499-c59d-4089-ab9d-052806e9ca12",
+      "node_type": "action",
+      "title": "Updated design doc to reflect worker split decision - collab worker to crdt, embed worker separate/stays in app",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T13:28:47.660377466-05:00",
+      "updated_at": "2026-01-06T13:28:47.660377466-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 146,
+      "change_id": "af7d7560-f461-4ba0-9d4d-495d044a6589",
+      "node_type": "decision",
+      "title": "Embed worker placement",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T13:29:10.272323210-05:00",
+      "updated_at": "2026-01-06T13:29:10.272323210-05:00",
+      "metadata_json": "{\"confidence\":100}"
+    },
+    {
+      "id": 147,
+      "change_id": "ed95158b-4307-491b-80ca-711020d0cb00",
+      "node_type": "outcome",
+      "title": "Embed worker → weaver-embed-worker crate (decided)",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T13:29:10.289780508-05:00",
+      "updated_at": "2026-01-06T13:29:10.289780508-05:00",
+      "metadata_json": "{\"confidence\":100}"
     }
   ],
   "edges": [
@@ -3180,6 +3257,61 @@
       "weight": 1.0,
       "rationale": "dedup effort",
       "created_at": "2026-01-06T12:54:14.531458670-05:00"
+    },
+    {
+      "id": 152,
+      "from_node_id": 132,
+      "to_node_id": 142,
+      "from_change_id": "d70e9274-470a-42f8-b7db-890f9e231cd1",
+      "to_change_id": "bffbf307-e150-4c9f-a98a-9c5950bf6aab",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "input.rs deduplication outcome",
+      "created_at": "2026-01-06T13:20:26.610371926-05:00"
+    },
+    {
+      "id": 153,
+      "from_node_id": 143,
+      "to_node_id": 144,
+      "from_change_id": "507d7c90-1370-4602-91c3-466d060eadb0",
+      "to_change_id": "2106143f-2b41-4132-a02e-0d5f106f55e7",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "migration completed",
+      "created_at": "2026-01-06T13:23:19.190956294-05:00"
+    },
+    {
+      "id": 154,
+      "from_node_id": 127,
+      "to_node_id": 145,
+      "from_change_id": "5aa17c55-afff-4d4a-8956-8fce165da24a",
+      "to_change_id": "3c662499-c59d-4089-ab9d-052806e9ca12",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Decision documented",
+      "created_at": "2026-01-06T13:28:47.676331192-05:00"
+    },
+    {
+      "id": 155,
+      "from_node_id": 127,
+      "to_node_id": 146,
+      "from_change_id": "5aa17c55-afff-4d4a-8956-8fce165da24a",
+      "to_change_id": "af7d7560-f461-4ba0-9d4d-495d044a6589",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Final decision made",
+      "created_at": "2026-01-06T13:29:10.311767876-05:00"
+    },
+    {
+      "id": 156,
+      "from_node_id": 146,
+      "to_node_id": 147,
+      "from_change_id": "af7d7560-f461-4ba0-9d4d-495d044a6589",
+      "to_change_id": "ed95158b-4307-491b-80ca-711020d0cb00",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Decision outcome",
+      "created_at": "2026-01-06T13:29:10.392856789-05:00"
     }
   ]
 }

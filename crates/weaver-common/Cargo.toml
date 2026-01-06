@@ -12,6 +12,8 @@ native = ["jacquard/dns"]
 use-index = []
 iroh = ["dep:iroh", "dep:iroh-gossip", "dep:iroh-tickets"]
 telemetry = ["dep:metrics", "dep:metrics-exporter-prometheus", "dep:tracing-subscriber", "dep:tracing-loki"]
+cache = ["dep:mini-moka-wasm"]
+perf = []
 
 [dependencies]
 n0-future = { workspace = true }
@@ -54,6 +56,9 @@ tracing-loki = { version = "0.2", optional = true }
 getrandom = { version = "0.3", features = [] }
 ring = { version = "0.17", default-features = false }
 
+# TTL cache (optional) - mini-moka-wasm works on both native and WASM
+mini-moka-wasm = { version = "0.10.99", optional = true }
+
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
 regex = "1.11.1"
@@ -71,6 +76,7 @@ wasmworker = "0.1"
 wasmworker-proc-macro = "0.1"
 ring = { version = "0.17", default-features = false, features = ["wasm32_unknown_unknown_js"]}
 getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
+web-sys = { version = "0.3", features = ["Window", "Performance"] }
 
 
 [dev-dependencies]

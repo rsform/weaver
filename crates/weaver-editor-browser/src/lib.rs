@@ -37,7 +37,7 @@ pub use dom_sync::{
 
 // Event handling
 pub use events::{
-    BeforeInputContext, BeforeInputResult, StaticRange, get_data_from_event,
+    BeforeInputContext, BeforeInputResult, StaticRange, copy_as_html, get_data_from_event,
     get_input_type_from_event, get_target_range_from_event, handle_beforeinput, is_composing,
     parse_browser_input_type, read_clipboard_text, write_clipboard_with_custom_type,
 };

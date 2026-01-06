@@ -96,11 +96,11 @@ pub use visibility::VisibilityState;
 #[allow(unused_imports)]
 pub use log_buffer::LogCaptureLayer;
 
-// Worker
+// Worker - EditorReactor stays local, EmbedWorker comes from weaver-embed-worker
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-pub use worker::{
-    EditorReactor, EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput, WorkerInput, WorkerOutput,
-};
+pub use worker::{EditorReactor, WorkerInput, WorkerOutput};
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub use weaver_embed_worker::{EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput};
 
 // Collab coordinator
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]

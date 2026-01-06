@@ -5849,7 +5849,7 @@ dependencies = [
  "jacquard-common",
  "jacquard-lexicon",
  "miette 7.6.0",
- "mini-moka-wasm",
+ "mini-moka-wasm 0.10.99 (git+https://tangled.org/@nonbinary.computer/jacquard)",
  "n0-future 0.1.3",
  "percent-encoding",
  "reqwest",
@@ -6931,7 +6931,20 @@ dependencies = [
  "smallvec",
  "tagptr",
  "triomphe",
- "web-time",
+]
+
+[[package]]
+name = "mini-moka-wasm"
+version = "0.10.99"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0102b9a2ad50fa47ca89eead2316c8222285ecfbd3f69ce99564fbe4253866e8"
+dependencies = [
+ "crossbeam-channel",
+ "crossbeam-utils",
+ "dashmap 6.1.0",
+ "smallvec",
+ "tagptr",
+ "triomphe",
 ]
 
 [[package]]
@@ -12087,7 +12100,6 @@ dependencies = [
  "markdown-weaver",
  "markdown-weaver-escape",
  "mime-sniffer",
- "mini-moka",
  "n0-future 0.1.3",
  "postcard",
  "regex",
@@ -12115,6 +12127,7 @@ dependencies = [
  "weaver-common",
  "weaver-editor-browser",
  "weaver-editor-core",
+ "weaver-embed-worker",
  "weaver-renderer",
  "web-sys",
  "web-time",
@@ -12162,6 +12175,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "miette 7.6.0",
  "mime-sniffer",
+ "mini-moka-wasm 0.10.99 (registry+https://github.com/rust-lang/crates.io-index)",
  "n0-future 0.1.3",
  "pin-project",
  "postcard",
@@ -12184,6 +12198,7 @@ dependencies = [
  "wasmworker",
  "wasmworker-proc-macro",
  "weaver-api",
+ "web-sys",
  "web-time",
 ]
 
@@ -12220,6 +12235,21 @@ dependencies = [
  "weaver-common",
  "weaver-renderer",
  "web-time",
+]
+
+[[package]]
+name = "weaver-embed-worker"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "gloo-worker",
+ "jacquard",
+ "serde",
+ "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "weaver-common",
+ "weaver-renderer",
 ]
 
 [[package]]

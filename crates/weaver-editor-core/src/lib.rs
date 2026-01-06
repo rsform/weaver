@@ -57,3 +57,7 @@ pub use render_cache::{
     CachedParagraph, IncrementalRenderResult, RenderCache, apply_delta, is_boundary_affecting,
     render_paragraphs_incremental,
 };
+
+// Re-export dependencies needed by browser crate.
+pub use markdown_weaver;
+pub use weaver_renderer;

@@ -8,6 +8,14 @@ use super::document::EditorDocument;
 use super::formatting::{self, FormatAction};
 use weaver_editor_core::SnapDirection;
 
+// Re-export ListContext from core - the logic is duplicated below for Loro-specific usage,
+// but the type itself comes from core.
+pub use weaver_editor_core::ListContext;
+
+// Re-export clipboard helpers from browser crate.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub use weaver_editor_browser::{copy_as_html, write_clipboard_with_custom_type};
+
 /// Check if we need to intercept this key event.
 /// Returns true for content-modifying operations, false for navigation.
 #[allow(unused)]
@@ -478,100 +486,6 @@ pub fn handle_copy(evt: Event<ClipboardData>, doc: &EditorDocument) {
     {
         let _ = (evt, doc); // suppress unused warnings
     }
-}
-
-/// Copy markdown as rendered HTML to clipboard.
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub async fn copy_as_html(markdown: &str) -> Result<(), wasm_bindgen::JsValue> {
-    use js_sys::Array;
-    use wasm_bindgen::JsValue;
-    use web_sys::{Blob, BlobPropertyBag, ClipboardItem};
-
-    // Render markdown to HTML using ClientWriter
-    let parser = markdown_weaver::Parser::new(markdown).into_offset_iter();
-    let mut html = String::new();
-    weaver_renderer::atproto::ClientWriter::<_, _, ()>::new(parser, &mut html, markdown)
-        .run()
-        .map_err(|e| JsValue::from_str(&format!("render error: {e}")))?;
-
-    let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
-    let clipboard = window.navigator().clipboard();
-
-    // Create blobs for both HTML and plain text (raw HTML for inspection)
-    let parts = Array::new();
-    parts.push(&JsValue::from_str(&html));
-
-    let mut html_opts = BlobPropertyBag::new();
-    html_opts.type_("text/html");
-    let html_blob = Blob::new_with_str_sequence_and_options(&parts, &html_opts)?;
-
-    let mut text_opts = BlobPropertyBag::new();
-    text_opts.type_("text/plain");
-    let text_blob = Blob::new_with_str_sequence_and_options(&parts, &text_opts)?;
-
-    // Create ClipboardItem with both types
-    let item_data = js_sys::Object::new();
-    js_sys::Reflect::set(&item_data, &JsValue::from_str("text/html"), &html_blob)?;
-    js_sys::Reflect::set(&item_data, &JsValue::from_str("text/plain"), &text_blob)?;
-
-    let clipboard_item = ClipboardItem::new_with_record_from_str_to_blob_promise(&item_data)?;
-    let items = Array::new();
-    items.push(&clipboard_item);
-
-    wasm_bindgen_futures::JsFuture::from(clipboard.write(&items)).await?;
-    tracing::info!("[COPY HTML] Success - {} bytes of HTML", html.len());
-    Ok(())
-}
-
-/// Write text to clipboard with both text/plain and custom MIME type.
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub async fn write_clipboard_with_custom_type(text: &str) -> Result<(), wasm_bindgen::JsValue> {
-    use js_sys::{Array, Object, Reflect};
-    use wasm_bindgen::JsValue;
-    use web_sys::{Blob, BlobPropertyBag, ClipboardItem};
-
-    let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
-    let navigator = window.navigator();
-    let clipboard = navigator.clipboard();
-
-    // Create blobs for each MIME type
-    let text_parts = Array::new();
-    text_parts.push(&JsValue::from_str(text));
-
-    let mut text_opts = BlobPropertyBag::new();
-    text_opts.type_("text/plain");
-    let text_blob = Blob::new_with_str_sequence_and_options(&text_parts, &text_opts)?;
-
-    let mut custom_opts = BlobPropertyBag::new();
-    custom_opts.type_("text/x-weaver-md");
-    let custom_blob = Blob::new_with_str_sequence_and_options(&text_parts, &custom_opts)?;
-
-    // Create ClipboardItem with both types
-    let item_data = Object::new();
-    Reflect::set(&item_data, &JsValue::from_str("text/plain"), &text_blob)?;
-    Reflect::set(
-        &item_data,
-        &JsValue::from_str("text/x-weaver-md"),
-        &custom_blob,
-    )?;
-
-    let clipboard_item = ClipboardItem::new_with_record_from_str_to_blob_promise(&item_data)?;
-    let items = Array::new();
-    items.push(&clipboard_item);
-
-    let promise = clipboard.write(&items);
-    wasm_bindgen_futures::JsFuture::from(promise).await?;
-
-    Ok(())
-}
-
-/// Describes what kind of list item the cursor is in, if any.
-#[derive(Debug, Clone)]
-pub enum ListContext {
-    /// Unordered list with the given marker char ('-' or '*') and indentation.
-    Unordered { indent: String, marker: char },
-    /// Ordered list with the current number and indentation.
-    Ordered { indent: String, number: usize },
 }
 
 /// Detect if cursor is in a list item and return context for continuation.

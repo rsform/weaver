@@ -1,8 +1,12 @@
 //! Weaver common library - thin wrapper around jacquard with notebook-specific conveniences
 
 pub mod agent;
+#[cfg(feature = "cache")]
+pub mod cache;
 pub mod constellation;
 pub mod error;
+#[cfg(feature = "perf")]
+pub mod perf;
 pub mod resolve;
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
