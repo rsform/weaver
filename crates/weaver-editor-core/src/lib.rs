@@ -42,12 +42,19 @@ pub use render::{EmbedContentProvider, ImageResolver, WikilinkValidator};
 pub use undo::{UndoManager, UndoableBuffer};
 pub use visibility::VisibilityState;
 pub use writer::{EditorImageResolver, EditorWriter, SegmentedWriter, WriterResult};
-pub use platform::{CursorPlatform, CursorSync, PlatformError};
+pub use platform::{
+    ClipboardPlatform, CursorPlatform, CursorSync, PlatformError, clipboard_copy,
+    clipboard_copy_as_html, clipboard_cut, clipboard_paste, render_markdown_to_html,
+    strip_zero_width,
+};
 pub use actions::{
     EditorAction, FormatAction, InputType, Key, KeyCombo, KeybindingConfig, KeydownResult,
     Modifiers, Range,
 };
-pub use execute::{apply_formatting, execute_action};
+pub use execute::{
+    apply_formatting, execute_action, execute_action_with_clipboard, handle_keydown,
+    handle_keydown_with_clipboard, snap_direction_for_action,
+};
 pub use text_helpers::{
     ListContext, count_leading_zero_width, detect_list_context, find_line_end, find_line_start,
     find_word_boundary_backward, find_word_boundary_forward, is_list_item_empty,

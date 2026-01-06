@@ -254,52 +254,6 @@ pub async fn read_clipboard_text() -> Result<Option<String>, JsValue> {
     Ok(result.as_string())
 }
 
-/// Copy markdown as rendered HTML to clipboard.
-///
-/// Renders the markdown to HTML and writes both text/html and text/plain
-/// representations to the clipboard.
-pub async fn copy_as_html(markdown: &str) -> Result<(), JsValue> {
-    use js_sys::{Array, Object, Reflect};
-    use web_sys::{Blob, BlobPropertyBag, ClipboardItem};
-
-    // Render markdown to HTML using ClientWriter.
-    let parser = weaver_editor_core::markdown_weaver::Parser::new(markdown).into_offset_iter();
-    let mut html = String::new();
-    weaver_editor_core::weaver_renderer::atproto::ClientWriter::<_, _, ()>::new(
-        parser, &mut html, markdown,
-    )
-    .run()
-    .map_err(|e| JsValue::from_str(&format!("render error: {e}")))?;
-
-    let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
-    let clipboard = window.navigator().clipboard();
-
-    // Create blobs for both HTML and plain text.
-    let parts = Array::new();
-    parts.push(&JsValue::from_str(&html));
-
-    let html_opts = BlobPropertyBag::new();
-    html_opts.set_type("text/html");
-    let html_blob = Blob::new_with_str_sequence_and_options(&parts, &html_opts)?;
-
-    let text_opts = BlobPropertyBag::new();
-    text_opts.set_type("text/plain");
-    let text_blob = Blob::new_with_str_sequence_and_options(&parts, &text_opts)?;
-
-    // Create ClipboardItem with both types.
-    let item_data = Object::new();
-    Reflect::set(&item_data, &JsValue::from_str("text/html"), &html_blob)?;
-    Reflect::set(&item_data, &JsValue::from_str("text/plain"), &text_blob)?;
-
-    let clipboard_item = ClipboardItem::new_with_record_from_str_to_blob_promise(&item_data)?;
-    let items = Array::new();
-    items.push(&clipboard_item);
-
-    wasm_bindgen_futures::JsFuture::from(clipboard.write(&items)).await?;
-    tracing::info!("[COPY HTML] Success - {} bytes of HTML", html.len());
-    Ok(())
-}
-
 // === BeforeInput handler ===
 
 use crate::FORCE_INNERHTML_UPDATE;
@@ -562,5 +516,48 @@ pub fn handle_beforeinput<D: EditorDocument>(
         | InputType::FormatSuperscript
         | InputType::FormatSubscript
         | InputType::Unknown(_) => BeforeInputResult::PassThrough,
+    }
+}
+
+// === Math click handling ===
+
+use weaver_editor_core::{OffsetMapping, SyntaxSpanInfo};
+
+/// Check if a click target is a math-clickable element.
+///
+/// Returns the target character offset if the click was on a `.math-clickable`
+/// element with a valid `data-char-target` attribute, None otherwise.
+pub fn get_math_click_offset(target: &web_sys::EventTarget) -> Option<usize> {
+    use wasm_bindgen::JsCast;
+
+    let element = target.dyn_ref::<web_sys::Element>()?;
+    let math_el = element.closest(".math-clickable").ok()??;
+    let char_target = math_el.get_attribute("data-char-target")?;
+    char_target.parse().ok()
+}
+
+/// Handle a click that might be on a math element.
+///
+/// If the click target is a math-clickable element, this updates the cursor,
+/// clears selection, updates visibility, and restores the DOM cursor position.
+///
+/// Returns true if the click was handled (was on a math element), false otherwise.
+/// When this returns false, the caller should handle the click normally.
+pub fn handle_math_click<D: EditorDocument>(
+    target: &web_sys::EventTarget,
+    doc: &mut D,
+    syntax_spans: &[SyntaxSpanInfo],
+    paragraphs: &[ParagraphRender],
+    offset_map: &[OffsetMapping],
+) -> bool {
+    if let Some(offset) = get_math_click_offset(target) {
+        tracing::debug!("math-clickable clicked, moving cursor to {}", offset);
+        doc.set_cursor_offset(offset);
+        doc.set_selection(None);
+        crate::update_syntax_visibility(offset, None, syntax_spans, paragraphs);
+        let _ = crate::restore_cursor_position(offset, offset_map, None);
+        true
+    } else {
+        false
     }
 }

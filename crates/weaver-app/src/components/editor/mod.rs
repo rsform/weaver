@@ -5,15 +5,14 @@
 //! editing plain markdown text under the hood.
 
 mod actions;
-mod beforeinput;
 mod collab;
 mod component;
 mod document;
 mod dom_sync;
 mod image_upload;
-mod input;
 mod log_buffer;
 mod publish;
+mod remote_cursors;
 mod report;
 mod storage;
 mod sync;
@@ -21,9 +20,6 @@ mod toolbar;
 
 #[cfg(test)]
 mod tests;
-
-// Re-export DOM update strategy constant from browser crate.
-pub(crate) use weaver_editor_browser::FORCE_INNERHTML_UPDATE;
 
 // Main component
 pub use component::MarkdownEditor;

@@ -64,6 +64,19 @@ pub trait EditorDocument {
     /// Set the composition state.
     fn set_composition(&mut self, composition: Option<CompositionState>);
 
+    // === Required: Cursor snap hint ===
+
+    /// Get the pending snap direction hint.
+    ///
+    /// This hints which direction the cursor should snap after an edit
+    /// when the cursor lands on invisible syntax. Forward for insertions
+    /// (snap toward new content), backward for deletions (snap toward
+    /// remaining content).
+    fn pending_snap(&self) -> Option<crate::SnapDirection>;
+
+    /// Set the pending snap direction hint.
+    fn set_pending_snap(&mut self, snap: Option<crate::SnapDirection>);
+
     // === Provided: Convenience accessors ===
 
     /// Get the cursor offset.
@@ -266,6 +279,7 @@ pub struct PlainEditor<T: TextBuffer + UndoManager> {
     selection: Option<Selection>,
     last_edit: Option<EditInfo>,
     composition: Option<CompositionState>,
+    pending_snap: Option<crate::SnapDirection>,
 }
 
 impl<T: TextBuffer + UndoManager + Default> Default for PlainEditor<T> {
@@ -283,6 +297,7 @@ impl<T: TextBuffer + UndoManager> PlainEditor<T> {
             selection: None,
             last_edit: None,
             composition: None,
+            pending_snap: None,
         }
     }
 
@@ -338,6 +353,14 @@ impl<T: TextBuffer + UndoManager> EditorDocument for PlainEditor<T> {
 
     fn set_composition(&mut self, composition: Option<CompositionState>) {
         self.composition = composition;
+    }
+
+    fn pending_snap(&self) -> Option<crate::SnapDirection> {
+        self.pending_snap
+    }
+
+    fn set_pending_snap(&mut self, snap: Option<crate::SnapDirection>) {
+        self.pending_snap = snap;
     }
 }
 

@@ -1979,6 +1979,28 @@
       "created_at": "2026-01-06T17:45:55.076540964-05:00",
       "updated_at": "2026-01-06T17:45:55.076540964-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 182,
+      "change_id": "7a9e3b35-e3c2-4081-8e62-74da292b1c08",
+      "node_type": "action",
+      "title": "Split component.rs - extract remote_cursors.rs and platform input handlers to browser crate",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:48:09.576571460-05:00",
+      "updated_at": "2026-01-06T17:48:09.576571460-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 183,
+      "change_id": "9f5f3214-ed3e-4a5b-94bf-3a24ed61b05c",
+      "node_type": "outcome",
+      "title": "RemoteCursors extracted to remote_cursors.rs, beforeinput closure lifecycle fixed (proper storage + cleanup), component.rs 1708→1586 lines, 88 tests pass",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:56:50.444969376-05:00",
+      "updated_at": "2026-01-06T17:56:50.444969376-05:00",
+      "metadata_json": "{\"confidence\":95}"
     }
   ],
   "edges": [
@@ -3994,6 +4016,28 @@
       "weight": 1.0,
       "rationale": "Action completed",
       "created_at": "2026-01-06T17:46:00.638988346-05:00"
+    },
+    {
+      "id": 185,
+      "from_node_id": 176,
+      "to_node_id": 182,
+      "from_change_id": "f1cb9bd9-9102-44b8-9d99-bae1ef085723",
+      "to_change_id": "7a9e3b35-e3c2-4081-8e62-74da292b1c08",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Part of editor organization",
+      "created_at": "2026-01-06T17:48:13.609765445-05:00"
+    },
+    {
+      "id": 186,
+      "from_node_id": 182,
+      "to_node_id": 183,
+      "from_change_id": "7a9e3b35-e3c2-4081-8e62-74da292b1c08",
+      "to_change_id": "9f5f3214-ed3e-4a5b-94bf-3a24ed61b05c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Action completed",
+      "created_at": "2026-01-06T17:56:55.250053755-05:00"
     }
   ]
 }

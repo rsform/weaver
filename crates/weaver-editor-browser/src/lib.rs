@@ -47,6 +47,7 @@ pub use weaver_editor_core::*;
 /// Set to `true` for maximum control, `false` for smoother typing experience.
 pub const FORCE_INNERHTML_UPDATE: bool = true;
 
+pub mod clipboard;
 pub mod color;
 pub mod cursor;
 pub mod dom_sync;
@@ -68,10 +69,10 @@ pub use dom_sync::{
 
 // Event handling
 pub use events::{
-    BeforeInputContext, BeforeInputResult, StaticRange, copy_as_html, get_current_range,
-    get_data_from_event, get_input_type_from_event, get_target_range_from_event,
-    handle_beforeinput, is_composing, parse_browser_input_type, read_clipboard_text,
-    write_clipboard_with_custom_type,
+    BeforeInputContext, BeforeInputResult, StaticRange, get_current_range, get_data_from_event,
+    get_input_type_from_event, get_math_click_offset, get_target_range_from_event,
+    handle_beforeinput, handle_math_click, is_composing, parse_browser_input_type,
+    read_clipboard_text, write_clipboard_with_custom_type,
 };
 
 // Platform detection
@@ -82,3 +83,8 @@ pub use visibility::update_syntax_visibility;
 
 // Color utilities
 pub use color::{rgba_u32_to_css, rgba_u32_to_css_alpha};
+
+// Clipboard
+pub use clipboard::{BrowserClipboard, write_html_to_clipboard};
+#[cfg(feature = "dioxus")]
+pub use clipboard::{handle_copy, handle_cut, handle_paste};

@@ -19,7 +19,7 @@
 //! }
 //! ```
 
-use weaver_editor_core::{ParagraphRender, Selection, SyntaxSpanInfo, VisibilityState};
+use weaver_editor_core::{ParagraphRender, Selection, SyntaxSpanInfo};
 
 /// Update syntax span visibility in the DOM based on cursor position.
 ///
@@ -43,7 +43,12 @@ pub fn update_syntax_visibility(
 ) {
     use wasm_bindgen::JsCast;
 
-    let visibility = VisibilityState::calculate(cursor_offset, selection, syntax_spans, paragraphs);
+    let visibility = weaver_editor_core::VisibilityState::calculate(
+        cursor_offset,
+        selection,
+        syntax_spans,
+        paragraphs,
+    );
 
     let Some(window) = web_sys::window() else {
         return;

@@ -1131,4 +1131,41 @@ impl EditorDocument for SignalEditorDocument {
     fn set_composition(&mut self, composition: Option<CompositionState>) {
         self.composition.set(composition);
     }
+
+    fn undo(&mut self) -> bool {
+        // Sync Loro cursor to current position BEFORE undo
+        // so it tracks through the undo operation.
+        self.sync_loro_cursor();
+
+        let result = self.buffer.undo();
+        if result {
+            // After undo, query Loro cursor for new position.
+            self.sync_cursor_from_loro();
+            // Signal content change for re-render.
+            self.content_changed.set(());
+        }
+        result
+    }
+
+    fn redo(&mut self) -> bool {
+        // Sync Loro cursor to current position BEFORE redo.
+        self.sync_loro_cursor();
+
+        let result = self.buffer.redo();
+        if result {
+            // After redo, query Loro cursor for new position.
+            self.sync_cursor_from_loro();
+            // Signal content change for re-render.
+            self.content_changed.set(());
+        }
+        result
+    }
+
+    fn pending_snap(&self) -> Option<weaver_editor_core::SnapDirection> {
+        *self.pending_snap.read()
+    }
+
+    fn set_pending_snap(&mut self, snap: Option<weaver_editor_core::SnapDirection>) {
+        self.pending_snap.set(snap);
+    }
 }

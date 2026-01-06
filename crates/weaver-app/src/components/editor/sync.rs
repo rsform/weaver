@@ -14,7 +14,7 @@ use crate::fetch::Fetcher;
 use jacquard::IntoStatic;
 use jacquard::prelude::*;
 use jacquard::types::ident::AtIdentifier;
-use jacquard::types::string::{AtUri, Cid, Did};
+use jacquard::types::string::{AtUri, Cid};
 use loro::LoroDoc;
 use loro::ToJson;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
@@ -24,9 +24,8 @@ use weaver_common::{WeaverError, WeaverExt};
 
 // Re-export crdt sync types for convenience.
 pub use weaver_editor_crdt::{
-    CreateRootResult, PdsEditState, RemoteDraft, SyncResult, build_draft_uri, find_all_edit_roots,
-    find_diffs_for_root, find_edit_root_for_draft, list_drafts, load_all_edit_states,
-    load_edit_state_from_draft, load_edit_state_from_entry,
+    CreateRootResult, PdsEditState, RemoteDraft, SyncResult, build_draft_uri, list_drafts,
+    load_all_edit_states, load_edit_state_from_draft, load_edit_state_from_entry,
 };
 
 /// Extract record embeds from a LoroDoc and pre-fetch their rendered content.

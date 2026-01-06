@@ -12207,7 +12207,10 @@ dependencies = [
 name = "weaver-editor-browser"
 version = "0.1.0"
 dependencies = [
+ "dioxus-core 0.7.2",
+ "dioxus-html 0.7.2",
  "dioxus-signals 0.7.2",
+ "dioxus-web 0.7.2",
  "gloo-events",
  "gloo-utils",
  "js-sys",

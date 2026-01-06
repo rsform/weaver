@@ -5,17 +5,13 @@ use super::actions::{
     EditorAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Range, execute_action,
     handle_keydown_with_bindings,
 };
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-use super::beforeinput::handle_beforeinput;
-#[allow(unused_imports)]
-use super::beforeinput::{BeforeInputContext, BeforeInputResult, InputType};
 use super::document::{CompositionState, LoadedDocState, SignalEditorDocument};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::dom_sync::update_paragraph_dom;
 use super::dom_sync::{sync_cursor_from_dom, sync_cursor_from_dom_with_direction};
-use super::input::{get_char_at, handle_copy, handle_cut, handle_paste};
 #[allow(unused_imports)]
 use super::publish::{LoadedEntry, PublishButton, load_entry_for_editing};
+use super::remote_cursors::RemoteCursors;
 use super::storage;
 use super::sync::{SyncStatus, load_and_merge_document};
 use super::toolbar::EditorToolbar;
@@ -35,8 +31,14 @@ use jacquard::types::blob::BlobRef;
 use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::embed::images::Image;
 use weaver_common::WeaverExt;
+#[allow(unused_imports)]
+use weaver_editor_browser::{BeforeInputContext, BeforeInputResult};
+use weaver_editor_browser::{handle_copy, handle_cut, handle_paste};
 use weaver_editor_browser::{platform, update_syntax_visibility};
+use weaver_editor_core::EditorDocument;
 use weaver_editor_core::EditorImageResolver;
+#[allow(unused_imports)]
+use weaver_editor_core::InputType;
 use weaver_editor_core::ParagraphRender;
 use weaver_editor_core::SnapDirection;
 use weaver_editor_core::apply_formatting;
@@ -703,9 +705,15 @@ fn MarkdownEditorInner(
     // This is the primary handler for text insertion, deletion, etc.
     // Keydown only handles shortcuts now.
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    type BeforeInputClosure = wasm_bindgen::closure::Closure<dyn FnMut(web_sys::InputEvent)>;
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let mut beforeinput_closure: Signal<Option<BeforeInputClosure>> = use_signal(|| None);
+
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let doc_for_beforeinput = document.clone();
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
+        use gloo_timers::callback::Timeout;
         use wasm_bindgen::JsCast;
         use wasm_bindgen::prelude::*;
 
@@ -725,7 +733,7 @@ fn MarkdownEditorInner(
         let mut doc = doc_for_beforeinput.clone();
         let cached_paras = cached_paragraphs;
 
-        let closure = Closure::wrap(Box::new(move |evt: web_sys::InputEvent| {
+        let closure: BeforeInputClosure = Closure::wrap(Box::new(move |evt: web_sys::InputEvent| {
             let input_type_str = evt.input_type();
             tracing::debug!(input_type = %input_type_str, "beforeinput");
 
@@ -746,7 +754,8 @@ fn MarkdownEditorInner(
                 platform: &plat,
             };
 
-            let result = handle_beforeinput(&mut doc, ctx);
+            let current_range = weaver_editor_browser::get_current_range(&doc);
+            let result = weaver_editor_browser::handle_beforeinput(&mut doc, &ctx, current_range);
 
             match result {
                 BeforeInputResult::Handled => {
@@ -765,35 +774,26 @@ fn MarkdownEditorInner(
                     let mut doc_for_timeout = doc.clone();
                     let doc_len_before = doc.len_chars();
 
-                    let window = web_sys::window();
-                    if let Some(window) = window {
-                        let closure = Closure::once(move || {
-                            // Check if the document changed
-                            if doc_for_timeout.len_chars() == doc_len_before {
-                                // Nothing happened - execute fallback
-                                tracing::debug!("Android backspace fallback triggered");
-                                // Refocus to work around virtual keyboard issues
-                                if let Some(window) = web_sys::window() {
-                                    if let Some(doc) = window.document() {
-                                        if let Some(elem) = doc.get_element_by_id(editor_id) {
-                                            if let Some(html_elem) =
-                                                elem.dyn_ref::<web_sys::HtmlElement>()
-                                            {
-                                                let _ = html_elem.blur();
-                                                let _ = html_elem.focus();
-                                            }
+                    Timeout::new(50, move || {
+                        if doc_for_timeout.len_chars() == doc_len_before {
+                            tracing::debug!("Android backspace fallback triggered");
+                            // Refocus to work around virtual keyboard issues
+                            if let Some(window) = web_sys::window() {
+                                if let Some(dom_doc) = window.document() {
+                                    if let Some(elem) = dom_doc.get_element_by_id(editor_id) {
+                                        if let Some(html_elem) =
+                                            elem.dyn_ref::<web_sys::HtmlElement>()
+                                        {
+                                            let _ = html_elem.blur();
+                                            let _ = html_elem.focus();
                                         }
                                     }
                                 }
-                                execute_action(&mut doc_for_timeout, &fallback_action);
                             }
-                        });
-                        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                            closure.as_ref().unchecked_ref(),
-                            50,
-                        );
-                        closure.forget();
-                    }
+                            execute_action(&mut doc_for_timeout, &fallback_action);
+                        }
+                    })
+                    .forget(); // One-shot timer, runs and cleans up
                 }
             }
 
@@ -805,26 +805,41 @@ fn MarkdownEditorInner(
                         tracing::debug!("Android: possible suggestion pick, deferring cursor sync");
                         let paras = cached_paras;
                         let mut doc_for_timeout = doc.clone();
-                        let window = web_sys::window();
-                        if let Some(window) = window {
-                            let closure = Closure::once(move || {
-                                let paras = paras();
-                                sync_cursor_from_dom(&mut doc_for_timeout, editor_id, &paras);
-                            });
-                            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                                closure.as_ref().unchecked_ref(),
-                                20,
-                            );
-                            closure.forget();
-                        }
+
+                        Timeout::new(20, move || {
+                            let paras = paras();
+                            sync_cursor_from_dom(&mut doc_for_timeout, editor_id, &paras);
+                        })
+                        .forget(); // One-shot timer, runs and cleans up
                     }
                 }
             }
-        }) as Box<dyn FnMut(web_sys::InputEvent)>);
+        })
+            as Box<dyn FnMut(web_sys::InputEvent)>);
 
         let _ = editor
             .add_event_listener_with_callback("beforeinput", closure.as_ref().unchecked_ref());
-        closure.forget();
+
+        // Store closure in signal for proper lifecycle management
+        beforeinput_closure.set(Some(closure));
+    });
+
+    // Clean up event listener on unmount
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    use_drop(move || {
+        if let Some(closure) = beforeinput_closure.peek().as_ref() {
+            if let Some(window) = web_sys::window() {
+                if let Some(dom_document) = window.document() {
+                    if let Some(editor) = dom_document.get_element_by_id(editor_id) {
+                        use wasm_bindgen::JsCast;
+                        let _ = editor.remove_event_listener_with_callback(
+                            "beforeinput",
+                            closure.as_ref().unchecked_ref(),
+                        );
+                    }
+                }
+            }
+        }
     });
 
     rsx! {
@@ -1184,53 +1199,30 @@ fn MarkdownEditorInner(
                             move |evt| {
                                 tracing::debug!("onclick fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
+                                let spans = syntax_spans();
                                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                                 let _ = evt;
 
-                                // Check if click target is a math-clickable element
+                                // Check if click target is a math-clickable element.
                                 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
                                 {
+                                    let map = offset_map();
                                     use dioxus::web::WebEventExt;
-                                    use wasm_bindgen::JsCast;
 
                                     let web_evt = evt.as_web_event();
                                     if let Some(target) = web_evt.target() {
-                                        if let Some(element) = target.dyn_ref::<web_sys::Element>() {
-                                            // Check element or ancestors for math-clickable
-                                            if let Ok(Some(math_el)) = element.closest(".math-clickable") {
-                                                if let Some(char_target) = math_el.get_attribute("data-char-target") {
-                                                    if let Ok(offset) = char_target.parse::<usize>() {
-                                                        tracing::debug!("math-clickable clicked, moving cursor to {}", offset);
-                                                        doc.cursor.write().offset = offset;
-                                                        *doc.selection.write() = None;
-                                                        // Update visibility FIRST so math-source is visible
-                                                        let spans = syntax_spans();
-                                                        update_syntax_visibility(offset, None, &spans, &paras);
-                                                        // Then set DOM selection
-                                                        let map = offset_map();
-                                                        let _ = weaver_editor_browser::restore_cursor_position(
-                                                            offset,
-                                                            &map,
-                                                            None,
-                                                        );
-                                                        return;
-                                                    }
-                                                }
-                                            }
+                                        if weaver_editor_browser::handle_math_click(
+                                            &target, &mut doc, &spans, &paras, &map,
+                                        ) {
+                                            return;
                                         }
                                     }
                                 }
 
                                 sync_cursor_from_dom(&mut doc, editor_id, &paras);
-                                let spans = syntax_spans();
                                 let cursor_offset = doc.cursor.read().offset;
                                 let selection = *doc.selection.read();
-                                update_syntax_visibility(
-                                    cursor_offset,
-                                    selection.as_ref(),
-                                    &spans,
-                                    &paras,
-                                );
+                                update_syntax_visibility(cursor_offset, selection.as_ref(), &spans, &paras);
                             }
                         },
 
@@ -1367,7 +1359,7 @@ fn MarkdownEditorInner(
                                     if !final_text.is_empty() {
                                         let mut delete_start = comp.start_offset;
                                         while delete_start > 0 {
-                                            match get_char_at(doc.loro_text(), delete_start - 1) {
+                                            match doc.char_at(delete_start - 1) {
                                                 Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
                                                 _ => break,
                                             }
@@ -1565,143 +1557,6 @@ fn MarkdownEditorInner(
                     },
                 }
 
-            }
-        }
-    }
-}
-
-/// Remote collaborator cursors overlay.
-///
-/// Renders cursor indicators for each remote collaborator.
-/// Uses the same offset mapping as local cursor restoration.
-#[component]
-fn RemoteCursors(
-    presence: Signal<weaver_common::transport::PresenceSnapshot>,
-    document: SignalEditorDocument,
-    render_cache: Signal<weaver_editor_browser::RenderCache>,
-) -> Element {
-    let presence_read = presence.read();
-    let cursor_count = presence_read.collaborators.len();
-    let cursors: Vec<_> = presence_read
-        .collaborators
-        .iter()
-        .filter_map(|c| {
-            c.cursor_position
-                .map(|pos| (c.display_name.clone(), c.color, pos, c.selection))
-        })
-        .collect();
-
-    if cursor_count > 0 {
-        tracing::debug!(
-            "RemoteCursors: {} collaborators, {} with cursors",
-            cursor_count,
-            cursors.len()
-        );
-    }
-
-    if cursors.is_empty() {
-        return rsx! {};
-    }
-
-    // Get flattened offset map from all paragraphs
-    let cache = render_cache.read();
-    let offset_map: Vec<_> = cache
-        .paragraphs
-        .iter()
-        .flat_map(|p| p.offset_map.iter().cloned())
-        .collect();
-
-    rsx! {
-        div { class: "remote-cursors-overlay",
-            for (display_name, color, position, selection) in cursors {
-                RemoteCursorIndicator {
-                    key: "{display_name}-{position}",
-                    display_name,
-                    position,
-                    selection,
-                    color,
-                    offset_map: offset_map.clone(),
-                }
-            }
-        }
-    }
-}
-
-/// Single remote cursor indicator with DOM-based positioning.
-#[component]
-fn RemoteCursorIndicator(
-    display_name: String,
-    position: usize,
-    selection: Option<(usize, usize)>,
-    color: u32,
-    offset_map: Vec<weaver_editor_core::OffsetMapping>,
-) -> Element {
-    use weaver_editor_browser::{
-        get_cursor_rect_relative, get_selection_rects_relative, rgba_u32_to_css,
-        rgba_u32_to_css_alpha,
-    };
-
-    let color_css = rgba_u32_to_css(color);
-    let selection_color_css = rgba_u32_to_css_alpha(color, 0.25);
-
-    // Get cursor position relative to editor
-    let rect = get_cursor_rect_relative(position, &offset_map, "markdown-editor");
-
-    // Get selection rectangles if there's a selection
-    let selection_rects = if let Some((start, end)) = selection {
-        let (start, end) = if start <= end {
-            (start, end)
-        } else {
-            (end, start)
-        };
-        get_selection_rects_relative(start, end, &offset_map, "markdown-editor")
-    } else {
-        vec![]
-    };
-
-    let Some(rect) = rect else {
-        tracing::debug!(
-            "RemoteCursorIndicator: no rect for position {} (offset_map len: {})",
-            position,
-            offset_map.len()
-        );
-        return rsx! {};
-    };
-
-    tracing::trace!(
-        "RemoteCursorIndicator: {} at ({}, {}) h={}, selection_rects={}",
-        display_name,
-        rect.x,
-        rect.y,
-        rect.height,
-        selection_rects.len()
-    );
-
-    let style = format!(
-        "left: {}px; top: {}px; --cursor-height: {}px; --cursor-color: {};",
-        rect.x, rect.y, rect.height, color_css
-    );
-
-    rsx! {
-        // Selection highlight rectangles (rendered behind cursor)
-        for (i, sel_rect) in selection_rects.iter().enumerate() {
-            div {
-                key: "sel-{i}",
-                class: "remote-selection",
-                style: "left: {sel_rect.x}px; top: {sel_rect.y}px; width: {sel_rect.width}px; height: {sel_rect.height}px; background-color: {selection_color_css};",
-            }
-        }
-
-        div {
-            class: "remote-cursor",
-            style: "{style}",
-
-            // Cursor caret line
-            div { class: "remote-cursor-caret" }
-
-            // Name label
-            div { class: "remote-cursor-label",
-                "{display_name}"
             }
         }
     }

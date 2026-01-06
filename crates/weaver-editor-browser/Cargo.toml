@@ -62,8 +62,22 @@ features = [
 default = []
 # Optional reactive state via dioxus-signals (framework-agnostic)
 dioxus_signals = ["dep:dioxus-signals"]
+# Optional Dioxus event handlers for clipboard
+dioxus = ["dep:dioxus-core", "dep:dioxus-html", "dep:dioxus-web"]
 
 [dependencies.dioxus-signals]
+version = "0.7"
+optional = true
+
+[dependencies.dioxus-core]
+version = "0.7"
+optional = true
+
+[dependencies.dioxus-html]
+version = "0.7"
+optional = true
+
+[dependencies.dioxus-web]
 version = "0.7"
 optional = true
 

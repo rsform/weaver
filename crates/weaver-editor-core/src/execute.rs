@@ -4,19 +4,54 @@
 //! operations to any type implementing `EditorDocument`. The logic is generic
 //! and platform-agnostic.
 
+use crate::SnapDirection;
 use crate::actions::{EditorAction, FormatAction, Range};
 use crate::document::EditorDocument;
+use crate::platform::{ClipboardPlatform, clipboard_copy, clipboard_cut, clipboard_paste};
 use crate::text_helpers::{
     ListContext, detect_list_context, find_line_end, find_line_start, find_word_boundary_backward,
     find_word_boundary_forward, is_list_item_empty,
 };
 use crate::types::Selection;
 
+/// Determine the cursor snap direction hint for an action.
+///
+/// Forward means cursor should snap toward new/remaining content (insertions).
+/// Backward means cursor should snap toward content before edit (deletions).
+pub fn snap_direction_for_action(action: &EditorAction) -> Option<SnapDirection> {
+    match action {
+        // Forward: cursor should snap toward new/remaining content.
+        EditorAction::InsertLineBreak { .. }
+        | EditorAction::InsertParagraph { .. }
+        | EditorAction::DeleteForward { .. }
+        | EditorAction::DeleteWordForward { .. }
+        | EditorAction::DeleteToLineEnd { .. }
+        | EditorAction::DeleteSoftLineForward { .. } => Some(SnapDirection::Forward),
+
+        // Backward: cursor should snap toward content before edit.
+        EditorAction::DeleteBackward { .. }
+        | EditorAction::DeleteWordBackward { .. }
+        | EditorAction::DeleteToLineStart { .. }
+        | EditorAction::DeleteSoftLineBackward { .. } => Some(SnapDirection::Backward),
+
+        _ => None,
+    }
+}
+
 /// Execute an editor action on a document.
 ///
 /// This is the central dispatch point for all editor operations.
+/// Sets the appropriate snap direction hint before executing.
 /// Returns true if the action was handled and the document was modified.
+///
+/// Note: Clipboard operations (Cut, Copy, CopyAsHtml, Paste) return false here.
+/// Use [`execute_action_with_clipboard`] if you have a clipboard platform available.
 pub fn execute_action<D: EditorDocument>(doc: &mut D, action: &EditorAction) -> bool {
+    // Set pending snap direction before executing action.
+    if let Some(snap) = snap_direction_for_action(action) {
+        doc.set_pending_snap(Some(snap));
+    }
+
     match action {
         EditorAction::Insert { text, range } => execute_insert(doc, text, *range),
         EditorAction::InsertLineBreak { range } => execute_insert_line_break(doc, *range),
@@ -41,16 +76,35 @@ pub fn execute_action<D: EditorDocument>(doc: &mut D, action: &EditorAction) -> 
         EditorAction::ToggleStrikethrough => execute_toggle_format(doc, "~~"),
         EditorAction::InsertLink => execute_insert_link(doc),
         EditorAction::Cut | EditorAction::Copy | EditorAction::CopyAsHtml => {
-            // Clipboard operations are handled by platform layer.
+            // Clipboard operations need platform - use execute_action_with_clipboard.
             false
         }
         EditorAction::Paste { range: _ } => {
-            // Paste is handled by platform layer with clipboard access.
+            // Paste needs platform - use execute_action_with_clipboard.
             false
         }
         EditorAction::SelectAll => execute_select_all(doc),
         EditorAction::MoveCursor { offset } => execute_move_cursor(doc, *offset),
         EditorAction::ExtendSelection { offset } => execute_extend_selection(doc, *offset),
+    }
+}
+
+/// Execute an editor action with clipboard support.
+///
+/// Like [`execute_action`], but also handles clipboard operations (Cut, Copy, Paste, CopyAsHtml)
+/// using the provided platform implementation.
+pub fn execute_action_with_clipboard<D, P>(doc: &mut D, action: &EditorAction, clipboard: &P) -> bool
+where
+    D: EditorDocument,
+    P: ClipboardPlatform,
+{
+    match action {
+        EditorAction::Copy => clipboard_copy(doc, clipboard),
+        EditorAction::Cut => clipboard_cut(doc, clipboard),
+        EditorAction::Paste { range: _ } => clipboard_paste(doc, clipboard),
+        EditorAction::CopyAsHtml => crate::platform::clipboard_copy_as_html(doc, clipboard),
+        // Delegate everything else to the regular execute_action.
+        _ => execute_action(doc, action),
     }
 }
 
@@ -551,6 +605,72 @@ fn list_continuation(ctx: &ListContext) -> String {
             format!("\n{}{}. ", indent, number + 1)
         }
     }
+}
+
+// === Keydown handling ===
+
+use crate::actions::{KeyCombo, KeybindingConfig, KeydownResult};
+
+/// Handle a keydown event using the keybinding configuration.
+///
+/// This handles keyboard shortcuts only. Text input and deletion
+/// are handled by beforeinput. Navigation (arrows, etc.) is passed
+/// through to the browser/platform.
+///
+/// For clipboard operations, use [`handle_keydown_with_clipboard`] instead.
+pub fn handle_keydown<D: EditorDocument>(
+    doc: &mut D,
+    config: &KeybindingConfig,
+    combo: KeyCombo,
+    range: Range,
+) -> KeydownResult {
+    // Look up keybinding (range is applied by lookup).
+    if let Some(action) = config.lookup(&combo, range) {
+        execute_action(doc, &action);
+        return KeydownResult::Handled;
+    }
+
+    check_passthrough(&combo)
+}
+
+/// Handle a keydown event with clipboard support.
+///
+/// Like [`handle_keydown`], but uses the provided clipboard platform
+/// for clipboard operations (Cut, Copy, Paste, CopyAsHtml).
+pub fn handle_keydown_with_clipboard<D, P>(
+    doc: &mut D,
+    config: &KeybindingConfig,
+    combo: KeyCombo,
+    range: Range,
+    clipboard: &P,
+) -> KeydownResult
+where
+    D: EditorDocument,
+    P: ClipboardPlatform,
+{
+    // Look up keybinding (range is applied by lookup).
+    if let Some(action) = config.lookup(&combo, range) {
+        execute_action_with_clipboard(doc, &action, clipboard);
+        return KeydownResult::Handled;
+    }
+
+    check_passthrough(&combo)
+}
+
+/// Check if a key combo should pass through to the platform.
+fn check_passthrough(combo: &KeyCombo) -> KeydownResult {
+    // Navigation keys should pass through.
+    if combo.key.is_navigation() {
+        return KeydownResult::PassThrough;
+    }
+
+    // Modifier-only keypresses should pass through.
+    if combo.key.is_modifier() {
+        return KeydownResult::PassThrough;
+    }
+
+    // Content keys (typing, backspace, etc.) - let beforeinput handle.
+    KeydownResult::NotHandled
 }
 
 #[cfg(test)]
