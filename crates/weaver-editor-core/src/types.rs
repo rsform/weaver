@@ -223,6 +223,51 @@ impl EditInfo {
 /// Covers: `######` (6), ```` ``` ```` (3), `> ` (2), `- ` (2), `999. ` (5)
 pub const BLOCK_SYNTAX_ZONE: usize = 6;
 
+// === Platform-agnostic geometry types ===
+
+/// Screen coordinates for a cursor position.
+///
+/// Represents the bounding box of a cursor caret in screen space.
+/// Platform implementations fill this from their native APIs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CursorRect {
+    /// X coordinate (pixels from left).
+    pub x: f64,
+    /// Y coordinate (pixels from top).
+    pub y: f64,
+    /// Height of the cursor line (pixels).
+    pub height: f64,
+}
+
+impl CursorRect {
+    /// Create a new cursor rect.
+    pub fn new(x: f64, y: f64, height: f64) -> Self {
+        Self { x, y, height }
+    }
+}
+
+/// Screen rectangle for part of a selection.
+///
+/// A selection spanning multiple lines produces multiple rects (one per line).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SelectionRect {
+    /// X coordinate (pixels from left).
+    pub x: f64,
+    /// Y coordinate (pixels from top).
+    pub y: f64,
+    /// Width of this selection segment (pixels).
+    pub width: f64,
+    /// Height of this selection segment (pixels).
+    pub height: f64,
+}
+
+impl SelectionRect {
+    /// Create a new selection rect.
+    pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
+        Self { x, y, width, height }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

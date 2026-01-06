@@ -11,6 +11,7 @@
 pub mod document;
 pub mod offset_map;
 pub mod paragraph;
+pub mod platform;
 pub mod render;
 pub mod syntax;
 pub mod text;
@@ -28,10 +29,12 @@ pub use smol_str::SmolStr;
 pub use syntax::{SyntaxSpanInfo, SyntaxType, classify_syntax};
 pub use text::{EditorRope, TextBuffer};
 pub use types::{
-    Affinity, CompositionState, CursorState, EditInfo, EditorImage, Selection, BLOCK_SYNTAX_ZONE,
+    Affinity, CompositionState, CursorRect, CursorState, EditInfo, EditorImage, Selection,
+    SelectionRect, BLOCK_SYNTAX_ZONE,
 };
 pub use document::{EditorDocument, PlainEditor};
 pub use render::{EmbedContentProvider, ImageResolver, WikilinkValidator};
 pub use undo::{UndoManager, UndoableBuffer};
 pub use visibility::VisibilityState;
 pub use writer::{EditorImageResolver, EditorWriter, SegmentedWriter, WriterResult};
+pub use platform::{CursorPlatform, CursorSync, PlatformError};

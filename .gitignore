@@ -9,8 +9,6 @@
 .env
 .env.prod
 .devenv
-CLAUDE.md
-AGENTS.md
 grant_proposal.md
 
 **/**.db
@@ -23,3 +21,8 @@ grant_proposal.md
 **/bug_notes.md
 /opencodetmp
 deploy.sh
+
+CLAUDE.md.local
+
+# Deciduous database (local)
+.deciduous/

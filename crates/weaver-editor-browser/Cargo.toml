@@ -1,0 +1,63 @@
+[package]
+name = "weaver-editor-browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Browser DOM layer for weaver editor - generic over EditorDocument"
+
+[dependencies]
+# Re-export core
+weaver-editor-core = { path = "../weaver-editor-core" }
+
+# Browser APIs (baseline - this crate assumes wasm32-unknown-unknown)
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+gloo-events = "0.2"
+gloo-utils = "0.2"
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+smol_str = "0.3"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "Node",
+    "NodeList",
+    "Navigator",
+    "Text",
+    "Range",
+    "Selection",
+    "DomTokenList",
+    "DomRect",
+    "DomRectList",
+    "TreeWalker",
+    "CssStyleDeclaration",
+    "InputEvent",
+    "KeyboardEvent",
+    "ClipboardEvent",
+    "CompositionEvent",
+    "DataTransfer",
+    "DataTransferItem",
+    "DataTransferItemList",
+    "FocusEvent",
+    "MouseEvent",
+]
+
+[features]
+default = []
+# Optional reactive state via dioxus-signals (framework-agnostic)
+dioxus_signals = ["dep:dioxus-signals"]
+
+[dependencies.dioxus-signals]
+version = "0.7"
+optional = true
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
