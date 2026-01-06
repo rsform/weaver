@@ -56,7 +56,7 @@ pub trait TextBuffer {
     fn byte_to_char(&self, byte_offset: usize) -> usize;
 
     /// Get info about the last edit operation, if any.
-    fn last_edit(&self) -> Option<&EditInfo>;
+    fn last_edit(&self) -> Option<EditInfo>;
 
     /// Check if a char offset is in the block-syntax zone (first few chars of a line).
     fn is_in_block_syntax_zone(&self, offset: usize) -> bool {
@@ -198,8 +198,8 @@ impl TextBuffer for EditorRope {
         self.rope.byte_to_char(byte_offset)
     }
 
-    fn last_edit(&self) -> Option<&EditInfo> {
-        self.last_edit.as_ref()
+    fn last_edit(&self) -> Option<EditInfo> {
+        self.last_edit
     }
 
     fn is_in_block_syntax_zone(&self, offset: usize) -> bool {

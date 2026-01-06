@@ -159,7 +159,7 @@ impl<T: TextBuffer> TextBuffer for UndoableBuffer<T> {
         self.buffer.byte_to_char(byte_offset)
     }
 
-    fn last_edit(&self) -> Option<&crate::types::EditInfo> {
+    fn last_edit(&self) -> Option<crate::types::EditInfo> {
         self.buffer.last_edit()
     }
 }

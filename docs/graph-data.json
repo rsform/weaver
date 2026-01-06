@@ -1748,6 +1748,39 @@
       "created_at": "2026-01-06T15:16:33.936978250-05:00",
       "updated_at": "2026-01-06T15:16:33.936978250-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 161,
+      "change_id": "95b49ba0-0387-4bcb-b9c1-1aeea141aa46",
+      "node_type": "action",
+      "title": "Adding EditInfo tracking to LoroTextBuffer and EditorRope",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T15:48:29.751031863-05:00",
+      "updated_at": "2026-01-06T15:48:29.751031863-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 162,
+      "change_id": "85236b61-2d3f-4de6-bc90-71187810ca73",
+      "node_type": "outcome",
+      "title": "EditInfo tracking added to both EditorRope and LoroTextBuffer, with optimized is_in_block_syntax_zone using ropey line functions",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T15:49:15.888613855-05:00",
+      "updated_at": "2026-01-06T15:49:15.888613855-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 163,
+      "change_id": "5fff4fb8-ea78-4e46-9167-d3f72eea1532",
+      "node_type": "outcome",
+      "title": "LoroTextBuffer refactored with Rc<RefCell<Inner>> for shared mutable state, cursor management, from_doc constructor - clones now share all state",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T15:54:32.396727943-05:00",
+      "updated_at": "2026-01-06T15:54:32.396727943-05:00",
+      "metadata_json": "{\"confidence\":95}"
     }
   ],
   "edges": [
@@ -3565,6 +3598,28 @@
       "weight": 1.0,
       "rationale": "refactor completed successfully",
       "created_at": "2026-01-06T15:16:39.426610084-05:00"
+    },
+    {
+      "id": 167,
+      "from_node_id": 161,
+      "to_node_id": 162,
+      "from_change_id": "95b49ba0-0387-4bcb-b9c1-1aeea141aa46",
+      "to_change_id": "85236b61-2d3f-4de6-bc90-71187810ca73",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "EditInfo implementation complete",
+      "created_at": "2026-01-06T15:49:15.905323972-05:00"
+    },
+    {
+      "id": 168,
+      "from_node_id": 161,
+      "to_node_id": 163,
+      "from_change_id": "95b49ba0-0387-4bcb-b9c1-1aeea141aa46",
+      "to_change_id": "5fff4fb8-ea78-4e46-9167-d3f72eea1532",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Refactoring complete with tests",
+      "created_at": "2026-01-06T15:54:32.412922730-05:00"
     }
   ]
 }

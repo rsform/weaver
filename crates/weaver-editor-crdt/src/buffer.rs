@@ -4,23 +4,38 @@ use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 
-use loro::{cursor::PosType, LoroDoc, LoroText, UndoManager as LoroUndoManager, VersionVector};
+use loro::{
+    cursor::{Cursor, PosType, Side},
+    LoroDoc, LoroText, UndoManager as LoroUndoManager, VersionVector,
+};
 use smol_str::{SmolStr, ToSmolStr};
 use web_time::Instant;
 use weaver_editor_core::{EditInfo, TextBuffer, UndoManager};
 
 use crate::CrdtError;
 
+/// Mutable state that must be shared across clones.
+struct LoroTextBufferInner {
+    undo_mgr: LoroUndoManager,
+    last_edit: Option<EditInfo>,
+    loro_cursor: Option<Cursor>,
+}
+
 /// Loro-backed text buffer with undo/redo support.
 ///
 /// Wraps a `LoroDoc` with a text container and provides implementations
 /// of the `TextBuffer` and `UndoManager` traits from weaver-editor-core.
+///
+/// Also provides CRDT-aware cursor tracking that survives remote edits
+/// and undo/redo operations.
+///
+/// Cloning is cheap and clones share all mutable state (undo history,
+/// last edit info, cursor position).
 #[derive(Clone)]
 pub struct LoroTextBuffer {
     doc: LoroDoc,
     content: LoroText,
-    undo_mgr: Rc<RefCell<LoroUndoManager>>,
-    last_edit: Option<EditInfo>,
+    inner: Rc<RefCell<LoroTextBufferInner>>,
 }
 
 impl LoroTextBuffer {
@@ -28,13 +43,16 @@ impl LoroTextBuffer {
     pub fn new() -> Self {
         let doc = LoroDoc::new();
         let content = doc.get_text("content");
-        let undo_mgr = Rc::new(RefCell::new(LoroUndoManager::new(&doc)));
+        let loro_cursor = content.get_cursor(0, Side::default());
 
         Self {
+            inner: Rc::new(RefCell::new(LoroTextBufferInner {
+                undo_mgr: LoroUndoManager::new(&doc),
+                last_edit: None,
+                loro_cursor,
+            })),
             doc,
             content,
-            undo_mgr,
-            last_edit: None,
         }
     }
 
@@ -43,14 +61,36 @@ impl LoroTextBuffer {
         let doc = LoroDoc::new();
         doc.import(snapshot)?;
         let content = doc.get_text("content");
-        let undo_mgr = Rc::new(RefCell::new(LoroUndoManager::new(&doc)));
+        let loro_cursor = content.get_cursor(0, Side::default());
 
         Ok(Self {
+            inner: Rc::new(RefCell::new(LoroTextBufferInner {
+                undo_mgr: LoroUndoManager::new(&doc),
+                last_edit: None,
+                loro_cursor,
+            })),
             doc,
             content,
-            undo_mgr,
-            last_edit: None,
         })
+    }
+
+    /// Create a buffer from an existing LoroDoc with a specific text container key.
+    ///
+    /// Useful for shared documents where multiple text fields exist in the same doc.
+    /// The doc is cloned (cheap - Arc-backed) so the buffer shares state with the original.
+    pub fn from_doc(doc: LoroDoc, key: &str) -> Self {
+        let content = doc.get_text(key);
+        let loro_cursor = content.get_cursor(0, Side::default());
+
+        Self {
+            inner: Rc::new(RefCell::new(LoroTextBufferInner {
+                undo_mgr: LoroUndoManager::new(&doc),
+                last_edit: None,
+                loro_cursor,
+            })),
+            doc,
+            content,
+        }
     }
 
     /// Get the underlying Loro document.
@@ -104,6 +144,34 @@ impl LoroTextBuffer {
     pub fn version(&self) -> VersionVector {
         self.doc.oplog_vv()
     }
+
+    // --- Cursor management ---
+
+    /// Sync the Loro cursor to track a specific char offset.
+    /// Call this after local edits where you know the new cursor position.
+    pub fn sync_cursor(&self, offset: usize) {
+        self.inner.borrow_mut().loro_cursor = self.content.get_cursor(offset, Side::default());
+    }
+
+    /// Resolve the Loro cursor to its current char offset.
+    /// Call this after undo/redo or remote edits where the position may have shifted.
+    /// Returns None if no cursor is set or resolution fails.
+    pub fn resolve_cursor(&self) -> Option<usize> {
+        let inner = self.inner.borrow();
+        let cursor = inner.loro_cursor.as_ref()?;
+        let result = self.doc.get_cursor_pos(cursor).ok()?;
+        Some(result.current.pos.min(self.content.len_unicode()))
+    }
+
+    /// Get a clone of the Loro cursor for serialization.
+    pub fn loro_cursor(&self) -> Option<Cursor> {
+        self.inner.borrow().loro_cursor.clone()
+    }
+
+    /// Set the Loro cursor (used when restoring from storage).
+    pub fn set_loro_cursor(&self, cursor: Option<Cursor>) {
+        self.inner.borrow_mut().loro_cursor = cursor;
+    }
 }
 
 impl Default for LoroTextBuffer {
@@ -127,7 +195,7 @@ impl TextBuffer for LoroTextBuffer {
 
         self.content.insert(char_offset, text).ok();
 
-        self.last_edit = Some(EditInfo {
+        self.inner.borrow_mut().last_edit = Some(EditInfo {
             edit_char_pos: char_offset,
             inserted_len: text.chars().count(),
             deleted_len: 0,
@@ -148,7 +216,7 @@ impl TextBuffer for LoroTextBuffer {
 
         self.content.delete(char_range.start, deleted_len).ok();
 
-        self.last_edit = Some(EditInfo {
+        self.inner.borrow_mut().last_edit = Some(EditInfo {
             edit_char_pos: char_range.start,
             inserted_len: 0,
             deleted_len,
@@ -189,32 +257,30 @@ impl TextBuffer for LoroTextBuffer {
             .unwrap_or(self.content.len_unicode())
     }
 
-    fn last_edit(&self) -> Option<&EditInfo> {
-        self.last_edit.as_ref()
+    fn last_edit(&self) -> Option<EditInfo> {
+        self.inner.borrow().last_edit
     }
 }
 
 impl UndoManager for LoroTextBuffer {
     fn can_undo(&self) -> bool {
-        self.undo_mgr.borrow().can_undo()
+        self.inner.borrow().undo_mgr.can_undo()
     }
 
     fn can_redo(&self) -> bool {
-        self.undo_mgr.borrow().can_redo()
+        self.inner.borrow().undo_mgr.can_redo()
     }
 
     fn undo(&mut self) -> bool {
-        self.undo_mgr.borrow_mut().undo().is_ok()
+        self.inner.borrow_mut().undo_mgr.undo().is_ok()
     }
 
     fn redo(&mut self) -> bool {
-        self.undo_mgr.borrow_mut().redo().is_ok()
+        self.inner.borrow_mut().undo_mgr.redo().is_ok()
     }
 
     fn clear_history(&mut self) {
-        // Loro's UndoManager doesn't have a clear method
-        // Create a new one to effectively clear history
-        self.undo_mgr = Rc::new(RefCell::new(LoroUndoManager::new(&self.doc)));
+        self.inner.borrow_mut().undo_mgr = LoroUndoManager::new(&self.doc);
     }
 }
 
@@ -267,5 +333,39 @@ mod tests {
 
         assert_eq!(buffer.char_to_byte(6), 6); // before emoji
         assert_eq!(buffer.char_to_byte(7), 10); // after emoji
+    }
+
+    #[test]
+    fn test_clone_shares_state() {
+        let mut buffer1 = LoroTextBuffer::new();
+        buffer1.insert(0, "Hello");
+
+        let buffer2 = buffer1.clone();
+
+        // Both should see the same last_edit
+        assert_eq!(buffer1.last_edit(), buffer2.last_edit());
+
+        // Edit through buffer1
+        buffer1.insert(5, " World");
+
+        // buffer2 should see the updated last_edit (shared state)
+        assert_eq!(buffer1.last_edit(), buffer2.last_edit());
+        assert_eq!(buffer2.last_edit().unwrap().inserted_len, 6);
+    }
+
+    #[test]
+    fn test_cursor_management() {
+        let mut buffer = LoroTextBuffer::new();
+        buffer.insert(0, "Hello World");
+
+        // Sync cursor to position 5
+        buffer.sync_cursor(5);
+        assert_eq!(buffer.resolve_cursor(), Some(5));
+
+        // Insert text before cursor - cursor should shift
+        buffer.insert(0, "Hi ");
+        // After insert, cursor tracked by Loro should have shifted
+        let pos = buffer.resolve_cursor().unwrap();
+        assert_eq!(pos, 8); // 5 + 3 = 8
     }
 }

@@ -165,7 +165,7 @@ impl CompositionState {
 ///
 /// This tracks enough information to determine which paragraphs need re-rendering
 /// after an edit, enabling efficient incremental updates instead of full re-renders.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct EditInfo {
     /// Character offset where the edit occurred
     pub edit_char_pos: usize,
