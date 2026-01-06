@@ -8,8 +8,7 @@
 //!
 //! - `cursor`: Selection API handling and cursor restoration
 //! - `dom_sync`: DOM ↔ document state synchronization
-//! - `events`: beforeinput, keydown, paste event handlers
-//! - `contenteditable`: Editor element setup and management
+//! - `events`: beforeinput event handling and clipboard helpers
 //! - `platform`: Browser/OS detection for platform-specific behavior
 //!
 //! # Re-exports
@@ -29,8 +28,15 @@ pub mod platform;
 // Browser cursor implementation
 pub use cursor::BrowserCursor;
 
+// DOM sync types
+pub use dom_sync::{BrowserCursorSync, CursorSyncResult, ParagraphDomData};
+
+// Event handling
+pub use events::{
+    BeforeInputContext, BeforeInputResult, StaticRange, get_data_from_event,
+    get_input_type_from_event, get_target_range_from_event, is_composing,
+    parse_browser_input_type, read_clipboard_text, write_clipboard_with_custom_type,
+};
+
 // Platform detection
 pub use platform::{Platform, platform};
-
-// TODO: contenteditable module
-// TODO: embed worker module

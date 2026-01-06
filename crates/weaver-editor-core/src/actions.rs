@@ -457,6 +457,8 @@ pub struct Modifiers {
     pub alt: bool,
     pub shift: bool,
     pub meta: bool,
+    pub hyper: bool,
+    pub super_: bool,
 }
 
 impl Modifiers {
@@ -465,6 +467,8 @@ impl Modifiers {
         alt: false,
         shift: false,
         meta: false,
+        hyper: false,
+        super_: false,
     };
 
     pub const CTRL: Self = Self {
@@ -472,6 +476,8 @@ impl Modifiers {
         alt: false,
         shift: false,
         meta: false,
+        hyper: false,
+        super_: false,
     };
 
     pub const ALT: Self = Self {
@@ -479,6 +485,8 @@ impl Modifiers {
         alt: true,
         shift: false,
         meta: false,
+        hyper: false,
+        super_: false,
     };
 
     pub const SHIFT: Self = Self {
@@ -486,6 +494,8 @@ impl Modifiers {
         alt: false,
         shift: true,
         meta: false,
+        hyper: false,
+        super_: false,
     };
 
     pub const META: Self = Self {
@@ -493,6 +503,26 @@ impl Modifiers {
         alt: false,
         shift: false,
         meta: true,
+        hyper: false,
+        super_: false,
+    };
+
+    pub const HYPER: Self = Self {
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+        hyper: true,
+        super_: false,
+    };
+
+    pub const SUPER: Self = Self {
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+        hyper: false,
+        super_: true,
     };
 
     pub const CTRL_SHIFT: Self = Self {
@@ -500,6 +530,8 @@ impl Modifiers {
         alt: false,
         shift: true,
         meta: false,
+        hyper: false,
+        super_: false,
     };
 
     pub const META_SHIFT: Self = Self {
@@ -507,6 +539,8 @@ impl Modifiers {
         alt: false,
         shift: true,
         meta: true,
+        hyper: false,
+        super_: false,
     };
 
     /// Get the primary modifier for the platform (Cmd on Mac, Ctrl elsewhere).
@@ -592,4 +626,153 @@ pub enum KeydownResult {
     NotHandled,
     /// Event should be passed through (navigation, etc.).
     PassThrough,
+}
+
+// === Keybinding configuration ===
+
+use std::collections::HashMap;
+
+/// Keybinding configuration for the editor.
+///
+/// Maps key combinations to editor actions. Platform-specific defaults
+/// can be created via `default_for_platform`.
+#[derive(Debug, Clone)]
+pub struct KeybindingConfig {
+    bindings: HashMap<KeyCombo, EditorAction>,
+}
+
+impl Default for KeybindingConfig {
+    fn default() -> Self {
+        Self::default_for_platform(false)
+    }
+}
+
+impl KeybindingConfig {
+    /// Create an empty keybinding configuration.
+    pub fn new() -> Self {
+        Self {
+            bindings: HashMap::new(),
+        }
+    }
+
+    /// Create default keybindings for the given platform.
+    ///
+    /// `is_mac` determines whether to use Cmd (true) or Ctrl (false) for shortcuts.
+    pub fn default_for_platform(is_mac: bool) -> Self {
+        let mut bindings = HashMap::new();
+
+        // === Formatting ===
+        bindings.insert(
+            KeyCombo::primary(Key::character("b"), is_mac),
+            EditorAction::ToggleBold,
+        );
+        bindings.insert(
+            KeyCombo::primary(Key::character("i"), is_mac),
+            EditorAction::ToggleItalic,
+        );
+        bindings.insert(
+            KeyCombo::primary(Key::character("e"), is_mac),
+            EditorAction::CopyAsHtml,
+        );
+
+        // === History ===
+        bindings.insert(
+            KeyCombo::primary(Key::character("z"), is_mac),
+            EditorAction::Undo,
+        );
+
+        // Redo: Cmd+Shift+Z on Mac, Ctrl+Y or Ctrl+Shift+Z elsewhere
+        if is_mac {
+            bindings.insert(
+                KeyCombo::primary_shift(Key::character("Z"), is_mac),
+                EditorAction::Redo,
+            );
+        } else {
+            bindings.insert(KeyCombo::ctrl(Key::character("y")), EditorAction::Redo);
+            bindings.insert(
+                KeyCombo::with_modifiers(Key::character("Z"), Modifiers::CTRL_SHIFT),
+                EditorAction::Redo,
+            );
+        }
+
+        // === Selection ===
+        bindings.insert(
+            KeyCombo::primary(Key::character("a"), is_mac),
+            EditorAction::SelectAll,
+        );
+
+        // === Line deletion ===
+        if is_mac {
+            bindings.insert(
+                KeyCombo::meta(Key::Backspace),
+                EditorAction::DeleteToLineStart {
+                    range: Range::caret(0),
+                },
+            );
+            bindings.insert(
+                KeyCombo::meta(Key::Delete),
+                EditorAction::DeleteToLineEnd {
+                    range: Range::caret(0),
+                },
+            );
+        }
+
+        // === Enter behaviour ===
+        // Enter = soft break (single newline)
+        bindings.insert(
+            KeyCombo::new(Key::Enter),
+            EditorAction::InsertLineBreak {
+                range: Range::caret(0),
+            },
+        );
+        // Shift+Enter = paragraph break (double newline)
+        bindings.insert(
+            KeyCombo::shift(Key::Enter),
+            EditorAction::InsertParagraph {
+                range: Range::caret(0),
+            },
+        );
+
+        // === Dedicated keys ===
+        bindings.insert(KeyCombo::new(Key::Undo), EditorAction::Undo);
+        bindings.insert(KeyCombo::new(Key::Redo), EditorAction::Redo);
+        bindings.insert(KeyCombo::new(Key::Copy), EditorAction::Copy);
+        bindings.insert(KeyCombo::new(Key::Cut), EditorAction::Cut);
+        bindings.insert(
+            KeyCombo::new(Key::Paste),
+            EditorAction::Paste {
+                range: Range::caret(0),
+            },
+        );
+        bindings.insert(KeyCombo::new(Key::Select), EditorAction::SelectAll);
+
+        Self { bindings }
+    }
+
+    /// Look up an action for the given key combo.
+    ///
+    /// The range in the returned action is updated to the provided range.
+    pub fn lookup(&self, combo: &KeyCombo, range: Range) -> Option<EditorAction> {
+        self.bindings.get(combo).cloned().map(|a| a.with_range(range))
+    }
+
+    /// Add or replace a keybinding.
+    pub fn bind(&mut self, combo: KeyCombo, action: EditorAction) {
+        self.bindings.insert(combo, action);
+    }
+
+    /// Remove a keybinding.
+    pub fn unbind(&mut self, combo: &KeyCombo) {
+        self.bindings.remove(combo);
+    }
+
+    /// Check if a key combo has a binding.
+    pub fn has_binding(&self, combo: &KeyCombo) -> bool {
+        self.bindings.contains_key(combo)
+    }
+
+    /// Iterate over all bindings.
+    pub fn iter(&self) -> impl Iterator<Item = (&KeyCombo, &EditorAction)> {
+        self.bindings.iter()
+    }
 }

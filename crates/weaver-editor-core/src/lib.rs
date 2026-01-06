@@ -6,15 +6,19 @@
 //! - `UndoableBuffer<T>` - TextBuffer wrapper with undo/redo
 //! - `EditorDocument` trait - interface for editor implementations
 //! - `PlainEditor<T>` - simple field-based EditorDocument impl
+//! - `EditorAction`, `InputType`, `Key` - platform-agnostic input/action types
 //! - Rendering types and offset mapping utilities
 
+pub mod actions;
 pub mod document;
+pub mod execute;
 pub mod offset_map;
 pub mod paragraph;
 pub mod platform;
 pub mod render;
 pub mod syntax;
 pub mod text;
+pub mod text_helpers;
 pub mod types;
 pub mod undo;
 pub mod visibility;
@@ -38,3 +42,12 @@ pub use undo::{UndoManager, UndoableBuffer};
 pub use visibility::VisibilityState;
 pub use writer::{EditorImageResolver, EditorWriter, SegmentedWriter, WriterResult};
 pub use platform::{CursorPlatform, CursorSync, PlatformError};
+pub use actions::{
+    EditorAction, InputType, Key, KeyCombo, KeybindingConfig, KeydownResult, Modifiers, Range,
+};
+pub use execute::execute_action;
+pub use text_helpers::{
+    ListContext, count_leading_zero_width, detect_list_context, find_line_end, find_line_start,
+    find_word_boundary_backward, find_word_boundary_forward, is_list_item_empty,
+    is_zero_width_char,
+};

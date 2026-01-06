@@ -1,5 +1,257 @@
 //! Browser event handling for the editor.
 //!
-//! Handles beforeinput, keydown, paste, and other DOM events.
+//! Provides browser-specific event extraction and input type parsing for
+//! the `beforeinput` event and other DOM events.
 
-// TODO: Migrate from weaver-app (beforeinput.rs, input.rs)
+use wasm_bindgen::prelude::*;
+use weaver_editor_core::{InputType, OffsetMapping, Range};
+
+use crate::dom_sync::dom_position_to_text_offset;
+
+// === StaticRange binding ===
+//
+// Custom wasm_bindgen binding for StaticRange since web-sys doesn't expose it.
+// StaticRange is returned by InputEvent.getTargetRanges() and represents
+// a fixed range that doesn't update when the DOM changes.
+
+#[wasm_bindgen]
+extern "C" {
+    /// The StaticRange interface represents a static range of text in the DOM.
+    pub type StaticRange;
+
+    #[wasm_bindgen(method, getter, structural)]
+    pub fn startContainer(this: &StaticRange) -> web_sys::Node;
+
+    #[wasm_bindgen(method, getter, structural)]
+    pub fn startOffset(this: &StaticRange) -> u32;
+
+    #[wasm_bindgen(method, getter, structural)]
+    pub fn endContainer(this: &StaticRange) -> web_sys::Node;
+
+    #[wasm_bindgen(method, getter, structural)]
+    pub fn endOffset(this: &StaticRange) -> u32;
+
+    #[wasm_bindgen(method, getter, structural)]
+    pub fn collapsed(this: &StaticRange) -> bool;
+}
+
+// === InputType browser parsing ===
+
+/// Parse a browser inputType string to an InputType enum.
+///
+/// This handles the W3C Input Events inputType values as returned by
+/// `InputEvent.inputType` in browsers.
+pub fn parse_browser_input_type(s: &str) -> InputType {
+    match s {
+        // Insertion
+        "insertText" => InputType::InsertText,
+        "insertCompositionText" => InputType::InsertCompositionText,
+        "insertLineBreak" => InputType::InsertLineBreak,
+        "insertParagraph" => InputType::InsertParagraph,
+        "insertFromPaste" => InputType::InsertFromPaste,
+        "insertFromDrop" => InputType::InsertFromDrop,
+        "insertReplacementText" => InputType::InsertReplacementText,
+        "insertFromYank" => InputType::InsertFromYank,
+        "insertHorizontalRule" => InputType::InsertHorizontalRule,
+        "insertOrderedList" => InputType::InsertOrderedList,
+        "insertUnorderedList" => InputType::InsertUnorderedList,
+        "insertLink" => InputType::InsertLink,
+
+        // Deletion
+        "deleteContentBackward" => InputType::DeleteContentBackward,
+        "deleteContentForward" => InputType::DeleteContentForward,
+        "deleteWordBackward" => InputType::DeleteWordBackward,
+        "deleteWordForward" => InputType::DeleteWordForward,
+        "deleteSoftLineBackward" => InputType::DeleteSoftLineBackward,
+        "deleteSoftLineForward" => InputType::DeleteSoftLineForward,
+        "deleteHardLineBackward" => InputType::DeleteHardLineBackward,
+        "deleteHardLineForward" => InputType::DeleteHardLineForward,
+        "deleteByCut" => InputType::DeleteByCut,
+        "deleteByDrag" => InputType::DeleteByDrag,
+        "deleteContent" => InputType::DeleteContent,
+        "deleteEntireSoftLine" => InputType::DeleteSoftLineBackward,
+        "deleteEntireWordBackward" => InputType::DeleteEntireWordBackward,
+        "deleteEntireWordForward" => InputType::DeleteEntireWordForward,
+
+        // History
+        "historyUndo" => InputType::HistoryUndo,
+        "historyRedo" => InputType::HistoryRedo,
+
+        // Formatting
+        "formatBold" => InputType::FormatBold,
+        "formatItalic" => InputType::FormatItalic,
+        "formatUnderline" => InputType::FormatUnderline,
+        "formatStrikethrough" => InputType::FormatStrikethrough,
+        "formatSuperscript" => InputType::FormatSuperscript,
+        "formatSubscript" => InputType::FormatSubscript,
+
+        // Unknown
+        other => InputType::Unknown(other.to_string()),
+    }
+}
+
+// === BeforeInput event handling ===
+
+/// Result of handling a beforeinput event.
+#[derive(Debug, Clone)]
+pub enum BeforeInputResult {
+    /// Event was handled, prevent default browser behavior.
+    Handled,
+    /// Event should be handled by browser (e.g., during composition).
+    PassThrough,
+    /// Event was handled but requires async follow-up (e.g., paste).
+    HandledAsync,
+    /// Android backspace workaround: defer and check if browser handled it.
+    DeferredCheck {
+        /// The action to execute if browser didn't handle it.
+        fallback_action: weaver_editor_core::EditorAction,
+    },
+}
+
+/// Context for beforeinput handling.
+pub struct BeforeInputContext<'a> {
+    /// The input type.
+    pub input_type: InputType,
+    /// The data (text to insert, if any).
+    pub data: Option<String>,
+    /// Target range from getTargetRanges(), if available.
+    pub target_range: Option<Range>,
+    /// Whether the event is part of an IME composition.
+    pub is_composing: bool,
+    /// Whether we're on Android.
+    pub is_android: bool,
+    /// Whether we're on Chrome.
+    pub is_chrome: bool,
+    /// Offset mappings for the document.
+    pub offset_map: &'a [OffsetMapping],
+}
+
+/// Extract target range from a beforeinput event.
+///
+/// Uses getTargetRanges() to get the browser's intended range for this operation.
+pub fn get_target_range_from_event(
+    event: &web_sys::InputEvent,
+    editor_id: &str,
+    offset_map: &[OffsetMapping],
+) -> Option<Range> {
+    use wasm_bindgen::JsCast;
+
+    let ranges = event.get_target_ranges();
+    if ranges.length() == 0 {
+        return None;
+    }
+
+    let static_range: StaticRange = ranges.get(0).unchecked_into();
+
+    let window = web_sys::window()?;
+    let dom_document = window.document()?;
+    let editor_element = dom_document.get_element_by_id(editor_id)?;
+
+    let start_container = static_range.startContainer();
+    let start_offset = static_range.startOffset() as usize;
+    let end_container = static_range.endContainer();
+    let end_offset = static_range.endOffset() as usize;
+
+    let start = dom_position_to_text_offset(
+        &dom_document,
+        &editor_element,
+        &start_container,
+        start_offset,
+        offset_map,
+        None,
+    )?;
+
+    let end = dom_position_to_text_offset(
+        &dom_document,
+        &editor_element,
+        &end_container,
+        end_offset,
+        offset_map,
+        None,
+    )?;
+
+    Some(Range::new(start, end))
+}
+
+/// Get data from a beforeinput event, handling different sources.
+pub fn get_data_from_event(event: &web_sys::InputEvent) -> Option<String> {
+    // First try the data property.
+    if let Some(data) = event.data() {
+        if !data.is_empty() {
+            return Some(data);
+        }
+    }
+
+    // For paste/drop, try dataTransfer.
+    if let Some(data_transfer) = event.data_transfer() {
+        if let Ok(text) = data_transfer.get_data("text/plain") {
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+    }
+
+    None
+}
+
+/// Get input type from a beforeinput event.
+pub fn get_input_type_from_event(event: &web_sys::InputEvent) -> InputType {
+    parse_browser_input_type(&event.input_type())
+}
+
+/// Check if the beforeinput event is during IME composition.
+pub fn is_composing(event: &web_sys::InputEvent) -> bool {
+    event.is_composing()
+}
+
+// === Clipboard helpers ===
+
+/// Write text to clipboard with both text/plain and custom MIME type.
+pub async fn write_clipboard_with_custom_type(text: &str) -> Result<(), JsValue> {
+    use js_sys::{Array, Object, Reflect};
+    use web_sys::{Blob, BlobPropertyBag, ClipboardItem};
+
+    let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
+    let navigator = window.navigator();
+    let clipboard = navigator.clipboard();
+
+    let text_parts = Array::new();
+    text_parts.push(&JsValue::from_str(text));
+
+    let text_opts = BlobPropertyBag::new();
+    text_opts.set_type("text/plain");
+    let text_blob = Blob::new_with_str_sequence_and_options(&text_parts, &text_opts)?;
+
+    let custom_opts = BlobPropertyBag::new();
+    custom_opts.set_type("text/markdown");
+    let custom_blob = Blob::new_with_str_sequence_and_options(&text_parts, &custom_opts)?;
+
+    let item_data = Object::new();
+    Reflect::set(&item_data, &JsValue::from_str("text/plain"), &text_blob)?;
+    Reflect::set(
+        &item_data,
+        &JsValue::from_str("text/markdown"),
+        &custom_blob,
+    )?;
+
+    let clipboard_item = ClipboardItem::new_with_record_from_str_to_blob_promise(&item_data)?;
+    let items = Array::new();
+    items.push(&clipboard_item);
+
+    let promise = clipboard.write(&items);
+    wasm_bindgen_futures::JsFuture::from(promise).await?;
+
+    Ok(())
+}
+
+/// Read text from clipboard.
+pub async fn read_clipboard_text() -> Result<Option<String>, JsValue> {
+    let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
+    let navigator = window.navigator();
+    let clipboard = navigator.clipboard();
+
+    let promise = clipboard.read_text();
+    let result: JsValue = wasm_bindgen_futures::JsFuture::from(promise).await?;
+
+    Ok(result.as_string())
+}

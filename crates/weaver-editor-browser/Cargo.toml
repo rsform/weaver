@@ -18,6 +18,9 @@ gloo-utils = "0.2"
 # Logging
 tracing = { workspace = true }
 
+# Async (for JS promise bridging)
+wasm-bindgen-futures = "0.4"
+
 # Utilities
 smol_str = "0.3"
 
@@ -48,6 +51,10 @@ features = [
     "DataTransferItemList",
     "FocusEvent",
     "MouseEvent",
+    "Blob",
+    "BlobPropertyBag",
+    "Clipboard",
+    "ClipboardItem",
 ]
 
 [features]

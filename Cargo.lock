@@ -12197,6 +12197,7 @@ dependencies = [
  "smol_str",
  "tracing",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "weaver-editor-core",
  "web-sys",

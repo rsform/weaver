@@ -1286,6 +1286,72 @@
       "created_at": "2026-01-06T11:35:39.555773236-05:00",
       "updated_at": "2026-01-06T11:35:39.555773236-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 119,
+      "change_id": "98dde6b1-ff25-47b3-bc02-7479a4341b1e",
+      "node_type": "action",
+      "title": "core: actions.rs with Range, EditorAction, InputType, Key, Modifiers, KeyCombo",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T11:48:31.913440141-05:00",
+      "updated_at": "2026-01-06T11:48:31.913440141-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 120,
+      "change_id": "b192e6ab-9500-4e4b-b7c3-8b5d7a8453b7",
+      "node_type": "action",
+      "title": "core: text_helpers.rs with find_line_start/end, word boundaries, list detection",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T11:48:48.907582364-05:00",
+      "updated_at": "2026-01-06T11:48:48.907582364-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 121,
+      "change_id": "1206764e-ee77-4dd4-b924-019177b1a495",
+      "node_type": "outcome",
+      "title": "weaver-editor-browser and weaver-editor-core compile with extracted actions, text helpers, and events",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T11:54:09.803705832-05:00",
+      "updated_at": "2026-01-06T11:54:09.803705832-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 122,
+      "change_id": "7179434c-6064-4ae7-9eac-1f89465e2479",
+      "node_type": "goal",
+      "title": "Extract execute_action and related code to core/browser crates",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T11:57:25.012098492-05:00",
+      "updated_at": "2026-01-06T11:57:25.012098492-05:00",
+      "metadata_json": "{\"confidence\":85,\"prompt\":\"User asked: extract execute_action in generic fashion and scan editor components for other extractable code (non-crdt, non-dioxus)\"}"
+    },
+    {
+      "id": 123,
+      "change_id": "47ebda62-aefb-4f8b-9c22-860b0b89d32a",
+      "node_type": "action",
+      "title": "Created execute.rs in core with generic execute_action",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:01:21.232311329-05:00",
+      "updated_at": "2026-01-06T12:01:21.232311329-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 124,
+      "change_id": "51a84f63-8720-4a90-97af-50c9212d14d6",
+      "node_type": "outcome",
+      "title": "Core execute.rs complete with 75 tests passing",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:01:52.561290209-05:00",
+      "updated_at": "2026-01-06T12:01:52.561290209-05:00",
+      "metadata_json": "{\"confidence\":95}"
     }
   ],
   "edges": [
@@ -2718,6 +2784,72 @@
       "weight": 1.0,
       "rationale": "API refinement",
       "created_at": "2026-01-06T11:35:39.734624305-05:00"
+    },
+    {
+      "id": 132,
+      "from_node_id": 81,
+      "to_node_id": 119,
+      "from_change_id": "5f00148d-b487-40fb-b4b4-66b8d2489e91",
+      "to_change_id": "98dde6b1-ff25-47b3-bc02-7479a4341b1e",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "core actions support browser crate",
+      "created_at": "2026-01-06T11:48:48.924160167-05:00"
+    },
+    {
+      "id": 133,
+      "from_node_id": 116,
+      "to_node_id": 119,
+      "from_change_id": "cd5cc522-d717-43a7-b116-94f86845db10",
+      "to_change_id": "98dde6b1-ff25-47b3-bc02-7479a4341b1e",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "pattern applied: generic logic in core",
+      "created_at": "2026-01-06T11:48:48.940647360-05:00"
+    },
+    {
+      "id": 134,
+      "from_node_id": 119,
+      "to_node_id": 120,
+      "from_change_id": "98dde6b1-ff25-47b3-bc02-7479a4341b1e",
+      "to_change_id": "b192e6ab-9500-4e4b-b7c3-8b5d7a8453b7",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "text helpers support action execution",
+      "created_at": "2026-01-06T11:54:09.820070547-05:00"
+    },
+    {
+      "id": 135,
+      "from_node_id": 81,
+      "to_node_id": 120,
+      "from_change_id": "5f00148d-b487-40fb-b4b4-66b8d2489e91",
+      "to_change_id": "b192e6ab-9500-4e4b-b7c3-8b5d7a8453b7",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "browser crate extraction progress",
+      "created_at": "2026-01-06T11:54:09.837098743-05:00"
+    },
+    {
+      "id": 136,
+      "from_node_id": 122,
+      "to_node_id": 123,
+      "from_change_id": "7179434c-6064-4ae7-9eac-1f89465e2479",
+      "to_change_id": "47ebda62-aefb-4f8b-9c22-860b0b89d32a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Part of extracting action execution",
+      "created_at": "2026-01-06T12:01:21.248171774-05:00"
+    },
+    {
+      "id": 137,
+      "from_node_id": 123,
+      "to_node_id": 124,
+      "from_change_id": "47ebda62-aefb-4f8b-9c22-860b0b89d32a",
+      "to_change_id": "51a84f63-8720-4a90-97af-50c9212d14d6",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Execute action implementation outcome",
+      "created_at": "2026-01-06T12:01:52.577885198-05:00"
     }
   ]
 }
