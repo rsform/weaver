@@ -5,8 +5,8 @@
 //! logic to work across different platforms.
 
 use crate::offset_map::SnapDirection;
+use crate::paragraph::ParagraphRender;
 use crate::types::{CursorRect, SelectionRect};
-use crate::OffsetMapping;
 
 /// Error type for platform operations.
 #[derive(Debug, Clone)]
@@ -40,13 +40,13 @@ impl From<String> for PlatformError {
 pub trait CursorPlatform {
     /// Restore cursor position in the UI after content changes.
     ///
-    /// Given a character offset and the current offset map, positions the cursor
+    /// Given a character offset and rendered paragraphs, positions the cursor
     /// in the rendered content. The snap direction is used when the offset falls
     /// on invisible content (formatting syntax).
     fn restore_cursor(
         &self,
         char_offset: usize,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
         snap_direction: Option<SnapDirection>,
     ) -> Result<(), PlatformError>;
 
@@ -56,7 +56,7 @@ pub trait CursorPlatform {
     fn get_cursor_rect(
         &self,
         char_offset: usize,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
     ) -> Option<CursorRect>;
 
     /// Get screen coordinates relative to the editor container.
@@ -66,7 +66,7 @@ pub trait CursorPlatform {
     fn get_cursor_rect_relative(
         &self,
         char_offset: usize,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
     ) -> Option<CursorRect>;
 
     /// Get screen rectangles for a selection range.
@@ -77,7 +77,7 @@ pub trait CursorPlatform {
         &self,
         start: usize,
         end: usize,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
     ) -> Vec<SelectionRect>;
 }
 
@@ -95,7 +95,7 @@ pub trait CursorSync {
     /// - For a selection: calls `on_selection(anchor, head)`
     fn sync_cursor_from_platform<F, G>(
         &self,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
         direction_hint: Option<SnapDirection>,
         on_cursor: F,
         on_selection: G,

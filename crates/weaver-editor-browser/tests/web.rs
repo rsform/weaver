@@ -7,7 +7,7 @@ use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
 
 use weaver_editor_browser::{
-    BeforeInputContext, BeforeInputResult, InputType, Range, handle_beforeinput,
+    BeforeInputContext, BeforeInputResult, InputType, Platform, Range, handle_beforeinput,
     parse_browser_input_type, platform,
 };
 use weaver_editor_core::{EditorDocument, EditorRope, PlainEditor, UndoableBuffer};
@@ -18,6 +18,20 @@ fn make_editor(content: &str) -> TestEditor {
     let rope = EditorRope::from_str(content);
     let buf = UndoableBuffer::new(rope, 100);
     PlainEditor::new(buf)
+}
+
+fn test_platform() -> Platform {
+    Platform {
+        ios: false,
+        mac: false,
+        android: false,
+        chrome: false,
+        safari: false,
+        gecko: false,
+        webkit_version: None,
+        chrome_version: None,
+        mobile: false,
+    }
 }
 
 // === InputType parsing tests ===
@@ -68,15 +82,14 @@ fn test_platform_detection() {
 fn test_handle_insert_text() {
     let mut editor = make_editor("hello");
     editor.set_cursor_offset(5);
+    let plat = test_platform();
 
     let ctx = BeforeInputContext {
         input_type: InputType::InsertText,
         data: Some(" world".to_string()),
         target_range: None,
         is_composing: false,
-        is_android: false,
-        is_chrome: false,
-        offset_map: &[],
+        platform: &plat,
     };
 
     let result = handle_beforeinput(&mut editor, &ctx, Range::caret(5));
@@ -88,15 +101,14 @@ fn test_handle_insert_text() {
 fn test_handle_delete_backward() {
     let mut editor = make_editor("hello");
     editor.set_cursor_offset(5);
+    let plat = test_platform();
 
     let ctx = BeforeInputContext {
         input_type: InputType::DeleteContentBackward,
         data: None,
         target_range: None,
         is_composing: false,
-        is_android: false,
-        is_chrome: false,
-        offset_map: &[],
+        platform: &plat,
     };
 
     let result = handle_beforeinput(&mut editor, &ctx, Range::caret(5));
@@ -107,15 +119,14 @@ fn test_handle_delete_backward() {
 #[wasm_bindgen_test]
 fn test_handle_composition_passthrough() {
     let mut editor = make_editor("hello");
+    let plat = test_platform();
 
     let ctx = BeforeInputContext {
         input_type: InputType::InsertText,
         data: Some("x".to_string()),
         target_range: None,
         is_composing: true, // During composition
-        is_android: false,
-        is_chrome: false,
-        offset_map: &[],
+        platform: &plat,
     };
 
     let result = handle_beforeinput(&mut editor, &ctx, Range::caret(5));
@@ -128,6 +139,7 @@ fn test_handle_composition_passthrough() {
 fn test_handle_undo_redo() {
     let mut editor = make_editor("hello");
     editor.set_cursor_offset(5);
+    let plat = test_platform();
 
     // Insert text first.
     let insert_ctx = BeforeInputContext {
@@ -135,9 +147,7 @@ fn test_handle_undo_redo() {
         data: Some(" world".to_string()),
         target_range: None,
         is_composing: false,
-        is_android: false,
-        is_chrome: false,
-        offset_map: &[],
+        platform: &plat,
     };
     handle_beforeinput(&mut editor, &insert_ctx, Range::caret(5));
     assert_eq!(editor.content_string(), "hello world");
@@ -148,9 +158,7 @@ fn test_handle_undo_redo() {
         data: None,
         target_range: None,
         is_composing: false,
-        is_android: false,
-        is_chrome: false,
-        offset_map: &[],
+        platform: &plat,
     };
     let result = handle_beforeinput(&mut editor, &undo_ctx, Range::caret(11));
     assert!(matches!(result, BeforeInputResult::Handled));
@@ -162,9 +170,7 @@ fn test_handle_undo_redo() {
         data: None,
         target_range: None,
         is_composing: false,
-        is_android: false,
-        is_chrome: false,
-        offset_map: &[],
+        platform: &plat,
     };
     let result = handle_beforeinput(&mut editor, &redo_ctx, Range::caret(5));
     assert!(matches!(result, BeforeInputResult::Handled));
@@ -175,15 +181,14 @@ fn test_handle_undo_redo() {
 fn test_handle_insert_paragraph() {
     let mut editor = make_editor("hello");
     editor.set_cursor_offset(5);
+    let plat = test_platform();
 
     let ctx = BeforeInputContext {
         input_type: InputType::InsertParagraph,
         data: None,
         target_range: None,
         is_composing: false,
-        is_android: false,
-        is_chrome: false,
-        offset_map: &[],
+        platform: &plat,
     };
 
     let result = handle_beforeinput(&mut editor, &ctx, Range::caret(5));
@@ -195,15 +200,14 @@ fn test_handle_insert_paragraph() {
 #[wasm_bindgen_test]
 fn test_handle_selection_delete() {
     let mut editor = make_editor("hello world");
+    let plat = test_platform();
 
     let ctx = BeforeInputContext {
         input_type: InputType::DeleteContentBackward,
         data: None,
         target_range: Some(Range::new(5, 11)), // Select " world"
         is_composing: false,
-        is_android: false,
-        is_chrome: false,
-        offset_map: &[],
+        platform: &plat,
     };
 
     let result = handle_beforeinput(&mut editor, &ctx, Range::new(5, 11));

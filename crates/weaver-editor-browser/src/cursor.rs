@@ -4,8 +4,8 @@
 
 use wasm_bindgen::JsCast;
 use weaver_editor_core::{
-    CursorPlatform, CursorRect, OffsetMapping, PlatformError, SelectionRect, SnapDirection,
-    find_mapping_for_char, find_nearest_valid_position,
+    CursorPlatform, CursorRect, OffsetMapping, ParagraphRender, PlatformError, SelectionRect,
+    SnapDirection, find_mapping_for_char, find_nearest_valid_position,
 };
 
 /// Browser-based cursor platform implementation.
@@ -33,26 +33,29 @@ impl CursorPlatform for BrowserCursor {
     fn restore_cursor(
         &self,
         char_offset: usize,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
         snap_direction: Option<SnapDirection>,
     ) -> Result<(), PlatformError> {
+        // Find the paragraph containing this offset and use its offset map.
+        let offset_map = find_offset_map_for_char(paragraphs, char_offset);
         restore_cursor_position(char_offset, offset_map, snap_direction)
     }
 
     fn get_cursor_rect(
         &self,
         char_offset: usize,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
     ) -> Option<CursorRect> {
+        let offset_map = find_offset_map_for_char(paragraphs, char_offset);
         get_cursor_rect_impl(char_offset, offset_map)
     }
 
     fn get_cursor_rect_relative(
         &self,
         char_offset: usize,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
     ) -> Option<CursorRect> {
-        let cursor_rect = self.get_cursor_rect(char_offset, offset_map)?;
+        let cursor_rect = self.get_cursor_rect(char_offset, paragraphs)?;
 
         let window = web_sys::window()?;
         let document = window.document()?;
@@ -70,10 +73,36 @@ impl CursorPlatform for BrowserCursor {
         &self,
         start: usize,
         end: usize,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
     ) -> Vec<SelectionRect> {
-        get_selection_rects_impl(start, end, offset_map, &self.editor_id)
+        // For selection, we need all offset maps since selection can span paragraphs.
+        let all_maps: Vec<_> = paragraphs
+            .iter()
+            .flat_map(|p| p.offset_map.iter())
+            .collect();
+        let borrowed: Vec<_> = all_maps.iter().map(|m| (*m).clone()).collect();
+        get_selection_rects_impl(start, end, &borrowed, &self.editor_id)
     }
+}
+
+/// Find the offset map for a character offset from paragraphs.
+///
+/// Returns the offset map of the paragraph containing the given offset,
+/// or an empty slice if no paragraph contains it.
+fn find_offset_map_for_char(
+    paragraphs: &[ParagraphRender],
+    char_offset: usize,
+) -> &[OffsetMapping] {
+    for para in paragraphs {
+        if para.char_range.start <= char_offset && char_offset <= para.char_range.end {
+            return &para.offset_map;
+        }
+    }
+    // Fallback: if offset is past the end, use the last paragraph.
+    paragraphs
+        .last()
+        .map(|p| p.offset_map.as_slice())
+        .unwrap_or(&[])
 }
 
 /// Restore cursor position in the DOM after re-render.
@@ -180,7 +209,7 @@ pub fn restore_cursor_position(
 }
 
 /// Find text node at given UTF-16 offset within element.
-fn find_text_node_at_offset(
+pub fn find_text_node_at_offset(
     container: &web_sys::HtmlElement,
     target_utf16_offset: usize,
 ) -> Result<(web_sys::Node, usize), PlatformError> {

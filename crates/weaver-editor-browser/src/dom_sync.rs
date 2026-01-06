@@ -5,7 +5,8 @@
 
 use wasm_bindgen::JsCast;
 use weaver_editor_core::{
-    CursorSync, OffsetMapping, SnapDirection, find_nearest_valid_position, is_valid_cursor_position,
+    CursorSync, OffsetMapping, ParagraphRender, SnapDirection, find_nearest_valid_position,
+    is_valid_cursor_position,
 };
 
 use crate::cursor::restore_cursor_position;
@@ -46,7 +47,7 @@ impl BrowserCursorSync {
 impl CursorSync for BrowserCursorSync {
     fn sync_cursor_from_platform<F, G>(
         &self,
-        offset_map: &[OffsetMapping],
+        paragraphs: &[ParagraphRender],
         direction_hint: Option<SnapDirection>,
         on_cursor: F,
         on_selection: G,
@@ -54,7 +55,7 @@ impl CursorSync for BrowserCursorSync {
         F: FnOnce(usize),
         G: FnOnce(usize, usize),
     {
-        if let Some(result) = sync_cursor_from_dom_impl(&self.editor_id, offset_map, direction_hint)
+        if let Some(result) = sync_cursor_from_dom_impl(&self.editor_id, paragraphs, direction_hint)
         {
             match result {
                 CursorSyncResult::Cursor(offset) => on_cursor(offset),
@@ -74,13 +75,13 @@ impl CursorSync for BrowserCursorSync {
 /// Sync cursor state from DOM selection, returning the result.
 ///
 /// This is the core implementation that reads the browser's selection state
-/// and converts it to character offsets using the offset map.
+/// and converts it to character offsets using paragraph offset maps.
 pub fn sync_cursor_from_dom_impl(
     editor_id: &str,
-    offset_map: &[OffsetMapping],
+    paragraphs: &[ParagraphRender],
     direction_hint: Option<SnapDirection>,
 ) -> Option<CursorSyncResult> {
-    if offset_map.is_empty() {
+    if paragraphs.is_empty() {
         return Some(CursorSyncResult::None);
     }
 
@@ -100,7 +101,7 @@ pub fn sync_cursor_from_dom_impl(
         &editor_element,
         &anchor_node,
         anchor_offset,
-        offset_map,
+        paragraphs,
         direction_hint,
     );
     let focus_char = dom_position_to_text_offset(
@@ -108,7 +109,7 @@ pub fn sync_cursor_from_dom_impl(
         &editor_element,
         &focus_node,
         focus_offset,
-        offset_map,
+        paragraphs,
         direction_hint,
     );
 
@@ -130,13 +131,15 @@ pub fn sync_cursor_from_dom_impl(
 /// Convert a DOM position (node + offset) to a text char offset.
 ///
 /// Walks up from the node to find a container with a node ID, then uses
-/// the offset map to convert the UTF-16 offset to a character offset.
+/// the paragraph offset maps to convert the UTF-16 offset to a character offset.
+/// The `direction_hint` is used when snapping from invisible content to determine
+/// which direction to prefer.
 pub fn dom_position_to_text_offset(
     dom_document: &web_sys::Document,
     editor_element: &web_sys::Element,
     node: &web_sys::Node,
     offset_in_text_node: usize,
-    offset_map: &[OffsetMapping],
+    paragraphs: &[ParagraphRender],
     direction_hint: Option<SnapDirection>,
 ) -> Option<usize> {
     // Find the containing element with a node ID (walk up from text node).
@@ -144,19 +147,46 @@ pub fn dom_position_to_text_offset(
     let mut walked_from: Option<web_sys::Node> = None;
 
     let node_id = loop {
+        let node_name = current_node.node_name();
+        let node_id_attr = current_node
+            .dyn_ref::<web_sys::Element>()
+            .and_then(|e| e.get_attribute("id"));
+        tracing::trace!(
+            node_name = %node_name,
+            node_id_attr = ?node_id_attr,
+            "dom_position_to_text_offset: walk-up iteration"
+        );
+
         if let Some(element) = current_node.dyn_ref::<web_sys::Element>() {
             if element == editor_element {
                 // Selection is on the editor container itself.
+                // IMPORTANT: If we WALKED UP to the editor from a descendant,
+                // offset_in_text_node is the offset within that descendant, NOT the
+                // child index in the editor.
                 if let Some(ref walked_node) = walked_from {
-                    // We walked up from a descendant - find which mapping it belongs to.
-                    for mapping in offset_map {
-                        if let Some(elem) = dom_document.get_element_by_id(&mapping.node_id) {
-                            let elem_node: &web_sys::Node = elem.as_ref();
-                            if elem_node.contains(Some(walked_node)) {
-                                return Some(mapping.char_range.start);
+                    tracing::debug!(
+                        walked_from_node_name = %walked_node.node_name(),
+                        "dom_position_to_text_offset: walked up to editor from descendant"
+                    );
+
+                    // Find paragraph containing this node by checking paragraph wrapper divs.
+                    for (idx, para) in paragraphs.iter().enumerate() {
+                        if let Some(para_elem) = dom_document.get_element_by_id(&para.id) {
+                            let para_node: &web_sys::Node = para_elem.as_ref();
+                            if para_node.contains(Some(walked_node)) {
+                                tracing::trace!(
+                                    para_id = %para.id,
+                                    para_idx = idx,
+                                    char_start = para.char_range.start,
+                                    "dom_position_to_text_offset: found containing paragraph"
+                                );
+                                return Some(para.char_range.start);
                             }
                         }
                     }
+                    tracing::warn!(
+                        "dom_position_to_text_offset: walked up to editor but couldn't find containing paragraph"
+                    );
                     break None;
                 }
 
@@ -165,7 +195,7 @@ pub fn dom_position_to_text_offset(
                 if offset_in_text_node == 0 {
                     return Some(0);
                 } else if offset_in_text_node >= child_count {
-                    return offset_map.last().map(|m| m.char_range.end);
+                    return paragraphs.last().map(|p| p.char_range.end);
                 }
                 break None;
             }
@@ -175,7 +205,15 @@ pub fn dom_position_to_text_offset(
                 .or_else(|| element.get_attribute("data-node-id"));
 
             if let Some(id) = id {
+                // Match both old-style "n0" and paragraph-prefixed "p-2-n0" node IDs.
                 let is_node_id = id.starts_with('n') || id.contains("-n");
+                tracing::trace!(
+                    id = %id,
+                    is_node_id,
+                    starts_with_n = id.starts_with('n'),
+                    contains_dash_n = id.contains("-n"),
+                    "dom_position_to_text_offset: checking ID pattern"
+                );
                 if is_node_id {
                     break Some(id);
                 }
@@ -202,7 +240,7 @@ pub fn dom_position_to_text_offset(
         .unwrap_or(false);
 
     if node_is_container {
-        // offset_in_text_node is a child index.
+        // offset_in_text_node is a child index - count text content up to that child.
         let child_index = offset_in_text_node;
         let children = container.child_nodes();
         let mut text_counted = 0usize;
@@ -215,6 +253,12 @@ pub fn dom_position_to_text_offset(
             }
         }
         utf16_offset_in_container = text_counted;
+
+        tracing::debug!(
+            child_index,
+            utf16_offset = utf16_offset_in_container,
+            "dom_position_to_text_offset: node is container, using child index"
+        );
     } else {
         // Normal case: node is a text node, walk to find it.
         if let Ok(walker) =
@@ -256,38 +300,73 @@ pub fn dom_position_to_text_offset(
         }
     }
 
-    // Look up the offset in the offset map.
-    for mapping in offset_map {
-        if mapping.node_id == node_id {
-            let mapping_start = mapping.char_offset_in_node;
-            let mapping_end = mapping.char_offset_in_node + mapping.utf16_len;
+    // Log what we're looking for.
+    tracing::trace!(
+        node_id = %node_id,
+        utf16_offset = utf16_offset_in_container,
+        num_paragraphs = paragraphs.len(),
+        "dom_position_to_text_offset: looking up mapping"
+    );
 
-            if utf16_offset_in_container >= mapping_start
-                && utf16_offset_in_container <= mapping_end
-            {
-                let offset_in_mapping = utf16_offset_in_container - mapping_start;
-                let char_offset = mapping.char_range.start + offset_in_mapping;
+    // Look up the offset in paragraph offset maps.
+    for para in paragraphs {
+        for mapping in &para.offset_map {
+            if mapping.node_id == node_id {
+                let mapping_start = mapping.char_offset_in_node;
+                let mapping_end = mapping.char_offset_in_node + mapping.utf16_len;
 
-                // Check if position is valid (not on invisible content).
-                if is_valid_cursor_position(offset_map, char_offset) {
+                tracing::trace!(
+                    mapping_node_id = %mapping.node_id,
+                    mapping_start,
+                    mapping_end,
+                    char_range_start = mapping.char_range.start,
+                    char_range_end = mapping.char_range.end,
+                    "dom_position_to_text_offset: found matching node_id"
+                );
+
+                if utf16_offset_in_container >= mapping_start
+                    && utf16_offset_in_container <= mapping_end
+                {
+                    let offset_in_mapping = utf16_offset_in_container - mapping_start;
+                    let char_offset = mapping.char_range.start + offset_in_mapping;
+
+                    tracing::trace!(
+                        node_id = %node_id,
+                        utf16_offset = utf16_offset_in_container,
+                        mapping_start,
+                        mapping_end,
+                        offset_in_mapping,
+                        char_range_start = mapping.char_range.start,
+                        char_offset,
+                        "dom_position_to_text_offset: MATCHED mapping"
+                    );
+
+                    // Check if position is valid (not on invisible content).
+                    if is_valid_cursor_position(&para.offset_map, char_offset) {
+                        return Some(char_offset);
+                    }
+
+                    // Position is on invisible content, snap to nearest valid.
+                    if let Some(snapped) =
+                        find_nearest_valid_position(&para.offset_map, char_offset, direction_hint)
+                    {
+                        return Some(snapped.char_offset());
+                    }
+
+                    // Fallback to original if no snap target.
                     return Some(char_offset);
                 }
-
-                // Position is on invisible content, snap to nearest valid.
-                if let Some(snapped) =
-                    find_nearest_valid_position(offset_map, char_offset, direction_hint)
-                {
-                    return Some(snapped.char_offset());
-                }
-
-                return Some(char_offset);
             }
         }
     }
 
-    // No mapping found - try to find any valid position.
-    if let Some(snapped) = find_nearest_valid_position(offset_map, 0, direction_hint) {
-        return Some(snapped.char_offset());
+    // No mapping found - try to find any valid position in paragraphs.
+    for para in paragraphs {
+        if let Some(snapped) =
+            find_nearest_valid_position(&para.offset_map, para.char_range.start, direction_hint)
+        {
+            return Some(snapped.char_offset());
+        }
     }
 
     None
@@ -356,8 +435,8 @@ pub fn update_paragraph_dom(
     for new_para in new_paragraphs.iter() {
         let para_id = new_para.id;
         let new_hash = format!("{:x}", new_para.source_hash);
-        let is_cursor_para = new_para.char_range.start <= cursor_offset
-            && cursor_offset <= new_para.char_range.end;
+        let is_cursor_para =
+            new_para.char_range.start <= cursor_offset && cursor_offset <= new_para.char_range.end;
 
         if let Some(existing_elem) = old_elements.remove(para_id) {
             let old_hash = existing_elem.get_attribute("data-hash").unwrap_or_default();

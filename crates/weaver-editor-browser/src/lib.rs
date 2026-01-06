@@ -27,10 +27,13 @@ pub mod platform;
 pub mod visibility;
 
 // Browser cursor implementation
-pub use cursor::BrowserCursor;
+pub use cursor::{BrowserCursor, find_text_node_at_offset, restore_cursor_position};
 
 // DOM sync types
-pub use dom_sync::{BrowserCursorSync, CursorSyncResult, ParagraphDomData};
+pub use dom_sync::{
+    BrowserCursorSync, CursorSyncResult, ParagraphDomData, dom_position_to_text_offset,
+    sync_cursor_from_dom_impl, update_paragraph_dom,
+};
 
 // Event handling
 pub use events::{

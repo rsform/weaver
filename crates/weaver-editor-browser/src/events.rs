@@ -4,9 +4,10 @@
 //! the `beforeinput` event and other DOM events.
 
 use wasm_bindgen::prelude::*;
-use weaver_editor_core::{InputType, OffsetMapping, Range};
+use weaver_editor_core::{InputType, ParagraphRender, Range};
 
 use crate::dom_sync::dom_position_to_text_offset;
+use crate::platform::Platform;
 
 // === StaticRange binding ===
 //
@@ -115,15 +116,12 @@ pub struct BeforeInputContext<'a> {
     /// The data (text to insert, if any).
     pub data: Option<String>,
     /// Target range from getTargetRanges(), if available.
+    /// This is the range the browser wants to modify.
     pub target_range: Option<Range>,
     /// Whether the event is part of an IME composition.
     pub is_composing: bool,
-    /// Whether we're on Android.
-    pub is_android: bool,
-    /// Whether we're on Chrome.
-    pub is_chrome: bool,
-    /// Offset mappings for the document.
-    pub offset_map: &'a [OffsetMapping],
+    /// Platform info for quirks handling.
+    pub platform: &'a Platform,
 }
 
 /// Extract target range from a beforeinput event.
@@ -132,7 +130,7 @@ pub struct BeforeInputContext<'a> {
 pub fn get_target_range_from_event(
     event: &web_sys::InputEvent,
     editor_id: &str,
-    offset_map: &[OffsetMapping],
+    paragraphs: &[ParagraphRender],
 ) -> Option<Range> {
     use wasm_bindgen::JsCast;
 
@@ -157,7 +155,7 @@ pub fn get_target_range_from_event(
         &editor_element,
         &start_container,
         start_offset,
-        offset_map,
+        paragraphs,
         None,
     )?;
 
@@ -166,7 +164,7 @@ pub fn get_target_range_from_event(
         &editor_element,
         &end_container,
         end_offset,
-        offset_map,
+        paragraphs,
         None,
     )?;
 
@@ -337,7 +335,7 @@ pub fn handle_beforeinput<D: EditorDocument>(
         // === Deletion ===
         InputType::DeleteContentBackward => {
             // Android Chrome workaround: backspace sometimes doesn't work properly.
-            if ctx.is_android && ctx.is_chrome && range.is_caret() {
+            if ctx.platform.android && ctx.platform.chrome && range.is_caret() {
                 let action = EditorAction::DeleteBackward { range };
                 return BeforeInputResult::DeferredCheck {
                     fallback_action: action,

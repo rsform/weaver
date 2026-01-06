@@ -21,43 +21,11 @@ use super::document::EditorDocument;
 use super::platform::Platform;
 
 // Re-export types from extracted crates.
+pub use weaver_editor_browser::{BeforeInputContext, BeforeInputResult};
 pub use weaver_editor_core::{InputType, Range};
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub use weaver_editor_browser::StaticRange;
-
-/// Result of handling a beforeinput event.
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub enum BeforeInputResult {
-    /// Event was handled, prevent default browser behavior.
-    Handled,
-    /// Event should be handled by browser (e.g., during composition).
-    PassThrough,
-    /// Event was handled but requires async follow-up (e.g., paste).
-    HandledAsync,
-    /// Android backspace workaround: defer and check if browser handled it.
-    DeferredCheck {
-        /// The action to execute if browser didn't handle it.
-        fallback_action: EditorAction,
-    },
-}
-
-/// Context for beforeinput handling.
-#[allow(dead_code)]
-pub struct BeforeInputContext<'a> {
-    /// The input type.
-    pub input_type: InputType,
-    /// The data (text to insert, if any).
-    pub data: Option<String>,
-    /// Target range from getTargetRanges(), if available.
-    /// This is the range the browser wants to modify.
-    pub target_range: Option<Range>,
-    /// Whether the event is part of an IME composition.
-    pub is_composing: bool,
-    /// Platform info for quirks handling.
-    pub platform: &'a Platform,
-}
 
 /// Handle a beforeinput event.
 ///
