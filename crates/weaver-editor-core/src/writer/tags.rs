@@ -5,6 +5,7 @@ use std::ops::Range;
 
 use markdown_weaver::{Alignment, BlockQuoteKind, CodeBlockKind, EmbedType, Event, LinkType, Tag};
 use markdown_weaver_escape::{StrWrite, escape_href, escape_html, escape_html_body_text};
+use smol_str::ToSmolStr;
 
 use crate::offset_map::OffsetMapping;
 use crate::render::{EmbedContentProvider, ImageResolver, WikilinkValidator};
@@ -488,7 +489,7 @@ where
                         let lang_opt = if lang.is_empty() {
                             None
                         } else {
-                            Some(smol_str::SmolStr::new(lang))
+                            Some(lang.to_smolstr())
                         };
                         // Start buffering
                         self.code_block.buffer = Some((lang_opt, String::new()));
@@ -990,7 +991,7 @@ where
                 self.write("</span>")?;
 
                 // Store the definition info (no longer tracking syntax spans for hide/show)
-                self.footnotes.current_def = Some((name.to_string(), 0, char_start));
+                self.footnotes.current_def = Some((name.to_smolstr(), 0, char_start));
 
                 // Record offset mapping for the prefix
                 self.record_mapping(

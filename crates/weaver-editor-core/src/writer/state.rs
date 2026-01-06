@@ -272,9 +272,9 @@ pub enum WrapperElement {
 #[derive(Debug, Clone, Default)]
 pub struct FootnoteContext {
     /// Maps footnote name -> (syntax_span_index, char_start)
-    pub ref_spans: HashMap<String, (usize, usize)>,
+    pub ref_spans: HashMap<SmolStr, (usize, usize)>,
     /// Current footnote def being processed: (name, span_idx, char_start)
-    pub current_def: Option<(String, usize, usize)>,
+    pub current_def: Option<(SmolStr, usize, usize)>,
 }
 
 /// UTF-16 offset checkpoints for incremental tracking.

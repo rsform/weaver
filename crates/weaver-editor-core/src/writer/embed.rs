@@ -8,6 +8,7 @@ use jacquard::IntoStatic;
 use jacquard::types::{ident::AtIdentifier, string::Rkey};
 use markdown_weaver::{CowStr, EmbedType, Event};
 use markdown_weaver_escape::{StrWrite, escape_html};
+use smol_str::SmolStr;
 
 use crate::render::{EmbedContentProvider, ImageResolver, WikilinkValidator};
 use crate::syntax::{SyntaxSpanInfo, SyntaxType};
@@ -43,7 +44,7 @@ enum ResolvedImage {
 #[derive(Clone, Default)]
 pub struct EditorImageResolver {
     /// All resolved images: name -> resolved path info
-    images: HashMap<String, ResolvedImage>,
+    images: HashMap<SmolStr, ResolvedImage>,
 }
 
 impl EditorImageResolver {
@@ -52,8 +53,9 @@ impl EditorImageResolver {
     }
 
     /// Add a pending image with a data URL for immediate preview.
-    pub fn add_pending(&mut self, name: String, data_url: String) {
-        self.images.insert(name, ResolvedImage::Pending(data_url));
+    pub fn add_pending(&mut self, name: impl Into<SmolStr>, data_url: String) {
+        self.images
+            .insert(name.into(), ResolvedImage::Pending(data_url));
     }
 
     /// Promote a pending image to uploaded (draft) status.
@@ -64,29 +66,29 @@ impl EditorImageResolver {
         ident: AtIdentifier<'static>,
     ) {
         self.images
-            .insert(name.to_string(), ResolvedImage::Draft { blob_rkey, ident });
+            .insert(SmolStr::new(name), ResolvedImage::Draft { blob_rkey, ident });
     }
 
     /// Add an already-uploaded draft image.
     pub fn add_uploaded(
         &mut self,
-        name: String,
+        name: impl Into<SmolStr>,
         blob_rkey: Rkey<'static>,
         ident: AtIdentifier<'static>,
     ) {
         self.images
-            .insert(name, ResolvedImage::Draft { blob_rkey, ident });
+            .insert(name.into(), ResolvedImage::Draft { blob_rkey, ident });
     }
 
     /// Add a published image.
     pub fn add_published(
         &mut self,
-        name: String,
+        name: impl Into<SmolStr>,
         entry_rkey: Rkey<'static>,
         ident: AtIdentifier<'static>,
     ) {
         self.images
-            .insert(name, ResolvedImage::Published { entry_rkey, ident });
+            .insert(name.into(), ResolvedImage::Published { entry_rkey, ident });
     }
 
     /// Check if an image is pending upload.

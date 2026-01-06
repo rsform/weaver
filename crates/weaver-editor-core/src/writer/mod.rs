@@ -141,7 +141,7 @@ where
     entry_index: Option<&'a weaver_common::EntryIndex>,
 
     // === Misc ===
-    numbers: HashMap<String, usize>,
+    numbers: HashMap<SmolStr, usize>,
     pending_blockquote_range: Option<Range<usize>>,
     ref_collector: weaver_common::RefCollector,
 }
