@@ -12262,6 +12262,7 @@ dependencies = [
  "weaver-common",
  "weaver-editor-core",
  "weaver-renderer",
+ "web-time",
 ]
 
 [[package]]

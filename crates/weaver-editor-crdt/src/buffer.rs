@@ -6,7 +6,8 @@ use std::rc::Rc;
 
 use loro::{cursor::PosType, LoroDoc, LoroText, UndoManager as LoroUndoManager, VersionVector};
 use smol_str::{SmolStr, ToSmolStr};
-use weaver_editor_core::{TextBuffer, UndoManager};
+use web_time::Instant;
+use weaver_editor_core::{EditInfo, TextBuffer, UndoManager};
 
 use crate::CrdtError;
 
@@ -19,6 +20,7 @@ pub struct LoroTextBuffer {
     doc: LoroDoc,
     content: LoroText,
     undo_mgr: Rc<RefCell<LoroUndoManager>>,
+    last_edit: Option<EditInfo>,
 }
 
 impl LoroTextBuffer {
@@ -32,6 +34,7 @@ impl LoroTextBuffer {
             doc,
             content,
             undo_mgr,
+            last_edit: None,
         }
     }
 
@@ -46,6 +49,7 @@ impl LoroTextBuffer {
             doc,
             content,
             undo_mgr,
+            last_edit: None,
         })
     }
 
@@ -118,11 +122,41 @@ impl TextBuffer for LoroTextBuffer {
     }
 
     fn insert(&mut self, char_offset: usize, text: &str) {
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(char_offset);
+        let contains_newline = text.contains('\n');
+
         self.content.insert(char_offset, text).ok();
+
+        self.last_edit = Some(EditInfo {
+            edit_char_pos: char_offset,
+            inserted_len: text.chars().count(),
+            deleted_len: 0,
+            contains_newline,
+            in_block_syntax_zone,
+            doc_len_after: self.content.len_unicode(),
+            timestamp: Instant::now(),
+        });
     }
 
     fn delete(&mut self, char_range: Range<usize>) {
-        self.content.delete(char_range.start, char_range.len()).ok();
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(char_range.start);
+        let contains_newline = self
+            .slice(char_range.clone())
+            .map(|s| s.contains('\n'))
+            .unwrap_or(false);
+        let deleted_len = char_range.len();
+
+        self.content.delete(char_range.start, deleted_len).ok();
+
+        self.last_edit = Some(EditInfo {
+            edit_char_pos: char_range.start,
+            inserted_len: 0,
+            deleted_len,
+            contains_newline,
+            in_block_syntax_zone,
+            doc_len_after: self.content.len_unicode(),
+            timestamp: Instant::now(),
+        });
     }
 
     fn slice(&self, char_range: Range<usize>) -> Option<SmolStr> {
@@ -153,6 +187,10 @@ impl TextBuffer for LoroTextBuffer {
         self.content
             .convert_pos(byte_offset, PosType::Bytes, PosType::Unicode)
             .unwrap_or(self.content.len_unicode())
+    }
+
+    fn last_edit(&self) -> Option<&EditInfo> {
+        self.last_edit.as_ref()
     }
 }
 

@@ -23,6 +23,7 @@ jacquard = { workspace = true }
 loro = "1.9"
 serde = { workspace = true }
 smol_str = "0.3"
+web-time = "1"
 tracing = { workspace = true }
 thiserror = "2"
 futures-util = "0.3"

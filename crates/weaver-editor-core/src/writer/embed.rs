@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use jacquard::IntoStatic;
 use jacquard::types::{ident::AtIdentifier, string::Rkey};
-use markdown_weaver::{CowStr, Event, Tag};
+use markdown_weaver::{Event, Tag};
 use markdown_weaver_escape::{StrWrite, escape_html};
 use smol_str::SmolStr;
 

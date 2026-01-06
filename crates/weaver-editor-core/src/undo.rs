@@ -158,6 +158,10 @@ impl<T: TextBuffer> TextBuffer for UndoableBuffer<T> {
     fn byte_to_char(&self, byte_offset: usize) -> usize {
         self.buffer.byte_to_char(byte_offset)
     }
+
+    fn last_edit(&self) -> Option<&crate::types::EditInfo> {
+        self.buffer.last_edit()
+    }
 }
 
 impl<T: TextBuffer> UndoManager for UndoableBuffer<T> {

@@ -6,6 +6,9 @@
 
 use smol_str::{SmolStr, ToSmolStr};
 use std::ops::Range;
+use web_time::Instant;
+
+use crate::types::{EditInfo, BLOCK_SYNTAX_ZONE};
 
 /// A text buffer that supports efficient editing and offset conversion.
 ///
@@ -51,14 +54,44 @@ pub trait TextBuffer {
 
     /// Convert byte offset to char offset.
     fn byte_to_char(&self, byte_offset: usize) -> usize;
+
+    /// Get info about the last edit operation, if any.
+    fn last_edit(&self) -> Option<&EditInfo>;
+
+    /// Check if a char offset is in the block-syntax zone (first few chars of a line).
+    fn is_in_block_syntax_zone(&self, offset: usize) -> bool {
+        if offset <= BLOCK_SYNTAX_ZONE {
+            return true;
+        }
+
+        // Get slice of the search range and look for newline.
+        let search_start = offset.saturating_sub(BLOCK_SYNTAX_ZONE + 1);
+        match self.slice(search_start..offset) {
+            Some(s) => match s.rfind('\n') {
+                Some(pos) => (offset - search_start - pos - 1) <= BLOCK_SYNTAX_ZONE,
+                None => false, // No newline in range, offset > BLOCK_SYNTAX_ZONE.
+            },
+            None => false,
+        }
+    }
 }
 
 /// Ropey-backed text buffer for local editing.
 ///
 /// Provides O(log n) editing operations and offset conversions.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct EditorRope {
     rope: ropey::Rope,
+    last_edit: Option<EditInfo>,
+}
+
+impl Default for EditorRope {
+    fn default() -> Self {
+        Self {
+            rope: ropey::Rope::default(),
+            last_edit: None,
+        }
+    }
 }
 
 impl EditorRope {
@@ -71,6 +104,7 @@ impl EditorRope {
     pub fn from_str(s: &str) -> Self {
         Self {
             rope: ropey::Rope::from_str(s),
+            last_edit: None,
         }
     }
 
@@ -101,11 +135,41 @@ impl TextBuffer for EditorRope {
     }
 
     fn insert(&mut self, char_offset: usize, text: &str) {
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(char_offset);
+        let contains_newline = text.contains('\n');
+
         self.rope.insert(char_offset, text);
+
+        self.last_edit = Some(EditInfo {
+            edit_char_pos: char_offset,
+            inserted_len: text.chars().count(),
+            deleted_len: 0,
+            contains_newline,
+            in_block_syntax_zone,
+            doc_len_after: self.rope.len_chars(),
+            timestamp: Instant::now(),
+        });
     }
 
     fn delete(&mut self, char_range: Range<usize>) {
-        self.rope.remove(char_range);
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(char_range.start);
+        let contains_newline = self
+            .slice(char_range.clone())
+            .map(|s| s.contains('\n'))
+            .unwrap_or(false);
+        let deleted_len = char_range.len();
+
+        self.rope.remove(char_range.clone());
+
+        self.last_edit = Some(EditInfo {
+            edit_char_pos: char_range.start,
+            inserted_len: 0,
+            deleted_len,
+            contains_newline,
+            in_block_syntax_zone,
+            doc_len_after: self.rope.len_chars(),
+            timestamp: Instant::now(),
+        });
     }
 
     fn slice(&self, char_range: Range<usize>) -> Option<SmolStr> {
@@ -132,6 +196,19 @@ impl TextBuffer for EditorRope {
 
     fn byte_to_char(&self, byte_offset: usize) -> usize {
         self.rope.byte_to_char(byte_offset)
+    }
+
+    fn last_edit(&self) -> Option<&EditInfo> {
+        self.last_edit.as_ref()
+    }
+
+    fn is_in_block_syntax_zone(&self, offset: usize) -> bool {
+        if offset > self.rope.len_chars() {
+            return false;
+        }
+        let line_num = self.rope.char_to_line(offset);
+        let line_start = self.rope.line_to_char(line_num);
+        (offset - line_start) <= BLOCK_SYNTAX_ZONE
     }
 }
 
