@@ -255,3 +255,194 @@ pub async fn read_clipboard_text() -> Result<Option<String>, JsValue> {
 
     Ok(result.as_string())
 }
+
+// === BeforeInput handler ===
+
+use weaver_editor_core::{EditorAction, EditorDocument, execute_action};
+
+/// Handle a beforeinput event, dispatching to the appropriate action.
+///
+/// This is the main entry point for beforeinput-based input handling.
+/// The `current_range` parameter should be the current cursor/selection range
+/// from the document when `ctx.target_range` is None.
+///
+/// Returns the handling result indicating whether default should be prevented.
+pub fn handle_beforeinput<D: EditorDocument>(
+    doc: &mut D,
+    ctx: &BeforeInputContext<'_>,
+    current_range: Range,
+) -> BeforeInputResult {
+    // During composition, let the browser handle most things.
+    if ctx.is_composing {
+        match ctx.input_type {
+            InputType::HistoryUndo | InputType::HistoryRedo => {
+                // Handle undo/redo even during composition.
+            }
+            InputType::InsertCompositionText => {
+                return BeforeInputResult::PassThrough;
+            }
+            _ => {
+                return BeforeInputResult::PassThrough;
+            }
+        }
+    }
+
+    // Use target range from event, or fall back to current range.
+    let range = ctx.target_range.unwrap_or(current_range);
+
+    match ctx.input_type {
+        // === Insertion ===
+        InputType::InsertText => {
+            if let Some(ref text) = ctx.data {
+                let action = EditorAction::Insert {
+                    text: text.clone(),
+                    range,
+                };
+                execute_action(doc, &action);
+                BeforeInputResult::Handled
+            } else {
+                BeforeInputResult::PassThrough
+            }
+        }
+
+        InputType::InsertLineBreak => {
+            let action = EditorAction::InsertLineBreak { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::InsertParagraph => {
+            let action = EditorAction::InsertParagraph { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::InsertFromPaste | InputType::InsertReplacementText => {
+            if let Some(ref text) = ctx.data {
+                let action = EditorAction::Insert {
+                    text: text.clone(),
+                    range,
+                };
+                execute_action(doc, &action);
+                BeforeInputResult::Handled
+            } else {
+                BeforeInputResult::PassThrough
+            }
+        }
+
+        InputType::InsertFromDrop => BeforeInputResult::PassThrough,
+
+        InputType::InsertCompositionText => BeforeInputResult::PassThrough,
+
+        // === Deletion ===
+        InputType::DeleteContentBackward => {
+            // Android Chrome workaround: backspace sometimes doesn't work properly.
+            if ctx.is_android && ctx.is_chrome && range.is_caret() {
+                let action = EditorAction::DeleteBackward { range };
+                return BeforeInputResult::DeferredCheck {
+                    fallback_action: action,
+                };
+            }
+
+            let action = EditorAction::DeleteBackward { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteContentForward => {
+            let action = EditorAction::DeleteForward { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteWordBackward | InputType::DeleteEntireWordBackward => {
+            let action = EditorAction::DeleteWordBackward { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteWordForward | InputType::DeleteEntireWordForward => {
+            let action = EditorAction::DeleteWordForward { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteSoftLineBackward => {
+            let action = EditorAction::DeleteSoftLineBackward { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteSoftLineForward => {
+            let action = EditorAction::DeleteSoftLineForward { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteHardLineBackward => {
+            let action = EditorAction::DeleteToLineStart { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteHardLineForward => {
+            let action = EditorAction::DeleteToLineEnd { range };
+            execute_action(doc, &action);
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteByCut => {
+            if !range.is_caret() {
+                let action = EditorAction::DeleteBackward { range };
+                execute_action(doc, &action);
+            }
+            BeforeInputResult::Handled
+        }
+
+        InputType::DeleteByDrag | InputType::DeleteContent => {
+            if !range.is_caret() {
+                let action = EditorAction::DeleteBackward { range };
+                execute_action(doc, &action);
+            }
+            BeforeInputResult::Handled
+        }
+
+        // === History ===
+        InputType::HistoryUndo => {
+            execute_action(doc, &EditorAction::Undo);
+            BeforeInputResult::Handled
+        }
+
+        InputType::HistoryRedo => {
+            execute_action(doc, &EditorAction::Redo);
+            BeforeInputResult::Handled
+        }
+
+        // === Formatting ===
+        InputType::FormatBold => {
+            execute_action(doc, &EditorAction::ToggleBold);
+            BeforeInputResult::Handled
+        }
+
+        InputType::FormatItalic => {
+            execute_action(doc, &EditorAction::ToggleItalic);
+            BeforeInputResult::Handled
+        }
+
+        InputType::FormatStrikethrough => {
+            execute_action(doc, &EditorAction::ToggleStrikethrough);
+            BeforeInputResult::Handled
+        }
+
+        // === Not handled ===
+        InputType::InsertFromYank
+        | InputType::InsertHorizontalRule
+        | InputType::InsertOrderedList
+        | InputType::InsertUnorderedList
+        | InputType::InsertLink
+        | InputType::FormatUnderline
+        | InputType::FormatSuperscript
+        | InputType::FormatSubscript
+        | InputType::Unknown(_) => BeforeInputResult::PassThrough,
+    }
+}

@@ -12113,6 +12113,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "weaver-api",
  "weaver-common",
+ "weaver-editor-browser",
  "weaver-editor-core",
  "weaver-renderer",
  "web-sys",

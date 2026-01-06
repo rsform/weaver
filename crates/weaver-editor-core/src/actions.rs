@@ -181,6 +181,26 @@ impl InputType {
     }
 }
 
+/// High-level formatting actions for markdown editing.
+///
+/// These represent user-initiated formatting operations that wrap or modify
+/// text with markdown syntax.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FormatAction {
+    Bold,
+    Italic,
+    Strikethrough,
+    Code,
+    Link,
+    Image,
+    /// Heading level 1-6.
+    Heading(u8),
+    BulletList,
+    NumberedList,
+    Quote,
+}
+
 /// All possible editor actions.
 ///
 /// These represent semantic operations on the document, decoupled from

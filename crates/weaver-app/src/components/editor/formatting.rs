@@ -5,20 +5,8 @@ use super::document::EditorDocument;
 use super::input::{ListContext, detect_list_context, find_line_end};
 use dioxus::prelude::*;
 
-/// Formatting actions available in the editor.
-#[derive(Clone, Debug, PartialEq)]
-pub enum FormatAction {
-    Bold,
-    Italic,
-    Strikethrough,
-    Code,
-    Link,
-    Image,
-    Heading(u8), // 1-6
-    BulletList,
-    NumberedList,
-    Quote,
-}
+// FormatAction is imported from core.
+pub use weaver_editor_core::FormatAction;
 
 /// Find word boundaries around cursor position.
 ///
@@ -164,6 +152,9 @@ pub fn apply_formatting(doc: &mut EditorDocument, action: FormatAction) {
             let _ = doc.insert_tracked(line_start, "> ");
             doc.cursor.write().offset = cursor_offset + 2;
             doc.selection.set(None);
+        }
+        _ => {
+            tracing::warn!(?action, "unhandled format action");
         }
     }
 }

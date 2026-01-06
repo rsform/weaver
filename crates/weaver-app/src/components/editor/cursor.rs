@@ -8,6 +8,7 @@
 //! 4. Setting cursor with web_sys Selection API
 
 use weaver_editor_core::OffsetMapping;
+pub use weaver_editor_core::{CursorRect, SelectionRect};
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use weaver_editor_core::{SnapDirection, find_mapping_for_char, find_nearest_valid_position};
 
@@ -194,13 +195,7 @@ fn find_text_node_at_offset(
     Err("no text node found in container".into())
 }
 
-/// Screen coordinates for a cursor position.
-#[derive(Debug, Clone, Copy)]
-pub struct CursorRect {
-    pub x: f64,
-    pub y: f64,
-    pub height: f64,
-}
+// CursorRect is imported from weaver_editor_core.
 
 /// Get screen coordinates for a character offset in the editor.
 ///
@@ -290,14 +285,7 @@ pub fn get_cursor_rect_relative(
     None
 }
 
-/// A rectangle for part of a selection (one per line).
-#[derive(Debug, Clone, Copy)]
-pub struct SelectionRect {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
+// SelectionRect is imported from weaver_editor_core.
 
 /// Get screen rectangles for a selection range, relative to editor.
 ///

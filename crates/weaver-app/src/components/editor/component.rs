@@ -1238,7 +1238,7 @@ fn MarkdownEditorInner(
 
                             onkeydown: {
                             let mut doc = document.clone();
-                            let keybindings = KeybindingConfig::default_for_platform(&platform::platform());
+                            let keybindings = super::actions::default_keybindings(platform::platform());
                             move |evt| {
                                 use dioxus::prelude::keyboard_types::Key;
                                 use std::time::Duration;
@@ -1284,7 +1284,7 @@ fn MarkdownEditorInner(
                                 }
 
                                 // Try keybindings first (for shortcuts like Ctrl+B, Ctrl+Z, etc.)
-                                let combo = KeyCombo::from_keyboard_event(&evt.data());
+                                let combo = super::actions::keycombo_from_dioxus_event(&evt.data());
                                 let cursor_offset = doc.cursor.read().offset;
                                 let selection = *doc.selection.read();
                                 let range = selection

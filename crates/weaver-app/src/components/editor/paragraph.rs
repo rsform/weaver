@@ -1,54 +1,14 @@
 //! Paragraph-level rendering for incremental updates.
 //!
-//! Paragraphs are discovered during markdown rendering by tracking
-//! Tag::Paragraph events. This allows updating only changed paragraphs in the DOM.
+//! Re-exports core types and provides Loro-specific helpers.
 
 use loro::LoroText;
 use std::ops::Range;
-use weaver_editor_core::{OffsetMapping, SyntaxSpanInfo};
 
-/// A rendered paragraph with its source range and offset mappings.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ParagraphRender {
-    /// Stable content-based ID for DOM diffing (format: `p-{hash_prefix}-{collision_idx}`)
-    pub id: String,
+// Re-export core types.
+pub use weaver_editor_core::{ParagraphRender, hash_source, make_paragraph_id};
 
-    /// Source byte range in the rope
-    pub byte_range: Range<usize>,
-
-    /// Source char range in the rope
-    pub char_range: Range<usize>,
-
-    /// Rendered HTML content (without wrapper div)
-    pub html: String,
-
-    /// Offset mappings for this paragraph
-    pub offset_map: Vec<OffsetMapping>,
-
-    /// Syntax spans for conditional visibility
-    pub syntax_spans: Vec<SyntaxSpanInfo>,
-
-    /// Hash of source text for quick change detection
-    pub source_hash: u64,
-}
-
-/// Simple hash function for source text comparison
-pub fn hash_source(text: &str) -> u64 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
-    hasher.finish()
-}
-
-/// Generate a paragraph ID from monotonic counter.
-/// IDs are stable across content changes - only position/cursor determines identity.
-pub fn make_paragraph_id(id: usize) -> String {
-    format!("p-{}", id)
-}
-
-/// Extract substring from LoroText as String
+/// Extract substring from LoroText as String.
 pub fn text_slice_to_string(text: &LoroText, range: Range<usize>) -> String {
     text.slice(range.start, range.end).unwrap_or_default()
 }

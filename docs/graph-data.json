@@ -1352,6 +1352,160 @@
       "created_at": "2026-01-06T12:01:52.561290209-05:00",
       "updated_at": "2026-01-06T12:01:52.561290209-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 125,
+      "change_id": "5d4e888e-42c7-4c48-ba82-d9f18206f6e0",
+      "node_type": "action",
+      "title": "Added KeybindingConfig and hyper/super modifiers to core",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:04:23.569321382-05:00",
+      "updated_at": "2026-01-06T12:04:23.569321382-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 126,
+      "change_id": "bd54a469-fa5c-43bb-9796-3b4ccbee356f",
+      "node_type": "observation",
+      "title": "Embed worker is network fetch + cache, not DOM. Misplaced in browser crate plan. Options: stay in weaver-app, own micro-crate, or browser crate with network feature",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:08:08.392667991-05:00",
+      "updated_at": "2026-01-06T12:08:08.392667991-05:00",
+      "metadata_json": "{\"confidence\":80}"
+    },
+    {
+      "id": 127,
+      "change_id": "5aa17c55-afff-4d4a-8956-8fce165da24a",
+      "node_type": "decision",
+      "title": "Where should embed worker live?",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:09:01.110078211-05:00",
+      "updated_at": "2026-01-06T12:09:01.110078211-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 128,
+      "change_id": "761683dd-e0b9-48e3-9695-4b0ddedcd226",
+      "node_type": "option",
+      "title": "weaver-renderer - already has fetch_and_render",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:09:01.127567526-05:00",
+      "updated_at": "2026-01-06T12:09:01.127567526-05:00",
+      "metadata_json": "{\"confidence\":60}"
+    },
+    {
+      "id": 129,
+      "change_id": "229d61f2-352b-4a12-8b58-8f5f9ff5ee49",
+      "node_type": "option",
+      "title": "Own crate weaver-embed-worker - clean separation",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:09:01.144794901-05:00",
+      "updated_at": "2026-01-06T12:09:01.144794901-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 130,
+      "change_id": "795d4e93-df31-4a55-af7a-d4aee1813d22",
+      "node_type": "outcome",
+      "title": "Browser crate is fairly complete - cursor, dom_sync, events with handle_beforeinput, platform. App has duplicates that need removal.",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:13:55.962679951-05:00",
+      "updated_at": "2026-01-06T12:13:55.962679951-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 131,
+      "change_id": "29cd0f9f-a61a-4102-bc0f-04ff35735d30",
+      "node_type": "action",
+      "title": "Added WASM test infrastructure with 10 passing tests",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:16:55.818922231-05:00",
+      "updated_at": "2026-01-06T12:16:55.818922231-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 132,
+      "change_id": "d70e9274-470a-42f8-b7db-890f9e231cd1",
+      "node_type": "action",
+      "title": "Deduplicating weaver-app types by importing from core/browser crates",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:22:03.641188187-05:00",
+      "updated_at": "2026-01-06T12:22:03.641188187-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 133,
+      "change_id": "381f7585-0b04-4106-ae9c-7fac2baa2f6a",
+      "node_type": "observation",
+      "title": "Core has: Range, EditorAction, Key, Modifiers, KeyCombo, KeybindingConfig, KeydownResult, ParagraphRender, CursorState, Selection, VisibilityState, text_helpers. Browser has: Platform, StaticRange, BeforeInputResult, BeforeInputContext. App has massive duplication of all these.",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:22:11.819592056-05:00",
+      "updated_at": "2026-01-06T12:22:11.819592056-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 134,
+      "change_id": "1e8412cc-95de-473c-9ac7-f96510e7eb46",
+      "node_type": "outcome",
+      "title": "Deduplicated actions.rs and paragraph.rs - imported types from core, SmolStr consistency established",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:30:26.244030599-05:00",
+      "updated_at": "2026-01-06T12:30:26.244030599-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 135,
+      "change_id": "d4a8f89d-3926-4a60-9802-05c921d6d578",
+      "node_type": "action",
+      "title": "Moved render_cache.rs to core - generic incremental rendering over TextBuffer",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:48:54.654141279-05:00",
+      "updated_at": "2026-01-06T12:48:54.654141279-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 136,
+      "change_id": "33d19ce9-56be-4894-95ee-ce4f8d7dbbc8",
+      "node_type": "outcome",
+      "title": "Core render_cache complete: RenderCache, CachedParagraph, apply_delta, is_boundary_affecting, render_paragraphs_incremental<T: TextBuffer>",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:48:54.777507129-05:00",
+      "updated_at": "2026-01-06T12:48:54.777507129-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 137,
+      "change_id": "a5094bcf-151d-462d-85e1-b8550e65a0eb",
+      "node_type": "action",
+      "title": "Deduplicated document.rs - removed local Selection, CompositionState, EditInfo, CursorState, Affinity, BLOCK_SYNTAX_ZONE",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:49:01.242741800-05:00",
+      "updated_at": "2026-01-06T12:49:01.242741800-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 138,
+      "change_id": "439402ae-17dc-467e-9bf3-04f32a9f4931",
+      "node_type": "action",
+      "title": "Deduplicated cursor.rs - removed local CursorRect, SelectionRect",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T12:49:01.362223737-05:00",
+      "updated_at": "2026-01-06T12:49:01.362223737-05:00",
+      "metadata_json": "{\"confidence\":95}"
     }
   ],
   "edges": [
@@ -2850,6 +3004,138 @@
       "weight": 1.0,
       "rationale": "Execute action implementation outcome",
       "created_at": "2026-01-06T12:01:52.577885198-05:00"
+    },
+    {
+      "id": 138,
+      "from_node_id": 122,
+      "to_node_id": 125,
+      "from_change_id": "7179434c-6064-4ae7-9eac-1f89465e2479",
+      "to_change_id": "5d4e888e-42c7-4c48-ba82-d9f18206f6e0",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Part of extraction work",
+      "created_at": "2026-01-06T12:04:23.698114449-05:00"
+    },
+    {
+      "id": 139,
+      "from_node_id": 126,
+      "to_node_id": 127,
+      "from_change_id": "bd54a469-fa5c-43bb-9796-3b4ccbee356f",
+      "to_change_id": "5aa17c55-afff-4d4a-8956-8fce165da24a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Decision follows observation",
+      "created_at": "2026-01-06T12:09:01.163893115-05:00"
+    },
+    {
+      "id": 140,
+      "from_node_id": 127,
+      "to_node_id": 128,
+      "from_change_id": "5aa17c55-afff-4d4a-8956-8fce165da24a",
+      "to_change_id": "761683dd-e0b9-48e3-9695-4b0ddedcd226",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Option A",
+      "created_at": "2026-01-06T12:09:05.444869523-05:00"
+    },
+    {
+      "id": 141,
+      "from_node_id": 127,
+      "to_node_id": 129,
+      "from_change_id": "5aa17c55-afff-4d4a-8956-8fce165da24a",
+      "to_change_id": "229d61f2-352b-4a12-8b58-8f5f9ff5ee49",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Option B - preferred",
+      "created_at": "2026-01-06T12:09:05.461293286-05:00"
+    },
+    {
+      "id": 142,
+      "from_node_id": 122,
+      "to_node_id": 130,
+      "from_change_id": "7179434c-6064-4ae7-9eac-1f89465e2479",
+      "to_change_id": "795d4e93-df31-4a55-af7a-d4aee1813d22",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Extraction progress",
+      "created_at": "2026-01-06T12:13:55.979279744-05:00"
+    },
+    {
+      "id": 143,
+      "from_node_id": 122,
+      "to_node_id": 131,
+      "from_change_id": "7179434c-6064-4ae7-9eac-1f89465e2479",
+      "to_change_id": "29cd0f9f-a61a-4102-bc0f-04ff35735d30",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Test setup for browser crate",
+      "created_at": "2026-01-06T12:16:55.834996178-05:00"
+    },
+    {
+      "id": 144,
+      "from_node_id": 120,
+      "to_node_id": 132,
+      "from_change_id": "b192e6ab-9500-4e4b-b7c3-8b5d7a8453b7",
+      "to_change_id": "d70e9274-470a-42f8-b7db-890f9e231cd1",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Part of phase 1 extraction - removing app duplicates",
+      "created_at": "2026-01-06T12:22:11.802027921-05:00"
+    },
+    {
+      "id": 145,
+      "from_node_id": 132,
+      "to_node_id": 134,
+      "from_change_id": "d70e9274-470a-42f8-b7db-890f9e231cd1",
+      "to_change_id": "1e8412cc-95de-473c-9ac7-f96510e7eb46",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Deduplication completed",
+      "created_at": "2026-01-06T12:30:26.260547276-05:00"
+    },
+    {
+      "id": 146,
+      "from_node_id": 132,
+      "to_node_id": 135,
+      "from_change_id": "d70e9274-470a-42f8-b7db-890f9e231cd1",
+      "to_change_id": "d4a8f89d-3926-4a60-9802-05c921d6d578",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "render_cache migration is part of deduplication effort",
+      "created_at": "2026-01-06T12:49:01.496533815-05:00"
+    },
+    {
+      "id": 147,
+      "from_node_id": 135,
+      "to_node_id": 136,
+      "from_change_id": "d4a8f89d-3926-4a60-9802-05c921d6d578",
+      "to_change_id": "33d19ce9-56be-4894-95ee-ce4f8d7dbbc8",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "render_cache action leads to outcome",
+      "created_at": "2026-01-06T12:49:06.880751070-05:00"
+    },
+    {
+      "id": 148,
+      "from_node_id": 132,
+      "to_node_id": 137,
+      "from_change_id": "d70e9274-470a-42f8-b7db-890f9e231cd1",
+      "to_change_id": "a5094bcf-151d-462d-85e1-b8550e65a0eb",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "dedup effort",
+      "created_at": "2026-01-06T12:49:06.897304176-05:00"
+    },
+    {
+      "id": 149,
+      "from_node_id": 132,
+      "to_node_id": 138,
+      "from_change_id": "d70e9274-470a-42f8-b7db-890f9e231cd1",
+      "to_change_id": "439402ae-17dc-467e-9bf3-04f32a9f4931",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "dedup effort",
+      "created_at": "2026-01-06T12:49:06.980327331-05:00"
     }
   ]
 }

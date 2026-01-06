@@ -28,6 +28,9 @@ use jacquard::types::string::AtUri;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
 use weaver_api::sh_weaver::embed::images::Image;
 use weaver_api::sh_weaver::embed::records::RecordEmbed;
+pub use weaver_editor_core::{
+    Affinity, CompositionState, CursorState, EditInfo, Selection, BLOCK_SYNTAX_ZONE,
+};
 use weaver_api::sh_weaver::notebook::entry::Entry;
 
 /// Helper for working with editor images.
@@ -151,65 +154,8 @@ pub struct EditorDocument {
     pub collected_refs: Signal<Vec<weaver_common::ExtractedRef>>,
 }
 
-/// Cursor state including position and affinity.
-#[derive(Clone, Debug, Copy)]
-pub struct CursorState {
-    /// Character offset in text (NOT byte offset!)
-    pub offset: usize,
-
-    /// Prefer left/right when at boundary (for vertical cursor movement)
-    pub affinity: Affinity,
-}
-
-/// Cursor affinity for vertical movement.
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
-pub enum Affinity {
-    Before,
-    After,
-}
-
-/// Text selection with anchor and head positions.
-#[derive(Clone, Debug, Copy)]
-pub struct Selection {
-    /// Where selection started
-    pub anchor: usize,
-    /// Where cursor is now
-    pub head: usize,
-}
-
-/// IME composition state (for international text input).
-#[derive(Clone, Debug)]
-pub struct CompositionState {
-    pub start_offset: usize,
-    pub text: String,
-}
-
-/// Information about the most recent edit, used for incremental rendering optimization.
-/// Derives PartialEq so it can be used with Dioxus memos for change detection.
-#[derive(Clone, Debug, PartialEq)]
-pub struct EditInfo {
-    /// Character offset where the edit occurred
-    pub edit_char_pos: usize,
-    /// Number of characters inserted
-    pub inserted_len: usize,
-    /// Number of characters deleted
-    pub deleted_len: usize,
-    /// Whether the edit contains a newline (boundary-affecting)
-    pub contains_newline: bool,
-    /// Whether the edit is in the block-syntax zone of a line (first ~6 chars).
-    /// Edits here could affect block-level syntax like headings, lists, code fences.
-    pub in_block_syntax_zone: bool,
-    /// Document length (in chars) after this edit was applied.
-    /// Used to detect stale edit info - if current doc length doesn't match,
-    /// the edit info is from a previous render cycle and shouldn't be used.
-    pub doc_len_after: usize,
-    /// When this edit occurred. Used for idle detection in collaborative sync.
-    pub timestamp: web_time::Instant,
-}
-
-/// Max distance from line start where block syntax can appear.
-/// Covers: `######` (6), ```` ``` ```` (3), `> ` (2), `- ` (2), `999. ` (5)
-const BLOCK_SYNTAX_ZONE: usize = 6;
+// CursorState, Affinity, Selection, CompositionState, EditInfo, and BLOCK_SYNTAX_ZONE
+// are imported from weaver_editor_core.
 
 /// Pre-loaded document state that can be created outside of reactive context.
 ///

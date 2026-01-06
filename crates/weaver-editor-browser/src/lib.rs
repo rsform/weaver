@@ -24,6 +24,7 @@ pub mod cursor;
 pub mod dom_sync;
 pub mod events;
 pub mod platform;
+pub mod visibility;
 
 // Browser cursor implementation
 pub use cursor::BrowserCursor;
@@ -34,9 +35,12 @@ pub use dom_sync::{BrowserCursorSync, CursorSyncResult, ParagraphDomData};
 // Event handling
 pub use events::{
     BeforeInputContext, BeforeInputResult, StaticRange, get_data_from_event,
-    get_input_type_from_event, get_target_range_from_event, is_composing,
+    get_input_type_from_event, get_target_range_from_event, handle_beforeinput, is_composing,
     parse_browser_input_type, read_clipboard_text, write_clipboard_with_custom_type,
 };
 
 // Platform detection
 pub use platform::{Platform, platform};
+
+// Visibility updates
+pub use visibility::update_syntax_visibility;

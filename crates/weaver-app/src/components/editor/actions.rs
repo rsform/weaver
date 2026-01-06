@@ -1,747 +1,132 @@
 //! Editor actions and keybinding system.
 //!
-//! This module defines all editor operations as an enum, providing a clean
-//! abstraction layer between input events and document mutations. This enables:
-//!
-//! - Configurable keybindings (user can remap shortcuts)
-//! - Platform-specific defaults (Cmd vs Ctrl, etc.)
-//! - Consistent action handling regardless of input source
-//! - Potential for command palette, macros, etc.
-
-use std::collections::HashMap;
+//! This module re-exports core types and provides Dioxus-specific conversions
+//! and the concrete execute_action implementation for EditorDocument.
 
 use dioxus::prelude::*;
-use jacquard::smol_str::SmolStr;
 
 use super::document::EditorDocument;
 use super::platform::Platform;
 
-/// A range in the document, measured in character offsets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Range {
-    pub start: usize,
-    pub end: usize,
-}
+// Re-export core types.
+pub use weaver_editor_core::{
+    EditorAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Modifiers, Range,
+};
 
-impl Range {
-    pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
-    }
+// === Dioxus conversion helpers ===
 
-    pub fn caret(offset: usize) -> Self {
-        Self {
-            start: offset,
-            end: offset,
-        }
-    }
+/// Convert a dioxus keyboard_types::Key to our Key type.
+pub fn key_from_dioxus(key: dioxus::prelude::keyboard_types::Key) -> Key {
+    use dioxus::prelude::keyboard_types::Key as KT;
 
-    pub fn is_caret(&self) -> bool {
-        self.start == self.end
-    }
-
-    pub fn len(&self) -> usize {
-        self.end.saturating_sub(self.start)
-    }
-
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Normalize range so start <= end.
-    pub fn normalize(self) -> Self {
-        if self.start <= self.end {
-            self
-        } else {
-            Self {
-                start: self.end,
-                end: self.start,
-            }
-        }
-    }
-}
-
-/// All possible editor actions.
-///
-/// These represent semantic operations on the document, decoupled from
-/// how they're triggered (keyboard, mouse, touch, voice, etc.).
-#[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
-pub enum EditorAction {
-    // === Text Insertion ===
-    /// Insert text at the given range (replacing any selected content).
-    Insert { text: String, range: Range },
-
-    /// Insert a soft line break (Shift+Enter, `<br>` equivalent).
-    InsertLineBreak { range: Range },
-
-    /// Insert a paragraph break (Enter).
-    InsertParagraph { range: Range },
-
-    // === Deletion ===
-    /// Delete content backward (Backspace).
-    DeleteBackward { range: Range },
-
-    /// Delete content forward (Delete key).
-    DeleteForward { range: Range },
-
-    /// Delete word backward (Ctrl/Alt+Backspace).
-    DeleteWordBackward { range: Range },
-
-    /// Delete word forward (Ctrl/Alt+Delete).
-    DeleteWordForward { range: Range },
-
-    /// Delete to start of line (Cmd+Backspace on Mac).
-    DeleteToLineStart { range: Range },
-
-    /// Delete to end of line (Cmd+Delete on Mac).
-    DeleteToLineEnd { range: Range },
-
-    /// Delete to start of soft line (visual line in wrapped text).
-    DeleteSoftLineBackward { range: Range },
-
-    /// Delete to end of soft line.
-    DeleteSoftLineForward { range: Range },
-
-    // === History ===
-    /// Undo the last change.
-    Undo,
-
-    /// Redo the last undone change.
-    Redo,
-
-    // === Formatting ===
-    /// Toggle bold on selection.
-    ToggleBold,
-
-    /// Toggle italic on selection.
-    ToggleItalic,
-
-    /// Toggle inline code on selection.
-    ToggleCode,
-
-    /// Toggle strikethrough on selection.
-    ToggleStrikethrough,
-
-    /// Insert/wrap with link.
-    InsertLink,
-
-    // === Clipboard ===
-    /// Cut selection to clipboard.
-    Cut,
-
-    /// Copy selection to clipboard.
-    Copy,
-
-    /// Paste from clipboard at range.
-    Paste { range: Range },
-
-    /// Copy selection as rendered HTML.
-    CopyAsHtml,
-
-    // === Selection ===
-    /// Select all content.
-    SelectAll,
-
-    // === Navigation (for command palette / programmatic use) ===
-    /// Move cursor to position.
-    MoveCursor { offset: usize },
-
-    /// Extend selection to position.
-    ExtendSelection { offset: usize },
-}
-
-impl EditorAction {
-    /// Update the range in actions that use one.
-    /// Actions without a range are returned unchanged.
-    pub fn with_range(self, range: Range) -> Self {
-        match self {
-            Self::Insert { text, .. } => Self::Insert { text, range },
-            Self::InsertLineBreak { .. } => Self::InsertLineBreak { range },
-            Self::InsertParagraph { .. } => Self::InsertParagraph { range },
-            Self::DeleteBackward { .. } => Self::DeleteBackward { range },
-            Self::DeleteForward { .. } => Self::DeleteForward { range },
-            Self::DeleteWordBackward { .. } => Self::DeleteWordBackward { range },
-            Self::DeleteWordForward { .. } => Self::DeleteWordForward { range },
-            Self::DeleteToLineStart { .. } => Self::DeleteToLineStart { range },
-            Self::DeleteToLineEnd { .. } => Self::DeleteToLineEnd { range },
-            Self::DeleteSoftLineBackward { .. } => Self::DeleteSoftLineBackward { range },
-            Self::DeleteSoftLineForward { .. } => Self::DeleteSoftLineForward { range },
-            Self::Paste { .. } => Self::Paste { range },
-            // Actions without range stay unchanged
-            other => other,
-        }
+    match key {
+        KT::Character(s) => Key::character(s.as_str()),
+        KT::Unidentified => Key::Unidentified,
+        KT::Backspace => Key::Backspace,
+        KT::Delete => Key::Delete,
+        KT::Enter => Key::Enter,
+        KT::Tab => Key::Tab,
+        KT::Escape => Key::Escape,
+        KT::Insert => Key::Insert,
+        KT::Clear => Key::Clear,
+        KT::ArrowLeft => Key::ArrowLeft,
+        KT::ArrowRight => Key::ArrowRight,
+        KT::ArrowUp => Key::ArrowUp,
+        KT::ArrowDown => Key::ArrowDown,
+        KT::Home => Key::Home,
+        KT::End => Key::End,
+        KT::PageUp => Key::PageUp,
+        KT::PageDown => Key::PageDown,
+        KT::Alt => Key::Alt,
+        KT::AltGraph => Key::AltGraph,
+        KT::CapsLock => Key::CapsLock,
+        KT::Control => Key::Control,
+        KT::Fn => Key::Fn,
+        KT::FnLock => Key::FnLock,
+        KT::Meta => Key::Meta,
+        KT::NumLock => Key::NumLock,
+        KT::ScrollLock => Key::ScrollLock,
+        KT::Shift => Key::Shift,
+        KT::Symbol => Key::Symbol,
+        KT::SymbolLock => Key::SymbolLock,
+        KT::Hyper => Key::Hyper,
+        KT::Super => Key::Super,
+        KT::F1 => Key::F1,
+        KT::F2 => Key::F2,
+        KT::F3 => Key::F3,
+        KT::F4 => Key::F4,
+        KT::F5 => Key::F5,
+        KT::F6 => Key::F6,
+        KT::F7 => Key::F7,
+        KT::F8 => Key::F8,
+        KT::F9 => Key::F9,
+        KT::F10 => Key::F10,
+        KT::F11 => Key::F11,
+        KT::F12 => Key::F12,
+        KT::F13 => Key::F13,
+        KT::F14 => Key::F14,
+        KT::F15 => Key::F15,
+        KT::F16 => Key::F16,
+        KT::F17 => Key::F17,
+        KT::F18 => Key::F18,
+        KT::F19 => Key::F19,
+        KT::F20 => Key::F20,
+        KT::ContextMenu => Key::ContextMenu,
+        KT::PrintScreen => Key::PrintScreen,
+        KT::Pause => Key::Pause,
+        KT::Help => Key::Help,
+        KT::Copy => Key::Copy,
+        KT::Cut => Key::Cut,
+        KT::Paste => Key::Paste,
+        KT::Undo => Key::Undo,
+        KT::Redo => Key::Redo,
+        KT::Find => Key::Find,
+        KT::Select => Key::Select,
+        KT::MediaPlayPause => Key::MediaPlayPause,
+        KT::MediaStop => Key::MediaStop,
+        KT::MediaTrackNext => Key::MediaTrackNext,
+        KT::MediaTrackPrevious => Key::MediaTrackPrevious,
+        KT::AudioVolumeDown => Key::AudioVolumeDown,
+        KT::AudioVolumeUp => Key::AudioVolumeUp,
+        KT::AudioVolumeMute => Key::AudioVolumeMute,
+        KT::Compose => Key::Compose,
+        KT::Convert => Key::Convert,
+        KT::NonConvert => Key::NonConvert,
+        KT::Dead => Key::Dead,
+        KT::HangulMode => Key::HangulMode,
+        KT::HanjaMode => Key::HanjaMode,
+        KT::JunjaMode => Key::JunjaMode,
+        KT::Eisu => Key::Eisu,
+        KT::Hankaku => Key::Hankaku,
+        KT::Hiragana => Key::Hiragana,
+        KT::HiraganaKatakana => Key::HiraganaKatakana,
+        KT::KanaMode => Key::KanaMode,
+        KT::KanjiMode => Key::KanjiMode,
+        KT::Katakana => Key::Katakana,
+        KT::Romaji => Key::Romaji,
+        KT::Zenkaku => Key::Zenkaku,
+        KT::ZenkakuHankaku => Key::ZenkakuHankaku,
+        _ => Key::Unidentified,
     }
 }
 
-/// Key values for keyboard input.
-///
-/// Mirrors the keyboard-types crate's Key enum structure. Character keys use
-/// SmolStr to efficiently handle both single characters and composed sequences
-/// (from dead keys, IME, etc.).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
-pub enum Key {
-    /// A character key. The string corresponds to the character typed,
-    /// taking into account locale, modifiers, and keyboard mapping.
-    /// May be multiple characters for composed sequences.
-    Character(SmolStr),
-
-    /// Unknown/unidentified key.
-    Unidentified,
-
-    // === Whitespace / editing ===
-    Backspace,
-    Delete,
-    Enter,
-    Tab,
-    Escape,
-    Space,
-    Insert,
-    Clear,
-
-    // === Navigation ===
-    ArrowLeft,
-    ArrowRight,
-    ArrowUp,
-    ArrowDown,
-    Home,
-    End,
-    PageUp,
-    PageDown,
-
-    // === Modifiers ===
-    Alt,
-    AltGraph,
-    CapsLock,
-    Control,
-    Fn,
-    FnLock,
-    Meta,
-    NumLock,
-    ScrollLock,
-    Shift,
-    Symbol,
-    SymbolLock,
-    Hyper,
-    Super,
-
-    // === Function keys ===
-    F1,
-    F2,
-    F3,
-    F4,
-    F5,
-    F6,
-    F7,
-    F8,
-    F9,
-    F10,
-    F11,
-    F12,
-    F13,
-    F14,
-    F15,
-    F16,
-    F17,
-    F18,
-    F19,
-    F20,
-
-    // === UI keys ===
-    ContextMenu,
-    PrintScreen,
-    Pause,
-    Help,
-
-    // === Clipboard / editing commands ===
-    Copy,
-    Cut,
-    Paste,
-    Undo,
-    Redo,
-    Find,
-    Select,
-
-    // === Media keys ===
-    MediaPlayPause,
-    MediaStop,
-    MediaTrackNext,
-    MediaTrackPrevious,
-    AudioVolumeDown,
-    AudioVolumeUp,
-    AudioVolumeMute,
-
-    // === IME / composition ===
-    Compose,
-    Convert,
-    NonConvert,
-    Dead,
-
-    // === CJK IME keys ===
-    HangulMode,
-    HanjaMode,
-    JunjaMode,
-    Eisu,
-    Hankaku,
-    Hiragana,
-    HiraganaKatakana,
-    KanaMode,
-    KanjiMode,
-    Katakana,
-    Romaji,
-    Zenkaku,
-    ZenkakuHankaku,
-}
-
-impl Key {
-    /// Create a character key from a string.
-    pub fn character(s: impl Into<SmolStr>) -> Self {
-        Self::Character(s.into())
-    }
-
-    /// Convert from a dioxus keyboard_types::Key.
-    pub fn from_keyboard_types(key: dioxus::prelude::keyboard_types::Key) -> Self {
-        use dioxus::prelude::keyboard_types::Key as KT;
-
-        match key {
-            KT::Character(s) => Self::Character(s.as_str().into()),
-            KT::Unidentified => Self::Unidentified,
-
-            // Whitespace / editing
-            KT::Backspace => Self::Backspace,
-            KT::Delete => Self::Delete,
-            KT::Enter => Self::Enter,
-            KT::Tab => Self::Tab,
-            KT::Escape => Self::Escape,
-            KT::Insert => Self::Insert,
-            KT::Clear => Self::Clear,
-
-            // Navigation
-            KT::ArrowLeft => Self::ArrowLeft,
-            KT::ArrowRight => Self::ArrowRight,
-            KT::ArrowUp => Self::ArrowUp,
-            KT::ArrowDown => Self::ArrowDown,
-            KT::Home => Self::Home,
-            KT::End => Self::End,
-            KT::PageUp => Self::PageUp,
-            KT::PageDown => Self::PageDown,
-
-            // Modifiers
-            KT::Alt => Self::Alt,
-            KT::AltGraph => Self::AltGraph,
-            KT::CapsLock => Self::CapsLock,
-            KT::Control => Self::Control,
-            KT::Fn => Self::Fn,
-            KT::FnLock => Self::FnLock,
-            KT::Meta => Self::Meta,
-            KT::NumLock => Self::NumLock,
-            KT::ScrollLock => Self::ScrollLock,
-            KT::Shift => Self::Shift,
-            KT::Symbol => Self::Symbol,
-            KT::SymbolLock => Self::SymbolLock,
-            KT::Hyper => Self::Hyper,
-            KT::Super => Self::Super,
-
-            // Function keys
-            KT::F1 => Self::F1,
-            KT::F2 => Self::F2,
-            KT::F3 => Self::F3,
-            KT::F4 => Self::F4,
-            KT::F5 => Self::F5,
-            KT::F6 => Self::F6,
-            KT::F7 => Self::F7,
-            KT::F8 => Self::F8,
-            KT::F9 => Self::F9,
-            KT::F10 => Self::F10,
-            KT::F11 => Self::F11,
-            KT::F12 => Self::F12,
-            KT::F13 => Self::F13,
-            KT::F14 => Self::F14,
-            KT::F15 => Self::F15,
-            KT::F16 => Self::F16,
-            KT::F17 => Self::F17,
-            KT::F18 => Self::F18,
-            KT::F19 => Self::F19,
-            KT::F20 => Self::F20,
-
-            // UI keys
-            KT::ContextMenu => Self::ContextMenu,
-            KT::PrintScreen => Self::PrintScreen,
-            KT::Pause => Self::Pause,
-            KT::Help => Self::Help,
-
-            // Clipboard / editing commands
-            KT::Copy => Self::Copy,
-            KT::Cut => Self::Cut,
-            KT::Paste => Self::Paste,
-            KT::Undo => Self::Undo,
-            KT::Redo => Self::Redo,
-            KT::Find => Self::Find,
-            KT::Select => Self::Select,
-
-            // Media keys
-            KT::MediaPlayPause => Self::MediaPlayPause,
-            KT::MediaStop => Self::MediaStop,
-            KT::MediaTrackNext => Self::MediaTrackNext,
-            KT::MediaTrackPrevious => Self::MediaTrackPrevious,
-            KT::AudioVolumeDown => Self::AudioVolumeDown,
-            KT::AudioVolumeUp => Self::AudioVolumeUp,
-            KT::AudioVolumeMute => Self::AudioVolumeMute,
-
-            // IME / composition
-            KT::Compose => Self::Compose,
-            KT::Convert => Self::Convert,
-            KT::NonConvert => Self::NonConvert,
-            KT::Dead => Self::Dead,
-
-            // CJK IME keys
-            KT::HangulMode => Self::HangulMode,
-            KT::HanjaMode => Self::HanjaMode,
-            KT::JunjaMode => Self::JunjaMode,
-            KT::Eisu => Self::Eisu,
-            KT::Hankaku => Self::Hankaku,
-            KT::Hiragana => Self::Hiragana,
-            KT::HiraganaKatakana => Self::HiraganaKatakana,
-            KT::KanaMode => Self::KanaMode,
-            KT::KanjiMode => Self::KanjiMode,
-            KT::Katakana => Self::Katakana,
-            KT::Romaji => Self::Romaji,
-            KT::Zenkaku => Self::Zenkaku,
-            KT::ZenkakuHankaku => Self::ZenkakuHankaku,
-
-            // Everything else falls through to Unidentified
-            _ => Self::Unidentified,
-        }
-    }
-
-    /// Check if this is a navigation key that should pass through to browser.
-    pub fn is_navigation(&self) -> bool {
-        matches!(
-            self,
-            Self::ArrowLeft
-                | Self::ArrowRight
-                | Self::ArrowUp
-                | Self::ArrowDown
-                | Self::Home
-                | Self::End
-                | Self::PageUp
-                | Self::PageDown
-        )
-    }
-
-    /// Check if this is a modifier key.
-    pub fn is_modifier(&self) -> bool {
-        matches!(
-            self,
-            Self::Alt
-                | Self::AltGraph
-                | Self::CapsLock
-                | Self::Control
-                | Self::Fn
-                | Self::FnLock
-                | Self::Meta
-                | Self::NumLock
-                | Self::ScrollLock
-                | Self::Shift
-                | Self::Symbol
-                | Self::SymbolLock
-                | Self::Hyper
-                | Self::Super
-        )
-    }
-}
-
-/// Modifier key state for a key combination.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct Modifiers {
-    pub ctrl: bool,
-    pub alt: bool,
-    pub shift: bool,
-    pub meta: bool,
-    pub hyper: bool,
-    pub super_: bool, // `super` is a keyword
-}
-
-#[allow(dead_code)]
-impl Modifiers {
-    pub const NONE: Self = Self {
-        ctrl: false,
-        alt: false,
-        shift: false,
-        meta: false,
+/// Create a KeyCombo from a dioxus keyboard event.
+pub fn keycombo_from_dioxus_event(event: &dioxus::events::KeyboardData) -> KeyCombo {
+    let key = key_from_dioxus(event.key());
+    let modifiers = Modifiers {
+        ctrl: event.modifiers().ctrl(),
+        alt: event.modifiers().alt(),
+        shift: event.modifiers().shift(),
+        meta: event.modifiers().meta(),
         hyper: false,
         super_: false,
     };
-    pub const CTRL: Self = Self {
-        ctrl: true,
-        alt: false,
-        shift: false,
-        meta: false,
-        hyper: false,
-        super_: false,
-    };
-    pub const ALT: Self = Self {
-        ctrl: false,
-        alt: true,
-        shift: false,
-        meta: false,
-        hyper: false,
-        super_: false,
-    };
-    pub const SHIFT: Self = Self {
-        ctrl: false,
-        alt: false,
-        shift: true,
-        meta: false,
-        hyper: false,
-        super_: false,
-    };
-    pub const META: Self = Self {
-        ctrl: false,
-        alt: false,
-        shift: false,
-        meta: true,
-        hyper: false,
-        super_: false,
-    };
-    pub const HYPER: Self = Self {
-        ctrl: false,
-        alt: false,
-        shift: false,
-        meta: false,
-        hyper: true,
-        super_: false,
-    };
-    pub const SUPER: Self = Self {
-        ctrl: false,
-        alt: false,
-        shift: false,
-        meta: false,
-        hyper: false,
-        super_: true,
-    };
-    pub const CTRL_SHIFT: Self = Self {
-        ctrl: true,
-        alt: false,
-        shift: true,
-        meta: false,
-        hyper: false,
-        super_: false,
-    };
-    pub const META_SHIFT: Self = Self {
-        ctrl: false,
-        alt: false,
-        shift: true,
-        meta: true,
-        hyper: false,
-        super_: false,
-    };
-
-    /// Get the platform's primary modifier (Cmd on Mac, Ctrl elsewhere).
-    pub fn cmd_or_ctrl(platform: &Platform) -> Self {
-        if platform.mac { Self::META } else { Self::CTRL }
-    }
-
-    /// Get the platform's primary modifier + Shift.
-    pub fn cmd_or_ctrl_shift(platform: &Platform) -> Self {
-        if platform.mac {
-            Self::META_SHIFT
-        } else {
-            Self::CTRL_SHIFT
-        }
-    }
+    KeyCombo::with_modifiers(key, modifiers)
 }
 
-/// A key combination for triggering an action.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct KeyCombo {
-    pub key: Key,
-    pub modifiers: Modifiers,
-}
-
-impl KeyCombo {
-    pub fn new(key: Key) -> Self {
-        Self {
-            key,
-            modifiers: Modifiers::NONE,
-        }
-    }
-
-    pub fn with_modifiers(key: Key, modifiers: Modifiers) -> Self {
-        Self { key, modifiers }
-    }
-
-    pub fn ctrl(key: Key) -> Self {
-        Self {
-            key,
-            modifiers: Modifiers::CTRL,
-        }
-    }
-
-    pub fn meta(key: Key) -> Self {
-        Self {
-            key,
-            modifiers: Modifiers::META,
-        }
-    }
-
-    pub fn shift(key: Key) -> Self {
-        Self {
-            key,
-            modifiers: Modifiers::SHIFT,
-        }
-    }
-
-    pub fn cmd_or_ctrl(key: Key, platform: &Platform) -> Self {
-        Self {
-            key,
-            modifiers: Modifiers::cmd_or_ctrl(platform),
-        }
-    }
-
-    pub fn cmd_or_ctrl_shift(key: Key, platform: &Platform) -> Self {
-        Self {
-            key,
-            modifiers: Modifiers::cmd_or_ctrl_shift(platform),
-        }
-    }
-
-    /// Create a KeyCombo from a dioxus keyboard event.
-    pub fn from_keyboard_event(event: &dioxus::events::KeyboardData) -> Self {
-        let key = Key::from_keyboard_types(event.key());
-        let modifiers = Modifiers {
-            ctrl: event.modifiers().ctrl(),
-            alt: event.modifiers().alt(),
-            shift: event.modifiers().shift(),
-            meta: event.modifiers().meta(),
-            // dioxus doesn't expose hyper/super separately, they typically map to meta
-            hyper: false,
-            super_: false,
-        };
-        Self { key, modifiers }
-    }
-}
-
-/// Keybinding configuration for the editor.
-///
-/// Uses a HashMap for O(1) keybinding lookup.
-#[derive(Debug, Clone)]
-pub struct KeybindingConfig {
-    bindings: HashMap<KeyCombo, EditorAction>,
-}
-
-impl KeybindingConfig {
-    /// Create default keybindings for the given platform.
-    pub fn default_for_platform(platform: &Platform) -> Self {
-        let mut bindings = HashMap::new();
-
-        // === Formatting ===
-        bindings.insert(
-            KeyCombo::cmd_or_ctrl(Key::character("b"), platform),
-            EditorAction::ToggleBold,
-        );
-        bindings.insert(
-            KeyCombo::cmd_or_ctrl(Key::character("i"), platform),
-            EditorAction::ToggleItalic,
-        );
-        bindings.insert(
-            KeyCombo::cmd_or_ctrl(Key::character("e"), platform),
-            EditorAction::CopyAsHtml,
-        );
-
-        // === History ===
-        bindings.insert(
-            KeyCombo::cmd_or_ctrl(Key::character("z"), platform),
-            EditorAction::Undo,
-        );
-
-        // Redo: Cmd+Shift+Z on Mac, Ctrl+Y or Ctrl+Shift+Z elsewhere
-        if platform.mac {
-            bindings.insert(
-                KeyCombo::cmd_or_ctrl_shift(Key::character("Z"), platform),
-                EditorAction::Redo,
-            );
-        } else {
-            bindings.insert(KeyCombo::ctrl(Key::character("y")), EditorAction::Redo);
-            bindings.insert(
-                KeyCombo::with_modifiers(Key::character("Z"), Modifiers::CTRL_SHIFT),
-                EditorAction::Redo,
-            );
-        }
-
-        // === Selection ===
-        bindings.insert(
-            KeyCombo::cmd_or_ctrl(Key::character("a"), platform),
-            EditorAction::SelectAll,
-        );
-
-        // === Line deletion ===
-        if platform.mac {
-            bindings.insert(
-                KeyCombo::meta(Key::Backspace),
-                EditorAction::DeleteToLineStart {
-                    range: Range::caret(0),
-                },
-            );
-            bindings.insert(
-                KeyCombo::meta(Key::Delete),
-                EditorAction::DeleteToLineEnd {
-                    range: Range::caret(0),
-                },
-            );
-        }
-
-        // === Enter behaviour ===
-        // Enter = soft break (single newline)
-        bindings.insert(
-            KeyCombo::new(Key::Enter),
-            EditorAction::InsertLineBreak {
-                range: Range::caret(0),
-            },
-        );
-        // Shift+Enter = paragraph break (double newline)
-        bindings.insert(
-            KeyCombo::shift(Key::Enter),
-            EditorAction::InsertParagraph {
-                range: Range::caret(0),
-            },
-        );
-
-        bindings.insert(KeyCombo::new(Key::Undo), EditorAction::Undo);
-        bindings.insert(KeyCombo::new(Key::Redo), EditorAction::Redo);
-        bindings.insert(KeyCombo::new(Key::Copy), EditorAction::Copy);
-        bindings.insert(KeyCombo::new(Key::Cut), EditorAction::Cut);
-        bindings.insert(
-            KeyCombo::new(Key::Paste),
-            EditorAction::Paste {
-                range: Range::caret(0),
-            },
-        );
-        bindings.insert(KeyCombo::new(Key::Select), EditorAction::SelectAll);
-
-        Self { bindings }
-    }
-
-    /// Look up an action for the given key combo, with the current range applied.
-    pub fn lookup(&self, combo: KeyCombo, range: Range) -> Option<EditorAction> {
-        self.bindings
-            .get(&combo)
-            .cloned()
-            .map(|a| a.with_range(range))
-    }
-
-    /// Add or replace a keybinding.
-    #[allow(dead_code)]
-    pub fn bind(&mut self, combo: KeyCombo, action: EditorAction) {
-        self.bindings.insert(combo, action);
-    }
-
-    /// Remove a keybinding.
-    #[allow(dead_code)]
-    pub fn unbind(&mut self, combo: KeyCombo) {
-        self.bindings.remove(&combo);
-    }
+/// Create a default KeybindingConfig for the given platform.
+pub fn default_keybindings(platform: &Platform) -> KeybindingConfig {
+    KeybindingConfig::default_for_platform(platform.mac)
 }
 
 /// Execute an editor action on a document.
@@ -1248,17 +633,6 @@ fn find_word_boundary_forward(doc: &EditorDocument, cursor: usize) -> usize {
     pos
 }
 
-/// Result of handling a keydown event.
-#[derive(Debug, Clone, PartialEq)]
-pub enum KeydownResult {
-    /// Event was handled, prevent default.
-    Handled,
-    /// Event was not a keybinding, let browser/beforeinput handle it.
-    NotHandled,
-    /// Event should be passed through (navigation, etc.).
-    PassThrough,
-}
-
 /// Handle a keydown event using the keybinding configuration.
 ///
 /// This handles keyboard shortcuts only. Text input and deletion
@@ -1271,7 +645,7 @@ pub fn handle_keydown_with_bindings(
     range: Range,
 ) -> KeydownResult {
     // Look up keybinding (range is applied by lookup)
-    if let Some(action) = config.lookup(combo.clone(), range) {
+    if let Some(action) = config.lookup(&combo, range) {
         execute_action(doc, &action);
         return KeydownResult::Handled;
     }
