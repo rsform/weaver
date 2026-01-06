@@ -1170,3 +1170,46 @@ impl PartialEq for EditorDocument {
         false
     }
 }
+
+impl weaver_editor_crdt::CrdtDocument for EditorDocument {
+    fn export_snapshot(&self) -> Vec<u8> {
+        self.export_snapshot()
+    }
+
+    fn export_updates_since_sync(&self) -> Option<Vec<u8>> {
+        self.export_updates_since_sync()
+    }
+
+    fn import(&mut self, data: &[u8]) -> Result<(), weaver_editor_crdt::CrdtError> {
+        self.import_updates(data)
+            .map_err(|e| weaver_editor_crdt::CrdtError::Import(e.to_string()))
+    }
+
+    fn version(&self) -> VersionVector {
+        self.version_vector()
+    }
+
+    fn edit_root(&self) -> Option<StrongRef<'static>> {
+        self.edit_root()
+    }
+
+    fn set_edit_root(&mut self, root: Option<StrongRef<'static>>) {
+        self.set_edit_root(root);
+    }
+
+    fn last_diff(&self) -> Option<StrongRef<'static>> {
+        self.last_diff()
+    }
+
+    fn set_last_diff(&mut self, diff: Option<StrongRef<'static>>) {
+        self.set_last_diff(diff);
+    }
+
+    fn mark_synced(&mut self) {
+        self.mark_synced();
+    }
+
+    fn has_unsynced_changes(&self) -> bool {
+        self.has_unsynced_changes()
+    }
+}

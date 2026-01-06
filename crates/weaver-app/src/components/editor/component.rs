@@ -501,7 +501,7 @@ fn MarkdownEditorInner(
     // Background fetch for AT embeds via worker
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
-        use super::worker::{EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput};
+        use weaver_embed_worker::{EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput};
         use dioxus::prelude::Writable;
         use gloo_worker::Spawnable;
 
@@ -731,7 +731,7 @@ fn MarkdownEditorInner(
     // Worker-based autosave (offloads export + encode to worker thread)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
-        use super::worker::{EditorReactor, WorkerInput, WorkerOutput};
+        use weaver_editor_crdt::{EditorReactor, WorkerInput, WorkerOutput};
         use gloo_storage::Storage;
         use gloo_worker::Spawnable;
         use gloo_worker::reactor::ReactorBridge;
@@ -964,7 +964,7 @@ fn MarkdownEditorInner(
             tracing::debug!(input_type = %input_type_str, "beforeinput");
 
             let plat = platform::platform();
-            let input_type = InputType::from_str(&input_type_str);
+            let input_type = weaver_editor_browser::parse_browser_input_type(&input_type_str);
             let is_composing = evt.is_composing();
 
             // Get target range from the event if available
@@ -1444,7 +1444,6 @@ fn MarkdownEditorInner(
                                                         let _ = crate::components::editor::cursor::restore_cursor_position(
                                                             offset,
                                                             &map,
-                                                            editor_id,
                                                             None,
                                                         );
                                                         return;

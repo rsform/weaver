@@ -24,8 +24,6 @@ mod storage;
 mod sync;
 mod toolbar;
 mod visibility;
-#[cfg(all(target_family = "wasm", target_os = "unknown"))]
-mod worker;
 mod writer;
 
 #[cfg(test)]
@@ -96,9 +94,10 @@ pub use visibility::VisibilityState;
 #[allow(unused_imports)]
 pub use log_buffer::LogCaptureLayer;
 
-// Worker - EditorReactor stays local, EmbedWorker comes from weaver-embed-worker
+// Worker types from weaver-editor-crdt
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-pub use worker::{EditorReactor, WorkerInput, WorkerOutput};
+pub use weaver_editor_crdt::{EditorReactor, WorkerInput, WorkerOutput};
+// Embed worker from weaver-embed-worker
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub use weaver_embed_worker::{EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput};
 

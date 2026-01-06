@@ -2589,6 +2589,35 @@ pub trait WeaverExt: AgentSessionExt + XrpcExt + Send + Sync + Sized {
             Ok(contributors.into_iter().collect())
         }
     }
+
+    /// Fetch a blob from any PDS by DID and CID.
+    ///
+    /// Resolves the DID to find its PDS, then fetches the blob.
+    fn fetch_blob<'a>(
+        &'a self,
+        did: &'a Did<'_>,
+        cid: &'a jacquard::types::string::Cid<'_>,
+    ) -> impl Future<Output = Result<Bytes, WeaverError>> + 'a {
+        async move {
+            use weaver_api::com_atproto::sync::get_blob::GetBlob;
+
+            let pds_url = self.pds_for_did(did).await.map_err(|e| {
+                AgentError::from(ClientError::from(e).with_context("Failed to resolve PDS for DID"))
+            })?;
+
+            let request = GetBlob::new().did(did.clone()).cid(cid.clone()).build();
+
+            let response = self
+                .xrpc(pds_url)
+                .send(&request)
+                .await
+                .map_err(|e| AgentError::from(ClientError::from(e)))?;
+
+            let output = response.into_output().map_err(|e| AgentError::xrpc(e))?;
+
+            Ok(output.body)
+        }
+    }
 }
 
 /// A version of a record from a collaborator's repository.

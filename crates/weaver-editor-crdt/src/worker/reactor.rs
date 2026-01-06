@@ -1,10 +1,10 @@
-//! Web Worker for offloading expensive editor operations.
+//! Web Worker reactor for offloading expensive editor operations.
 //!
 //! This worker maintains a shadow copy of the Loro document and handles
 //! CPU-intensive operations like snapshot export and base64 encoding
 //! off the main thread.
 //!
-//! When the `collab-worker` feature is enabled, also handles iroh P2P
+//! When the `collab` feature is enabled, also handles iroh P2P
 //! networking for real-time collaboration.
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
@@ -138,18 +138,18 @@ mod worker_impl {
     use gloo_worker::reactor::{ReactorScope, reactor};
     use weaver_common::transport::CollaboratorInfo;
 
-    #[cfg(feature = "collab-worker")]
+    #[cfg(feature = "collab")]
     use jacquard::smol_str::ToSmolStr;
-    #[cfg(feature = "collab-worker")]
+    #[cfg(feature = "collab")]
     use std::sync::Arc;
-    #[cfg(feature = "collab-worker")]
+    #[cfg(feature = "collab")]
     use weaver_common::transport::{
         CollabMessage, CollabNode, CollabSession, PresenceTracker, SessionEvent, TopicId,
         parse_node_id,
     };
 
     /// Internal event from gossip handler task to main reactor loop.
-    #[cfg(feature = "collab-worker")]
+    #[cfg(feature = "collab")]
     enum CollabEvent {
         RemoteUpdates { data: Vec<u8> },
         PresenceChanged(PresenceSnapshot),
@@ -162,18 +162,18 @@ mod worker_impl {
         let mut doc: Option<loro::LoroDoc> = None;
         let mut draft_key = SmolStr::default();
 
-        // Collab state (only used when collab-worker feature enabled)
-        #[cfg(feature = "collab-worker")]
+        // Collab state (only used when collab feature enabled)
+        #[cfg(feature = "collab")]
         let mut collab_node: Option<Arc<CollabNode>> = None;
-        #[cfg(feature = "collab-worker")]
+        #[cfg(feature = "collab")]
         let mut collab_session: Option<Arc<CollabSession>> = None;
-        #[cfg(feature = "collab-worker")]
+        #[cfg(feature = "collab")]
         let mut collab_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<CollabEvent>> = None;
-        #[cfg(feature = "collab-worker")]
+        #[cfg(feature = "collab")]
         const OUR_COLOR: u32 = 0x4ECDC4FF;
 
         // Helper enum for racing coordinator messages vs collab events
-        #[cfg(feature = "collab-worker")]
+        #[cfg(feature = "collab")]
         enum RaceResult {
             CoordinatorMsg(Option<WorkerInput>),
             CollabEvent(Option<CollabEvent>),
@@ -181,7 +181,7 @@ mod worker_impl {
 
         loop {
             // Race between coordinator messages and collab events
-            #[cfg(feature = "collab-worker")]
+            #[cfg(feature = "collab")]
             let race_result = if let Some(ref mut event_rx) = collab_event_rx {
                 use n0_future::FutureExt;
                 let coord_fut = async { RaceResult::CoordinatorMsg(scope.next().await) };
@@ -191,7 +191,7 @@ mod worker_impl {
                 RaceResult::CoordinatorMsg(scope.next().await)
             };
 
-            #[cfg(feature = "collab-worker")]
+            #[cfg(feature = "collab")]
             match race_result {
                 RaceResult::CollabEvent(Some(event)) => {
                     match event {
@@ -281,7 +281,7 @@ mod worker_impl {
                                 continue;
                             };
 
-                            let export_start = crate::perf::now();
+                            let export_start = weaver_common::perf::now();
                             let snapshot_bytes = match doc.export(loro::ExportMode::Snapshot) {
                                 Ok(bytes) => bytes,
                                 Err(e) => {
@@ -298,11 +298,11 @@ mod worker_impl {
                                     continue;
                                 }
                             };
-                            let export_ms = crate::perf::now() - export_start;
+                            let export_ms = weaver_common::perf::now() - export_start;
 
-                            let encode_start = crate::perf::now();
+                            let encode_start = weaver_common::perf::now();
                             let b64_snapshot = BASE64.encode(&snapshot_bytes);
-                            let encode_ms = crate::perf::now() - encode_start;
+                            let encode_ms = weaver_common::perf::now() - encode_start;
 
                             let content = doc.get_text("content").to_string();
                             let title: SmolStr = doc.get_text("title").to_string().into();
@@ -327,9 +327,9 @@ mod worker_impl {
                         }
 
                         // ============================================================
-                        // Collab handlers - full impl when collab-worker feature enabled
+                        // Collab handlers - full impl when collab feature enabled
                         // ============================================================
-                        #[cfg(feature = "collab-worker")]
+                        #[cfg(feature = "collab")]
                         WorkerInput::StartCollab {
                             topic,
                             bootstrap_peers,
@@ -388,9 +388,6 @@ mod worker_impl {
                                             "Failed to send CollabJoined to coordinator: {e}"
                                         );
                                     }
-
-                                    // NOTE: Don't broadcast Join here - wait for BroadcastJoin message
-                                    // after peers have been added via AddPeers
 
                                     // Create channel for events from spawned task
                                     let (event_tx, event_rx) =
@@ -461,8 +458,6 @@ mod worker_impl {
                                                             selection,
                                                             ..
                                                         } => {
-                                                            // Note: cursor updates require the collaborator to exist
-                                                            // (added via Join message)
                                                             let exists = presence.contains(&from);
                                                             tracing::debug!(%from, position, ?selection, exists, "Received Cursor message");
                                                             presence.update_cursor(
@@ -485,8 +480,6 @@ mod worker_impl {
                                                 }
                                                 SessionEvent::PeerJoined(peer) => {
                                                     tracing::info!(%peer, "PeerJoined - notifying coordinator");
-                                                    // Notify coordinator so it can send BroadcastJoin
-                                                    // Don't add to presence yet - wait for their Join message
                                                     if event_tx
                                                         .send(CollabEvent::PeerConnected)
                                                         .is_err()
@@ -531,7 +524,7 @@ mod worker_impl {
                             }
                         }
 
-                        #[cfg(feature = "collab-worker")]
+                        #[cfg(feature = "collab")]
                         WorkerInput::BroadcastUpdate { data } => {
                             if let Some(ref session) = collab_session {
                                 let msg = CollabMessage::LoroUpdate {
@@ -544,7 +537,7 @@ mod worker_impl {
                             }
                         }
 
-                        #[cfg(feature = "collab-worker")]
+                        #[cfg(feature = "collab")]
                         WorkerInput::BroadcastCursor {
                             position,
                             selection,
@@ -572,22 +565,22 @@ mod worker_impl {
                             }
                         }
 
-                        #[cfg(feature = "collab-worker")]
+                        #[cfg(feature = "collab")]
                         WorkerInput::AddPeers { peers } => {
                             tracing::info!(count = peers.len(), "Worker: received AddPeers");
                             if let Some(ref session) = collab_session {
                                 let peer_ids: Vec<_> = peers
-                            .iter()
-                            .filter_map(|s| {
-                                match parse_node_id(s) {
-                                    Ok(id) => Some(id),
-                                    Err(e) => {
-                                        tracing::warn!(node_id = %s, error = %e, "Failed to parse node_id");
-                                        None
-                                    }
-                                }
-                            })
-                            .collect();
+                                    .iter()
+                                    .filter_map(|s| {
+                                        match parse_node_id(s) {
+                                            Ok(id) => Some(id),
+                                            Err(e) => {
+                                                tracing::warn!(node_id = %s, error = %e, "Failed to parse node_id");
+                                                None
+                                            }
+                                        }
+                                    })
+                                    .collect();
                                 tracing::info!(
                                     parsed_count = peer_ids.len(),
                                     "Worker: joining peers"
@@ -600,7 +593,7 @@ mod worker_impl {
                             }
                         }
 
-                        #[cfg(feature = "collab-worker")]
+                        #[cfg(feature = "collab")]
                         WorkerInput::BroadcastJoin { did, display_name } => {
                             if let Some(ref session) = collab_session {
                                 let join_msg = CollabMessage::Join { did, display_name };
@@ -610,7 +603,7 @@ mod worker_impl {
                             }
                         }
 
-                        #[cfg(feature = "collab-worker")]
+                        #[cfg(feature = "collab")]
                         WorkerInput::StopCollab => {
                             collab_session = None;
                             collab_node = None;
@@ -619,12 +612,39 @@ mod worker_impl {
                                 tracing::error!("Failed to send CollabStopped to coordinator: {e}");
                             }
                         }
+
+                        // Non-collab stubs for when collab feature is enabled but message doesn't match
+                        #[cfg(not(feature = "collab"))]
+                        WorkerInput::StartCollab { .. } => {
+                            if let Err(e) = scope
+                                .send(WorkerOutput::Error {
+                                    message: "Collab not enabled".into(),
+                                })
+                                .await
+                            {
+                                tracing::error!("Failed to send Error to coordinator: {e}");
+                            }
+                        }
+                        #[cfg(not(feature = "collab"))]
+                        WorkerInput::BroadcastUpdate { .. } => {}
+                        #[cfg(not(feature = "collab"))]
+                        WorkerInput::AddPeers { .. } => {}
+                        #[cfg(not(feature = "collab"))]
+                        WorkerInput::BroadcastJoin { .. } => {}
+                        #[cfg(not(feature = "collab"))]
+                        WorkerInput::BroadcastCursor { .. } => {}
+                        #[cfg(not(feature = "collab"))]
+                        WorkerInput::StopCollab => {
+                            if let Err(e) = scope.send(WorkerOutput::CollabStopped).await {
+                                tracing::error!("Failed to send CollabStopped to coordinator: {e}");
+                            }
+                        }
                     } // end match msg
                 } // end RaceResult::CoordinatorMsg(Some(msg))
             } // end match race_result
 
-            // Non-collab-worker: simple message loop
-            #[cfg(not(feature = "collab-worker"))]
+            // Non-collab: simple message loop
+            #[cfg(not(feature = "collab"))]
             {
                 let Some(msg) = scope.next().await else { break };
                 tracing::debug!(?msg, "Worker: received message");
@@ -679,7 +699,7 @@ mod worker_impl {
                             }
                             continue;
                         };
-                        let export_start = crate::perf::now();
+                        let export_start = weaver_common::perf::now();
                         let snapshot_bytes = match doc.export(loro::ExportMode::Snapshot) {
                             Ok(bytes) => bytes,
                             Err(e) => {
@@ -696,10 +716,10 @@ mod worker_impl {
                                 continue;
                             }
                         };
-                        let export_ms = crate::perf::now() - export_start;
-                        let encode_start = crate::perf::now();
+                        let export_ms = weaver_common::perf::now() - export_start;
+                        let encode_start = weaver_common::perf::now();
                         let b64_snapshot = BASE64.encode(&snapshot_bytes);
-                        let encode_ms = crate::perf::now() - encode_start;
+                        let encode_ms = weaver_common::perf::now() - encode_start;
                         let content = doc.get_text("content").to_string();
                         let title: SmolStr = doc.get_text("title").to_string().into();
                         if let Err(e) = scope
@@ -720,7 +740,7 @@ mod worker_impl {
                             tracing::error!("Failed to send Snapshot to coordinator: {e}");
                         }
                     }
-                    // Collab stubs for non-collab-worker build
+                    // Collab stubs for non-collab build
                     WorkerInput::StartCollab { .. } => {
                         if let Err(e) = scope
                             .send(WorkerOutput::Error {
@@ -746,8 +766,9 @@ mod worker_impl {
     }
 
     /// Convert PresenceTracker to serializable PresenceSnapshot.
-    #[cfg(feature = "collab-worker")]
+    #[cfg(feature = "collab")]
     fn presence_to_snapshot(tracker: &PresenceTracker) -> PresenceSnapshot {
+        use jacquard::smol_str::ToSmolStr;
         let collaborators = tracker
             .collaborators()
             .map(|c| CollaboratorInfo {

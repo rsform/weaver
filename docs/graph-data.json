@@ -1605,6 +1605,105 @@
       "created_at": "2026-01-06T13:29:10.289780508-05:00",
       "updated_at": "2026-01-06T13:29:10.289780508-05:00",
       "metadata_json": "{\"confidence\":100}"
+    },
+    {
+      "id": 148,
+      "change_id": "ba10fea1-443c-4255-810a-1eaf0d5460eb",
+      "node_type": "observation",
+      "title": "Generic caching XrpcClient/Agent impl could be extracted to weaver-common - Fetcher's caching pattern is reusable",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:09:59.296473570-05:00",
+      "updated_at": "2026-01-06T14:09:59.296473570-05:00",
+      "metadata_json": "{\"confidence\":70}"
+    },
+    {
+      "id": 149,
+      "change_id": "613058e8-44fb-4c27-9208-2fa17ef3a1f9",
+      "node_type": "decision",
+      "title": "weaver-editor-crdt crate design - generic CRDT/sync layer for AT Protocol apps",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:12:12.637577921-05:00",
+      "updated_at": "2026-01-06T14:12:12.637577921-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 150,
+      "change_id": "9b277ea3-0d58-4d30-8b81-2a589aed2942",
+      "node_type": "action",
+      "title": "Design documented in plans/2026-01-06-weaver-editor-crdt-design.md",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:12:12.655230849-05:00",
+      "updated_at": "2026-01-06T14:12:12.655230849-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 151,
+      "change_id": "601d0155-f773-4c6d-af26-aa45234d8b2a",
+      "node_type": "action",
+      "title": "WIP: Scaffolding weaver-editor-crdt crate - buffer.rs, document.rs, sync.rs created",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:17:26.809060420-05:00",
+      "updated_at": "2026-01-06T14:17:26.809060420-05:00",
+      "metadata_json": "{\"confidence\":75}"
+    },
+    {
+      "id": 152,
+      "change_id": "321430d0-ecea-41db-baa3-48b146fb6cf2",
+      "node_type": "outcome",
+      "title": "weaver-editor-crdt scaffolded and compiling - buffer.rs, document.rs, sync.rs, worker/mod.rs",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:19:37.822498862-05:00",
+      "updated_at": "2026-01-06T14:19:37.822498862-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 153,
+      "change_id": "f357a30f-0000-4b09-bb35-fe6c23b1dccf",
+      "node_type": "outcome",
+      "title": "weaver-editor-crdt complete - LoroTextBuffer, CrdtDocument, sync, EditorReactor worker all extracted and building",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:26:25.977005171-05:00",
+      "updated_at": "2026-01-06T14:26:25.977005171-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 154,
+      "change_id": "ca300515-473e-4d26-b08e-24279d8d8ce7",
+      "node_type": "action",
+      "title": "Fixing EnvFilter error in editor_worker binary - adding env-filter feature to tracing-subscriber",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:31:53.901825123-05:00",
+      "updated_at": "2026-01-06T14:31:53.901825123-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 155,
+      "change_id": "8d336294-6ea4-4112-9120-99ba857836e7",
+      "node_type": "goal",
+      "title": "Extract worker manager from collab.rs to weaver-editor-crdt - non-Dioxus coordination logic",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:34:17.012426477-05:00",
+      "updated_at": "2026-01-06T14:34:17.012426477-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 156,
+      "change_id": "93f2714e-aacc-4982-88ae-69f3a06eb195",
+      "node_type": "outcome",
+      "title": "Worker build working - EditorReactor moved to weaver-editor-crdt, imports fixed in weaver-app",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T14:36:23.710415853-05:00",
+      "updated_at": "2026-01-06T14:36:23.710415853-05:00",
+      "metadata_json": "{\"confidence\":95}"
     }
   ],
   "edges": [
@@ -3312,6 +3411,72 @@
       "weight": 1.0,
       "rationale": "Decision outcome",
       "created_at": "2026-01-06T13:29:10.392856789-05:00"
+    },
+    {
+      "id": 157,
+      "from_node_id": 149,
+      "to_node_id": 150,
+      "from_change_id": "613058e8-44fb-4c27-9208-2fa17ef3a1f9",
+      "to_change_id": "9b277ea3-0d58-4d30-8b81-2a589aed2942",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Design written to plans file",
+      "created_at": "2026-01-06T14:12:18.629424162-05:00"
+    },
+    {
+      "id": 158,
+      "from_node_id": 149,
+      "to_node_id": 148,
+      "from_change_id": "613058e8-44fb-4c27-9208-2fa17ef3a1f9",
+      "to_change_id": "ba10fea1-443c-4255-810a-1eaf0d5460eb",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Related future work identified during design",
+      "created_at": "2026-01-06T14:12:18.645517562-05:00"
+    },
+    {
+      "id": 159,
+      "from_node_id": 151,
+      "to_node_id": 152,
+      "from_change_id": "601d0155-f773-4c6d-af26-aa45234d8b2a",
+      "to_change_id": "321430d0-ecea-41db-baa3-48b146fb6cf2",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Scaffold completed",
+      "created_at": "2026-01-06T14:19:37.838628283-05:00"
+    },
+    {
+      "id": 160,
+      "from_node_id": 149,
+      "to_node_id": 153,
+      "from_change_id": "613058e8-44fb-4c27-9208-2fa17ef3a1f9",
+      "to_change_id": "f357a30f-0000-4b09-bb35-fe6c23b1dccf",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementation complete",
+      "created_at": "2026-01-06T14:26:25.993259775-05:00"
+    },
+    {
+      "id": 161,
+      "from_node_id": 154,
+      "to_node_id": 155,
+      "from_change_id": "ca300515-473e-4d26-b08e-24279d8d8ce7",
+      "to_change_id": "8d336294-6ea4-4112-9120-99ba857836e7",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Part of same extraction session",
+      "created_at": "2026-01-06T14:34:17.133444402-05:00"
+    },
+    {
+      "id": 162,
+      "from_node_id": 154,
+      "to_node_id": 156,
+      "from_change_id": "ca300515-473e-4d26-b08e-24279d8d8ce7",
+      "to_change_id": "93f2714e-aacc-4982-88ae-69f3a06eb195",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Completed fix",
+      "created_at": "2026-01-06T14:36:23.726201054-05:00"
     }
   ]
 }

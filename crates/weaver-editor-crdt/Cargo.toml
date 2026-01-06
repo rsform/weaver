@@ -1,0 +1,46 @@
+[package]
+name = "weaver-editor-crdt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CRDT-backed editor with AT Protocol sync"
+
+[features]
+default = []
+collab = ["weaver-common/iroh"]
+weaver = ["dep:weaver-renderer"]  # Entry-specific conveniences
+use-index = ["weaver-common/use-index"]  # Use weaver-index for reads
+
+[[bin]]
+name = "editor_worker"
+path = "src/bin/editor_worker.rs"
+
+[dependencies]
+weaver-editor-core = { path = "../weaver-editor-core" }
+weaver-common = { path = "../weaver-common", features = ["perf"] }
+weaver-api = { path = "../weaver-api" }
+jacquard = { workspace = true }
+loro = "1.9"
+serde = { workspace = true }
+smol_str = "0.3"
+tracing = { workspace = true }
+thiserror = "2"
+futures-util = "0.3"
+n0-future = { workspace = true }
+
+# Optional weaver-specific deps
+weaver-renderer = { path = "../weaver-renderer", optional = true }
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+gloo-worker = { version = "0.5", features = ["futures"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+base64 = "0.22"
+tokio = { version = "1", features = ["sync"] }
+console_error_panic_hook = "0.1"
+tracing-wasm = "0.2"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "registry", "env-filter"] }
+
+[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
+base64 = "0.22"
+tokio = { version = "1", features = ["sync"] }

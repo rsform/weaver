@@ -50,6 +50,7 @@ dioxus = { version = "0.7.1", features = ["router"] }
 weaver-common = { path = "../weaver-common", features = ["cache", "perf"] }
 weaver-editor-core = { path = "../weaver-editor-core" }
 weaver-editor-browser = { path = "../weaver-editor-browser" }
+weaver-editor-crdt = { path = "../weaver-editor-crdt" }
 jacquard = { workspace = true}#, features = ["streaming"] }
 jacquard-lexicon = { workspace = true }
 jacquard-identity = { workspace = true }

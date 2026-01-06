@@ -83,7 +83,6 @@ enum CoordinatorState {
 pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
     #[cfg(target_arch = "wasm32")]
     {
-        use super::worker::{WorkerInput, WorkerOutput};
         use crate::collab_context::CollabDebugState;
         use crate::fetch::Fetcher;
         use futures_util::stream::SplitSink;
@@ -92,8 +91,7 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
         use gloo_worker::reactor::ReactorBridge;
         use jacquard::IntoStatic;
         use weaver_common::WeaverExt;
-
-        use super::worker::EditorReactor;
+        use weaver_editor_crdt::{EditorReactor, WorkerInput, WorkerOutput};
 
         let fetcher = use_context::<Fetcher>();
 

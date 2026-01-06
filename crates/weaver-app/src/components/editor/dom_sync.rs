@@ -213,7 +213,7 @@ pub fn update_paragraph_dom(
         let is_cursor_para =
             new_para.char_range.start <= cursor_offset && cursor_offset <= new_para.char_range.end;
 
-        if let Some(existing_elem) = old_elements.remove(para_id) {
+        if let Some(existing_elem) = old_elements.remove(para_id.as_str()) {
             // Element exists - check if it needs updating
             let old_hash = existing_elem.get_attribute("data-hash").unwrap_or_default();
             let needs_update = force || old_hash != new_hash;
@@ -227,7 +227,7 @@ pub fn update_paragraph_dom(
 
             if !at_correct_position {
                 tracing::warn!(
-                    para_id,
+                    para_id = %para_id,
                     is_cursor_para,
                     "update_paragraph_dom: element not at correct position, moving"
                 );
@@ -286,7 +286,7 @@ pub fn update_paragraph_dom(
 
                 if should_skip_cursor_update {
                     tracing::trace!(
-                        para_id,
+                        para_id = %para_id,
                         "update_paragraph_dom: skipping cursor para innerHTML (syntax unchanged, DOM verified)"
                     );
                     // Update hash - browser native editing has the correct content
@@ -318,7 +318,7 @@ pub fn update_paragraph_dom(
                         {
                             let elapsed_ms = end_time - start_time;
                             tracing::debug!(
-                                para_id,
+                                para_id = %para_id,
                                 is_cursor_para,
                                 elapsed_ms,
                                 html_len = new_para.html.len(),
@@ -335,7 +335,6 @@ pub fn update_paragraph_dom(
                         if let Err(e) = restore_cursor_position(
                             cursor_offset,
                             &new_para.offset_map,
-                            editor_id,
                             None,
                         ) {
                             tracing::warn!("Synchronous cursor restore failed: {:?}", e);

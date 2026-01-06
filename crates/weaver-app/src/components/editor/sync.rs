@@ -1,56 +1,33 @@
 //! PDS synchronization for editor edit state.
 //!
-//! This module handles syncing the editor's Loro CRDT document to AT Protocol
-//! edit records (`sh.weaver.edit.root` and `sh.weaver.edit.diff`).
-//!
-//! ## Edit State Structure
-//!
-//! - `sh.weaver.edit.root`: The starting point for an edit session, containing
-//!   a full Loro snapshot and a reference to the entry being edited.
-//! - `sh.weaver.edit.diff`: Incremental updates since the root (or previous diff),
-//!   containing only the Loro delta bytes.
-//!
-//! ## Sync Flow
-//!
-//! 1. **First sync**: Create a root record with a full snapshot
-//! 2. **Subsequent syncs**: Create diff records with deltas since last sync
-//! 3. **Loading**: Find root via constellation backlinks, fetch all diffs, apply in order
+//! This module provides app-specific sync functionality built on top of
+//! `weaver_editor_crdt::sync`. It adds:
+//! - Fetcher-based API (wrapping the generic client)
+//! - Embed prefetching and blob caching
+//! - localStorage integration for document loading
+//! - Dioxus UI components for sync status
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use super::document::{EditorDocument, LoadedDocState};
 use crate::fetch::Fetcher;
-use jacquard::bytes::Bytes;
-use jacquard::cowstr::ToCowStr;
+use jacquard::IntoStatic;
 use jacquard::prelude::*;
-use jacquard::smol_str::format_smolstr;
-use jacquard::types::blob::MimeType;
-#[allow(unused_imports)]
-use jacquard::types::collection::Collection;
 use jacquard::types::ident::AtIdentifier;
-use jacquard::types::recordkey::RecordKey;
-use jacquard::types::string::{AtUri, Cid, Did, Nsid};
-use jacquard::types::tid::Ticker;
-use jacquard::types::uri::Uri;
-use jacquard::url::Url;
-use jacquard::{CowStr, IntoStatic, to_data};
+use jacquard::types::string::{AtUri, Cid, Did};
 use loro::LoroDoc;
 use loro::ToJson;
-use weaver_api::com_atproto::repo::create_record::CreateRecord;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
-use weaver_api::com_atproto::sync::get_blob::GetBlob;
-use weaver_api::sh_weaver::edit::diff::Diff;
 use weaver_api::sh_weaver::edit::draft::Draft;
-use weaver_api::sh_weaver::edit::root::Root;
-use weaver_api::sh_weaver::edit::{DocRef, DocRefValue, DraftRef, EntryRef};
-use weaver_common::constellation::{GetBacklinksQuery, RecordId};
-#[allow(unused_imports)]
+use weaver_api::sh_weaver::edit::{DocRef, DocRefValue};
 use weaver_common::{WeaverError, WeaverExt};
 
-const ROOT_NSID: &str = "sh.weaver.edit.root";
-const DIFF_NSID: &str = "sh.weaver.edit.diff";
-const DRAFT_NSID: &str = "sh.weaver.edit.draft";
-const CONSTELLATION_URL: &str = "https://constellation.microcosm.blue";
+// Re-export crdt sync types for convenience.
+pub use weaver_editor_crdt::{
+    CreateRootResult, PdsEditState, RemoteDraft, SyncResult, build_draft_uri, find_all_edit_roots,
+    find_diffs_for_root, find_edit_root_for_draft, list_drafts, load_all_edit_states,
+    load_edit_state_from_draft, load_edit_state_from_entry,
+};
 
 /// Extract record embeds from a LoroDoc and pre-fetch their rendered content.
 ///
@@ -182,65 +159,6 @@ async fn prefetch_embeds_from_doc(
     resolved
 }
 
-/// Build a DocRef for either a published entry or an unpublished draft.
-///
-/// If entry_uri and entry_cid are provided, creates an EntryRef.
-/// Otherwise, creates a DraftRef with a synthetic AT-URI for Constellation indexing.
-///
-/// The synthetic URI format is: `at://{did}/sh.weaver.edit.draft/{rkey}`
-/// This allows Constellation to index drafts as backlinks, enabling discovery.
-fn build_doc_ref(
-    did: &Did<'_>,
-    draft_key: &str,
-    entry_uri: Option<&AtUri<'_>>,
-    entry_cid: Option<&Cid<'_>>,
-) -> DocRef<'static> {
-    match (entry_uri, entry_cid) {
-        (Some(uri), Some(cid)) => DocRef {
-            value: DocRefValue::EntryRef(Box::new(EntryRef {
-                entry: StrongRef::new()
-                    .uri(uri.clone().into_static())
-                    .cid(cid.clone().into_static())
-                    .build(),
-                extra_data: None,
-            })),
-            extra_data: None,
-        },
-        _ => {
-            // Transform localStorage key to synthetic AT-URI for Constellation indexing
-            // localStorage uses "new:{tid}" or AT-URI, PDS uses "at://{did}/sh.weaver.edit.draft/{rkey}"
-            let rkey = if let Some(tid) = draft_key.strip_prefix("new:") {
-                // New draft: extract TID as rkey
-                tid.to_string()
-            } else if draft_key.starts_with("at://") {
-                // Editing existing entry: use the entry's rkey
-                draft_key.split('/').last().unwrap_or(draft_key).to_string()
-            } else if draft_key.starts_with("did:") && draft_key.contains(':') {
-                // Old canonical format "did:xxx:rkey" - extract rkey
-                draft_key
-                    .rsplit(':')
-                    .next()
-                    .unwrap_or(draft_key)
-                    .to_string()
-            } else {
-                // Fallback: use as-is
-                draft_key.to_string()
-            };
-
-            // Build AT-URI pointing to actual draft record: at://{did}/sh.weaver.edit.draft/{rkey}
-            let canonical_uri = format_smolstr!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
-
-            DocRef {
-                value: DocRefValue::DraftRef(Box::new(DraftRef {
-                    draft_key: CowStr::from(canonical_uri),
-                    extra_data: None,
-                })),
-                extra_data: None,
-            }
-        }
-    }
-}
-
 /// Convert a DocRef to an entry_ref StrongRef.
 ///
 /// For EntryRef: returns the entry's StrongRef directly
@@ -277,413 +195,23 @@ async fn doc_ref_to_entry_ref(
     }
 }
 
-/// Result of a sync operation.
-#[derive(Clone, Debug)]
-pub enum SyncResult {
-    /// Created a new root record (first sync)
-    CreatedRoot {
-        uri: AtUri<'static>,
-        cid: Cid<'static>,
-    },
-    /// Created a new diff record
-    CreatedDiff {
-        uri: AtUri<'static>,
-        cid: Cid<'static>,
-    },
-    /// No changes to sync
-    NoChanges,
-}
-
-/// Find ALL edit.root records across collaborators for an entry.
-///
-/// With use-index: Uses weaver-index getEditHistory endpoint.
-/// Without use-index: Queries Constellation for backlinks.
-#[cfg(feature = "use-index")]
-pub async fn find_all_edit_roots_for_entry(
-    fetcher: &Fetcher,
-    entry_uri: &AtUri<'_>,
-) -> Result<Vec<RecordId<'static>>, WeaverError> {
-    let output = fetcher
-        .get_edit_history(entry_uri)
-        .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to get edit history: {}", e)))?;
-
-    // Convert EditHistoryEntry roots to RecordId format
-    let roots: Vec<RecordId<'static>> = output
-        .roots
-        .into_iter()
-        .filter_map(|entry| {
-            let uri = AtUri::new(entry.uri.as_ref()).ok()?;
-            let did = match uri.authority() {
-                AtIdentifier::Did(d) => d.clone().into_static(),
-                _ => return None,
-            };
-            let rkey = uri.rkey()?.clone().into_static();
-            Some(RecordId {
-                did,
-                collection: Nsid::raw(ROOT_NSID).into_static(),
-                rkey,
-            })
-        })
-        .collect();
-
-    tracing::debug!(
-        "find_all_edit_roots_for_entry (index): found {} roots",
-        roots.len()
-    );
-
-    Ok(roots)
-}
-
-/// Find ALL edit.root records across collaborators for an entry.
-///
-/// 1. Gets list of collaborators via permissions
-/// 2. Queries Constellation for edit.root in each collaborator's repo
-/// 3. Returns all found roots for CRDT merge
-#[cfg(not(feature = "use-index"))]
-pub async fn find_all_edit_roots_for_entry(
-    fetcher: &Fetcher,
-    entry_uri: &AtUri<'_>,
-) -> Result<Vec<RecordId<'static>>, WeaverError> {
-    // Get collaborators from permissions
-    let collaborators = fetcher
-        .get_client()
-        .find_collaborators_for_resource(entry_uri)
-        .await
-        .unwrap_or_default();
-
-    // Include the entry owner
-    let owner_did = match entry_uri.authority() {
-        AtIdentifier::Did(d) => d.clone().into_static(),
-        AtIdentifier::Handle(h) => fetcher
-            .client
-            .resolve_handle(h)
-            .await
-            .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve handle: {}", e)))?
-            .into_static(),
-    };
-
-    let all_dids: Vec<Did<'static>> = std::iter::once(owner_did)
-        .chain(collaborators.into_iter())
-        .collect();
-
-    let constellation_url = Url::parse(CONSTELLATION_URL)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
-
-    let mut all_roots = Vec::new();
-
-    // Query for edit.root records from this DID that reference entry_uri
-    let query = GetBacklinksQuery {
-        subject: Uri::At(entry_uri.clone().into_static()),
-        source: format_smolstr!("{}:doc.value.entry.uri", ROOT_NSID).into(),
-        cursor: None,
-        did: all_dids.clone(),
-        limit: 10,
-    };
-
-    let response = fetcher
-        .get_client()
-        .xrpc(constellation_url.clone())
-        .send(&query)
-        .await;
-
-    if let Ok(response) = response {
-        if let Ok(output) = response.into_output() {
-            all_roots.extend(output.records.into_iter().map(|r| r.into_static()));
-        } else {
-            tracing::warn!("Failed to parse response for edit root query");
-        }
-    } else {
-        tracing::warn!("Failed to fetch edit root query");
-    }
-
-    tracing::debug!(
-        "find_all_edit_roots_for_entry: found {} roots across {} collaborators",
-        all_roots.len(),
-        all_dids.len()
-    );
-
-    Ok(all_roots)
-}
-
-/// Find the edit root for a draft using constellation backlinks.
-///
-/// Queries constellation for `sh.weaver.edit.root` records that reference
-/// the given draft URI via the `.doc.value.draft_key` path.
-///
-/// The draft_uri should be in canonical format: `at://{did}/sh.weaver.edit.draft/{rkey}`
-pub async fn find_edit_root_for_draft(
-    fetcher: &Fetcher,
-    draft_uri: &AtUri<'_>,
-) -> Result<Option<RecordId<'static>>, WeaverError> {
-    let constellation_url = Url::parse(CONSTELLATION_URL)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
-
-    let query = GetBacklinksQuery {
-        subject: Uri::At(draft_uri.clone().into_static()),
-        source: format_smolstr!("{}:doc.value.draft_key", ROOT_NSID).into(),
-        cursor: None,
-        did: vec![],
-        limit: 1,
-    };
-
-    let response = fetcher
-        .client
-        .xrpc(constellation_url)
-        .send(&query)
-        .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Constellation query failed: {}", e)))?;
-
-    let output = response.into_output().map_err(|e| {
-        WeaverError::InvalidNotebook(format!("Failed to parse constellation response: {}", e))
-    })?;
-
-    Ok(output.records.into_iter().next().map(|r| r.into_static()))
-}
-
-/// Build a canonical draft URI from localStorage key and DID.
-///
-/// Transforms localStorage format ("new:{tid}" or AT-URI) to
-/// draft record URI format: `at://{did}/sh.weaver.edit.draft/{rkey}`
-pub fn build_draft_uri(did: &Did<'_>, draft_key: &str) -> AtUri<'static> {
-    let rkey = if let Some(tid) = draft_key.strip_prefix("new:") {
-        tid.to_string()
-    } else if draft_key.starts_with("at://") {
-        draft_key.split('/').last().unwrap_or(draft_key).to_string()
-    } else {
-        draft_key.to_string()
-    };
-
-    let uri_str = format_smolstr!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
-    // Safe to unwrap: we're constructing a valid AT-URI
-    AtUri::new(&uri_str).unwrap().into_static()
-}
-
-/// Extract the rkey (TID) from a localStorage draft key.
-fn extract_draft_rkey(draft_key: &str) -> String {
-    if let Some(tid) = draft_key.strip_prefix("new:") {
-        tid.to_string()
-    } else if draft_key.starts_with("at://") {
-        draft_key.split('/').last().unwrap_or(draft_key).to_string()
-    } else {
-        draft_key.to_string()
-    }
-}
-
-/// Create the draft stub record on PDS.
-///
-/// This creates a minimal `sh.weaver.edit.draft` record that acts as an anchor
-/// for edit.root/diff records and enables draft discovery via listRecords.
-async fn create_draft_stub(
-    fetcher: &Fetcher,
-    did: &Did<'_>,
-    rkey: &str,
-) -> Result<(AtUri<'static>, Cid<'static>), WeaverError> {
-    // Build minimal draft record with just createdAt
-    let draft = Draft::new()
-        .created_at(jacquard::types::datetime::Datetime::now())
-        .build();
-
-    let draft_data = to_data(&draft)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to serialize draft: {}", e)))?;
-
-    let record_key =
-        RecordKey::any(rkey).map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
-
-    let collection = Nsid::new(DRAFT_NSID).map_err(WeaverError::AtprotoString)?;
-
-    let request = CreateRecord::new()
-        .repo(AtIdentifier::Did(did.clone().into_static()))
-        .collection(collection)
-        .rkey(record_key)
-        .record(draft_data)
-        .build();
-
-    let response = fetcher
-        .send(request)
-        .await
-        .map_err(jacquard::client::AgentError::from)?;
-
-    let output = response
-        .into_output()
-        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
-
-    Ok((output.uri.into_static(), output.cid.into_static()))
-}
-
-/// Remote draft info from PDS.
-#[derive(Clone, Debug)]
-pub struct RemoteDraft {
-    /// The draft record URI
-    pub uri: AtUri<'static>,
-    /// The rkey (TID) of the draft
-    pub rkey: String,
-    /// When the draft was created
-    pub created_at: String,
-}
-
-/// List all drafts for the current user.
-///
-/// With use-index: Uses weaver-index listDrafts endpoint.
-/// Without use-index: Uses direct PDS ListRecords query.
-#[cfg(feature = "use-index")]
-pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>, WeaverError> {
-    let did = fetcher
-        .current_did()
-        .await
-        .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
-
-    let actor = AtIdentifier::Did(did);
-    let output = fetcher
-        .list_drafts(&actor)
-        .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to list drafts: {}", e)))?;
-
-    tracing::debug!(
-        "list_drafts_from_pds (index): found {} drafts",
-        output.drafts.len()
-    );
-
-    let drafts = output
-        .drafts
-        .into_iter()
-        .filter_map(|draft| {
-            let uri = AtUri::new(draft.uri.as_ref()).ok()?.into_static();
-            let rkey = uri.rkey()?.0.as_str().to_string();
-            let created_at = draft.created_at.to_string();
-            Some(RemoteDraft {
-                uri,
-                rkey,
-                created_at,
-            })
-        })
-        .collect();
-
-    Ok(drafts)
-}
-
 /// List all drafts from PDS for the current user.
 ///
-/// Returns a list of draft records from `sh.weaver.edit.draft` collection.
-#[cfg(not(feature = "use-index"))]
+/// Wraps the crdt crate's list_drafts function with Fetcher support.
 pub async fn list_drafts_from_pds(fetcher: &Fetcher) -> Result<Vec<RemoteDraft>, WeaverError> {
-    use weaver_api::com_atproto::repo::list_records::ListRecords;
-
     let did = fetcher
         .current_did()
         .await
         .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
 
-    let client = fetcher.get_client();
-    let collection = Nsid::new(DRAFT_NSID).map_err(WeaverError::AtprotoString)?;
-
-    let request = ListRecords::new()
-        .repo(did)
-        .collection(collection)
-        .limit(100)
-        .build();
-
-    let response = client
-        .send(request)
+    list_drafts(fetcher.get_client().as_ref(), &did)
         .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to list drafts: {}", e)))?;
-
-    let output = response.into_output().map_err(|e| {
-        WeaverError::InvalidNotebook(format!("Failed to parse list records response: {}", e))
-    })?;
-
-    tracing::debug!(
-        "list_drafts_from_pds: found {} records",
-        output.records.len()
-    );
-
-    let mut drafts = Vec::new();
-    for record in output.records {
-        let rkey = record
-            .uri
-            .rkey()
-            .map(|r| r.0.as_str().to_string())
-            .unwrap_or_default();
-
-        tracing::debug!("  Draft record: uri={}, rkey={}", record.uri, rkey);
-
-        // Parse the draft record to get createdAt
-        let created_at =
-            jacquard::from_data::<weaver_api::sh_weaver::edit::draft::Draft>(&record.value)
-                .map(|d| d.created_at.to_string())
-                .unwrap_or_default();
-
-        drafts.push(RemoteDraft {
-            uri: record.uri.into_static(),
-            rkey,
-            created_at,
-        });
-    }
-
-    Ok(drafts)
-}
-
-/// Find all diffs for a root record using constellation backlinks.
-pub async fn find_diffs_for_root(
-    fetcher: &Fetcher,
-    root_uri: &AtUri<'_>,
-) -> Result<Vec<RecordId<'static>>, WeaverError> {
-    let constellation_url = Url::parse(CONSTELLATION_URL)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid constellation URL: {}", e)))?;
-
-    let mut all_diffs = Vec::new();
-    let mut cursor: Option<String> = None;
-
-    loop {
-        let query = GetBacklinksQuery {
-            subject: Uri::At(root_uri.clone().into_static()),
-            source: format_smolstr!("{}:root.uri", DIFF_NSID).into(),
-            cursor: cursor.map(Into::into),
-            did: vec![],
-            limit: 100,
-        };
-
-        let response = fetcher
-            .client
-            .xrpc(constellation_url.clone())
-            .send(&query)
-            .await
-            .map_err(|e| {
-                WeaverError::InvalidNotebook(format!("Constellation query failed: {}", e))
-            })?;
-
-        let output = response.into_output().map_err(|e| {
-            WeaverError::InvalidNotebook(format!("Failed to parse constellation response: {}", e))
-        })?;
-
-        all_diffs.extend(output.records.into_iter().map(|r| r.into_static()));
-
-        match output.cursor {
-            Some(c) => cursor = Some(c.to_string()),
-            None => break,
-        }
-    }
-
-    Ok(all_diffs)
-}
-
-/// Result of creating an edit root, includes optional draft stub info.
-pub struct CreateRootResult {
-    /// The root record URI
-    pub root_uri: AtUri<'static>,
-    /// The root record CID
-    pub root_cid: Cid<'static>,
-    /// Draft stub StrongRef if this was a new draft (not editing published entry)
-    pub draft_ref: Option<StrongRef<'static>>,
+        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))
 }
 
 /// Create the edit root record for an entry.
 ///
-/// Uploads the current Loro snapshot as a blob and creates an `sh.weaver.edit.root`
-/// record referencing the entry (or draft key if unpublished).
-///
-/// For drafts, also creates the `sh.weaver.edit.draft` stub record first.
-/// Returns the draft stub info so caller can set entry_ref.
+/// Wraps the crdt crate's create_edit_root with Fetcher support.
 pub async fn create_edit_root(
     fetcher: &Fetcher,
     doc: &EditorDocument,
@@ -691,114 +219,20 @@ pub async fn create_edit_root(
     entry_uri: Option<&AtUri<'_>>,
     entry_cid: Option<&Cid<'_>>,
 ) -> Result<CreateRootResult, WeaverError> {
-    let client = fetcher.get_client();
-    let did = fetcher
-        .current_did()
-        .await
-        .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
-
-    // For drafts, create the stub record first (makes it discoverable via listRecords)
-    let draft_ref: Option<StrongRef<'static>> = if entry_uri.is_none() {
-        let rkey = extract_draft_rkey(draft_key);
-        // Try to create draft stub, or get existing one
-        match create_draft_stub(fetcher, &did, &rkey).await {
-            Ok((uri, cid)) => {
-                tracing::debug!("Created draft stub: {}", uri);
-                Some(StrongRef::new().uri(uri).cid(cid).build())
-            }
-            Err(e) => {
-                // Check if it's a "record already exists" error
-                let err_str = e.to_string();
-                if err_str.contains("RecordAlreadyExists") || err_str.contains("already exists") {
-                    // Draft exists - fetch it to get the CID
-                    let draft_uri_str = format!("at://{}/{}/{}", did, DRAFT_NSID, rkey);
-                    if let Ok(draft_uri) = AtUri::new(&draft_uri_str) {
-                        if let Ok(response) =
-                            fetcher.get_client().get_record::<Draft>(&draft_uri).await
-                        {
-                            if let Ok(output) = response.into_output() {
-                                if let Some(cid) = output.cid {
-                                    Some(
-                                        StrongRef::new()
-                                            .uri(draft_uri.into_static())
-                                            .cid(cid.into_static())
-                                            .build(),
-                                    )
-                                } else {
-                                    tracing::warn!("Draft exists but has no CID");
-                                    None
-                                }
-                            } else {
-                                tracing::warn!("Draft exists but couldn't parse output");
-                                None
-                            }
-                        } else {
-                            tracing::warn!("Draft exists but couldn't fetch record");
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    tracing::warn!("Failed to create draft stub (continuing anyway): {}", e);
-                    None
-                }
-            }
-        }
-    } else {
-        None // Published entry, not a draft
-    };
-
-    // Export full snapshot
-    let snapshot = doc.export_snapshot();
-
-    // Upload snapshot blob
-    let mime_type = MimeType::new_static("application/octet-stream");
-    let blob_ref = client
-        .upload_blob(snapshot, mime_type)
-        .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to upload snapshot: {}", e)))?;
-
-    // Build DocRef - use EntryRef if published, DraftRef if not
-    let doc_ref = build_doc_ref(&did, draft_key, entry_uri, entry_cid);
-
-    // Build root record
-    let root = Root::new().doc(doc_ref).snapshot(blob_ref).build();
-
-    let root_data = to_data(&root)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to serialize root: {}", e)))?;
-
-    // Generate TID for the root rkey
-    let root_tid = Ticker::new().next(None);
-    let rkey = RecordKey::any(root_tid.as_str())
-        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
-
-    let collection = Nsid::new(ROOT_NSID).map_err(|e| WeaverError::AtprotoString(e))?;
-
-    let request = CreateRecord::new()
-        .repo(AtIdentifier::Did(did))
-        .collection(collection)
-        .rkey(rkey)
-        .record(root_data)
-        .build();
-
-    let response = fetcher
-        .send(request)
-        .await
-        .map_err(jacquard::client::AgentError::from)?;
-
-    let output = response
-        .into_output()
-        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
-
-    Ok(CreateRootResult {
-        root_uri: output.uri.into_static(),
-        root_cid: output.cid.into_static(),
-        draft_ref,
-    })
+    weaver_editor_crdt::create_edit_root(
+        fetcher.get_client().as_ref(),
+        doc,
+        draft_key,
+        entry_uri,
+        entry_cid,
+    )
+    .await
+    .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))
 }
 
 /// Create a diff record with updates since the last sync.
+///
+/// Wraps the crdt crate's create_diff with Fetcher support.
 pub async fn create_diff(
     fetcher: &Fetcher,
     doc: &EditorDocument,
@@ -809,86 +243,18 @@ pub async fn create_diff(
     entry_uri: Option<&AtUri<'_>>,
     entry_cid: Option<&Cid<'_>>,
 ) -> Result<Option<(AtUri<'static>, Cid<'static>)>, WeaverError> {
-    // Export updates since last sync
-    let updates = match doc.export_updates_since_sync() {
-        Some(u) => u,
-        None => return Ok(None), // No changes
-    };
-
-    let client = fetcher.get_client();
-    let did = fetcher
-        .current_did()
-        .await
-        .ok_or_else(|| WeaverError::InvalidNotebook("Not authenticated".into()))?;
-
-    // Threshold for inline vs blob storage (8KB max for inline per lexicon)
-    const INLINE_THRESHOLD: usize = 8192;
-
-    // Use inline for small diffs, blob for larger ones
-    let (blob_ref, inline_diff): (Option<jacquard::types::blob::BlobRef<'static>>, _) =
-        if updates.len() <= INLINE_THRESHOLD {
-            (None, Some(jacquard::bytes::Bytes::from(updates)))
-        } else {
-            let mime_type = MimeType::new_static("application/octet-stream");
-            let blob = client.upload_blob(updates, mime_type).await.map_err(|e| {
-                WeaverError::InvalidNotebook(format!("Failed to upload diff: {}", e))
-            })?;
-            (Some(blob.into()), None)
-        };
-
-    // Build DocRef - use EntryRef if published, DraftRef if not
-    let doc_ref = build_doc_ref(&did, draft_key, entry_uri, entry_cid);
-
-    // Build root reference
-    let root_ref = StrongRef::new()
-        .uri(root_uri.clone().into_static())
-        .cid(root_cid.clone().into_static())
-        .build();
-
-    // Build prev reference if we have a previous diff
-    let prev_ref = prev_diff.map(|(uri, cid)| {
-        StrongRef::new()
-            .uri(uri.clone().into_static())
-            .cid(cid.clone().into_static())
-            .build()
-    });
-
-    // Build diff record
-    let diff = Diff::new()
-        .doc(doc_ref)
-        .root(root_ref)
-        .maybe_snapshot(blob_ref)
-        .maybe_inline_diff(inline_diff)
-        .maybe_prev(prev_ref)
-        .build();
-
-    let diff_data = to_data(&diff)
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to serialize diff: {}", e)))?;
-
-    // Generate TID for the diff rkey
-    let diff_tid = Ticker::new().next(None);
-    let rkey = RecordKey::any(diff_tid.as_str())
-        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
-
-    let collection = Nsid::new(DIFF_NSID).map_err(|e| WeaverError::AtprotoString(e))?;
-
-    let request = CreateRecord::new()
-        .repo(AtIdentifier::Did(did))
-        .collection(collection)
-        .rkey(rkey)
-        .record(diff_data)
-        .build();
-
-    let response = fetcher
-        .send(request)
-        .await
-        .map_err(jacquard::client::AgentError::from)?;
-
-    let output = response
-        .into_output()
-        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?;
-
-    Ok(Some((output.uri.into_static(), output.cid.into_static())))
+    weaver_editor_crdt::create_diff(
+        fetcher.get_client().as_ref(),
+        doc,
+        root_uri,
+        root_cid,
+        prev_diff,
+        draft_key,
+        entry_uri,
+        entry_cid,
+    )
+    .await
+    .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))
 }
 
 /// Sync the document to the PDS.
@@ -997,350 +363,52 @@ pub async fn sync_to_pds(
     }
 }
 
-/// Result of loading edit state from PDS.
-#[derive(Clone, Debug)]
-pub struct PdsEditState {
-    /// The root record reference
-    pub root_ref: StrongRef<'static>,
-    /// The latest diff reference (if any diffs exist)
-    pub last_diff_ref: Option<StrongRef<'static>>,
-    /// The Loro snapshot bytes from the root
-    pub root_snapshot: Bytes,
-    /// All diff update bytes in order (oldest first, by TID)
-    pub diff_updates: Vec<Bytes>,
-    /// Last seen diff URI per collaborator root (for incremental sync).
-    /// Maps root URI -> last diff URI we've imported from that root.
-    pub last_seen_diffs: std::collections::HashMap<AtUri<'static>, AtUri<'static>>,
-    /// The DocRef from the root record (tells us what's being edited)
-    pub doc_ref: DocRef<'static>,
-}
-
-/// Fetch a blob from the PDS.
-async fn fetch_blob(fetcher: &Fetcher, did: &Did<'_>, cid: &Cid<'_>) -> Result<Bytes, WeaverError> {
-    let pds_url = fetcher
-        .client
-        .pds_for_did(did)
-        .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to resolve DID: {}", e)))?;
-
-    let request = GetBlob::new().did(did.clone()).cid(cid.clone()).build();
-
-    let response = fetcher
-        .client
-        .xrpc(pds_url)
-        .send(&request)
-        .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to fetch blob: {}", e)))?;
-
-    let output = response.into_output().map_err(|e| {
-        WeaverError::InvalidNotebook(format!("Failed to parse blob response: {}", e))
-    })?;
-
-    Ok(output.body)
-}
-
 /// Load edit state from the PDS for an entry.
 ///
-/// Finds the edit root via constellation backlinks, fetches all diffs,
-/// and returns the snapshot + updates needed to reconstruct the document.
+/// Wraps the crdt crate's load_edit_state_from_entry with Fetcher support.
 pub async fn load_edit_state_from_pds(
     fetcher: &Fetcher,
     entry_uri: &AtUri<'_>,
 ) -> Result<Option<PdsEditState>, WeaverError> {
-    // Find the edit root for this entry (take first if multiple exist)
-    let root_id = match find_all_edit_roots_for_entry(fetcher, entry_uri)
-        .await?
-        .into_iter()
-        .next()
-    {
-        Some(id) => id,
-        None => return Ok(None),
-    };
+    let client = fetcher.get_client();
+    // Get collaborators for this resource.
+    let collaborators = client
+        .find_collaborators_for_resource(entry_uri)
+        .await
+        .unwrap_or_default();
 
-    load_edit_state_from_root_id(fetcher, root_id, None).await
-}
-
-/// Load edit state from the PDS for a draft.
-///
-/// Finds the edit root via constellation backlinks using the draft URI,
-/// fetches all diffs, and returns the snapshot + updates.
-pub async fn load_edit_state_from_draft(
-    fetcher: &Fetcher,
-    draft_uri: &AtUri<'_>,
-) -> Result<Option<PdsEditState>, WeaverError> {
-    // Find the edit root for this draft
-    let root_id = match find_edit_root_for_draft(fetcher, draft_uri).await? {
-        Some(id) => id,
-        None => return Ok(None),
-    };
-
-    load_edit_state_from_root_id(fetcher, root_id, None).await
+    load_edit_state_from_entry(client.as_ref(), entry_uri, collaborators)
+        .await
+        .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))
 }
 
 /// Load edit state from ALL collaborator repos for an entry, returning merged state.
 ///
-/// For each edit.root found across collaborators:
-/// - Fetches the root snapshot
-/// - Finds and fetches all diffs for that root (skipping already-seen diffs)
-/// - Merges all Loro states into one unified document
-///
-/// `last_seen_diffs` maps root URI -> last diff URI we've imported from that root.
-/// This enables incremental sync by only fetching new diffs.
-///
-/// Returns merged state suitable for CRDT collaboration, including updated last_seen_diffs.
+/// Wraps the crdt crate's load_all_edit_states with Fetcher support.
 pub async fn load_all_edit_states_from_pds(
     fetcher: &Fetcher,
     entry_uri: &AtUri<'_>,
-    last_seen_diffs: &std::collections::HashMap<AtUri<'static>, AtUri<'static>>,
+    last_seen_diffs: &HashMap<AtUri<'static>, AtUri<'static>>,
 ) -> Result<Option<PdsEditState>, WeaverError> {
-    let all_roots = find_all_edit_roots_for_entry(fetcher, entry_uri).await?;
+    let client = fetcher.get_client();
 
-    if all_roots.is_empty() {
-        return Ok(None);
-    }
+    // Get collaborators for this resource.
+    let collaborators = client
+        .find_collaborators_for_resource(entry_uri)
+        .await
+        .unwrap_or_default();
 
-    // We'll merge all snapshots and diffs into one unified LoroDoc
-    let merged_doc = LoroDoc::new();
-    let mut our_root_ref: Option<StrongRef<'static>> = None;
-    let mut our_last_diff_ref: Option<StrongRef<'static>> = None;
-    let mut merged_doc_ref: Option<DocRef<'static>> = None;
-    let mut updated_last_seen = last_seen_diffs.clone();
-
-    // Get current user's DID to identify "our" root for sync state tracking
     let current_did = fetcher.current_did().await;
 
-    for root_id in all_roots {
-        // Save the DID before consuming root_id
-        let root_did = root_id.did.clone();
-
-        // Build root URI to look up last seen diff
-        let root_uri = AtUri::new(&format_smolstr!(
-            "at://{}/{}/{}",
-            root_id.did,
-            ROOT_NSID,
-            root_id.rkey.as_ref()
-        ))
-        .ok()
-        .map(|u| u.into_static());
-
-        // Get the last seen diff rkey for this root (if any)
-        let after_rkey = root_uri.as_ref().and_then(|uri| {
-            last_seen_diffs
-                .get(uri)
-                .and_then(|diff_uri| diff_uri.rkey().map(|rk| rk.0.to_string()))
-        });
-
-        // Load state from this root (skipping already-seen diffs)
-        if let Some(pds_state) =
-            load_edit_state_from_root_id(fetcher, root_id, after_rkey.as_deref()).await?
-        {
-            // Import root snapshot into merged doc
-            if let Err(e) = merged_doc.import(&pds_state.root_snapshot) {
-                tracing::warn!("Failed to import root snapshot from {}: {:?}", root_did, e);
-                continue;
-            }
-
-            // Import all diffs
-            for diff in &pds_state.diff_updates {
-                if let Err(e) = merged_doc.import(diff) {
-                    tracing::warn!("Failed to import diff from {}: {:?}", root_did, e);
-                }
-            }
-
-            // Update last seen diff for this root (for incremental sync next time)
-            if let (Some(uri), Some(last_diff)) = (&root_uri, &pds_state.last_diff_ref) {
-                updated_last_seen.insert(uri.clone(), last_diff.uri.clone().into_static());
-            }
-
-            // Track doc_ref from the first root we process (they should all match)
-            if merged_doc_ref.is_none() {
-                merged_doc_ref = Some(pds_state.doc_ref.clone());
-            }
-
-            // Track "our" root/diff refs for sync state (used when syncing back)
-            // We want to track our own edit.root so subsequent diffs go to the right place
-            let is_our_root = current_did.as_ref().is_some_and(|did| root_did == *did);
-
-            if is_our_root {
-                // This is our own root - use it for sync state
-                our_root_ref = Some(pds_state.root_ref);
-                our_last_diff_ref = pds_state.last_diff_ref;
-            } else if our_root_ref.is_none() {
-                // We don't have our own root yet - use the first one we find
-                // (this handles the case where we're a new collaborator with no edit state)
-                our_root_ref = Some(pds_state.root_ref);
-                our_last_diff_ref = pds_state.last_diff_ref;
-            }
-        }
-    }
-
-    // Export merged state as new snapshot
-    let merged_snapshot = merged_doc.export(loro::ExportMode::Snapshot).map_err(|e| {
-        WeaverError::InvalidNotebook(format!("Failed to export merged snapshot: {}", e))
-    })?;
-
-    tracing::debug!(
-        "load_all_edit_states_from_pds: merged document, snapshot size = {} bytes",
-        merged_snapshot.len()
-    );
-
-    // If we found any roots, return the merged state (includes updated last_seen map)
-    // Note: our_root_ref might be from another collaborator if we haven't created our own yet
-    Ok(our_root_ref.map(|root_ref| PdsEditState {
-        root_ref,
-        last_diff_ref: our_last_diff_ref,
-        root_snapshot: merged_snapshot.into(),
-        diff_updates: vec![], // Already merged into snapshot
-        last_seen_diffs: updated_last_seen,
-        doc_ref: merged_doc_ref.expect("Should have at least one doc_ref if we have a root"),
-    }))
-}
-
-/// Internal helper to load edit state given a root record ID.
-///
-/// If `after_rkey` is provided, only diffs with rkey > after_rkey are fetched.
-/// This enables incremental sync by skipping diffs we've already imported.
-async fn load_edit_state_from_root_id(
-    fetcher: &Fetcher,
-    root_id: RecordId<'static>,
-    after_rkey: Option<&str>,
-) -> Result<Option<PdsEditState>, WeaverError> {
-    // Build root URI
-    let root_uri = AtUri::new(&format_smolstr!(
-        "at://{}/{}/{}",
-        root_id.did,
-        ROOT_NSID,
-        root_id.rkey.as_ref()
-    ))
-    .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid root URI: {}", e)))?
-    .into_static();
-
-    // Fetch the root record using get_record helper
-    let root_response = fetcher
-        .client
-        .get_record::<Root>(&root_uri)
-        .await
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to fetch root: {}", e)))?;
-
-    let root_output = root_response
-        .into_output()
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to parse root: {}", e)))?;
-
-    let root_cid = root_output
-        .cid
-        .ok_or_else(|| WeaverError::InvalidNotebook("Root response missing CID".into()))?;
-
-    let root_ref = StrongRef::new()
-        .uri(root_uri.clone())
-        .cid(root_cid.into_static())
-        .build();
-
-    // Extract the DocRef from the root record
-    let doc_ref = root_output.value.doc.into_static();
-
-    // Fetch the root snapshot blob
-    let root_snapshot = fetch_blob(
-        fetcher,
-        &root_id.did,
-        root_output.value.snapshot.blob().cid(),
+    load_all_edit_states(
+        client.as_ref(),
+        entry_uri,
+        collaborators,
+        current_did.as_ref(),
+        last_seen_diffs,
     )
-    .await?;
-
-    // Find all diffs for this root
-    let diff_ids = find_diffs_for_root(fetcher, &root_uri).await?;
-
-    if diff_ids.is_empty() {
-        return Ok(Some(PdsEditState {
-            root_ref,
-            last_diff_ref: None,
-            root_snapshot,
-            diff_updates: vec![],
-            last_seen_diffs: std::collections::HashMap::new(),
-            doc_ref,
-        }));
-    }
-
-    // Fetch all diffs and store in BTreeMap keyed by rkey (TID) for sorted order
-    // TIDs are lexicographically sortable timestamps
-    let mut diffs_by_rkey: BTreeMap<
-        CowStr<'static>,
-        (Diff<'static>, Cid<'static>, AtUri<'static>),
-    > = BTreeMap::new();
-
-    for diff_id in &diff_ids {
-        let rkey_str: &str = diff_id.rkey.as_ref();
-
-        // Skip diffs we've already seen (rkey/TID is lexicographically sortable by time)
-        if let Some(after) = after_rkey {
-            if rkey_str <= after {
-                tracing::trace!("Skipping already-seen diff rkey: {}", rkey_str);
-                continue;
-            }
-        }
-
-        let diff_uri = AtUri::new(&format_smolstr!(
-            "at://{}/{}/{}",
-            diff_id.did,
-            DIFF_NSID,
-            rkey_str
-        ))
-        .map_err(|e| WeaverError::InvalidNotebook(format!("Invalid diff URI: {}", e)))?
-        .into_static();
-
-        let diff_response = fetcher
-            .client
-            .get_record::<Diff>(&diff_uri)
-            .await
-            .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to fetch diff: {}", e)))?;
-
-        let diff_output = diff_response
-            .into_output()
-            .map_err(|e| WeaverError::InvalidNotebook(format!("Failed to parse diff: {}", e)))?;
-
-        let diff_cid = diff_output
-            .cid
-            .ok_or_else(|| WeaverError::InvalidNotebook("Diff response missing CID".into()))?;
-
-        diffs_by_rkey.insert(
-            rkey_str.to_cowstr().into_static(),
-            (
-                diff_output.value.into_static(),
-                diff_cid.into_static(),
-                diff_uri,
-            ),
-        );
-    }
-
-    // Fetch all diff data in TID order (BTreeMap iterates in sorted order)
-    // Diffs can be stored either inline or as blobs
-    let mut diff_updates = Vec::new();
-    let mut last_diff_ref = None;
-
-    for (_rkey, (diff, cid, uri)) in &diffs_by_rkey {
-        // Check for inline diff first, then fall back to blob
-        let diff_bytes = if let Some(ref inline) = diff.inline_diff {
-            inline.clone()
-        } else if let Some(ref snapshot) = diff.snapshot {
-            fetch_blob(fetcher, &root_id.did, snapshot.blob().cid()).await?
-        } else {
-            tracing::warn!("Diff has neither inline_diff nor snapshot, skipping");
-            continue;
-        };
-
-        diff_updates.push(diff_bytes);
-
-        // Track the last diff (will be the one with highest TID after iteration)
-        last_diff_ref = Some(StrongRef::new().uri(uri.clone()).cid(cid.clone()).build());
-    }
-
-    Ok(Some(PdsEditState {
-        root_ref,
-        last_diff_ref,
-        root_snapshot,
-        diff_updates,
-        last_seen_diffs: std::collections::HashMap::new(),
-        doc_ref,
-    }))
+    .await
+    .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))
 }
 
 /// Load document state by merging local storage and PDS state.
@@ -1365,13 +433,15 @@ pub async fn load_and_merge_document(
     // for drafts use single-repo loading (draft sharing requires knowing the URI)
     let pds_state = if let Some(uri) = entry_uri {
         // Published entry: load from ALL collaborators (multi-repo CRDT merge)
-        let empty_last_seen = std::collections::HashMap::new();
+        let empty_last_seen = HashMap::new();
         load_all_edit_states_from_pds(fetcher, uri, &empty_last_seen).await?
     } else if let Some(did) = fetcher.current_did().await {
         // Unpublished draft: single-repo for now
         // (draft sharing would require collaborator to know the draft URI)
         let draft_uri = build_draft_uri(&did, draft_key);
-        load_edit_state_from_draft(fetcher, &draft_uri).await?
+        load_edit_state_from_draft(fetcher.get_client().as_ref(), &draft_uri)
+            .await
+            .map_err(|e| WeaverError::InvalidNotebook(e.to_string()))?
     } else {
         // Not authenticated, can't query PDS
         None
