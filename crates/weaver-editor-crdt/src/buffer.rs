@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 
-use loro::{LoroDoc, LoroText, UndoManager as LoroUndoManager, VersionVector};
+use loro::{cursor::PosType, LoroDoc, LoroText, UndoManager as LoroUndoManager, VersionVector};
 use smol_str::{SmolStr, ToSmolStr};
 use weaver_editor_core::{TextBuffer, UndoManager};
 
@@ -110,7 +110,7 @@ impl Default for LoroTextBuffer {
 
 impl TextBuffer for LoroTextBuffer {
     fn len_bytes(&self) -> usize {
-        self.content.to_string().len()
+        self.content.len_utf8()
     }
 
     fn len_chars(&self) -> usize {
@@ -126,20 +126,17 @@ impl TextBuffer for LoroTextBuffer {
     }
 
     fn slice(&self, char_range: Range<usize>) -> Option<SmolStr> {
-        let s = self.content.to_string();
-        let chars: Vec<char> = s.chars().collect();
-
-        if char_range.end > chars.len() {
+        if char_range.end > self.content.len_unicode() {
             return None;
         }
-
-        let slice: String = chars[char_range].iter().collect();
-        Some(slice.to_smolstr())
+        self.content
+            .slice(char_range.start, char_range.end)
+            .ok()
+            .map(|s| s.to_smolstr())
     }
 
     fn char_at(&self, char_offset: usize) -> Option<char> {
-        let s = self.content.to_string();
-        s.chars().nth(char_offset)
+        self.content.char_at(char_offset).ok()
     }
 
     fn to_string(&self) -> String {
@@ -147,16 +144,15 @@ impl TextBuffer for LoroTextBuffer {
     }
 
     fn char_to_byte(&self, char_offset: usize) -> usize {
-        let s = self.content.to_string();
-        s.char_indices()
-            .nth(char_offset)
-            .map(|(i, _)| i)
-            .unwrap_or(s.len())
+        self.content
+            .convert_pos(char_offset, PosType::Unicode, PosType::Bytes)
+            .unwrap_or(self.content.len_utf8())
     }
 
     fn byte_to_char(&self, byte_offset: usize) -> usize {
-        let s = self.content.to_string();
-        s[..byte_offset.min(s.len())].chars().count()
+        self.content
+            .convert_pos(byte_offset, PosType::Bytes, PosType::Unicode)
+            .unwrap_or(self.content.len_unicode())
     }
 }
 

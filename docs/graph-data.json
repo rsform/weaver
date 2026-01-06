@@ -1704,6 +1704,50 @@
       "created_at": "2026-01-06T14:36:23.710415853-05:00",
       "updated_at": "2026-01-06T14:36:23.710415853-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 157,
+      "change_id": "e1666f70-0b8a-4a9e-9716-bd550899e65c",
+      "node_type": "action",
+      "title": "Moved fetch_blob to WeaverExt trait in weaver-common",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T15:16:33.868867777-05:00",
+      "updated_at": "2026-01-06T15:16:33.868867777-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 158,
+      "change_id": "89ef84b5-0909-4367-8644-4392c1cf4c3a",
+      "node_type": "action",
+      "title": "Added use-index cfg gates to crdt sync functions (find_all_edit_roots, list_drafts)",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T15:16:33.886464900-05:00",
+      "updated_at": "2026-01-06T15:16:33.886464900-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 159,
+      "change_id": "f3f310fb-78e3-4178-98a3-20d55e20c85a",
+      "node_type": "action",
+      "title": "Refactored app sync.rs - removed ~1100 lines of duplicated code, re-exports crdt types",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T15:16:33.904856197-05:00",
+      "updated_at": "2026-01-06T15:16:33.904856197-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 160,
+      "change_id": "da49b35a-6ca3-4d59-a1f8-84f359693565",
+      "node_type": "outcome",
+      "title": "Sync extraction complete - app sync.rs now thin wrapper over weaver-editor-crdt, both use-index and non-use-index paths compile",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T15:16:33.936978250-05:00",
+      "updated_at": "2026-01-06T15:16:33.936978250-05:00",
+      "metadata_json": "{\"confidence\":95}"
     }
   ],
   "edges": [
@@ -3477,6 +3521,50 @@
       "weight": 1.0,
       "rationale": "Completed fix",
       "created_at": "2026-01-06T14:36:23.726201054-05:00"
+    },
+    {
+      "id": 163,
+      "from_node_id": 153,
+      "to_node_id": 157,
+      "from_change_id": "f357a30f-0000-4b09-bb35-fe6c23b1dccf",
+      "to_change_id": "e1666f70-0b8a-4a9e-9716-bd550899e65c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "fetch_blob needed for crdt sync to work standalone",
+      "created_at": "2026-01-06T15:16:39.378273071-05:00"
+    },
+    {
+      "id": 164,
+      "from_node_id": 157,
+      "to_node_id": 158,
+      "from_change_id": "e1666f70-0b8a-4a9e-9716-bd550899e65c",
+      "to_change_id": "89ef84b5-0909-4367-8644-4392c1cf4c3a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "cfg gates next step after fetch_blob available",
+      "created_at": "2026-01-06T15:16:39.394339283-05:00"
+    },
+    {
+      "id": 165,
+      "from_node_id": 158,
+      "to_node_id": 159,
+      "from_change_id": "89ef84b5-0909-4367-8644-4392c1cf4c3a",
+      "to_change_id": "f3f310fb-78e3-4178-98a3-20d55e20c85a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "app sync.rs refactor follows crdt having both paths",
+      "created_at": "2026-01-06T15:16:39.410629272-05:00"
+    },
+    {
+      "id": 166,
+      "from_node_id": 159,
+      "to_node_id": 160,
+      "from_change_id": "f3f310fb-78e3-4178-98a3-20d55e20c85a",
+      "to_change_id": "da49b35a-6ca3-4d59-a1f8-84f359693565",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "refactor completed successfully",
+      "created_at": "2026-01-06T15:16:39.426610084-05:00"
     }
   ]
 }

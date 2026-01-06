@@ -200,25 +200,20 @@ impl PartialEq for LoadedDocState {
 impl EditorDocument {
     /// Check if a character position is within the block-syntax zone of its line.
     fn is_in_block_syntax_zone(&self, pos: usize) -> bool {
-        if pos == 0 {
+        if pos <= BLOCK_SYNTAX_ZONE {
             return true;
         }
 
-        let content_str = self.content.to_string();
-        let mut last_newline_pos: Option<usize> = None;
-
-        for (i, c) in content_str.chars().take(pos).enumerate() {
-            if c == '\n' {
-                last_newline_pos = Some(i);
+        // Search backwards from pos-1, only need to check BLOCK_SYNTAX_ZONE + 1 chars.
+        let search_start = pos.saturating_sub(BLOCK_SYNTAX_ZONE + 1);
+        for i in (search_start..pos).rev() {
+            if self.content.char_at(i).ok() == Some('\n') {
+                // Found newline at i, distance from line start is pos - i - 1.
+                return (pos - i - 1) <= BLOCK_SYNTAX_ZONE;
             }
         }
-
-        let chars_from_line_start = match last_newline_pos {
-            Some(nl_pos) => pos - nl_pos - 1,
-            None => pos,
-        };
-
-        chars_from_line_start <= BLOCK_SYNTAX_ZONE
+        // No newline found in search range, and pos > BLOCK_SYNTAX_ZONE, so not in zone.
+        false
     }
 
     /// Create a new editor document with the given content.
@@ -695,8 +690,11 @@ impl EditorDocument {
 
     /// Remove text range from content and record edit info for incremental rendering.
     pub fn remove_tracked(&mut self, start: usize, len: usize) -> LoroResult<()> {
-        let content_str = self.content.to_string();
-        let contains_newline = content_str.chars().skip(start).take(len).any(|c| c == '\n');
+        let contains_newline = self
+            .content
+            .slice(start, start + len)
+            .map(|s| s.contains('\n'))
+            .unwrap_or(false);
         let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
 
         let result = self.content.delete(start, len);
@@ -714,8 +712,11 @@ impl EditorDocument {
 
     /// Replace text in content (delete then insert) and record combined edit info.
     pub fn replace_tracked(&mut self, start: usize, len: usize, text: &str) -> LoroResult<()> {
-        let content_str = self.content.to_string();
-        let delete_has_newline = content_str.chars().skip(start).take(len).any(|c| c == '\n');
+        let delete_has_newline = self
+            .content
+            .slice(start, start + len)
+            .map(|s| s.contains('\n'))
+            .unwrap_or(false);
         let in_block_syntax_zone = self.is_in_block_syntax_zone(start);
 
         let len_before = self.content.len_unicode();
