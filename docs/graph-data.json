@@ -1825,6 +1825,160 @@
       "created_at": "2026-01-06T16:13:31.725544621-05:00",
       "updated_at": "2026-01-06T16:13:31.725544621-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 168,
+      "change_id": "f823cca6-ffb6-4df9-b9a0-523fa783fb56",
+      "node_type": "outcome",
+      "title": "EditorDocument trait impl complete - SignalEditorDocument implements buffer(), cursor, selection, composition accessors via Signals, set_last_edit bumps content_changed",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T16:27:11.484430002-05:00",
+      "updated_at": "2026-01-06T16:27:11.484430002-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 169,
+      "change_id": "52456860-fce9-4312-9b98-b63e9364619f",
+      "node_type": "outcome",
+      "title": "LoroTextAdapter removed - render.rs now generic over &impl TextBuffer, tests use LoroTextBuffer directly",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T16:27:15.613322837-05:00",
+      "updated_at": "2026-01-06T16:27:15.613322837-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 170,
+      "change_id": "5347d57b-ce85-4852-9340-727db8801551",
+      "node_type": "outcome",
+      "title": "EditorDocument refactor complete - SignalEditorDocument wraps LoroTextBuffer, implements EditorDocument trait, render generic over TextBuffer",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T16:27:33.306772142-05:00",
+      "updated_at": "2026-01-06T16:27:33.306772142-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 171,
+      "change_id": "e0f8c887-c288-4fdf-b61b-c6a75a1e9c94",
+      "node_type": "outcome",
+      "title": "Formatting module fully extracted to core - apply_formatting handles all FormatAction variants, formatting.rs deleted from app",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:06:21.313945531-05:00",
+      "updated_at": "2026-01-06T17:06:21.313945531-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 172,
+      "change_id": "ad871947-0590-47ab-848c-eab47cb125c2",
+      "node_type": "goal",
+      "title": "Cursor module refactor - make browser cursor functions public and remove app duplicates",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:07:07.731289055-05:00",
+      "updated_at": "2026-01-06T17:07:07.731289055-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 173,
+      "change_id": "514cd2ee-94a2-4889-8654-934824feef04",
+      "node_type": "outcome",
+      "title": "Cursor functions extracted - get_cursor_rect, get_cursor_rect_relative, get_selection_rects_relative now public in browser crate, app's cursor.rs reduced from 206 to 35 lines",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:09:00.838425880-05:00",
+      "updated_at": "2026-01-06T17:09:00.838425880-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 174,
+      "change_id": "18c1dd40-fdb8-4822-8b66-34bade45d6ce",
+      "node_type": "outcome",
+      "title": "cursor.rs deleted from app entirely - was 206 lines, now 0",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:10:30.980248146-05:00",
+      "updated_at": "2026-01-06T17:10:30.980248146-05:00",
+      "metadata_json": "{\"confidence\":100}"
+    },
+    {
+      "id": 175,
+      "change_id": "c6c259af-8514-4bab-bbda-3e42124d7592",
+      "node_type": "outcome",
+      "title": "Deleted writer/ dir, render.rs from app - all types now from core. EditorImage, EditorImageResolver use core versions. 69 tests pass.",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:18:26.321282250-05:00",
+      "updated_at": "2026-01-06T17:18:26.321282250-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 176,
+      "change_id": "f1cb9bd9-9102-44b8-9d99-bae1ef085723",
+      "node_type": "goal",
+      "title": "Evaluate and organize collab.rs and component.rs - consider extraction to core/browser/crdt crates and embed worker host migration",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:25:55.550260849-05:00",
+      "updated_at": "2026-01-06T17:25:55.550260849-05:00",
+      "metadata_json": "{\"confidence\":95,\"prompt\":\"User asked to review collab.rs and component.rs for cleanup/organization opportunities, potentially move code to weaver-editor-core, weaver-editor-browser, weaver-editor-crdt. Also consider moving embed worker host side to weaver-embed-worker\"}"
+    },
+    {
+      "id": 177,
+      "change_id": "0f9cdce5-ae15-49e1-9cbd-7d2151d43e12",
+      "node_type": "action",
+      "title": "Migrate embed worker host side to weaver-embed-worker crate",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:31:25.829135397-05:00",
+      "updated_at": "2026-01-06T17:31:25.829135397-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 178,
+      "change_id": "df64b2b4-7074-4311-805d-5d40791c151b",
+      "node_type": "outcome",
+      "title": "EmbedWorkerHost extracted to weaver-embed-worker - host.rs with spawn/fetch_embeds/clear_cache API, component.rs simplified, non-wasm fallback removed",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:35:52.587988139-05:00",
+      "updated_at": "2026-01-06T17:35:52.587988139-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 179,
+      "change_id": "91b9cc98-8159-4166-929f-e40dd1603c6b",
+      "node_type": "outcome",
+      "title": "Browser helpers extracted - color.rs with rgba_u32_to_css and rgba_u32_to_css_alpha, worker-based autosave removed (simplified to main-thread save), 77 tests pass",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:39:11.648608310-05:00",
+      "updated_at": "2026-01-06T17:39:11.648608310-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 180,
+      "change_id": "867a78cf-9c15-4ac6-95e5-23f547e4cfde",
+      "node_type": "action",
+      "title": "Simple collab extraction - move CoordinatorState, constants, and topic helper to weaver-editor-crdt",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:40:52.904782219-05:00",
+      "updated_at": "2026-01-06T17:40:52.904782219-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 181,
+      "change_id": "da36f4f1-de32-4f2d-aaea-46e41756b75e",
+      "node_type": "outcome",
+      "title": "Collab types extracted - CoordinatorState, constants, compute_collab_topic in weaver-editor-crdt/coordinator.rs, collab.rs updated to use them, 88 tests pass",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T17:45:55.076540964-05:00",
+      "updated_at": "2026-01-06T17:45:55.076540964-05:00",
+      "metadata_json": "{\"confidence\":95}"
     }
   ],
   "edges": [
@@ -3697,6 +3851,149 @@
       "weight": 1.0,
       "rationale": "Refactor implementation complete",
       "created_at": "2026-01-06T16:13:31.873150501-05:00"
+    },
+    {
+      "id": 172,
+      "from_node_id": 166,
+      "to_node_id": 168,
+      "from_change_id": "8d2c762d-490e-4783-bb9e-ebcfa32f7be0",
+      "to_change_id": "f823cca6-ffb6-4df9-b9a0-523fa783fb56",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Action produced this outcome",
+      "created_at": "2026-01-06T16:27:20.406600807-05:00"
+    },
+    {
+      "id": 173,
+      "from_node_id": 168,
+      "to_node_id": 169,
+      "from_change_id": "f823cca6-ffb6-4df9-b9a0-523fa783fb56",
+      "to_change_id": "52456860-fce9-4312-9b98-b63e9364619f",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Continued refactor",
+      "created_at": "2026-01-06T16:27:20.423272971-05:00"
+    },
+    {
+      "id": 174,
+      "from_node_id": 164,
+      "to_node_id": 168,
+      "from_change_id": "9f555968-9c6c-4db6-bda1-6223c92acbec",
+      "to_change_id": "f823cca6-ffb6-4df9-b9a0-523fa783fb56",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Goal achieved via refactor",
+      "created_at": "2026-01-06T16:27:33.331386230-05:00"
+    },
+    {
+      "id": 175,
+      "from_node_id": 170,
+      "to_node_id": 171,
+      "from_change_id": "5347d57b-ce85-4852-9340-727db8801551",
+      "to_change_id": "e0f8c887-c288-4fdf-b61b-c6a75a1e9c94",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Formatting extraction completed",
+      "created_at": "2026-01-06T17:06:34.061778318-05:00"
+    },
+    {
+      "id": 176,
+      "from_node_id": 172,
+      "to_node_id": 173,
+      "from_change_id": "ad871947-0590-47ab-848c-eab47cb125c2",
+      "to_change_id": "514cd2ee-94a2-4889-8654-934824feef04",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Cursor refactor completed",
+      "created_at": "2026-01-06T17:09:06.164296492-05:00"
+    },
+    {
+      "id": 177,
+      "from_node_id": 173,
+      "to_node_id": 174,
+      "from_change_id": "514cd2ee-94a2-4889-8654-934824feef04",
+      "to_change_id": "18c1dd40-fdb8-4822-8b66-34bade45d6ce",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Further cleanup",
+      "created_at": "2026-01-06T17:10:33.430711917-05:00"
+    },
+    {
+      "id": 178,
+      "from_node_id": 174,
+      "to_node_id": 175,
+      "from_change_id": "18c1dd40-fdb8-4822-8b66-34bade45d6ce",
+      "to_change_id": "c6c259af-8514-4bab-bbda-3e42124d7592",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Writer/render cleanup",
+      "created_at": "2026-01-06T17:18:26.339195552-05:00"
+    },
+    {
+      "id": 179,
+      "from_node_id": 18,
+      "to_node_id": 176,
+      "from_change_id": "fa554b5d-8af7-42e4-b03f-e5bec837e31a",
+      "to_change_id": "f1cb9bd9-9102-44b8-9d99-bae1ef085723",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Part of ongoing editor extraction goal",
+      "created_at": "2026-01-06T17:25:59.337129941-05:00"
+    },
+    {
+      "id": 180,
+      "from_node_id": 176,
+      "to_node_id": 177,
+      "from_change_id": "f1cb9bd9-9102-44b8-9d99-bae1ef085723",
+      "to_change_id": "0f9cdce5-ae15-49e1-9cbd-7d2151d43e12",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "First task in evaluation goal",
+      "created_at": "2026-01-06T17:31:30.915708943-05:00"
+    },
+    {
+      "id": 181,
+      "from_node_id": 177,
+      "to_node_id": 178,
+      "from_change_id": "0f9cdce5-ae15-49e1-9cbd-7d2151d43e12",
+      "to_change_id": "df64b2b4-7074-4311-805d-5d40791c151b",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Action completed",
+      "created_at": "2026-01-06T17:35:58.536814810-05:00"
+    },
+    {
+      "id": 182,
+      "from_node_id": 176,
+      "to_node_id": 179,
+      "from_change_id": "f1cb9bd9-9102-44b8-9d99-bae1ef085723",
+      "to_change_id": "91b9cc98-8159-4166-929f-e40dd1603c6b",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Part of extraction goal",
+      "created_at": "2026-01-06T17:39:17.951129546-05:00"
+    },
+    {
+      "id": 183,
+      "from_node_id": 176,
+      "to_node_id": 180,
+      "from_change_id": "f1cb9bd9-9102-44b8-9d99-bae1ef085723",
+      "to_change_id": "867a78cf-9c15-4ac6-95e5-23f547e4cfde",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Part of extraction goal",
+      "created_at": "2026-01-06T17:40:58.868799958-05:00"
+    },
+    {
+      "id": 184,
+      "from_node_id": 180,
+      "to_node_id": 181,
+      "from_change_id": "867a78cf-9c15-4ac6-95e5-23f547e4cfde",
+      "to_change_id": "da36f4f1-de32-4f2d-aaea-46e41756b75e",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Action completed",
+      "created_at": "2026-01-06T17:46:00.638988346-05:00"
     }
   ]
 }

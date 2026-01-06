@@ -372,32 +372,28 @@ pub fn dom_position_to_text_offset(
     None
 }
 
-/// Paragraph render data needed for DOM updates.
-///
-/// This is a simplified view of paragraph data for the DOM sync layer.
-pub struct ParagraphDomData<'a> {
-    /// Paragraph ID (for DOM element lookup).
-    pub id: &'a str,
-    /// HTML content to render.
-    pub html: &'a str,
-    /// Source hash for change detection.
-    pub source_hash: u64,
-    /// Character range in document.
-    pub char_range: std::ops::Range<usize>,
-    /// Offset mappings for cursor restoration.
-    pub offset_map: &'a [OffsetMapping],
-}
-
 /// Update paragraph DOM elements incrementally.
+///
+/// Uses stable content-based paragraph IDs for efficient DOM reconciliation:
+/// - Unchanged paragraphs (same ID + hash) are not touched
+/// - Changed paragraphs (same ID, different hash) get innerHTML updated
+/// - New paragraphs get created and inserted at correct position
+/// - Removed paragraphs get deleted
+///
+/// When `FORCE_INNERHTML_UPDATE` is false, cursor paragraph innerHTML updates
+/// are skipped if only text content changed (syntax spans unchanged) and the
+/// DOM content length matches expected. This allows browser-native editing
+/// to proceed without disrupting the selection.
 ///
 /// Returns true if the paragraph containing the cursor was updated.
 pub fn update_paragraph_dom(
     editor_id: &str,
-    old_paragraphs: &[ParagraphDomData<'_>],
-    new_paragraphs: &[ParagraphDomData<'_>],
+    old_paragraphs: &[ParagraphRender],
+    new_paragraphs: &[ParagraphRender],
     cursor_offset: usize,
     force: bool,
 ) -> bool {
+    use crate::FORCE_INNERHTML_UPDATE;
     use std::collections::HashMap;
 
     let window = match web_sys::window() {
@@ -417,6 +413,10 @@ pub fn update_paragraph_dom(
 
     let mut cursor_para_updated = false;
 
+    // Build lookup for old paragraphs by ID (for syntax span comparison).
+    let old_para_map: HashMap<&str, &ParagraphRender> =
+        old_paragraphs.iter().map(|p| (p.id.as_str(), p)).collect();
+
     // Build pool of existing DOM elements by ID.
     let mut old_elements: HashMap<String, web_sys::Element> = HashMap::new();
     let mut child_opt = editor.first_element_child();
@@ -433,12 +433,12 @@ pub fn update_paragraph_dom(
     let mut cursor_node: Option<web_sys::Node> = editor.first_element_child().map(|e| e.into());
 
     for new_para in new_paragraphs.iter() {
-        let para_id = new_para.id;
+        let para_id = &new_para.id;
         let new_hash = format!("{:x}", new_para.source_hash);
         let is_cursor_para =
             new_para.char_range.start <= cursor_offset && cursor_offset <= new_para.char_range.end;
 
-        if let Some(existing_elem) = old_elements.remove(para_id) {
+        if let Some(existing_elem) = old_elements.remove(para_id.as_str()) {
             let old_hash = existing_elem.get_attribute("data-hash").unwrap_or_default();
             let needs_update = force || old_hash != new_hash;
 
@@ -449,6 +449,11 @@ pub fn update_paragraph_dom(
                 .unwrap_or(false);
 
             if !at_correct_position {
+                tracing::warn!(
+                    para_id = %para_id,
+                    is_cursor_para,
+                    "update_paragraph_dom: element not at correct position, moving"
+                );
                 let _ = editor.insert_before(existing_as_node, cursor_node.as_ref());
                 if is_cursor_para {
                     cursor_para_updated = true;
@@ -458,23 +463,99 @@ pub fn update_paragraph_dom(
             }
 
             if needs_update {
-                existing_elem.set_inner_html(new_para.html);
-                let _ = existing_elem.set_attribute("data-hash", &new_hash);
+                // For cursor paragraph: only update if syntax/formatting changed.
+                // This prevents destroying browser selection during fast typing.
+                //
+                // HOWEVER: we must verify browser actually updated the DOM.
+                // PassThrough assumes browser handles edit, but sometimes it doesn't.
+                let should_skip_cursor_update =
+                    !FORCE_INNERHTML_UPDATE && is_cursor_para && !force && {
+                        let old_para = old_para_map.get(para_id.as_str());
+                        let syntax_unchanged = old_para
+                            .map(|old| old.syntax_spans == new_para.syntax_spans)
+                            .unwrap_or(false);
 
-                if is_cursor_para {
-                    if let Err(e) =
-                        restore_cursor_position(cursor_offset, new_para.offset_map, None)
-                    {
-                        tracing::warn!("Cursor restore failed: {:?}", e);
+                        // Verify DOM content length matches expected.
+                        let dom_matches_expected = if syntax_unchanged {
+                            let inner_elem = existing_elem.first_element_child();
+                            let dom_text = inner_elem
+                                .as_ref()
+                                .and_then(|e| e.text_content())
+                                .unwrap_or_default();
+                            let expected_len = new_para.byte_range.end - new_para.byte_range.start;
+                            let dom_len = dom_text.len();
+                            let matches = dom_len == expected_len;
+                            tracing::debug!(
+                                para_id = %para_id,
+                                dom_len,
+                                expected_len,
+                                matches,
+                                "DOM sync check"
+                            );
+                            matches
+                        } else {
+                            false
+                        };
+
+                        syntax_unchanged && dom_matches_expected
+                    };
+
+                if should_skip_cursor_update {
+                    tracing::trace!(
+                        para_id = %para_id,
+                        "update_paragraph_dom: skipping cursor para innerHTML (syntax unchanged, DOM verified)"
+                    );
+                    let _ = existing_elem.set_attribute("data-hash", &new_hash);
+                } else {
+                    if tracing::enabled!(tracing::Level::TRACE) {
+                        let old_inner = existing_elem.inner_html();
+                        tracing::trace!(
+                            para_id = %para_id,
+                            old_inner = %old_inner.escape_debug(),
+                            new_html = %new_para.html.escape_debug(),
+                            "update_paragraph_dom: replacing innerHTML"
+                        );
                     }
-                    cursor_para_updated = true;
+
+                    // Timing instrumentation.
+                    let start = web_sys::window()
+                        .and_then(|w| w.performance())
+                        .map(|p| p.now());
+
+                    existing_elem.set_inner_html(&new_para.html);
+                    let _ = existing_elem.set_attribute("data-hash", &new_hash);
+
+                    if let Some(start_time) = start {
+                        if let Some(end_time) = web_sys::window()
+                            .and_then(|w| w.performance())
+                            .map(|p| p.now())
+                        {
+                            let elapsed_ms = end_time - start_time;
+                            tracing::debug!(
+                                para_id = %para_id,
+                                is_cursor_para,
+                                elapsed_ms,
+                                html_len = new_para.html.len(),
+                                "update_paragraph_dom: innerHTML update timing"
+                            );
+                        }
+                    }
+
+                    if is_cursor_para {
+                        if let Err(e) =
+                            restore_cursor_position(cursor_offset, &new_para.offset_map, None)
+                        {
+                            tracing::warn!("Synchronous cursor restore failed: {:?}", e);
+                        }
+                        cursor_para_updated = true;
+                    }
                 }
             }
         } else {
             // New element - create and insert.
             if let Ok(div) = document.create_element("div") {
                 div.set_id(para_id);
-                div.set_inner_html(new_para.html);
+                div.set_inner_html(&new_para.html);
                 let _ = div.set_attribute("data-hash", &new_hash);
                 let div_node: &web_sys::Node = div.as_ref();
                 let _ = editor.insert_before(div_node, cursor_node.as_ref());

@@ -5,8 +5,7 @@
 use dioxus::prelude::*;
 
 use super::document::SignalEditorDocument;
-use super::formatting::{self, FormatAction};
-use weaver_editor_core::SnapDirection;
+use weaver_editor_core::{FormatAction, SnapDirection, apply_formatting};
 
 // Re-export ListContext from core - the logic is duplicated below for Loro-specific usage,
 // but the type itself comes from core.
@@ -64,11 +63,11 @@ pub fn handle_keydown(evt: Event<KeyboardData>, doc: &mut SignalEditorDocument) 
             if mods.ctrl() {
                 match ch.as_str() {
                     "b" => {
-                        formatting::apply_formatting(doc, FormatAction::Bold);
+                        apply_formatting(doc, FormatAction::Bold);
                         return;
                     }
                     "i" => {
-                        formatting::apply_formatting(doc, FormatAction::Italic);
+                        apply_formatting(doc, FormatAction::Italic);
                         return;
                     }
                     "z" => {

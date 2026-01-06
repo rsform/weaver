@@ -27,20 +27,10 @@ use weaver_api::sh_weaver::notebook::entry::Entry;
 use weaver_editor_core::EditorDocument;
 use weaver_editor_core::TextBuffer;
 use weaver_editor_core::UndoManager;
-pub use weaver_editor_core::{Affinity, CompositionState, CursorState, EditInfo, Selection};
+pub use weaver_editor_core::{
+    Affinity, CompositionState, CursorState, EditInfo, EditorImage, Selection,
+};
 use weaver_editor_crdt::LoroTextBuffer;
-
-/// Helper for working with editor images.
-/// Constructed from LoroMap data, NOT serialized directly.
-/// The Image lexicon type stores our `publishedBlobUri` in its `extra_data` field.
-#[derive(Clone, Debug)]
-pub struct EditorImage {
-    /// The lexicon Image type (deserialized via from_json_value)
-    pub image: Image<'static>,
-    /// AT-URI of the PublishedBlob record (for cleanup on publish/delete)
-    /// None for existing images that are already in an entry record.
-    pub published_blob_uri: Option<AtUri<'static>>,
-}
 
 /// Single source of truth for editor state.
 ///

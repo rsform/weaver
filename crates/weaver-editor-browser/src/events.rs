@@ -302,7 +302,27 @@ pub async fn copy_as_html(markdown: &str) -> Result<(), JsValue> {
 
 // === BeforeInput handler ===
 
-use weaver_editor_core::{EditorAction, EditorDocument, execute_action};
+use crate::FORCE_INNERHTML_UPDATE;
+use weaver_editor_core::{EditorAction, EditorDocument, Selection, execute_action};
+
+/// Get the current range (cursor or selection) from an EditorDocument.
+///
+/// This is a convenience helper for building `BeforeInputContext`.
+pub fn get_current_range<D: EditorDocument>(doc: &D) -> Range {
+    if let Some(sel) = doc.selection() {
+        Range::new(sel.start(), sel.end())
+    } else {
+        Range::caret(doc.cursor_offset())
+    }
+}
+
+/// Check if a character requires special delete handling.
+///
+/// Returns true for newlines and zero-width chars which need semantic handling
+/// rather than simple char deletion.
+fn needs_special_delete_handling(ch: Option<char>) -> bool {
+    matches!(ch, Some('\n') | Some('\u{200C}') | Some('\u{200B}'))
+}
 
 /// Handle a beforeinput event, dispatching to the appropriate action.
 ///
@@ -311,6 +331,15 @@ use weaver_editor_core::{EditorAction, EditorDocument, execute_action};
 /// from the document when `ctx.target_range` is None.
 ///
 /// Returns the handling result indicating whether default should be prevented.
+///
+/// # DOM Update Strategy
+///
+/// When [`FORCE_INNERHTML_UPDATE`] is `true`, this always returns `Handled`
+/// and the caller should preventDefault. The DOM will be updated via innerHTML.
+///
+/// When `false`, simple operations (plain text insert, single char delete)
+/// return `PassThrough` to let the browser update the DOM while we track
+/// changes in the model. Complex operations still return `Handled`.
 pub fn handle_beforeinput<D: EditorDocument>(
     doc: &mut D,
     ctx: &BeforeInputContext<'_>,
@@ -343,7 +372,14 @@ pub fn handle_beforeinput<D: EditorDocument>(
                     range,
                 };
                 execute_action(doc, &action);
-                BeforeInputResult::Handled
+
+                // When FORCE_INNERHTML_UPDATE is false, we can let browser handle
+                // DOM updates for simple text insertions while we just track in model.
+                if FORCE_INNERHTML_UPDATE {
+                    BeforeInputResult::Handled
+                } else {
+                    BeforeInputResult::PassThrough
+                }
             } else {
                 BeforeInputResult::PassThrough
             }
@@ -388,15 +424,53 @@ pub fn handle_beforeinput<D: EditorDocument>(
                 };
             }
 
-            let action = EditorAction::DeleteBackward { range };
-            execute_action(doc, &action);
-            BeforeInputResult::Handled
+            // Check if this delete requires special handling.
+            let needs_special = if !range.is_caret() {
+                // Selection delete - always handle for consistency.
+                true
+            } else if range.start == 0 {
+                // At start - nothing to delete.
+                false
+            } else {
+                // Check what char we're deleting.
+                needs_special_delete_handling(doc.char_at(range.start - 1))
+            };
+
+            if needs_special || FORCE_INNERHTML_UPDATE {
+                // Complex delete or forced mode - use full action handler.
+                let action = EditorAction::DeleteBackward { range };
+                execute_action(doc, &action);
+                BeforeInputResult::Handled
+            } else {
+                // Simple single-char delete - track in model, let browser handle DOM.
+                if range.start > 0 {
+                    doc.delete(range.start - 1..range.start);
+                }
+                BeforeInputResult::PassThrough
+            }
         }
 
         InputType::DeleteContentForward => {
-            let action = EditorAction::DeleteForward { range };
-            execute_action(doc, &action);
-            BeforeInputResult::Handled
+            // Check if this delete requires special handling.
+            let needs_special = if !range.is_caret() {
+                true
+            } else if range.start >= doc.len_chars() {
+                false
+            } else {
+                needs_special_delete_handling(doc.char_at(range.start))
+            };
+
+            if needs_special || FORCE_INNERHTML_UPDATE {
+                let action = EditorAction::DeleteForward { range };
+                execute_action(doc, &action);
+                BeforeInputResult::Handled
+            } else {
+                // Simple delete forward.
+                if range.start < doc.len_chars() {
+                    doc.delete(range.start..range.start + 1);
+                }
+                BeforeInputResult::PassThrough
+            }
         }
 
         InputType::DeleteWordBackward | InputType::DeleteEntireWordBackward => {

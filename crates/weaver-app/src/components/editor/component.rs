@@ -5,29 +5,20 @@ use super::actions::{
     EditorAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Range, execute_action,
     handle_keydown_with_bindings,
 };
-#[allow(unused_imports)]
-use super::beforeinput::{BeforeInputContext, BeforeInputResult, InputType, handle_beforeinput};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-use super::beforeinput::{get_data_from_event, get_target_range_from_event};
+use super::beforeinput::handle_beforeinput;
+#[allow(unused_imports)]
+use super::beforeinput::{BeforeInputContext, BeforeInputResult, InputType};
 use super::document::{CompositionState, LoadedDocState, SignalEditorDocument};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::dom_sync::update_paragraph_dom;
 use super::dom_sync::{sync_cursor_from_dom, sync_cursor_from_dom_with_direction};
-use super::formatting;
 use super::input::{get_char_at, handle_copy, handle_cut, handle_paste};
-use super::paragraph::ParagraphRender;
-use super::platform;
 #[allow(unused_imports)]
 use super::publish::{LoadedEntry, PublishButton, load_entry_for_editing};
-use super::render;
 use super::storage;
 use super::sync::{SyncStatus, load_and_merge_document};
 use super::toolbar::EditorToolbar;
-use super::visibility::update_syntax_visibility;
-#[allow(unused_imports)]
-use super::writer::EditorImageResolver;
-#[allow(unused_imports)]
-use super::writer::SyntaxSpanInfo;
 use crate::auth::AuthState;
 use crate::components::collab::CollaboratorAvatars;
 use crate::components::editor::ReportButton;
@@ -44,7 +35,11 @@ use jacquard::types::blob::BlobRef;
 use jacquard::types::ident::AtIdentifier;
 use weaver_api::sh_weaver::embed::images::Image;
 use weaver_common::WeaverExt;
+use weaver_editor_browser::{platform, update_syntax_visibility};
+use weaver_editor_core::EditorImageResolver;
+use weaver_editor_core::ParagraphRender;
 use weaver_editor_core::SnapDirection;
+use weaver_editor_core::apply_formatting;
 
 /// Result of loading document state.
 enum LoadResult {
@@ -442,7 +437,7 @@ fn MarkdownEditorInner(
         doc
     });
     let editor_id = "markdown-editor";
-    let mut render_cache = use_signal(|| render::RenderCache::default());
+    let mut render_cache = use_signal(|| weaver_editor_browser::RenderCache::default());
 
     // Populate resolver from existing images if editing a published entry
     let mut image_resolver: Signal<EditorImageResolver> = use_signal(|| {
@@ -482,7 +477,7 @@ fn MarkdownEditorInner(
         );
 
         let cursor_offset = doc_for_memo.cursor.read().offset;
-        let (paras, new_cache, refs) = render::render_paragraphs_incremental(
+        let result = weaver_editor_core::render_paragraphs_incremental(
             doc_for_memo.buffer(),
             Some(&cache),
             cursor_offset,
@@ -491,6 +486,9 @@ fn MarkdownEditorInner(
             entry_index_for_memo.as_ref(),
             &resolved,
         );
+        let paras = result.paragraphs;
+        let new_cache = result.cache;
+        let refs = result.collected_refs;
         let mut doc_for_spawn = doc_for_refs.clone();
         dioxus::prelude::spawn(async move {
             render_cache.set(new_cache);
@@ -504,12 +502,10 @@ fn MarkdownEditorInner(
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
         use dioxus::prelude::Writable;
-        use gloo_worker::Spawnable;
-        use weaver_embed_worker::{EmbedWorker, EmbedWorkerInput, EmbedWorkerOutput};
+        use weaver_embed_worker::{EmbedWorkerHost, EmbedWorkerOutput};
 
         let resolved_content_for_fetch = resolved_content;
-        let mut embed_worker_bridge: Signal<Option<gloo_worker::WorkerBridge<EmbedWorker>>> =
-            use_signal(|| None);
+        let mut embed_host: Signal<Option<EmbedWorkerHost>> = use_signal(|| None);
 
         // Spawn embed worker on mount
         let doc_for_embeds = document.clone();
@@ -543,10 +539,8 @@ fn MarkdownEditorInner(
                 }
             };
 
-            let bridge = EmbedWorker::spawner()
-                .callback(on_output)
-                .spawn("/embed_worker.js");
-            embed_worker_bridge.set(Some(bridge));
+            let host = EmbedWorkerHost::spawn("/embed_worker.js", on_output);
+            embed_host.set(Some(host));
             tracing::info!("Embed worker spawned");
         });
 
@@ -577,62 +571,9 @@ fn MarkdownEditorInner(
             }
 
             // Send to worker
-            if let Some(ref bridge) = *embed_worker_bridge.peek() {
-                bridge.send(EmbedWorkerInput::FetchEmbeds { uris: to_fetch });
+            if let Some(ref host) = *embed_host.peek() {
+                host.fetch_embeds(to_fetch);
             }
-        });
-    }
-
-    // Fallback for non-WASM (server-side rendering)
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    {
-        let mut resolved_content_for_fetch = resolved_content.clone();
-        let doc_for_embeds = document.clone();
-        let fetcher_for_embeds = fetcher.clone();
-        use_effect(move || {
-            let refs = doc_for_embeds.collected_refs.read();
-            let current_resolved = resolved_content_for_fetch.peek();
-            let fetcher = fetcher_for_embeds.clone();
-
-            // Find AT embeds that need fetching
-            let to_fetch: Vec<String> = refs
-                .iter()
-                .filter_map(|r| match r {
-                    weaver_common::ExtractedRef::AtEmbed { uri, .. } => {
-                        // Skip if already resolved
-                        if let Ok(at_uri) = jacquard::types::string::AtUri::new_owned(uri) {
-                            if current_resolved.get_embed_content(&at_uri).is_none() {
-                                return Some(uri.clone());
-                            }
-                        }
-                        None
-                    }
-                    _ => None,
-                })
-                .collect();
-
-            if to_fetch.is_empty() {
-                return;
-            }
-
-            // Spawn background fetches (main thread fallback)
-            dioxus::prelude::spawn(async move {
-                for uri_str in to_fetch {
-                    let Ok(at_uri) = jacquard::types::string::AtUri::new(&uri_str) else {
-                        continue;
-                    };
-
-                    match weaver_renderer::atproto::fetch_and_render(&at_uri, &fetcher).await {
-                        Ok(html) => {
-                            let mut rc = resolved_content_for_fetch.write();
-                            rc.add_embed(at_uri.into_static(), html, None);
-                        }
-                        Err(e) => {
-                            tracing::warn!("failed to fetch embed {}: {}", uri_str, e);
-                        }
-                    }
-                }
-            });
         });
     }
 
@@ -658,12 +599,6 @@ fn MarkdownEditorInner(
     let mut doc_for_dom = document.clone();
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     use_effect(move || {
-        // tracing::debug!(
-        //     composition_active = doc_for_dom.composition.read().is_some(),
-        //     cursor = doc_for_dom.cursor.read().offset,
-        //     "DOM update: checking state"
-        // );
-
         // Skip DOM updates during IME composition - browser controls the preview
         if doc_for_dom.composition.read().is_some() {
             tracing::debug!("skipping DOM update during composition");
@@ -723,144 +658,23 @@ fn MarkdownEditorInner(
     });
 
     // Track last saved frontiers to detect changes (peek-only, no subscriptions)
-    #[allow(unused_mut, unused)]
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let mut last_saved_frontiers: Signal<Option<loro::Frontiers>> = use_signal(|| None);
 
     // Store interval handle so it's dropped when component unmounts (prevents panic)
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let mut interval_holder: Signal<Option<gloo_timers::callback::Interval>> = use_signal(|| None);
 
-    // Worker-based autosave (offloads export + encode to worker thread)
+    // Autosave interval - saves to localStorage when document changes
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     {
-        use gloo_storage::Storage;
-        use gloo_worker::Spawnable;
-        use gloo_worker::reactor::ReactorBridge;
-        use weaver_editor_crdt::{EditorReactor, WorkerInput, WorkerOutput};
-
-        use futures_util::stream::{SplitSink, SplitStream};
-
-        // Track if worker is available (false = fallback to main thread)
-        let use_worker: Signal<bool> = use_signal(|| true);
-        // Worker sink for sending (split from bridge)
-        type WorkerSink = SplitSink<ReactorBridge<EditorReactor>, WorkerInput>;
-        let worker_sink: std::rc::Rc<std::cell::RefCell<Option<WorkerSink>>> =
-            std::rc::Rc::new(std::cell::RefCell::new(None));
-        // Track version vector sent to worker (for incremental updates)
-        let mut last_worker_vv: Signal<Option<loro::VersionVector>> = use_signal(|| None);
-
-        // Spawn worker on mount
-        let doc_for_worker_init = document.clone();
-        let draft_key_for_worker = draft_key.clone();
-        let worker_sink_for_spawn = worker_sink.clone();
-        let mut presence_for_worker = presence;
-        use_effect(move || {
-            let doc = doc_for_worker_init.clone();
-            let draft_key = draft_key_for_worker.clone();
-            let worker_sink = worker_sink_for_spawn.clone();
-
-            // Callback for worker responses
-            let mut on_output = move |output: WorkerOutput| {
-                match output {
-                    WorkerOutput::Ready => {
-                        tracing::info!("Editor worker ready");
-                    }
-                    WorkerOutput::Snapshot {
-                        draft_key,
-                        b64_snapshot,
-                        content,
-                        title,
-                        cursor_offset,
-                        editing_uri,
-                        editing_cid,
-                        notebook_uri,
-                        export_ms,
-                        encode_ms,
-                    } => {
-                        // Write to localStorage (fast - just string assignment)
-                        let snapshot = storage::EditorSnapshot {
-                            content,
-                            title,
-                            snapshot: Some(b64_snapshot),
-                            cursor: None, // Worker doesn't have Loro cursor
-                            cursor_offset,
-                            editing_uri,
-                            editing_cid,
-                            notebook_uri,
-                        };
-                        let write_start = crate::perf::now();
-                        let _ = gloo_storage::LocalStorage::set(
-                            format!("{}{}", storage::DRAFT_KEY_PREFIX, draft_key),
-                            &snapshot,
-                        );
-                        let write_ms = crate::perf::now() - write_start;
-                        tracing::trace!(export_ms, encode_ms, write_ms, "worker autosave complete");
-                    }
-                    WorkerOutput::Error { message } => {
-                        tracing::error!("Worker error: {}", message);
-                    }
-                    WorkerOutput::PresenceUpdate(snapshot) => {
-                        tracing::debug!(
-                            collaborators = snapshot.collaborators.len(),
-                            peers = snapshot.peer_count,
-                            "presence update from worker"
-                        );
-                        presence_for_worker.set(snapshot);
-                    }
-                    // Ignore other collab outputs for now (handled by CollabCoordinator)
-                    WorkerOutput::CollabReady { .. }
-                    | WorkerOutput::CollabJoined
-                    | WorkerOutput::RemoteUpdates { .. }
-                    | WorkerOutput::CollabStopped
-                    | WorkerOutput::PeerConnected => {}
-                }
-            };
-
-            // Spawn reactor and split into sink/stream
-            use futures_util::StreamExt;
-            let bridge = EditorReactor::spawner().spawn("/editor_worker.js");
-            let (sink, mut stream) = bridge.split();
-
-            // Store sink for sending
-            *worker_sink.borrow_mut() = Some(sink);
-
-            // Initialize with current document snapshot
-            let snapshot = doc.export_snapshot();
-            let sink_for_init = worker_sink.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                use futures_util::SinkExt;
-                if let Some(ref mut sink) = *sink_for_init.borrow_mut() {
-                    let _ = sink
-                        .send(WorkerInput::Init {
-                            snapshot,
-                            draft_key: draft_key.into(),
-                        })
-                        .await;
-                }
-            });
-
-            // Spawn receiver task to poll stream for outputs
-            wasm_bindgen_futures::spawn_local(async move {
-                while let Some(msg) = stream.next().await {
-                    on_output(msg);
-                }
-                tracing::info!("Editor reactor stream ended");
-            });
-
-            tracing::info!("Editor reactor spawned");
-        });
-
-        // Autosave interval
         let doc_for_autosave = document.clone();
         let draft_key_for_autosave = draft_key.clone();
-        let worker_sink_for_autosave = worker_sink.clone();
         use_effect(move || {
             let mut doc = doc_for_autosave.clone();
             let draft_key = draft_key_for_autosave.clone();
-            let worker_sink = worker_sink_for_autosave.clone();
 
             let interval = gloo_timers::callback::Interval::new(500, move || {
-                let callback_start = crate::perf::now();
                 let current_frontiers = doc.state_frontiers();
 
                 // Only save if frontiers changed (document was edited)
@@ -877,58 +691,8 @@ fn MarkdownEditorInner(
                 }
 
                 doc.sync_loro_cursor();
-
-                // Try worker path first
-                if *use_worker.peek() && worker_sink.borrow().is_some() {
-                    // Send updates to worker (or full snapshot if first time)
-                    let current_vv = doc.version_vector();
-                    let updates = if let Some(ref last_vv) = *last_worker_vv.peek() {
-                        doc.export_updates_from(last_vv).unwrap_or_default()
-                    } else {
-                        doc.export_snapshot()
-                    };
-
-                    let cursor_offset = doc.cursor.read().offset;
-                    let editing_uri = doc.entry_ref().map(|r| r.uri.to_smolstr());
-                    let editing_cid = doc.entry_ref().map(|r| r.cid.to_smolstr());
-                    let notebook_uri = doc.notebook_uri();
-
-                    let sink_clone = worker_sink.clone();
-
-                    // Spawn async sends
-                    wasm_bindgen_futures::spawn_local(async move {
-                        use futures_util::SinkExt;
-                        if let Some(ref mut sink) = *sink_clone.borrow_mut() {
-                            if !updates.is_empty() {
-                                let _ = sink.send(WorkerInput::ApplyUpdates { updates }).await;
-                            }
-
-                            // Request snapshot export
-                            let _ = sink
-                                .send(WorkerInput::ExportSnapshot {
-                                    cursor_offset,
-                                    editing_uri,
-                                    editing_cid,
-                                    notebook_uri,
-                                })
-                                .await;
-                        }
-                    });
-
-                    last_worker_vv.set(Some(current_vv));
-                    last_saved_frontiers.set(Some(current_frontiers));
-
-                    let callback_ms = crate::perf::now() - callback_start;
-                    tracing::debug!(callback_ms, "autosave via worker");
-                    return;
-                }
-
-                // Fallback: main thread save
                 let _ = storage::save_to_storage(&doc, &draft_key);
                 last_saved_frontiers.set(Some(current_frontiers));
-
-                let callback_ms = crate::perf::now() - callback_start;
-                tracing::debug!(callback_ms, "autosave callback (main thread fallback)");
             });
 
             interval_holder.set(Some(interval));
@@ -971,8 +735,9 @@ fn MarkdownEditorInner(
 
             // Get target range from the event if available
             let paras = cached_paras.peek().clone();
-            let target_range = get_target_range_from_event(&evt, editor_id, &paras);
-            let data = get_data_from_event(&evt);
+            let target_range =
+                weaver_editor_browser::get_target_range_from_event(&evt, editor_id, &paras);
+            let data = weaver_editor_browser::get_data_from_event(&evt);
             let ctx = BeforeInputContext {
                 input_type: input_type.clone(),
                 data,
@@ -1443,7 +1208,7 @@ fn MarkdownEditorInner(
                                                         update_syntax_visibility(offset, None, &spans, &paras);
                                                         // Then set DOM selection
                                                         let map = offset_map();
-                                                        let _ = crate::components::editor::cursor::restore_cursor_position(
+                                                        let _ = weaver_editor_browser::restore_cursor_position(
                                                             offset,
                                                             &map,
                                                             None,
@@ -1664,7 +1429,7 @@ fn MarkdownEditorInner(
                     on_format: {
                         let mut doc = document.clone();
                         move |action| {
-                            formatting::apply_formatting(&mut doc, action);
+                            apply_formatting(&mut doc, action);
                         }
                     },
                     on_image: {
@@ -1813,7 +1578,7 @@ fn MarkdownEditorInner(
 fn RemoteCursors(
     presence: Signal<weaver_common::transport::PresenceSnapshot>,
     document: SignalEditorDocument,
-    render_cache: Signal<render::RenderCache>,
+    render_cache: Signal<weaver_editor_browser::RenderCache>,
 ) -> Element {
     let presence_read = presence.read();
     let cursor_count = presence_read.collaborators.len();
@@ -1871,16 +1636,13 @@ fn RemoteCursorIndicator(
     color: u32,
     offset_map: Vec<weaver_editor_core::OffsetMapping>,
 ) -> Element {
-    use super::cursor::{get_cursor_rect_relative, get_selection_rects_relative};
+    use weaver_editor_browser::{
+        get_cursor_rect_relative, get_selection_rects_relative, rgba_u32_to_css,
+        rgba_u32_to_css_alpha,
+    };
 
-    // Convert RGBA u32 to CSS color (fully opaque for cursor)
-    let r = (color >> 24) & 0xFF;
-    let g = (color >> 16) & 0xFF;
-    let b = (color >> 8) & 0xFF;
-    let a = (color & 0xFF) as f32 / 255.0;
-    let color_css = format!("rgba({}, {}, {}, {})", r, g, b, a);
-    // Semi-transparent version for selection highlight
-    let selection_color_css = format!("rgba({}, {}, {}, 0.25)", r, g, b);
+    let color_css = rgba_u32_to_css(color);
+    let selection_color_css = rgba_u32_to_css_alpha(color, 0.25);
 
     // Get cursor position relative to editor
     let rect = get_cursor_rect_relative(position, &offset_map, "markdown-editor");

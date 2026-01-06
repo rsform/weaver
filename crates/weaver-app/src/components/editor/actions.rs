@@ -1,17 +1,40 @@
 //! Editor actions and keybinding system.
 //!
-//! This module re-exports core types and provides Dioxus-specific conversions
-//! and the concrete execute_action implementation for SignalEditorDocument.
+//! This module re-exports core types and provides Dioxus-specific conversions.
+//! Action execution delegates to `weaver_editor_core::execute_action`.
 
 use dioxus::prelude::*;
 
 use super::document::SignalEditorDocument;
-use super::platform::Platform;
+use weaver_editor_browser::Platform;
+use weaver_editor_core::SnapDirection;
 
 // Re-export core types.
 pub use weaver_editor_core::{
-    EditorAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Modifiers, Range,
+    EditorAction, FormatAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Modifiers, Range,
+    apply_formatting,
 };
+
+/// Determine the cursor snap direction hint for an action.
+fn snap_direction_for_action(action: &EditorAction) -> Option<SnapDirection> {
+    match action {
+        // Forward: cursor should snap toward new/remaining content.
+        EditorAction::InsertLineBreak { .. }
+        | EditorAction::InsertParagraph { .. }
+        | EditorAction::DeleteForward { .. }
+        | EditorAction::DeleteWordForward { .. }
+        | EditorAction::DeleteToLineEnd { .. }
+        | EditorAction::DeleteSoftLineForward { .. } => Some(SnapDirection::Forward),
+
+        // Backward: cursor should snap toward content before edit.
+        EditorAction::DeleteBackward { .. }
+        | EditorAction::DeleteWordBackward { .. }
+        | EditorAction::DeleteToLineStart { .. }
+        | EditorAction::DeleteSoftLineBackward { .. } => Some(SnapDirection::Backward),
+
+        _ => None,
+    }
+}
 
 // === Dioxus conversion helpers ===
 
@@ -134,7 +157,6 @@ pub fn default_keybindings(platform: &Platform) -> KeybindingConfig {
 /// This is the central dispatch point for all editor operations.
 /// Returns true if the action was handled and the document was modified.
 pub fn execute_action(doc: &mut SignalEditorDocument, action: &EditorAction) -> bool {
-    use super::formatting::{self, FormatAction};
     use super::input::{
         detect_list_context, find_line_end, find_line_start, get_char_at, is_list_item_empty,
     };
@@ -478,27 +500,27 @@ pub fn execute_action(doc: &mut SignalEditorDocument, action: &EditorAction) -> 
         }
 
         EditorAction::ToggleBold => {
-            formatting::apply_formatting(doc, FormatAction::Bold);
+            apply_formatting(doc, FormatAction::Bold);
             true
         }
 
         EditorAction::ToggleItalic => {
-            formatting::apply_formatting(doc, FormatAction::Italic);
+            apply_formatting(doc, FormatAction::Italic);
             true
         }
 
         EditorAction::ToggleCode => {
-            formatting::apply_formatting(doc, FormatAction::Code);
+            apply_formatting(doc, FormatAction::Code);
             true
         }
 
         EditorAction::ToggleStrikethrough => {
-            formatting::apply_formatting(doc, FormatAction::Strikethrough);
+            apply_formatting(doc, FormatAction::Strikethrough);
             true
         }
 
         EditorAction::InsertLink => {
-            formatting::apply_formatting(doc, FormatAction::Link);
+            apply_formatting(doc, FormatAction::Link);
             true
         }
 

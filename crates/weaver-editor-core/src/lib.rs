@@ -47,7 +47,7 @@ pub use actions::{
     EditorAction, FormatAction, InputType, Key, KeyCombo, KeybindingConfig, KeydownResult,
     Modifiers, Range,
 };
-pub use execute::execute_action;
+pub use execute::{apply_formatting, execute_action};
 pub use text_helpers::{
     ListContext, count_leading_zero_width, detect_list_context, find_line_end, find_line_start,
     find_word_boundary_backward, find_word_boundary_forward, is_list_item_empty,

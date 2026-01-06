@@ -5,8 +5,10 @@
 //! - `CrdtDocument`: Trait for documents that can sync to AT Protocol PDS
 //! - Generic sync logic for edit records (root/diff/draft)
 //! - Worker implementation for off-main-thread CRDT operations
+//! - Collab coordination types and helpers
 
 mod buffer;
+mod coordinator;
 mod document;
 mod error;
 mod sync;
@@ -14,6 +16,10 @@ mod sync;
 pub mod worker;
 
 pub use buffer::LoroTextBuffer;
+pub use coordinator::{
+    CoordinatorState, PEER_DISCOVERY_INTERVAL_MS, SESSION_REFRESH_INTERVAL_MS, SESSION_TTL_MINUTES,
+    compute_collab_topic,
+};
 pub use document::{CrdtDocument, SimpleCrdtDocument, SyncState};
 pub use error::CrdtError;
 pub use sync::{

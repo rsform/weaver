@@ -1,7 +1,26 @@
 //! Web worker for fetching and caching AT Protocol embeds.
 //!
-//! This crate provides a web worker that fetches and renders AT Protocol
-//! record embeds off the main thread, with TTL-based caching.
+//! This crate provides:
+//! - `EmbedWorker`: The worker implementation (runs in worker thread)
+//! - `EmbedWorkerHost`: Host-side manager for spawning and communicating with the worker
+//! - `EmbedWorkerInput`/`EmbedWorkerOutput`: Message types for worker communication
+//!
+//! # Usage
+//!
+//! The worker runs off the main thread, fetching and caching AT Protocol embeds.
+//! Use `EmbedWorkerHost` on the main thread to spawn and communicate with it:
+//!
+//! ```ignore
+//! use weaver_embed_worker::{EmbedWorkerHost, EmbedWorkerOutput};
+//!
+//! let host = EmbedWorkerHost::spawn("/embed_worker.js", |output| {
+//!     if let EmbedWorkerOutput::Embeds { results, .. } = output {
+//!         // Update UI with fetched embeds
+//!     }
+//! });
+//!
+//! host.fetch_embeds(vec!["at://did:plc:xxx/app.bsky.feed.post/yyy".into()]);
+//! ```
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -163,3 +182,8 @@ mod worker_impl {
 
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 pub use worker_impl::EmbedWorker;
+
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+mod host;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub use host::EmbedWorkerHost;

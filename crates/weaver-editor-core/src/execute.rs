@@ -4,7 +4,7 @@
 //! operations to any type implementing `EditorDocument`. The logic is generic
 //! and platform-agnostic.
 
-use crate::actions::{EditorAction, Range};
+use crate::actions::{EditorAction, FormatAction, Range};
 use crate::document::EditorDocument;
 use crate::text_helpers::{
     ListContext, detect_list_context, find_line_end, find_line_start, find_word_boundary_backward,
@@ -367,6 +367,120 @@ fn execute_insert_link<D: EditorDocument>(doc: &mut D) -> bool {
     doc.set_cursor_offset(end + 8);
     doc.set_selection(None);
     true
+}
+
+/// Apply a formatting action to the document.
+///
+/// Handles markdown formatting operations like bold, italic, headings, lists, etc.
+/// If there's a selection, formatting wraps it. Otherwise, behavior depends on the action:
+/// - Inline formats (Bold, Italic, etc.) expand to word boundaries
+/// - Block formats (Heading, Quote, List) operate on the current line
+pub fn apply_formatting<D: EditorDocument>(doc: &mut D, action: FormatAction) -> bool {
+    let cursor_offset = doc.cursor_offset();
+    let (start, end) = if let Some(sel) = doc.selection() {
+        (sel.start(), sel.end())
+    } else {
+        find_word_boundaries(doc, cursor_offset)
+    };
+
+    match action {
+        FormatAction::Bold => {
+            doc.insert(end, "**");
+            doc.insert(start, "**");
+            doc.set_cursor_offset(end + 4);
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::Italic => {
+            doc.insert(end, "*");
+            doc.insert(start, "*");
+            doc.set_cursor_offset(end + 2);
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::Strikethrough => {
+            doc.insert(end, "~~");
+            doc.insert(start, "~~");
+            doc.set_cursor_offset(end + 4);
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::Code => {
+            doc.insert(end, "`");
+            doc.insert(start, "`");
+            doc.set_cursor_offset(end + 2);
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::Link => {
+            doc.insert(end, "](url)");
+            doc.insert(start, "[");
+            doc.set_cursor_offset(end + 8);
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::Image => {
+            doc.insert(end, "](url)");
+            doc.insert(start, "![");
+            doc.set_cursor_offset(end + 9);
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::Heading(level) => {
+            let line_start = find_line_start(doc, cursor_offset);
+            let prefix = "#".repeat(level as usize) + " ";
+            let prefix_len = prefix.chars().count();
+            doc.insert(line_start, &prefix);
+            doc.set_cursor_offset(cursor_offset + prefix_len);
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::BulletList => {
+            if let Some(ctx) = detect_list_context(doc, cursor_offset) {
+                let continuation = match ctx {
+                    ListContext::Unordered { indent, marker } => {
+                        format!("\n{}{} ", indent, marker)
+                    }
+                    ListContext::Ordered { .. } => "\n\n - ".to_string(),
+                };
+                let len = continuation.chars().count();
+                doc.insert(cursor_offset, &continuation);
+                doc.set_cursor_offset(cursor_offset + len);
+            } else {
+                let line_start = find_line_start(doc, cursor_offset);
+                doc.insert(line_start, " - ");
+                doc.set_cursor_offset(cursor_offset + 3);
+            }
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::NumberedList => {
+            if let Some(ctx) = detect_list_context(doc, cursor_offset) {
+                let continuation = match ctx {
+                    ListContext::Unordered { .. } => "\n\n1. ".to_string(),
+                    ListContext::Ordered { indent, number } => {
+                        format!("\n{}{}. ", indent, number + 1)
+                    }
+                };
+                let len = continuation.chars().count();
+                doc.insert(cursor_offset, &continuation);
+                doc.set_cursor_offset(cursor_offset + len);
+            } else {
+                let line_start = find_line_start(doc, cursor_offset);
+                doc.insert(line_start, "1. ");
+                doc.set_cursor_offset(cursor_offset + 3);
+            }
+            doc.set_selection(None);
+            true
+        }
+        FormatAction::Quote => {
+            let line_start = find_line_start(doc, cursor_offset);
+            doc.insert(line_start, "> ");
+            doc.set_cursor_offset(cursor_offset + 2);
+            doc.set_selection(None);
+            true
+        }
+    }
 }
 
 fn execute_select_all<D: EditorDocument>(doc: &mut D) -> bool {

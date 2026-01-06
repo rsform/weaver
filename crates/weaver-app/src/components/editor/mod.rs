@@ -8,35 +8,22 @@ mod actions;
 mod beforeinput;
 mod collab;
 mod component;
-mod cursor;
 mod document;
 mod dom_sync;
-mod formatting;
 mod image_upload;
 mod input;
 mod log_buffer;
-mod paragraph;
-mod platform;
 mod publish;
-mod render;
 mod report;
 mod storage;
 mod sync;
 mod toolbar;
-mod visibility;
-mod writer;
 
 #[cfg(test)]
 mod tests;
 
-/// When true, always update innerHTML even for cursor paragraph during typing.
-/// This ensures syntax/formatting changes are immediately visible, but requires
-/// using `Handled` (preventDefault) for InsertText to avoid double-insertion
-/// from browser's default action racing with our innerHTML update.
-///
-/// TODO: Replace with granular detection of syntax/formatting changes to allow
-/// PassThrough optimization when only text content changes.
-pub(crate) const FORCE_INNERHTML_UPDATE: bool = true;
+// Re-export DOM update strategy constant from browser crate.
+pub(crate) use weaver_editor_browser::FORCE_INNERHTML_UPDATE;
 
 // Main component
 pub use component::MarkdownEditor;
@@ -47,23 +34,17 @@ pub use document::{
     Affinity, CompositionState, CursorState, LoadedDocState, Selection, SignalEditorDocument,
 };
 
-// Formatting
+// Formatting - re-export from core
 #[allow(unused_imports)]
-pub use formatting::{FormatAction, apply_formatting, find_word_boundaries};
+pub use weaver_editor_core::{FormatAction, apply_formatting};
 
 // Rendering - re-export core types
 #[allow(unused_imports)]
 pub use weaver_editor_core::{
-    EditorRope, EditorWriter, EmbedContentProvider, ImageResolver, OffsetMapping, RenderResult,
-    SegmentedWriter, SyntaxSpanInfo, SyntaxType, TextBuffer, WriterResult, find_mapping_for_byte,
+    EditorImageResolver, EditorRope, EditorWriter, EmbedContentProvider, ImageResolver,
+    OffsetMapping, ParagraphRender, RenderCache, RenderResult, SegmentedWriter, SyntaxSpanInfo,
+    SyntaxType, TextBuffer, WriterResult, find_mapping_for_byte, render_paragraphs_incremental,
 };
-#[allow(unused_imports)]
-pub use paragraph::ParagraphRender;
-#[allow(unused_imports)]
-pub use render::{RenderCache, render_paragraphs_incremental};
-// App-specific image resolver
-#[allow(unused_imports)]
-pub use writer::embed::EditorImageResolver;
 
 // Storage
 #[allow(unused_imports)]
@@ -88,7 +69,7 @@ pub use toolbar::EditorToolbar;
 
 // Visibility
 #[allow(unused_imports)]
-pub use visibility::VisibilityState;
+pub use weaver_editor_core::VisibilityState;
 
 // Logging
 #[allow(unused_imports)]

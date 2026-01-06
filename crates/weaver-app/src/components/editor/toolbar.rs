@@ -1,6 +1,6 @@
 //! Editor toolbar component with formatting buttons.
 
-use super::formatting::FormatAction;
+use weaver_editor_core::FormatAction;
 use super::image_upload::{ImageUploadButton, UploadedImage};
 use dioxus::prelude::*;
 

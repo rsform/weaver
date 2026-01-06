@@ -16,23 +16,18 @@ use super::document::SignalEditorDocument;
 use dioxus::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
+use jacquard::smol_str::ToSmolStr;
+#[cfg(target_arch = "wasm32")]
 use jacquard::smol_str::{SmolStr, format_smolstr};
 #[cfg(target_arch = "wasm32")]
 use jacquard::types::string::AtUri;
-
 use weaver_common::transport::PresenceSnapshot;
 
-/// Session record TTL in minutes.
 #[cfg(target_arch = "wasm32")]
-const SESSION_TTL_MINUTES: u32 = 15;
-
-/// How often to refresh session record (ms).
-#[cfg(target_arch = "wasm32")]
-const SESSION_REFRESH_INTERVAL_MS: u32 = 5 * 60 * 1000; // 5 minutes
-
-/// How often to poll for new peers (ms).
-#[cfg(target_arch = "wasm32")]
-const PEER_DISCOVERY_INTERVAL_MS: u32 = 30 * 1000; // 30 seconds
+use weaver_editor_crdt::{
+    CoordinatorState, PEER_DISCOVERY_INTERVAL_MS, SESSION_REFRESH_INTERVAL_MS, SESSION_TTL_MINUTES,
+    compute_collab_topic,
+};
 
 /// Props for the CollabCoordinator component.
 #[derive(Props, Clone, PartialEq)]
@@ -45,23 +40,6 @@ pub struct CollabCoordinatorProps {
     pub presence: Signal<PresenceSnapshot>,
     /// Children to render (this component wraps the editor)
     pub children: Element,
-}
-
-/// Coordinator state machine states.
-#[cfg(target_arch = "wasm32")]
-#[derive(Debug, Clone, PartialEq)]
-enum CoordinatorState {
-    /// Initial state - waiting for worker to be ready
-    Initializing,
-    /// Creating session record on PDS
-    CreatingSession {
-        node_id: SmolStr,
-        relay_url: Option<SmolStr>,
-    },
-    /// Active collab session
-    Active { session_uri: AtUri<'static> },
-    /// Error state
-    Error(SmolStr),
 }
 
 /// Coordinator component that bridges worker and PDS.
@@ -183,8 +161,7 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                             tracing::info!("CollabCoordinator: worker ready, starting collab");
 
                             // Compute topic from resource URI
-                            let hash = weaver_common::blake3::hash(resource_uri.as_bytes());
-                            let topic: [u8; 32] = *hash.as_bytes();
+                            let topic = compute_collab_topic(&resource_uri);
 
                             // Send StartCollab to worker immediately (no blocking on profile fetch)
                             if let Some(ref mut s) = *worker_sink.write() {
@@ -349,7 +326,7 @@ pub fn CollabCoordinator(props: CollabCoordinatorProps) -> Element {
                                         }
 
                                         state.set(CoordinatorState::Active {
-                                            session_uri: session_record_uri,
+                                            session_uri: session_record_uri.to_smolstr(),
                                         });
                                     }
                                     Err(e) => {

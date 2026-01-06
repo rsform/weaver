@@ -81,7 +81,7 @@ impl CursorPlatform for BrowserCursor {
             .flat_map(|p| p.offset_map.iter())
             .collect();
         let borrowed: Vec<_> = all_maps.iter().map(|m| (*m).clone()).collect();
-        get_selection_rects_impl(start, end, &borrowed, &self.editor_id)
+        get_selection_rects_relative(start, end, &borrowed, &self.editor_id)
     }
 }
 
@@ -274,7 +274,35 @@ pub fn find_text_node_at_offset(
     Err("no text node found in container".into())
 }
 
-/// Get screen coordinates for a cursor position (internal impl).
+/// Get screen coordinates for a cursor position.
+///
+/// Takes an offset map directly for cases where you don't have full paragraph data.
+pub fn get_cursor_rect(char_offset: usize, offset_map: &[OffsetMapping]) -> Option<CursorRect> {
+    get_cursor_rect_impl(char_offset, offset_map)
+}
+
+/// Get screen coordinates relative to the editor container.
+///
+/// Takes an offset map directly for cases where you don't have full paragraph data.
+pub fn get_cursor_rect_relative(
+    char_offset: usize,
+    offset_map: &[OffsetMapping],
+    editor_id: &str,
+) -> Option<CursorRect> {
+    let cursor_rect = get_cursor_rect(char_offset, offset_map)?;
+
+    let window = web_sys::window()?;
+    let document = window.document()?;
+    let editor = document.get_element_by_id(editor_id)?;
+    let editor_rect = editor.get_bounding_client_rect();
+
+    Some(CursorRect::new(
+        cursor_rect.x - editor_rect.x(),
+        cursor_rect.y - editor_rect.y(),
+        cursor_rect.height,
+    ))
+}
+
 fn get_cursor_rect_impl(char_offset: usize, offset_map: &[OffsetMapping]) -> Option<CursorRect> {
     if offset_map.is_empty() {
         return None;
@@ -317,8 +345,11 @@ fn get_cursor_rect_impl(char_offset: usize, offset_map: &[OffsetMapping]) -> Opt
     Some(CursorRect::new(rect.x(), rect.y(), rect.height().max(16.0)))
 }
 
-/// Get selection rectangles relative to editor (internal impl).
-fn get_selection_rects_impl(
+/// Get selection rectangles relative to editor.
+///
+/// Takes an offset map directly for cases where you don't have full paragraph data.
+/// Returns multiple rects if selection spans multiple lines.
+pub fn get_selection_rects_relative(
     start: usize,
     end: usize,
     offset_map: &[OffsetMapping],

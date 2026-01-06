@@ -55,6 +55,7 @@ features = [
     "BlobPropertyBag",
     "Clipboard",
     "ClipboardItem",
+    "Performance",
 ]
 
 [features]

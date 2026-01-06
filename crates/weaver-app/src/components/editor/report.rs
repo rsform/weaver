@@ -34,7 +34,7 @@ impl ReportData {
             .unwrap_or_default();
 
         let platform_info = {
-            let plat = super::platform::platform();
+            let plat = weaver_editor_browser::platform();
             format!(
                 "iOS: {}, Android: {}, Safari: {}, Chrome: {}, Firefox: {}, Mobile: {}\n\
                 User Agent: {}",
