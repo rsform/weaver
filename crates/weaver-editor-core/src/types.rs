@@ -3,7 +3,20 @@
 //! These types are framework-agnostic and can be used with any text buffer implementation.
 
 use std::ops::Range;
+
+use jacquard::types::string::AtUri;
+use weaver_api::sh_weaver::embed::images::Image;
 use web_time::Instant;
+
+/// Image stored in the editor, with optional publish state tracking.
+#[derive(Clone, Debug)]
+pub struct EditorImage {
+    /// The lexicon Image type (deserialized via from_json_value)
+    pub image: Image<'static>,
+    /// AT-URI of the PublishedBlob record (for cleanup on publish/delete).
+    /// None for existing images that are already in an entry record.
+    pub published_blob_uri: Option<AtUri<'static>>,
+}
 
 /// Cursor state including position and affinity.
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]

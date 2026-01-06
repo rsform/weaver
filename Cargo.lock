@@ -12125,10 +12125,17 @@ dependencies = [
 name = "weaver-editor-core"
 version = "0.1.0"
 dependencies = [
+ "jacquard",
+ "markdown-weaver",
+ "markdown-weaver-escape",
  "ropey",
  "smol_str",
+ "syntect",
  "thiserror 2.0.17",
  "tracing",
+ "weaver-api",
+ "weaver-common",
+ "weaver-renderer",
  "web-time",
 ]
 

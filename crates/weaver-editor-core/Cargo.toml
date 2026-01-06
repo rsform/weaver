@@ -10,5 +10,12 @@ smol_str = "0.3"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 web-time = "1.1"
+markdown-weaver = { workspace = true }
+markdown-weaver-escape = { workspace = true }
+weaver-common = { path = "../weaver-common" }
+weaver-renderer = { path = "../weaver-renderer" }
+weaver-api = { path = "../weaver-api" }
+jacquard = { workspace = true }
+syntect = { workspace = true }
 
 [dev-dependencies]

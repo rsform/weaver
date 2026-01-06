@@ -4,6 +4,7 @@
 //! and content gets split across nodes (syntax highlighting). Offset maps
 //! track how source byte positions map to DOM node positions.
 
+use smol_str::SmolStr;
 use std::ops::Range;
 
 /// Result of rendering markdown with offset tracking.
@@ -46,7 +47,7 @@ pub struct OffsetMapping {
 
     /// DOM node ID containing this content
     /// For invisible content, this is the nearest visible container
-    pub node_id: String,
+    pub node_id: SmolStr,
 
     /// Position within the node
     /// - If child_index is Some: cursor at that child index in the element
@@ -284,6 +285,7 @@ pub fn is_valid_cursor_position(offset_map: &[OffsetMapping], char_offset: usize
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smol_str::ToSmolStr;
 
     #[test]
     fn test_find_mapping_by_byte() {
@@ -291,7 +293,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 0..2,
                 char_range: 0..2,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 0,
                 child_index: None,
                 utf16_len: 0, // invisible
@@ -299,7 +301,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 2..5,
                 char_range: 2..5,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 0,
                 child_index: None,
                 utf16_len: 3,
@@ -307,7 +309,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 5..7,
                 char_range: 5..7,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 3,
                 child_index: None,
                 utf16_len: 0, // invisible
@@ -336,7 +338,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 0..2,
                 char_range: 0..2,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 0,
                 child_index: None,
                 utf16_len: 0, // invisible
@@ -344,7 +346,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 2..5,
                 char_range: 2..5,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 0,
                 child_index: None,
                 utf16_len: 3,
@@ -352,7 +354,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 5..7,
                 char_range: 5..7,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 3,
                 child_index: None,
                 utf16_len: 0, // invisible
@@ -380,7 +382,7 @@ mod tests {
         let mapping = OffsetMapping {
             byte_range: 10..20,
             char_range: 10..20,
-            node_id: "test".to_string(),
+            node_id: "test".to_smolstr(),
             char_offset_in_node: 0,
             child_index: None,
             utf16_len: 5,
@@ -398,7 +400,7 @@ mod tests {
         let mapping = OffsetMapping {
             byte_range: 10..20,
             char_range: 8..15, // emoji example: fewer chars than bytes
-            node_id: "test".to_string(),
+            node_id: "test".to_smolstr(),
             char_offset_in_node: 0,
             child_index: None,
             utf16_len: 5,
@@ -416,7 +418,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 0..2,
                 char_range: 0..2,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 0,
                 child_index: None,
                 utf16_len: 0, // invisible: "!["
@@ -424,7 +426,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 2..5,
                 char_range: 2..5,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 0,
                 child_index: None,
                 utf16_len: 3, // visible: "alt"
@@ -432,7 +434,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 5..15,
                 char_range: 5..15,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 3,
                 child_index: None,
                 utf16_len: 0, // invisible: "](url.png)"
@@ -440,7 +442,7 @@ mod tests {
             OffsetMapping {
                 byte_range: 15..20,
                 char_range: 15..20,
-                node_id: "n0".to_string(),
+                node_id: "n0".to_smolstr(),
                 char_offset_in_node: 3,
                 child_index: None,
                 utf16_len: 5, // visible: " text"
