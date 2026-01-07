@@ -2001,6 +2001,61 @@
       "created_at": "2026-01-06T17:56:50.444969376-05:00",
       "updated_at": "2026-01-06T17:56:50.444969376-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 184,
+      "change_id": "179b522e-15d2-44e2-8070-ba5323450d39",
+      "node_type": "outcome",
+      "title": "Clipboard handlers moved to browser crate - handle_paste/cut/copy in clipboard.rs with feature-gated dioxus deps (dioxus-core, dioxus-html, dioxus-web), input.rs deleted from app",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T18:54:49.482341819-05:00",
+      "updated_at": "2026-01-06T18:54:49.482341819-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 185,
+      "change_id": "57abe043-ecbe-409d-8d0e-3ee2597856b9",
+      "node_type": "outcome",
+      "title": "Math click handler moved to browser crate - handle_math_click() and get_math_click_offset() in events.rs, onclick handler in component.rs simplified from ~35 to ~15 lines",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T18:54:54.389267509-05:00",
+      "updated_at": "2026-01-06T18:54:54.389267509-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 186,
+      "change_id": "0b0c7b27-0bf2-4587-a2a8-34dfc9be3a28",
+      "node_type": "outcome",
+      "title": "Composition handlers moved to browser crate - handle_compositionstart/update/end in events.rs with feature-gated dioxus, added composition_ended_at to EditorDocument trait for Safari workaround, added push() to TextBuffer and EditorDocument traits",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T19:07:41.730306306-05:00",
+      "updated_at": "2026-01-06T19:07:41.730306306-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 187,
+      "change_id": "f94e4212-4d47-442d-aedc-bdacaf4babd8",
+      "node_type": "outcome",
+      "title": "Image upload extracted: handle_image_upload() and upload_image_to_pds() in image_upload.rs, component on_image handler reduced from ~130 to ~10 lines",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T19:18:49.734649882-05:00",
+      "updated_at": "2026-01-06T19:18:49.734649882-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 188,
+      "change_id": "ff80e6e7-36d0-426f-8db4-a64705ce0376",
+      "node_type": "outcome",
+      "title": "Loading logic extracted: load_editor_state(), create_state_from_entry(), prefetch_embeds_for_entry() in sync.rs. MarkdownEditor reduced from ~350 to ~85 lines",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-06T19:26:35.964103095-05:00",
+      "updated_at": "2026-01-06T19:26:35.964103095-05:00",
+      "metadata_json": "{\"confidence\":95}"
     }
   ],
   "edges": [
@@ -4038,6 +4093,61 @@
       "weight": 1.0,
       "rationale": "Action completed",
       "created_at": "2026-01-06T17:56:55.250053755-05:00"
+    },
+    {
+      "id": 187,
+      "from_node_id": 182,
+      "to_node_id": 184,
+      "from_change_id": "7a9e3b35-e3c2-4081-8e62-74da292b1c08",
+      "to_change_id": "179b522e-15d2-44e2-8070-ba5323450d39",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Clipboard handlers extracted as part of component simplification",
+      "created_at": "2026-01-06T18:54:59.446313320-05:00"
+    },
+    {
+      "id": 188,
+      "from_node_id": 182,
+      "to_node_id": 185,
+      "from_change_id": "7a9e3b35-e3c2-4081-8e62-74da292b1c08",
+      "to_change_id": "57abe043-ecbe-409d-8d0e-3ee2597856b9",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Math click handler extracted as part of component simplification",
+      "created_at": "2026-01-06T18:54:59.463812727-05:00"
+    },
+    {
+      "id": 189,
+      "from_node_id": 182,
+      "to_node_id": 186,
+      "from_change_id": "7a9e3b35-e3c2-4081-8e62-74da292b1c08",
+      "to_change_id": "0b0c7b27-0bf2-4587-a2a8-34dfc9be3a28",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Composition handlers extracted as part of component simplification",
+      "created_at": "2026-01-06T19:07:47.591441650-05:00"
+    },
+    {
+      "id": 190,
+      "from_node_id": 186,
+      "to_node_id": 187,
+      "from_change_id": "0b0c7b27-0bf2-4587-a2a8-34dfc9be3a28",
+      "to_change_id": "f94e4212-4d47-442d-aedc-bdacaf4babd8",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Image upload extraction completed",
+      "created_at": "2026-01-06T19:19:01.368609959-05:00"
+    },
+    {
+      "id": 191,
+      "from_node_id": 182,
+      "to_node_id": 188,
+      "from_change_id": "7a9e3b35-e3c2-4081-8e62-74da292b1c08",
+      "to_change_id": "ff80e6e7-36d0-426f-8db4-a64705ce0376",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Loading logic extraction part of component.rs split",
+      "created_at": "2026-01-06T19:26:48.871648902-05:00"
     }
   ]
 }

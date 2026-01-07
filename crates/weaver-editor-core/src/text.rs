@@ -28,6 +28,14 @@ pub trait TextBuffer {
     /// Insert text at char offset.
     fn insert(&mut self, char_offset: usize, text: &str);
 
+    /// Append text at end.
+    ///
+    /// Default implementation calls insert at len_chars(). Override if
+    /// the underlying buffer has a more efficient append operation.
+    fn push(&mut self, text: &str) {
+        self.insert(self.len_chars(), text);
+    }
+
     /// Delete char range.
     fn delete(&mut self, char_range: Range<usize>);
 
@@ -149,6 +157,12 @@ impl TextBuffer for EditorRope {
             doc_len_after: self.rope.len_chars(),
             timestamp: Instant::now(),
         });
+    }
+
+    // Ropey's insert is O(log n) regardless of position, so push is the same.
+    // Override for consistency with trait.
+    fn push(&mut self, text: &str) {
+        self.insert(self.rope.len_chars(), text);
     }
 
     fn delete(&mut self, char_range: Range<usize>) {

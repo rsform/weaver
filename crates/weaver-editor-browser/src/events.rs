@@ -561,3 +561,111 @@ pub fn handle_math_click<D: EditorDocument>(
         false
     }
 }
+
+// === Composition (IME) event handlers ===
+
+/// Handle composition start event.
+///
+/// Clears any existing selection (composition replaces it) and sets up
+/// composition state tracking.
+#[cfg(feature = "dioxus")]
+pub fn handle_compositionstart<D: EditorDocument>(
+    evt: dioxus_core::Event<dioxus_html::CompositionData>,
+    doc: &mut D,
+) {
+    let data = evt.data().data();
+    tracing::trace!(data = %data, "compositionstart");
+
+    // Delete selection if present (composition replaces it).
+    if let Some(sel) = doc.selection() {
+        let (start, end) = (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
+        tracing::trace!(start, end, "compositionstart: deleting selection");
+        doc.delete(start..end);
+        doc.set_cursor_offset(start);
+        doc.set_selection(None);
+    }
+
+    let cursor_offset = doc.cursor_offset();
+    tracing::trace!(cursor = cursor_offset, "compositionstart: setting composition state");
+    doc.set_composition(Some(weaver_editor_core::CompositionState {
+        start_offset: cursor_offset,
+        text: data,
+    }));
+}
+
+/// Handle composition update event.
+///
+/// Updates the composition text as the user types or selects IME suggestions.
+#[cfg(feature = "dioxus")]
+pub fn handle_compositionupdate<D: EditorDocument>(
+    evt: dioxus_core::Event<dioxus_html::CompositionData>,
+    doc: &mut D,
+) {
+    let data = evt.data().data();
+    tracing::trace!(data = %data, "compositionupdate");
+
+    if let Some(mut comp) = doc.composition() {
+        comp.text = data;
+        doc.set_composition(Some(comp));
+    } else {
+        tracing::debug!("compositionupdate without active composition state");
+    }
+}
+
+/// Handle composition end event.
+///
+/// Finalizes the composition by inserting the final text into the document.
+/// Also handles zero-width character cleanup that some IMEs leave behind.
+#[cfg(feature = "dioxus")]
+pub fn handle_compositionend<D: EditorDocument>(
+    evt: dioxus_core::Event<dioxus_html::CompositionData>,
+    doc: &mut D,
+) {
+    let final_text = evt.data().data();
+    tracing::trace!(data = %final_text, "compositionend");
+
+    // Record when composition ended for Safari timing workaround.
+    doc.set_composition_ended_now();
+
+    let comp = doc.composition();
+    doc.set_composition(None);
+
+    if let Some(comp) = comp {
+        tracing::debug!(
+            start_offset = comp.start_offset,
+            final_text = %final_text,
+            chars = final_text.chars().count(),
+            "compositionend: inserting text"
+        );
+
+        if !final_text.is_empty() {
+            // Clean up zero-width characters that IMEs sometimes leave behind.
+            let mut delete_start = comp.start_offset;
+            while delete_start > 0 {
+                match doc.char_at(delete_start - 1) {
+                    Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
+                    _ => break,
+                }
+            }
+
+            let cursor_offset = doc.cursor_offset();
+            let zw_count = cursor_offset - delete_start;
+
+            if zw_count > 0 {
+                // Splice: delete zero-width chars and insert new char in one op.
+                doc.replace(delete_start..delete_start + zw_count, &final_text);
+                doc.set_cursor_offset(delete_start + final_text.chars().count());
+            } else if cursor_offset == doc.len_chars() {
+                // Fast path: append at end.
+                doc.push(&final_text);
+                doc.set_cursor_offset(comp.start_offset + final_text.chars().count());
+            } else {
+                // Insert at cursor position.
+                doc.insert(cursor_offset, &final_text);
+                doc.set_cursor_offset(comp.start_offset + final_text.chars().count());
+            }
+        }
+    } else {
+        tracing::debug!("compositionend without active composition state");
+    }
+}

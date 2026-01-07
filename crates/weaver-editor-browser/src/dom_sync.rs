@@ -9,7 +9,10 @@ use weaver_editor_core::{
     is_valid_cursor_position,
 };
 
+use weaver_editor_core::{EditorDocument, Selection, SyntaxSpanInfo};
+
 use crate::cursor::restore_cursor_position;
+use crate::update_syntax_visibility;
 
 /// Result of syncing cursor from DOM.
 #[derive(Debug, Clone)]
@@ -370,6 +373,55 @@ pub fn dom_position_to_text_offset(
     }
 
     None
+}
+
+/// Sync cursor state from DOM to an EditorDocument.
+///
+/// This is a generic version that works with any `EditorDocument` implementation.
+/// It reads the browser's selection state and updates the document's cursor and selection.
+pub fn sync_cursor_from_dom<D: EditorDocument>(
+    doc: &mut D,
+    editor_id: &str,
+    paragraphs: &[ParagraphRender],
+    direction_hint: Option<SnapDirection>,
+) {
+    if let Some(result) = sync_cursor_from_dom_impl(editor_id, paragraphs, direction_hint) {
+        match result {
+            CursorSyncResult::Cursor(offset) => {
+                doc.set_cursor_offset(offset);
+                doc.set_selection(None);
+            }
+            CursorSyncResult::Selection { anchor, head } => {
+                doc.set_cursor_offset(head);
+                if anchor != head {
+                    doc.set_selection(Some(Selection { anchor, head }));
+                } else {
+                    doc.set_selection(None);
+                }
+            }
+            CursorSyncResult::None => {}
+        }
+    }
+}
+
+/// Sync cursor from DOM and update syntax visibility in one call.
+///
+/// This is the common pattern used by most event handlers: sync the cursor
+/// position from the browser's selection, then update which syntax elements
+/// are visible based on the new cursor position.
+///
+/// Use this for: onclick, onselect, onselectstart, onselectionchange, onkeyup.
+pub fn sync_cursor_and_visibility<D: EditorDocument>(
+    doc: &mut D,
+    editor_id: &str,
+    paragraphs: &[ParagraphRender],
+    syntax_spans: &[SyntaxSpanInfo],
+    direction_hint: Option<SnapDirection>,
+) {
+    sync_cursor_from_dom(doc, editor_id, paragraphs, direction_hint);
+    let cursor_offset = doc.cursor_offset();
+    let selection = doc.selection();
+    update_syntax_visibility(cursor_offset, selection.as_ref(), syntax_spans, paragraphs);
 }
 
 /// Update paragraph DOM elements incrementally.

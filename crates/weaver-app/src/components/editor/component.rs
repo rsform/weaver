@@ -1,58 +1,38 @@
 //! The main MarkdownEditor component.
 
-#[allow(unused_imports)]
 use super::actions::{
-    EditorAction, Key, KeyCombo, KeybindingConfig, KeydownResult, Range, execute_action,
-    handle_keydown_with_bindings,
+    EditorAction, KeydownResult, Range, execute_action, handle_keydown_with_bindings,
 };
-use super::document::{CompositionState, LoadedDocState, SignalEditorDocument};
+use super::document::SignalEditorDocument;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use super::dom_sync::update_paragraph_dom;
-use super::dom_sync::{sync_cursor_from_dom, sync_cursor_from_dom_with_direction};
-#[allow(unused_imports)]
-use super::publish::{LoadedEntry, PublishButton, load_entry_for_editing};
+use super::publish::PublishButton;
 use super::remote_cursors::RemoteCursors;
 use super::storage;
-use super::sync::{SyncStatus, load_and_merge_document};
+use super::sync::{LoadEditorResult, SyncStatus, load_editor_state};
 use super::toolbar::EditorToolbar;
 use crate::auth::AuthState;
 use crate::components::collab::CollaboratorAvatars;
-use crate::components::editor::ReportButton;
 use crate::components::editor::collab::CollabCoordinator;
+use crate::components::editor::{LoadedDocState, ReportButton};
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
 use jacquard::IntoStatic;
-use jacquard::cowstr::ToCowStr;
-use jacquard::identity::resolver::IdentityResolver;
-use jacquard::smol_str::{SmolStr, ToSmolStr};
-use jacquard::types::aturi::AtUri;
+use jacquard::smol_str::SmolStr;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use jacquard::types::blob::BlobRef;
-use jacquard::types::ident::AtIdentifier;
-use weaver_api::sh_weaver::embed::images::Image;
-use weaver_common::WeaverExt;
-#[allow(unused_imports)]
-use weaver_editor_browser::{BeforeInputContext, BeforeInputResult};
-use weaver_editor_browser::{handle_copy, handle_cut, handle_paste};
-use weaver_editor_browser::{platform, update_syntax_visibility};
-use weaver_editor_core::EditorDocument;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use weaver_editor_browser::{BeforeInputContext, BeforeInputResult, update_syntax_visibility};
+use weaver_editor_browser::{
+    handle_compositionend, handle_compositionstart, handle_compositionupdate, handle_copy,
+    handle_cut, handle_paste, platform, sync_cursor_and_visibility,
+};
 use weaver_editor_core::EditorImageResolver;
-#[allow(unused_imports)]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 use weaver_editor_core::InputType;
 use weaver_editor_core::ParagraphRender;
 use weaver_editor_core::SnapDirection;
 use weaver_editor_core::apply_formatting;
-
-/// Result of loading document state.
-enum LoadResult {
-    /// Document state loaded (may be merged from PDS + localStorage)
-    Loaded(LoadedDocState),
-    /// Loading failed
-    Failed(String),
-    /// Still loading
-    #[allow(dead_code)]
-    Loading,
-}
 
 /// Wrapper component that handles loading document state before rendering the editor.
 ///
@@ -100,274 +80,19 @@ pub fn MarkdownEditor(
         let target_notebook = target_notebook.clone();
 
         async move {
-            // Resolve target_notebook to a URI if provided
-            let notebook_uri: Option<SmolStr> = if let Some(ref title) = target_notebook {
-                if let Some(did) = fetcher.current_did().await {
-                    let ident = jacquard::types::ident::AtIdentifier::Did(did);
-                    match fetcher.get_notebook(ident, title.clone()).await {
-                        Ok(Some(notebook_data)) => Some(notebook_data.0.uri.to_smolstr()),
-                        Ok(None) | Err(_) => {
-                            tracing::debug!("Could not resolve notebook '{}' to URI", title);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
-            match load_and_merge_document(&fetcher, &draft_key, entry_uri.as_ref()).await {
-                Ok(Some(mut state)) => {
-                    tracing::debug!("Loaded merged document state");
-                    // If we resolved a notebook URI and state doesn't have one, use it
-                    if state.notebook_uri.is_none() {
-                        state.notebook_uri = notebook_uri;
-                    }
-                    return LoadResult::Loaded(state);
-                }
-                Ok(None) => {
-                    // No existing state - check if we need to load entry content
-                    if let Some(ref uri) = entry_uri {
-                        // Check that this entry belongs to the current user
-                        if let Some(current_did) = fetcher.current_did().await {
-                            let entry_authority = uri.authority();
-                            let is_own_entry = match entry_authority {
-                                AtIdentifier::Did(did) => did == &current_did,
-                                AtIdentifier::Handle(handle) => {
-                                    match fetcher.client.resolve_handle(handle).await {
-                                        Ok(resolved_did) => resolved_did == current_did,
-                                        Err(_) => false,
-                                    }
-                                }
-                            };
-                            if !is_own_entry {
-                                tracing::warn!(
-                                    "Cannot edit entry belonging to another user: {}",
-                                    entry_authority
-                                );
-                                return LoadResult::Failed(
-                                    "You can only edit your own entries".to_string(),
-                                );
-                            }
-                        }
-                        match load_entry_for_editing(&fetcher, uri).await {
-                            Ok(loaded) => {
-                                // Create LoadedDocState from entry
-                                let doc = loro::LoroDoc::new();
-                                let content = doc.get_text("content");
-                                let title = doc.get_text("title");
-                                let path = doc.get_text("path");
-                                let tags = doc.get_list("tags");
-
-                                content.insert(0, loaded.entry.content.as_ref()).ok();
-                                title.insert(0, loaded.entry.title.as_ref()).ok();
-                                path.insert(0, loaded.entry.path.as_ref()).ok();
-                                if let Some(ref entry_tags) = loaded.entry.tags {
-                                    for tag in entry_tags {
-                                        let tag_str: &str = tag.as_ref();
-                                        tags.push(tag_str).ok();
-                                    }
-                                }
-
-                                // Restore existing embeds from the entry
-                                if let Some(ref embeds) = loaded.entry.embeds {
-                                    let embeds_map = doc.get_map("embeds");
-
-                                    // Restore images
-                                    if let Some(ref images) = embeds.images {
-                                        let images_list = embeds_map
-                                            .get_or_create_container(
-                                                "images",
-                                                loro::LoroList::new(),
-                                            )
-                                            .expect("images list");
-                                        for image in &images.images {
-                                            // Serialize image to JSON and add to list
-                                            // No publishedBlobUri since these are already published
-                                            let json = serde_json::to_value(image)
-                                                .expect("Image serializes");
-                                            images_list.push(json).ok();
-                                        }
-                                    }
-
-                                    // Restore record embeds
-                                    if let Some(ref records) = embeds.records {
-                                        let records_list = embeds_map
-                                            .get_or_create_container(
-                                                "records",
-                                                loro::LoroList::new(),
-                                            )
-                                            .expect("records list");
-                                        for record in &records.records {
-                                            let json = serde_json::to_value(record)
-                                                .expect("RecordEmbed serializes");
-                                            records_list.push(json).ok();
-                                        }
-                                    }
-                                }
-
-                                doc.commit();
-
-                                // Pre-warm blob cache for images
-                                #[cfg(feature = "fullstack-server")]
-                                if let Some(ref embeds) = loaded.entry.embeds {
-                                    if let Some(ref images) = embeds.images {
-                                        let ident: &str = match uri.authority() {
-                                            AtIdentifier::Did(d) => d.as_ref(),
-                                            AtIdentifier::Handle(h) => h.as_ref(),
-                                        };
-                                        for image in &images.images {
-                                            let cid = image.image.blob().cid();
-                                            let name = image.name.as_ref().map(|n| n.as_ref());
-                                            if let Err(e) = crate::data::cache_blob(
-                                                ident.into(),
-                                                cid.as_ref().into(),
-                                                name.map(|n| n.into()),
-                                            )
-                                            .await
-                                            {
-                                                tracing::warn!(
-                                                    "Failed to pre-warm blob cache for {}: {}",
-                                                    cid,
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Pre-fetch embeds for initial render
-                                let mut resolved_content =
-                                    weaver_common::ResolvedContent::default();
-                                if let Some(ref embeds) = loaded.entry.embeds {
-                                    if let Some(ref records) = embeds.records {
-                                        for record in &records.records {
-                                            // name is the key used in markdown, fallback to record.uri
-                                            let key_uri = if let Some(ref name) = record.name {
-                                                match jacquard::types::string::AtUri::new(
-                                                    name.as_ref(),
-                                                ) {
-                                                    Ok(uri) => uri.into_static(),
-                                                    Err(_) => continue,
-                                                }
-                                            } else {
-                                                record.record.uri.clone().into_static()
-                                            };
-
-                                            match weaver_renderer::atproto::fetch_and_render(
-                                                &record.record.uri,
-                                                &fetcher,
-                                            )
-                                            .await
-                                            {
-                                                Ok(html) => {
-                                                    resolved_content.add_embed(key_uri, html, None);
-                                                }
-                                                Err(e) => {
-                                                    tracing::warn!(
-                                                        "Failed to pre-fetch embed {}: {}",
-                                                        record.record.uri,
-                                                        e
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                if resolved_content.embed_content.is_empty() {
-                                    use weaver_common::{ExtractedRef, collect_refs_from_markdown};
-
-                                    let text = doc.get_text("content");
-                                    let markdown = text.to_string();
-
-                                    if !markdown.is_empty() {
-                                        tracing::debug!(
-                                            "Falling back to markdown parsing for embeds"
-                                        );
-                                        let refs = collect_refs_from_markdown(&markdown);
-
-                                        for extracted in refs {
-                                            if let ExtractedRef::AtEmbed { uri, .. } = extracted {
-                                                let key_uri = match AtUri::new(&uri) {
-                                                    Ok(u) => u.into_static(),
-                                                    Err(_) => continue,
-                                                };
-
-                                                match weaver_renderer::atproto::fetch_and_render(
-                                                    &key_uri, &fetcher,
-                                                )
-                                                .await
-                                                {
-                                                    Ok(html) => {
-                                                        tracing::debug!(
-                                                            "Pre-fetched embed from markdown: {}",
-                                                            uri
-                                                        );
-                                                        resolved_content
-                                                            .add_embed(key_uri, html, None);
-                                                    }
-                                                    Err(e) => {
-                                                        tracing::warn!(
-                                                            "Failed to pre-fetch embed {}: {}",
-                                                            uri,
-                                                            e
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                return LoadResult::Loaded(LoadedDocState {
-                                    doc,
-                                    entry_ref: Some(loaded.entry_ref),
-                                    edit_root: None,
-                                    last_diff: None,
-                                    synced_version: None, // Fresh from entry, never synced
-                                    last_seen_diffs: std::collections::HashMap::new(),
-                                    resolved_content,
-                                    notebook_uri: notebook_uri.clone(),
-                                });
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to load entry: {}", e);
-                                return LoadResult::Failed(e.to_string());
-                            }
-                        }
-                    }
-
-                    // New document with initial content
-                    let doc = loro::LoroDoc::new();
-                    if let Some(ref content) = initial_content {
-                        let text = doc.get_text("content");
-                        text.insert(0, content).ok();
-                        doc.commit();
-                    }
-
-                    LoadResult::Loaded(LoadedDocState {
-                        doc,
-                        entry_ref: None,
-                        edit_root: None,
-                        last_diff: None,
-                        synced_version: None, // New doc, never synced
-                        last_seen_diffs: std::collections::HashMap::new(),
-                        resolved_content: weaver_common::ResolvedContent::default(),
-                        notebook_uri,
-                    })
-                }
-                Err(e) => {
-                    tracing::error!("Failed to load document state: {}", e);
-                    LoadResult::Failed(e.to_string())
-                }
-            }
+            load_editor_state(
+                &fetcher,
+                &draft_key,
+                entry_uri.as_ref(),
+                initial_content.as_deref(),
+                target_notebook.as_deref(),
+            )
+            .await
         }
     });
 
     match &*load_resource.read() {
-        Some(LoadResult::Loaded(state)) => {
+        Some(LoadEditorResult::Loaded(state)) => {
             rsx! {
                 MarkdownEditorInner {
                     key: "{draft_key_for_render}",
@@ -378,14 +103,14 @@ pub fn MarkdownEditor(
                 }
             }
         }
-        Some(LoadResult::Failed(err)) => {
+        Some(LoadEditorResult::Failed(err)) => {
             rsx! {
                 div { class: "editor-error",
                     "Failed to load: {err}"
                 }
             }
         }
-        Some(LoadResult::Loading) | None => {
+        None => {
             rsx! {
                 div { class: "editor-loading",
                     "Loading..."
@@ -626,32 +351,6 @@ fn MarkdownEditorInner(
         let cursor_para_updated =
             update_paragraph_dom(editor_id, &prev, &new_paras, cursor_offset, false);
 
-        // Only restore cursor if we actually re-rendered the paragraph it's in
-        // if cursor_para_updated {
-        //     use wasm_bindgen::JsCast;
-        //     use wasm_bindgen::prelude::*;
-
-        //     // Read and consume pending snap direction
-        //     let snap_direction = doc_for_dom.pending_snap.write().take();
-
-        //     // Use requestAnimationFrame to wait for browser paint
-        //     if let Some(window) = web_sys::window() {
-        //         let closure = Closure::once(move || {
-        //             if let Err(e) = super::cursor::restore_cursor_position(
-        //                 cursor_offset,
-        //                 &map,
-        //                 editor_id,
-        //                 snap_direction,
-        //             ) {
-        //                 tracing::warn!("Cursor restoration failed: {:?}", e);
-        //             }
-        //         });
-
-        //         let _ = window.request_animation_frame(closure.as_ref().unchecked_ref());
-        //         closure.forget();
-        //     }
-        // }
-
         // Store for next comparison AND for event handlers (write-only, no reactive read)
         cached_paragraphs.set(new_paras.clone());
 
@@ -808,7 +507,12 @@ fn MarkdownEditorInner(
 
                         Timeout::new(20, move || {
                             let paras = paras();
-                            sync_cursor_from_dom(&mut doc_for_timeout, editor_id, &paras);
+                            weaver_editor_browser::sync_cursor_from_dom(
+                                &mut doc_for_timeout,
+                                editor_id,
+                                &paras,
+                                None,
+                            );
                         })
                         .forget(); // One-shot timer, runs and cleans up
                     }
@@ -1122,19 +826,9 @@ fn MarkdownEditorInner(
                                         "onkeyup navigation - syncing cursor from DOM"
                                     );
                                     let paras = cached_paragraphs();
-                                    if let Some(dir) = direction_hint {
-                                        sync_cursor_from_dom_with_direction(&mut doc, editor_id, &paras, Some(dir));
-                                    } else {
-                                        sync_cursor_from_dom(&mut doc, editor_id, &paras);
-                                    }
                                     let spans = syntax_spans();
-                                    let cursor_offset = doc.cursor.read().offset;
-                                    let selection = *doc.selection.read();
-                                    update_syntax_visibility(
-                                        cursor_offset,
-                                        selection.as_ref(),
-                                        &spans,
-                                        &paras,
+                                    sync_cursor_and_visibility(
+                                        &mut doc, editor_id, &paras, &spans, direction_hint,
                                     );
                                 }
                             }
@@ -1145,16 +839,8 @@ fn MarkdownEditorInner(
                             move |_evt| {
                                 tracing::debug!("onselect fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
-                                sync_cursor_from_dom(&mut doc, editor_id, &paras);
                                 let spans = syntax_spans();
-                                let cursor_offset = doc.cursor.read().offset;
-                                let selection = *doc.selection.read();
-                                update_syntax_visibility(
-                                    cursor_offset,
-                                    selection.as_ref(),
-                                    &spans,
-                                    &paras,
-                                );
+                                sync_cursor_and_visibility(&mut doc, editor_id, &paras, &spans, None);
                             }
                         },
 
@@ -1163,16 +849,8 @@ fn MarkdownEditorInner(
                             move |_evt| {
                                 tracing::debug!("onselectstart fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
-                                sync_cursor_from_dom(&mut doc, editor_id, &paras);
                                 let spans = syntax_spans();
-                                let cursor_offset = doc.cursor.read().offset;
-                                let selection = *doc.selection.read();
-                                update_syntax_visibility(
-                                    cursor_offset,
-                                    selection.as_ref(),
-                                    &spans,
-                                    &paras,
-                                );
+                                sync_cursor_and_visibility(&mut doc, editor_id, &paras, &spans, None);
                             }
                         },
 
@@ -1181,16 +859,8 @@ fn MarkdownEditorInner(
                             move |_evt| {
                                 tracing::debug!("onselectionchange fired - syncing cursor from DOM");
                                 let paras = cached_paragraphs();
-                                sync_cursor_from_dom(&mut doc, editor_id, &paras);
                                 let spans = syntax_spans();
-                                let cursor_offset = doc.cursor.read().offset;
-                                let selection = *doc.selection.read();
-                                update_syntax_visibility(
-                                    cursor_offset,
-                                    selection.as_ref(),
-                                    &spans,
-                                    &paras,
-                                );
+                                sync_cursor_and_visibility(&mut doc, editor_id, &paras, &spans, None);
                             }
                         },
 
@@ -1219,10 +889,7 @@ fn MarkdownEditorInner(
                                     }
                                 }
 
-                                sync_cursor_from_dom(&mut doc, editor_id, &paras);
-                                let cursor_offset = doc.cursor.read().offset;
-                                let selection = *doc.selection.read();
-                                update_syntax_visibility(cursor_offset, selection.as_ref(), &spans, &paras);
+                                sync_cursor_and_visibility(&mut doc, editor_id, &paras, &spans, None);
                             }
                         },
 
@@ -1288,101 +955,21 @@ fn MarkdownEditorInner(
                         oncompositionstart: {
                             let mut doc = document.clone();
                             move |evt: CompositionEvent| {
-                                let data = evt.data().data();
-                                tracing::trace!(
-                                    data = %data,
-                                    "compositionstart"
-                                );
-                                // Delete selection if present (composition replaces it)
-                                let sel = doc.selection.write().take();
-                                if let Some(sel) = sel {
-                                    let (start, end) =
-                                        (sel.anchor.min(sel.head), sel.anchor.max(sel.head));
-                                    tracing::trace!(
-                                        start,
-                                        end,
-                                        "compositionstart: deleting selection"
-                                    );
-                                    let _ = doc.remove_tracked(start, end.saturating_sub(start));
-                                    doc.cursor.write().offset = start;
-                                }
-
-                                let cursor_offset = doc.cursor.read().offset;
-                                tracing::trace!(
-                                    cursor = cursor_offset,
-                                    "compositionstart: setting composition state"
-                                );
-                                doc.composition.set(Some(CompositionState {
-                                    start_offset: cursor_offset,
-                                    text: data,
-                                }));
+                                handle_compositionstart(evt, &mut doc);
                             }
                         },
 
                         oncompositionupdate: {
                             let mut doc = document.clone();
                             move |evt: CompositionEvent| {
-                                let data = evt.data().data();
-                                tracing::trace!(
-                                    data = %data,
-                                    "compositionupdate"
-                                );
-                                let mut comp_guard = doc.composition.write();
-                                if let Some(ref mut comp) = *comp_guard {
-                                    comp.text = data;
-                                } else {
-                                    tracing::debug!("compositionupdate without active composition state");
-                                }
+                                handle_compositionupdate(evt, &mut doc);
                             }
                         },
 
                         oncompositionend: {
                             let mut doc = document.clone();
                             move |evt: CompositionEvent| {
-                                let final_text = evt.data().data();
-                                tracing::trace!(
-                                    data = %final_text,
-                                    "compositionend"
-                                );
-                                // Record when composition ended for Safari timing workaround
-                                doc.composition_ended_at.set(Some(web_time::Instant::now()));
-
-                                let comp = doc.composition.write().take();
-                                if let Some(comp) = comp {
-                                    tracing::debug!(
-                                        start_offset = comp.start_offset,
-                                        final_text = %final_text,
-                                        chars = final_text.chars().count(),
-                                        "compositionend: inserting text"
-                                    );
-
-                                    if !final_text.is_empty() {
-                                        let mut delete_start = comp.start_offset;
-                                        while delete_start > 0 {
-                                            match doc.char_at(delete_start - 1) {
-                                                Some('\u{200C}') | Some('\u{200B}') => delete_start -= 1,
-                                                _ => break,
-                                            }
-                                        }
-
-                                        let cursor_offset = doc.cursor.read().offset;
-                                        let zw_count = cursor_offset - delete_start;
-                                        if zw_count > 0 {
-                                            // Splice: delete zero-width chars and insert new char in one op
-                                            let _ = doc.replace_tracked(delete_start, zw_count, &final_text);
-                                            doc.cursor.write().offset = delete_start + final_text.chars().count();
-                                        } else if cursor_offset == doc.len_chars() {
-                                            // Fast path: append at end
-                                            let _ = doc.push_tracked(&final_text);
-                                            doc.cursor.write().offset = comp.start_offset + final_text.chars().count();
-                                        } else {
-                                            let _ = doc.insert_tracked(cursor_offset, &final_text);
-                                            doc.cursor.write().offset = comp.start_offset + final_text.chars().count();
-                                        }
-                                    }
-                                } else {
-                                    tracing::debug!("compositionend without active composition state");
-                                }
+                                handle_compositionend(evt, &mut doc);
                             }
                         },
                         }
@@ -1427,132 +1014,13 @@ fn MarkdownEditorInner(
                     on_image: {
                         let mut doc = document.clone();
                         move |uploaded: super::image_upload::UploadedImage| {
-                            // Build data URL for immediate preview
-                            use base64::{Engine, engine::general_purpose::STANDARD};
-                            let data_url = format!(
-                                "data:{};base64,{}",
-                                uploaded.mime_type,
-                                STANDARD.encode(&uploaded.data)
+                            super::image_upload::handle_image_upload(
+                                uploaded,
+                                &mut doc,
+                                &mut image_resolver,
+                                &auth_state,
+                                &fetcher,
                             );
-
-                            // Add to resolver for immediate display
-                            let name = uploaded.name.clone();
-                            image_resolver.with_mut(|resolver| {
-                                resolver.add_pending(name.clone(), data_url);
-                            });
-
-                            // Insert markdown image syntax at cursor
-                            let alt_text = if uploaded.alt.is_empty() {
-                                name.clone()
-                            } else {
-                                uploaded.alt.clone()
-                            };
-
-                            // Check if authenticated and get DID for draft path
-                            let auth = auth_state.read();
-                            let did_for_path = auth.did.clone();
-                            let is_authenticated = auth.is_authenticated();
-                            drop(auth);
-
-                            // Pre-generate TID for the blob rkey (used in draft path and upload)
-                            let blob_tid = jacquard::types::tid::Ticker::new().next(None);
-
-                            // Build markdown with proper draft path if authenticated
-                            let markdown = if let Some(ref did) = did_for_path {
-                                format!("![{}](/image/{}/draft/{}/{})", alt_text, did, blob_tid.as_str(), name)
-                            } else {
-                                // Fallback for unauthenticated - simple path (won't be publishable anyway)
-                                format!("![{}](/image/{})", alt_text, name)
-                            };
-
-                            let pos = doc.cursor.read().offset;
-                            let _ = doc.insert_tracked(pos, &markdown);
-                            doc.cursor.write().offset = pos + markdown.chars().count();
-
-                            // Upload to PDS in background if authenticated
-                            if is_authenticated {
-                                let fetcher = fetcher.clone();
-                                let name_for_upload = name.clone();
-                                let alt_for_upload = alt_text.clone();
-                                let data = uploaded.data.clone();
-                                let mut doc_for_spawn = doc.clone();
-
-                                spawn(async move {
-                                    let client = fetcher.get_client();
-
-                                    // Clone data for cache pre-warming
-                                    let data_for_cache = data.clone();
-
-                                    // Use pre-generated TID as rkey for the blob record
-                                    let rkey = jacquard::types::recordkey::RecordKey::any(blob_tid.as_str())
-                                        .expect("TID is valid record key");
-
-                                    // Upload blob and create temporary PublishedBlob record
-                                    match client.publish_blob(data, &name_for_upload, Some(rkey)).await {
-                                        Ok((strong_ref, published_blob)) => {
-                                            // Get DID from fetcher
-                                            let did = match fetcher.current_did().await {
-                                                Some(d) => d,
-                                                None => {
-                                                    tracing::warn!("No DID available");
-                                                    return;
-                                                }
-                                            };
-
-                                            // Extract rkey from the AT-URI
-                                            let blob_rkey = match strong_ref.uri.rkey() {
-                                                Some(rkey) => rkey.0.clone().into_static(),
-                                                None => {
-                                                    tracing::warn!("No rkey in PublishedBlob URI");
-                                                    return;
-                                                }
-                                            };
-
-                                            let cid = published_blob.upload.blob().cid().clone().into_static();
-
-                                            let name_for_resolver = name_for_upload.clone();
-                                            let image = Image::new()
-                                                .alt(alt_for_upload.to_cowstr())
-                                                .image(published_blob.upload)
-                                                .name(name_for_upload.to_cowstr())
-                                                .build();
-                                            doc_for_spawn.add_image(&image, Some(&strong_ref.uri));
-
-                                            // Promote from pending to uploaded in resolver
-                                            let ident = AtIdentifier::Did(did);
-                                            image_resolver.with_mut(|resolver| {
-                                                resolver.promote_to_uploaded(
-                                                    &name_for_resolver,
-                                                    blob_rkey,
-                                                    ident,
-                                                );
-                                            });
-
-                                            tracing::info!(name = %name_for_resolver, "Image uploaded to PDS");
-
-                                            // Pre-warm server cache with blob bytes
-                                            #[cfg(feature = "fullstack-server")]
-                                            {
-                                                use jacquard::smol_str::ToSmolStr;
-                                                if let Err(e) = crate::data::cache_blob_bytes(
-                                                    cid.to_smolstr(),
-                                                    Some(name_for_resolver.into()),
-                                                    None,
-                                                    data_for_cache.into(),
-                                                ).await {
-                                                    tracing::warn!(error = %e, "Failed to pre-warm blob cache");
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            tracing::error!(error = %e, "Failed to upload image");
-                                            // Image stays as data URL - will work for preview but not publish
-                                        }
-                                    }
-                                });
-                            } else {
-                                tracing::debug!(name = %name, "Image added with data URL (not authenticated)");
-                            }
                         }
                     },
                 }

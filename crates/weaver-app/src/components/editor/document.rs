@@ -1132,6 +1132,14 @@ impl EditorDocument for SignalEditorDocument {
         self.composition.set(composition);
     }
 
+    fn composition_ended_at(&self) -> Option<web_time::Instant> {
+        *self.composition_ended_at.read()
+    }
+
+    fn set_composition_ended_now(&mut self) {
+        self.composition_ended_at.set(Some(web_time::Instant::now()));
+    }
+
     fn undo(&mut self) -> bool {
         // Sync Loro cursor to current position BEFORE undo
         // so it tracks through the undo operation.

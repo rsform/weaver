@@ -10,9 +10,12 @@
 use std::collections::HashMap;
 
 use super::document::{LoadedDocState, SignalEditorDocument};
+use super::publish::load_entry_for_editing;
 use crate::fetch::Fetcher;
 use jacquard::IntoStatic;
+use jacquard::identity::resolver::IdentityResolver;
 use jacquard::prelude::*;
+use jacquard::smol_str::{SmolStr, ToSmolStr};
 use jacquard::types::ident::AtIdentifier;
 use jacquard::types::string::{AtUri, Cid};
 use loro::LoroDoc;
@@ -904,4 +907,290 @@ pub fn SyncStatus(props: SyncStatusProps) -> Element {
             span { class: "sync-label", "{label}" }
         }
     }
+}
+
+// === Editor state loading ===
+
+/// Result of loading editor state.
+#[derive(Clone)]
+pub enum LoadEditorResult {
+    /// Document state loaded successfully.
+    Loaded(LoadedDocState),
+    /// Loading failed with error message.
+    Failed(String),
+}
+
+/// Load editor state from various sources.
+///
+/// This function handles the complete loading flow:
+/// 1. Resolves notebook title to URI if provided
+/// 2. Tries to load and merge from localStorage + PDS edit state
+/// 3. Falls back to loading entry content if no edit state exists
+/// 4. Creates new document with initial content if nothing exists
+///
+/// # Arguments
+/// - `fetcher`: The fetcher for API calls
+/// - `draft_key`: Unique key for localStorage (entry URI or "new:{tid}")
+/// - `entry_uri`: Optional AT-URI of existing entry to edit
+/// - `initial_content`: Optional initial markdown for new entries
+/// - `target_notebook`: Optional notebook title to resolve to URI
+pub async fn load_editor_state(
+    fetcher: &Fetcher,
+    draft_key: &str,
+    entry_uri: Option<&AtUri<'static>>,
+    initial_content: Option<&str>,
+    target_notebook: Option<&str>,
+) -> LoadEditorResult {
+    // Resolve target_notebook to a URI if provided.
+    let notebook_uri: Option<SmolStr> = if let Some(title) = target_notebook {
+        if let Some(did) = fetcher.current_did().await {
+            let ident = AtIdentifier::Did(did);
+            match fetcher.get_notebook(ident, title.into()).await {
+                Ok(Some(notebook_data)) => Some(notebook_data.0.uri.to_smolstr()),
+                Ok(None) | Err(_) => {
+                    tracing::debug!("Could not resolve notebook '{}' to URI", title);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    match load_and_merge_document(fetcher, draft_key, entry_uri).await {
+        Ok(Some(mut state)) => {
+            tracing::debug!("Loaded merged document state");
+            if state.notebook_uri.is_none() {
+                state.notebook_uri = notebook_uri;
+            }
+            return LoadEditorResult::Loaded(state);
+        }
+        Ok(None) => {
+            // No existing state - check if we need to load entry content.
+            if let Some(uri) = entry_uri {
+                // Check that this entry belongs to the current user.
+                if let Some(current_did) = fetcher.current_did().await {
+                    let entry_authority = uri.authority();
+                    let is_own_entry = match entry_authority {
+                        AtIdentifier::Did(did) => did == &current_did,
+                        AtIdentifier::Handle(handle) => {
+                            match fetcher.client.resolve_handle(handle).await {
+                                Ok(resolved_did) => resolved_did == current_did,
+                                Err(_) => false,
+                            }
+                        }
+                    };
+                    if !is_own_entry {
+                        tracing::warn!(
+                            "Cannot edit entry belonging to another user: {}",
+                            entry_authority
+                        );
+                        return LoadEditorResult::Failed(
+                            "You can only edit your own entries".to_string(),
+                        );
+                    }
+                }
+
+                match load_entry_for_editing(fetcher, uri).await {
+                    Ok(loaded) => {
+                        return LoadEditorResult::Loaded(
+                            create_state_from_entry(fetcher, &loaded, uri, notebook_uri).await,
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to load entry: {}", e);
+                        return LoadEditorResult::Failed(e.to_string());
+                    }
+                }
+            }
+
+            // New document with initial content.
+            let doc = LoroDoc::new();
+            if let Some(content) = initial_content {
+                let text = doc.get_text("content");
+                text.insert(0, content).ok();
+                doc.commit();
+            }
+
+            LoadEditorResult::Loaded(LoadedDocState {
+                doc,
+                entry_ref: None,
+                edit_root: None,
+                last_diff: None,
+                synced_version: None,
+                last_seen_diffs: HashMap::new(),
+                resolved_content: weaver_common::ResolvedContent::default(),
+                notebook_uri,
+            })
+        }
+        Err(e) => {
+            tracing::error!("Failed to load document state: {}", e);
+            LoadEditorResult::Failed(e.to_string())
+        }
+    }
+}
+
+/// Create LoadedDocState from a loaded entry.
+///
+/// Handles:
+/// - Creating LoroDoc and populating with entry data
+/// - Restoring embeds (images and records)
+/// - Pre-warming blob cache (server feature)
+/// - Pre-fetching embed content for initial render
+async fn create_state_from_entry(
+    fetcher: &Fetcher,
+    loaded: &super::publish::LoadedEntry,
+    uri: &AtUri<'_>,
+    notebook_uri: Option<SmolStr>,
+) -> LoadedDocState {
+    let doc = LoroDoc::new();
+    let content = doc.get_text("content");
+    let title = doc.get_text("title");
+    let path = doc.get_text("path");
+    let tags = doc.get_list("tags");
+
+    content.insert(0, loaded.entry.content.as_ref()).ok();
+    title.insert(0, loaded.entry.title.as_ref()).ok();
+    path.insert(0, loaded.entry.path.as_ref()).ok();
+    if let Some(ref entry_tags) = loaded.entry.tags {
+        for tag in entry_tags {
+            let tag_str: &str = tag.as_ref();
+            tags.push(tag_str).ok();
+        }
+    }
+
+    // Restore existing embeds from the entry.
+    if let Some(ref embeds) = loaded.entry.embeds {
+        let embeds_map = doc.get_map("embeds");
+
+        if let Some(ref images) = embeds.images {
+            let images_list = embeds_map
+                .get_or_create_container("images", loro::LoroList::new())
+                .expect("images list");
+            for image in &images.images {
+                let json = serde_json::to_value(image).expect("Image serializes");
+                images_list.push(json).ok();
+            }
+        }
+
+        if let Some(ref records) = embeds.records {
+            let records_list = embeds_map
+                .get_or_create_container("records", loro::LoroList::new())
+                .expect("records list");
+            for record in &records.records {
+                let json = serde_json::to_value(record).expect("RecordEmbed serializes");
+                records_list.push(json).ok();
+            }
+        }
+    }
+
+    doc.commit();
+
+    // Pre-warm blob cache for images.
+    #[cfg(feature = "fullstack-server")]
+    if let Some(ref embeds) = loaded.entry.embeds {
+        if let Some(ref images) = embeds.images {
+            let ident: &str = match uri.authority() {
+                AtIdentifier::Did(d) => d.as_ref(),
+                AtIdentifier::Handle(h) => h.as_ref(),
+            };
+            for image in &images.images {
+                let cid = image.image.blob().cid();
+                let name = image.name.as_ref().map(|n| n.as_ref());
+                if let Err(e) = crate::data::cache_blob(
+                    ident.into(),
+                    cid.as_ref().into(),
+                    name.map(|n| n.into()),
+                )
+                .await
+                {
+                    tracing::warn!("Failed to pre-warm blob cache for {}: {}", cid, e);
+                }
+            }
+        }
+    }
+
+    // Pre-fetch embeds for initial render.
+    let resolved_content = prefetch_embeds_for_entry(fetcher, &doc, &loaded.entry.embeds).await;
+
+    LoadedDocState {
+        doc,
+        entry_ref: Some(loaded.entry_ref.clone()),
+        edit_root: None,
+        last_diff: None,
+        synced_version: None,
+        last_seen_diffs: HashMap::new(),
+        resolved_content,
+        notebook_uri,
+    }
+}
+
+/// Pre-fetch embed content for an entry being loaded.
+async fn prefetch_embeds_for_entry(
+    fetcher: &Fetcher,
+    doc: &LoroDoc,
+    embeds: &Option<weaver_api::sh_weaver::notebook::entry::EntryEmbeds<'_>>,
+) -> weaver_common::ResolvedContent {
+    use weaver_common::{ExtractedRef, collect_refs_from_markdown};
+
+    let mut resolved_content = weaver_common::ResolvedContent::default();
+
+    if let Some(embeds) = embeds {
+        if let Some(ref records) = embeds.records {
+            for record in &records.records {
+                let key_uri = if let Some(ref name) = record.name {
+                    match AtUri::new(name.as_ref()) {
+                        Ok(uri) => uri.into_static(),
+                        Err(_) => continue,
+                    }
+                } else {
+                    record.record.uri.clone().into_static()
+                };
+
+                match weaver_renderer::atproto::fetch_and_render(&record.record.uri, fetcher).await
+                {
+                    Ok(html) => {
+                        resolved_content.add_embed(key_uri, html, None);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to pre-fetch embed {}: {}", record.record.uri, e);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fall back to parsing markdown if no embeds in record.
+    if resolved_content.embed_content.is_empty() {
+        let text = doc.get_text("content");
+        let markdown = text.to_string();
+
+        if !markdown.is_empty() {
+            tracing::debug!("Falling back to markdown parsing for embeds");
+            let refs = collect_refs_from_markdown(&markdown);
+
+            for extracted in refs {
+                if let ExtractedRef::AtEmbed { uri, .. } = extracted {
+                    let key_uri = match AtUri::new(&uri) {
+                        Ok(u) => u.into_static(),
+                        Err(_) => continue,
+                    };
+
+                    match weaver_renderer::atproto::fetch_and_render(&key_uri, fetcher).await {
+                        Ok(html) => {
+                            tracing::debug!("Pre-fetched embed from markdown: {}", uri);
+                            resolved_content.add_embed(key_uri, html, None);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to pre-fetch embed {}: {}", uri, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    resolved_content
 }

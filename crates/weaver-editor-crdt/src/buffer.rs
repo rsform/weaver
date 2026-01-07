@@ -252,6 +252,24 @@ impl TextBuffer for LoroTextBuffer {
         });
     }
 
+    fn push(&mut self, text: &str) {
+        let char_offset = self.content.len_unicode();
+        let contains_newline = text.contains('\n');
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(char_offset);
+
+        self.content.push_str(text).ok();
+
+        self.inner.borrow_mut().last_edit = Some(EditInfo {
+            edit_char_pos: char_offset,
+            inserted_len: text.chars().count(),
+            deleted_len: 0,
+            contains_newline,
+            in_block_syntax_zone,
+            doc_len_after: self.content.len_unicode(),
+            timestamp: Instant::now(),
+        });
+    }
+
     fn slice(&self, char_range: Range<usize>) -> Option<SmolStr> {
         if char_range.end > self.content.len_unicode() {
             return None;

@@ -64,6 +64,16 @@ pub trait EditorDocument {
     /// Set the composition state.
     fn set_composition(&mut self, composition: Option<CompositionState>);
 
+    /// Get the timestamp when composition last ended (Safari timing workaround).
+    ///
+    /// Returns None if composition never ended or implementation doesn't track it.
+    fn composition_ended_at(&self) -> Option<web_time::Instant>;
+
+    /// Record that composition ended now (Safari timing workaround).
+    ///
+    /// Implementations that don't need Safari workarounds can make this a no-op.
+    fn set_composition_ended_now(&mut self);
+
     // === Required: Cursor snap hint ===
 
     /// Get the pending snap direction hint.
@@ -221,6 +231,34 @@ pub trait EditorDocument {
         edit
     }
 
+    /// Append text at end of document.
+    ///
+    /// This is a fast path for appending - delegates to buffer's push()
+    /// which may have an optimized implementation.
+    fn push(&mut self, text: &str) -> EditInfo {
+        let offset = self.buffer().len_chars();
+        let contains_newline = text.contains('\n');
+        let in_block_syntax_zone = self.is_in_block_syntax_zone(offset);
+
+        self.buffer_mut().push(text);
+
+        let inserted_len = text.chars().count();
+        self.set_cursor_offset(offset + inserted_len);
+
+        let edit = EditInfo {
+            edit_char_pos: offset,
+            inserted_len,
+            deleted_len: 0,
+            contains_newline,
+            in_block_syntax_zone,
+            doc_len_after: self.buffer().len_chars(),
+            timestamp: Instant::now(),
+        };
+
+        self.set_last_edit(Some(edit.clone()));
+        edit
+    }
+
     /// Delete the current selection, if any.
     fn delete_selection(&mut self) -> Option<EditInfo> {
         let sel = self.selection()?;
@@ -279,6 +317,7 @@ pub struct PlainEditor<T: TextBuffer + UndoManager> {
     selection: Option<Selection>,
     last_edit: Option<EditInfo>,
     composition: Option<CompositionState>,
+    composition_ended_at: Option<web_time::Instant>,
     pending_snap: Option<crate::SnapDirection>,
 }
 
@@ -297,6 +336,7 @@ impl<T: TextBuffer + UndoManager> PlainEditor<T> {
             selection: None,
             last_edit: None,
             composition: None,
+            composition_ended_at: None,
             pending_snap: None,
         }
     }
@@ -353,6 +393,14 @@ impl<T: TextBuffer + UndoManager> EditorDocument for PlainEditor<T> {
 
     fn set_composition(&mut self, composition: Option<CompositionState>) {
         self.composition = composition;
+    }
+
+    fn composition_ended_at(&self) -> Option<web_time::Instant> {
+        self.composition_ended_at
+    }
+
+    fn set_composition_ended_now(&mut self) {
+        self.composition_ended_at = Some(web_time::Instant::now());
     }
 
     fn pending_snap(&self) -> Option<crate::SnapDirection> {

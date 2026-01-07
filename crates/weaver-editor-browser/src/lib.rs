@@ -63,8 +63,8 @@ pub use cursor::{
 
 // DOM sync types
 pub use dom_sync::{
-    BrowserCursorSync, CursorSyncResult, dom_position_to_text_offset, sync_cursor_from_dom_impl,
-    update_paragraph_dom,
+    BrowserCursorSync, CursorSyncResult, dom_position_to_text_offset, sync_cursor_and_visibility,
+    sync_cursor_from_dom, sync_cursor_from_dom_impl, update_paragraph_dom,
 };
 
 // Event handling
@@ -88,3 +88,7 @@ pub use color::{rgba_u32_to_css, rgba_u32_to_css_alpha};
 pub use clipboard::{BrowserClipboard, write_html_to_clipboard};
 #[cfg(feature = "dioxus")]
 pub use clipboard::{handle_copy, handle_cut, handle_paste};
+
+// Composition (IME) handlers
+#[cfg(feature = "dioxus")]
+pub use events::{handle_compositionend, handle_compositionstart, handle_compositionupdate};
