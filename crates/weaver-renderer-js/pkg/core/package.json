@@ -1,0 +1,52 @@
+{
+  "name": "@weaver.sh/renderer-core",
+  "version": "0.1.1",
+  "description": "AT Protocol record renderer (lightweight, no syntax highlighting)",
+  "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://tangled.org/nonbinary.computer/weaver"
+  },
+  "keywords": ["atproto", "bluesky", "markdown", "renderer", "wasm"],
+  "main": "nodejs/weaver_renderer.js",
+  "module": "bundler/weaver_renderer.js",
+  "browser": "web/weaver_renderer.js",
+  "types": "bundler/weaver_renderer.d.ts",
+  "exports": {
+    ".": {
+      "deno": "./deno/weaver_renderer.js",
+      "node": {
+        "import": "./nodejs/weaver_renderer.js",
+        "require": "./nodejs/weaver_renderer.js"
+      },
+      "browser": {
+        "import": "./web/weaver_renderer.js"
+      },
+      "default": "./bundler/weaver_renderer.js"
+    },
+    "./bundler": {
+      "import": "./bundler/weaver_renderer.js",
+      "types": "./bundler/weaver_renderer.d.ts"
+    },
+    "./web": {
+      "import": "./web/weaver_renderer.js",
+      "types": "./web/weaver_renderer.d.ts"
+    },
+    "./nodejs": {
+      "import": "./nodejs/weaver_renderer.js",
+      "require": "./nodejs/weaver_renderer.js",
+      "types": "./nodejs/weaver_renderer.d.ts"
+    },
+    "./deno": {
+      "import": "./deno/weaver_renderer.js",
+      "types": "./deno/weaver_renderer.d.ts"
+    }
+  },
+  "files": [
+    "bundler/",
+    "web/",
+    "nodejs/",
+    "deno/",
+    "README.md"
+  ]
+}

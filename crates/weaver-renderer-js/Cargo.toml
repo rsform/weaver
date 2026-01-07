@@ -4,10 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+repository = "https://tangled.org/nonbinary.computer/weaver"
 description = "WASM bindings for weaver-renderer"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 
 [features]
 default = ["syntax-highlighting"]
