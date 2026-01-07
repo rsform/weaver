@@ -611,10 +611,15 @@ pub fn update_paragraph_dom(
                 let _ = div.set_attribute("data-hash", &new_hash);
                 let div_node: &web_sys::Node = div.as_ref();
                 let _ = editor.insert_before(div_node, cursor_node.as_ref());
-            }
 
-            if is_cursor_para {
-                cursor_para_updated = true;
+                if is_cursor_para {
+                    if let Err(e) =
+                        restore_cursor_position(cursor_offset, &new_para.offset_map, None)
+                    {
+                        tracing::warn!("Cursor restore for new paragraph failed: {:?}", e);
+                    }
+                    cursor_para_updated = true;
+                }
             }
         }
     }

@@ -147,11 +147,15 @@ where
         match tag {
             // HTML blocks get their own paragraph to try and corral them better
             Tag::HtmlBlock => {
-                // Record paragraph start for boundary tracking
-                // Skip if inside a list or footnote def - they own their paragraph boundary
+                // Record paragraph start for boundary tracking.
+                // Use pre_gap_start if available to include leading whitespace in char_range.
+                // Skip if inside a list or footnote def - they own their paragraph boundary.
                 if self.paragraphs.list_depth == 0 && !self.paragraphs.in_footnote_def {
-                    self.paragraphs.current_start =
-                        Some((self.last_byte_offset, self.last_char_offset));
+                    self.paragraphs.current_start = self
+                        .paragraphs
+                        .pre_gap_start
+                        .take()
+                        .or(Some((self.last_byte_offset, self.last_char_offset)));
                 }
                 let node_id = self.gen_node_id();
 
@@ -189,11 +193,15 @@ where
                 // Handle wrapper before block
                 self.emit_wrapper_start()?;
 
-                // Record paragraph start for boundary tracking
-                // Skip if inside a list or footnote def - they own their paragraph boundary
+                // Record paragraph start for boundary tracking.
+                // Use pre_gap_start if available to include leading whitespace in char_range.
+                // Skip if inside a list or footnote def - they own their paragraph boundary.
                 if self.paragraphs.list_depth == 0 && !self.paragraphs.in_footnote_def {
-                    self.paragraphs.current_start =
-                        Some((self.last_byte_offset, self.last_char_offset));
+                    self.paragraphs.current_start = self
+                        .paragraphs
+                        .pre_gap_start
+                        .take()
+                        .or(Some((self.last_byte_offset, self.last_char_offset)));
                 }
 
                 let node_id = self.gen_node_id();
@@ -273,10 +281,14 @@ where
                 // Emit wrapper if pending (but don't close on heading end - wraps following block too)
                 self.emit_wrapper_start()?;
 
-                // Record paragraph start for boundary tracking
-                // Treat headings as paragraph-level blocks
-                self.paragraphs.current_start =
-                    Some((self.last_byte_offset, self.last_char_offset));
+                // Record paragraph start for boundary tracking.
+                // Use pre_gap_start if available to include leading whitespace in char_range.
+                // Treat headings as paragraph-level blocks.
+                self.paragraphs.current_start = self
+                    .paragraphs
+                    .pre_gap_start
+                    .take()
+                    .or(Some((self.last_byte_offset, self.last_char_offset)));
 
                 if !self.end_newline {
                     self.write_newline()?;
@@ -435,9 +447,13 @@ where
             Tag::CodeBlock(info) => {
                 self.emit_wrapper_start()?;
 
-                // Track code block as paragraph-level block
-                self.paragraphs.current_start =
-                    Some((self.last_byte_offset, self.last_char_offset));
+                // Track code block as paragraph-level block.
+                // Use pre_gap_start if available to include leading whitespace in char_range.
+                self.paragraphs.current_start = self
+                    .paragraphs
+                    .pre_gap_start
+                    .take()
+                    .or(Some((self.last_byte_offset, self.last_char_offset)));
 
                 if !self.end_newline {
                     self.write_newline()?;
@@ -511,9 +527,13 @@ where
             }
             Tag::List(Some(1)) => {
                 self.emit_wrapper_start()?;
-                // Track list as paragraph-level block
-                self.paragraphs.current_start =
-                    Some((self.last_byte_offset, self.last_char_offset));
+                // Track list as paragraph-level block.
+                // Use pre_gap_start if available to include leading whitespace in char_range.
+                self.paragraphs.current_start = self
+                    .paragraphs
+                    .pre_gap_start
+                    .take()
+                    .or(Some((self.last_byte_offset, self.last_char_offset)));
                 self.paragraphs.list_depth += 1;
                 if self.end_newline {
                     self.write("<ol>")
@@ -523,9 +543,13 @@ where
             }
             Tag::List(Some(start)) => {
                 self.emit_wrapper_start()?;
-                // Track list as paragraph-level block
-                self.paragraphs.current_start =
-                    Some((self.last_byte_offset, self.last_char_offset));
+                // Track list as paragraph-level block.
+                // Use pre_gap_start if available to include leading whitespace in char_range.
+                self.paragraphs.current_start = self
+                    .paragraphs
+                    .pre_gap_start
+                    .take()
+                    .or(Some((self.last_byte_offset, self.last_char_offset)));
                 self.paragraphs.list_depth += 1;
                 if self.end_newline {
                     self.write("<ol start=\"")?;
@@ -537,9 +561,13 @@ where
             }
             Tag::List(None) => {
                 self.emit_wrapper_start()?;
-                // Track list as paragraph-level block
-                self.paragraphs.current_start =
-                    Some((self.last_byte_offset, self.last_char_offset));
+                // Track list as paragraph-level block.
+                // Use pre_gap_start if available to include leading whitespace in char_range.
+                self.paragraphs.current_start = self
+                    .paragraphs
+                    .pre_gap_start
+                    .take()
+                    .or(Some((self.last_byte_offset, self.last_char_offset)));
                 self.paragraphs.list_depth += 1;
                 if self.end_newline {
                     self.write("<ul>")

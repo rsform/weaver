@@ -163,6 +163,9 @@ pub struct ParagraphTracker {
     pub ranges: Vec<(Range<usize>, Range<usize>)>,
     /// Start of current paragraph: (byte_offset, char_offset)
     pub current_start: Option<(usize, usize)>,
+    /// Pre-gap position for paragraph start (captured before gap emission).
+    /// This ensures the paragraph's char_range includes leading whitespace.
+    pub pre_gap_start: Option<(usize, usize)>,
     /// List nesting depth (suppress paragraph boundaries inside lists)
     pub list_depth: usize,
     /// In footnote definition (suppress inner paragraph boundaries)

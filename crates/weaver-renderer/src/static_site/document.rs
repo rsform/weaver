@@ -1,3 +1,4 @@
+#[cfg(feature = "syntax-css")]
 use crate::css::{generate_base_css, generate_syntax_css};
 use crate::static_site::context::{KaTeXSource, StaticSiteContext};
 use crate::theme::default_resolved_theme;
@@ -97,6 +98,7 @@ pub async fn write_document_head<A: AgentSession>(
                 .await
                 .into_diagnostic()?;
         }
+        #[cfg(feature = "syntax-css")]
         CssMode::Inline => {
             let default_theme = default_resolved_theme();
             let theme = context.theme.as_deref().unwrap_or(&default_theme);
@@ -115,6 +117,13 @@ pub async fn write_document_head<A: AgentSession>(
                 .await
                 .into_diagnostic()?;
             writer.write_all(b"  </style>\n").await.into_diagnostic()?;
+        }
+        #[cfg(not(feature = "syntax-css"))]
+        CssMode::Inline => {
+            // CSS generation not available without syntax-css feature
+            return Err(miette::miette!(
+                "Inline CSS mode requires the 'syntax-css' feature"
+            ));
         }
     }
 

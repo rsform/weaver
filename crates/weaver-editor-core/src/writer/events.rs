@@ -4,7 +4,7 @@ use core::fmt;
 use std::fmt::Write as _;
 use std::ops::Range;
 
-use markdown_weaver::{Event, TagEnd};
+use markdown_weaver::{Event, Tag, TagEnd};
 use markdown_weaver_escape::{escape_html, escape_html_body_text_with_char_count};
 
 use crate::offset_map::OffsetMapping;
@@ -58,6 +58,24 @@ where
                 // Emit gap from last_byte_offset to range.end
                 self.emit_gap_before(range.end)?;
             } else if !matches!(&event, Event::End(_)) {
+                // For paragraph-level start events, capture pre-gap position so the
+                // paragraph's char_range includes leading whitespace/gap content.
+                let is_para_start = matches!(
+                    &event,
+                    Event::Start(
+                        Tag::Paragraph(_)
+                            | Tag::Heading { .. }
+                            | Tag::CodeBlock(_)
+                            | Tag::List(_)
+                            | Tag::BlockQuote(_)
+                            | Tag::HtmlBlock
+                    )
+                );
+                if is_para_start && self.paragraphs.should_track_boundaries() {
+                    self.paragraphs.pre_gap_start =
+                        Some((self.last_byte_offset, self.last_char_offset));
+                }
+
                 // For other events, emit any gap before range.start
                 // (emit_syntax handles char offset tracking)
                 self.emit_gap_before(range.start)?;
@@ -79,16 +97,31 @@ where
             // else: Event updated offset (e.g. start_tag emitted opening syntax), keep that value
         }
 
-        // Emit any trailing syntax
-        self.emit_gap_before(self.source.len())?;
+        // Check if document ends with a paragraph break (double newline) BEFORE emitting trailing.
+        // If so, we'll reserve the final newline for a synthetic trailing paragraph.
+        let ends_with_para_break = self.source.ends_with("\n\n")
+            || self.source.ends_with("\n\u{200C}\n");
+
+        // Determine where to stop emitting trailing syntax
+        let trailing_emit_end = if ends_with_para_break {
+            // Don't emit the final newline - save it for synthetic paragraph
+            self.source.len().saturating_sub(1)
+        } else {
+            self.source.len()
+        };
+
+        // Emit trailing syntax up to the determined point
+        self.emit_gap_before(trailing_emit_end)?;
 
         // Handle unmapped trailing content (stripped by parser)
         // This includes trailing spaces that markdown ignores
         let doc_byte_len = self.source.len();
         let doc_char_len = self.text_buffer.len_chars();
 
-        if self.last_byte_offset < doc_byte_len || self.last_char_offset < doc_char_len {
-            // Emit the trailing content as visible syntax
+        if !ends_with_para_break
+            && (self.last_byte_offset < doc_byte_len || self.last_char_offset < doc_char_len)
+        {
+            // Emit the trailing content as visible syntax (only if not creating synthetic para)
             if self.last_byte_offset < doc_byte_len {
                 let trailing = &self.source[self.last_byte_offset..];
                 if !trailing.is_empty() {
@@ -125,7 +158,7 @@ where
             }
         }
 
-        // Add any remaining accumulated data for the last paragraph
+        // Add any remaining accumulated data for the last paragraph FIRST
         // (content that wasn't followed by a paragraph boundary)
         if !self.current_para.offset_maps.is_empty()
             || !self.current_para.syntax_spans.is_empty()
@@ -137,6 +170,48 @@ where
                 .push(std::mem::take(&mut self.current_para.syntax_spans));
             self.refs_by_para
                 .push(std::mem::take(&mut self.ref_collector.refs));
+        }
+
+        // Now create a synthetic trailing paragraph if needed
+        if ends_with_para_break {
+            // Get the trailing content we reserved (the final newline)
+            let trailing_content = &self.source[trailing_emit_end..];
+            let trailing_char_len = trailing_content.chars().count();
+
+            let trailing_start_char = self.last_char_offset;
+            let trailing_start_byte = self.last_byte_offset;
+            let trailing_end_char = trailing_start_char + trailing_char_len;
+            let trailing_end_byte = self.source.len();
+
+            // Create paragraph range that includes the trailing content
+            self.paragraphs.ranges.push((
+                trailing_start_byte..trailing_end_byte,
+                trailing_start_char..trailing_end_char,
+            ));
+
+            // Start a new HTML segment for this trailing paragraph
+            self.writer.new_segment();
+            let node_id = self.gen_node_id();
+
+            // Write the actual trailing content plus ZWSP for cursor positioning
+            write!(&mut self.writer, "<span id=\"{}\">", node_id)?;
+            escape_html(&mut self.writer, trailing_content)?;
+            self.write("\u{200B}</span>")?;
+
+            // Record offset mapping for the trailing content
+            let mapping = OffsetMapping {
+                byte_range: trailing_start_byte..trailing_end_byte,
+                char_range: trailing_start_char..trailing_end_char,
+                node_id,
+                char_offset_in_node: 0,
+                child_index: None,
+                utf16_len: trailing_char_len + 1, // Content + ZWSP
+            };
+
+            // Create offset_maps/syntax_spans/refs for this trailing paragraph
+            self.offset_maps_by_para.push(vec![mapping]);
+            self.syntax_spans_by_para.push(vec![]);
+            self.refs_by_para.push(vec![]);
         }
 
         // Get HTML segments from writer

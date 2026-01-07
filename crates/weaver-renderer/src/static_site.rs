@@ -231,6 +231,7 @@ where
         Ok(())
     }
 
+    #[cfg(feature = "syntax-css")]
     async fn generate_css_files(&self) -> Result<(), miette::Report> {
         use crate::css::{generate_base_css, generate_syntax_css};
 
@@ -255,6 +256,13 @@ where
             .into_diagnostic()?;
 
         Ok(())
+    }
+
+    #[cfg(not(feature = "syntax-css"))]
+    async fn generate_css_files(&self) -> Result<(), miette::Report> {
+        Err(miette::miette!(
+            "CSS generation requires the 'syntax-css' feature"
+        ))
     }
 
     async fn generate_default_index(&self) -> Result<(), miette::Report> {

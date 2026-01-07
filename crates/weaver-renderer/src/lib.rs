@@ -35,7 +35,7 @@ pub mod leaflet;
 pub mod math;
 #[cfg(feature = "pckt")]
 pub mod pckt;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), feature = "syntax-highlighting"))]
 pub mod static_site;
 pub mod theme;
 pub mod types;
