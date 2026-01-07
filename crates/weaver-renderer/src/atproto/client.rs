@@ -658,7 +658,7 @@ mod tests {
         let uri = AtUri::new("at://did:plc:xyz123/sh.weaver.notebook.entry/entry123").unwrap();
         assert_eq!(
             at_uri_to_web_url(&uri),
-            "https://alpha.weaver.sh/record/at://did:plc:xyz123/sh.weaver.notebook.entry/entry123"
+            "https://alpha.weaver.sh/did:plc:xyz123/e/entry123"
         );
     }
 

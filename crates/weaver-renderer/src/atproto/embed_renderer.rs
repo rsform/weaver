@@ -454,8 +454,11 @@ where
         .unwrap_or(false)
     {
         // blog.pckt.document wraps site.standard.document in a "document" field
-        let pckt_doc = jacquard::from_data::<weaver_api::blog_pckt::document::Document>(&output.value)
-            .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("Parse error: {:?}", e)))?;
+        let pckt_doc =
+            jacquard::from_data::<weaver_api::blog_pckt::document::Document>(&output.value)
+                .map_err(|e| {
+                    AtProtoPreprocessError::FetchFailed(format!("Parse error: {:?}", e))
+                })?;
         pckt_doc.document
     } else {
         // Direct site.standard.document
@@ -477,32 +480,32 @@ where
 
     // Get author DID and handle from URI authority
     use jacquard::types::string::{Did, Handle};
-    let (author_did, author_handle): (Did<'static>, Option<Handle<'static>>) =
-        match uri.authority() {
-            jacquard::types::ident::AtIdentifier::Did(d) => {
-                let did = d.clone().into_static();
-                let handle = agent
-                    .resolve_did_doc_owned(d)
-                    .await
-                    .ok()
-                    .and_then(|doc| doc.handles().first().cloned());
-                (did, handle)
-            }
-            jacquard::types::ident::AtIdentifier::Handle(h) => {
-                let handle = Some(h.clone().into_static());
-                let did = agent
-                    .resolve_handle(h)
-                    .await
-                    .map(|d| d.into_static())
-                    .map_err(|e| {
-                        AtProtoPreprocessError::FetchFailed(format!(
-                            "Handle resolution failed: {:?}",
-                            e
-                        ))
-                    })?;
-                (did, handle)
-            }
-        };
+    let (author_did, author_handle): (Did<'static>, Option<Handle<'static>>) = match uri.authority()
+    {
+        jacquard::types::ident::AtIdentifier::Did(d) => {
+            let did = d.clone().into_static();
+            let handle = agent
+                .resolve_did_doc_owned(d)
+                .await
+                .ok()
+                .and_then(|doc| doc.handles().first().cloned());
+            (did, handle)
+        }
+        jacquard::types::ident::AtIdentifier::Handle(h) => {
+            let handle = Some(h.clone().into_static());
+            let did = agent
+                .resolve_handle(h)
+                .await
+                .map(|d| d.into_static())
+                .map_err(|e| {
+                    AtProtoPreprocessError::FetchFailed(format!(
+                        "Handle resolution failed: {:?}",
+                        e
+                    ))
+                })?;
+            (did, handle)
+        }
+    };
 
     let ctx = PcktRenderContext::new(author_did);
 
@@ -511,11 +514,7 @@ where
     let toggle_id = format!("pckt-toggle-{}", rkey);
 
     // Document path for URL (use path field if present, otherwise rkey)
-    let doc_path = doc
-        .path
-        .as_ref()
-        .map(|p| p.as_ref())
-        .unwrap_or(rkey);
+    let doc_path = doc.path.as_ref().map(|p| p.as_ref()).unwrap_or(rkey);
 
     let mut html = String::new();
     html.push_str("<div class=\"atproto-embed atproto-entry\" contenteditable=\"false\">");
@@ -612,8 +611,767 @@ where
     }
 }
 
-/// Render a profile from ProfileDataViewInner (weaver, bsky, or tangled)
-fn render_profile_data_view(
+/// Render any AT Protocol record synchronously from pre-fetched data.
+///
+/// This is the pure sync version of `fetch_and_render`. Takes a URI and the
+/// record data, dispatches to the appropriate renderer based on collection type.
+///
+/// # Arguments
+///
+/// * `uri` - The AT URI of the record
+/// * `data` - The record data (either raw record or hydrated view type)
+/// * `fallback_author` - Optional author profile to use when data is a raw record
+///   without embedded author info. Used for entries and other content types.
+/// * `resolved_content` - Optional pre-resolved embeds for rendering markdown with embeds
+///
+/// # Supported collections
+///
+/// **Profiles** (pass hydrated view from appview):
+/// - `app.bsky.actor.profile` - Bluesky profiles (ProfileViewDetailed from getProfile)
+/// - `sh.weaver.actor.profile` - Weaver profiles (ProfileView from weaver appview)
+/// - Tangled profiles also supported via type discriminator
+///
+/// **Posts**:
+/// - `app.bsky.feed.post` - Posts (PostView from getPosts, or raw record for basic)
+///
+/// **Entries** (pass view type for author info, or provide fallback_author):
+/// - `sh.weaver.notebook.entry` - Weaver entries (EntryView or raw Entry)
+/// - `com.whtwnd.blog.entry` - Whitewind entries
+/// - `pub.leaflet.document` - Leaflet documents
+/// - `site.standard.document` / `blog.pckt.document` - pckt documents
+///
+/// **Lists & Feeds**:
+/// - `app.bsky.graph.list` - User lists
+/// - `app.bsky.feed.generator` - Custom feeds
+/// - `app.bsky.graph.starterpack` - Starter packs
+/// - `app.bsky.labeler.service` - Labelers
+///
+/// **Other** - Generic field display for unknown types
+pub fn render_record(
+    uri: &AtUri<'_>,
+    data: &Data<'_>,
+    fallback_author: Option<&weaver_api::sh_weaver::actor::ProfileDataView<'_>>,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) -> Result<String, AtProtoPreprocessError> {
+    let collection = uri.collection().map(|c| c.as_ref());
+
+    match collection {
+        // No collection = just an identity reference, try as profile
+        None => render_profile_from_data(data, uri),
+
+        // Profiles - try multiple profile view types
+        Some("app.bsky.actor.profile") | Some("sh.weaver.actor.profile") => {
+            render_profile_from_data(data, uri)
+        }
+
+        // Posts
+        Some("app.bsky.feed.post") => {
+            // Try PostView first (from getPosts), fall back to raw record
+            if let Ok(post_view) = jacquard::from_data::<PostView>(data) {
+                render_post_view(&post_view, uri)
+            } else {
+                render_basic_post(data, uri)
+            }
+        }
+
+        // Lists
+        Some("app.bsky.graph.list") => render_list_record(data, uri),
+
+        // Custom feeds
+        Some("app.bsky.feed.generator") => render_generator_record(data, uri),
+
+        // Starter packs
+        Some("app.bsky.graph.starterpack") => render_starterpack_record(data, uri),
+
+        // Labelers
+        Some("app.bsky.labeler.service") => render_labeler_record(data, uri),
+
+        // Weaver entries
+        Some("sh.weaver.notebook.entry") => {
+            render_weaver_entry_record(data, uri, fallback_author, resolved_content)
+        }
+
+        // Whitewind entries
+        Some("com.whtwnd.blog.entry") => {
+            render_whitewind_entry_record(data, uri, fallback_author, resolved_content)
+        }
+
+        // Leaflet documents
+        Some("pub.leaflet.document") => {
+            render_leaflet_record(data, uri, fallback_author, resolved_content)
+        }
+
+        // pckt / site.standard documents
+        #[cfg(feature = "pckt")]
+        Some("site.standard.document") | Some("blog.pckt.document") => {
+            render_site_standard_record(data, uri, fallback_author, resolved_content)
+        }
+
+        // Default: generic rendering
+        _ => render_generic_record(data, uri),
+    }
+}
+
+/// Try to render profile data by detecting the view type.
+fn render_profile_from_data(
+    data: &Data<'_>,
+    uri: &AtUri<'_>,
+) -> Result<String, AtProtoPreprocessError> {
+    // Check type discriminator first for union types
+    if let Some(type_disc) = data.type_discriminator() {
+        match type_disc {
+            "app.bsky.actor.defs#profileViewDetailed" => {
+                if let Ok(profile) =
+                    jacquard::from_data::<weaver_api::app_bsky::actor::ProfileViewDetailed>(data)
+                {
+                    return render_profile_data_view(&ProfileDataViewInner::ProfileViewDetailed(
+                        Box::new(profile),
+                    ));
+                }
+            }
+            "sh.weaver.actor.defs#profileView" => {
+                if let Ok(profile) =
+                    jacquard::from_data::<weaver_api::sh_weaver::actor::ProfileView>(data)
+                {
+                    return render_profile_data_view(&ProfileDataViewInner::ProfileView(Box::new(
+                        profile,
+                    )));
+                }
+            }
+            "sh.weaver.actor.defs#tangledProfileView" => {
+                if let Ok(profile) =
+                    jacquard::from_data::<weaver_api::sh_weaver::actor::TangledProfileView>(data)
+                {
+                    return render_profile_data_view(&ProfileDataViewInner::TangledProfileView(
+                        Box::new(profile),
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Try each type without discriminator
+    if let Ok(profile) =
+        jacquard::from_data::<weaver_api::app_bsky::actor::ProfileViewDetailed>(data)
+    {
+        return render_profile_data_view(&ProfileDataViewInner::ProfileViewDetailed(Box::new(
+            profile,
+        )));
+    }
+    if let Ok(profile) = jacquard::from_data::<weaver_api::sh_weaver::actor::ProfileView>(data) {
+        return render_profile_data_view(&ProfileDataViewInner::ProfileView(Box::new(profile)));
+    }
+    if let Ok(profile) =
+        jacquard::from_data::<weaver_api::sh_weaver::actor::TangledProfileView>(data)
+    {
+        return render_profile_data_view(&ProfileDataViewInner::TangledProfileView(Box::new(
+            profile,
+        )));
+    }
+
+    // Fall back to generic
+    render_generic_record(data, uri)
+}
+
+/// Render a list record.
+fn render_list_record(data: &Data<'_>, uri: &AtUri<'_>) -> Result<String, AtProtoPreprocessError> {
+    let list = match jacquard::from_data::<weaver_api::app_bsky::graph::list::List>(data) {
+        Ok(l) => l,
+        Err(_) => return render_generic_record(data, uri),
+    };
+
+    let mut html = String::new();
+    html.push_str("<span class=\"atproto-embed atproto-record\" contenteditable=\"false\">");
+    html.push_str("<span class=\"embed-type\">List</span>");
+    html.push_str("<span class=\"embed-author-name\">");
+    html.push_str(&html_escape(list.name.as_ref()));
+    html.push_str("</span>");
+    if let Some(desc) = &list.description {
+        html.push_str("<span class=\"embed-description\">");
+        html.push_str(&html_escape(desc.as_ref()));
+        html.push_str("</span>");
+    }
+    html.push_str("</span>");
+
+    Ok(html)
+}
+
+/// Render a feed generator record.
+fn render_generator_record(
+    data: &Data<'_>,
+    uri: &AtUri<'_>,
+) -> Result<String, AtProtoPreprocessError> {
+    let generator =
+        match jacquard::from_data::<weaver_api::app_bsky::feed::generator::Generator>(data) {
+            Ok(g) => g,
+            Err(_) => return render_generic_record(data, uri),
+        };
+
+    let mut html = String::new();
+    html.push_str("<span class=\"atproto-embed atproto-record\" contenteditable=\"false\">");
+    html.push_str("<span class=\"embed-type\">Custom Feed</span>");
+    html.push_str("<span class=\"embed-author-name\">");
+    html.push_str(&html_escape(generator.display_name.as_ref()));
+    html.push_str("</span>");
+    if let Some(desc) = &generator.description {
+        html.push_str("<span class=\"embed-description\">");
+        html.push_str(&html_escape(desc.as_ref()));
+        html.push_str("</span>");
+    }
+    html.push_str("</span>");
+
+    Ok(html)
+}
+
+/// Render a starter pack record.
+fn render_starterpack_record(
+    data: &Data<'_>,
+    uri: &AtUri<'_>,
+) -> Result<String, AtProtoPreprocessError> {
+    let sp =
+        match jacquard::from_data::<weaver_api::app_bsky::graph::starterpack::Starterpack>(data) {
+            Ok(s) => s,
+            Err(_) => return render_generic_record(data, uri),
+        };
+
+    let mut html = String::new();
+    html.push_str("<span class=\"atproto-embed atproto-record\" contenteditable=\"false\">");
+    html.push_str("<span class=\"embed-type\">Starter Pack</span>");
+    html.push_str("<span class=\"embed-author-name\">");
+    html.push_str(&html_escape(sp.name.as_ref()));
+    html.push_str("</span>");
+    if let Some(desc) = &sp.description {
+        html.push_str("<span class=\"embed-description\">");
+        html.push_str(&html_escape(desc.as_ref()));
+        html.push_str("</span>");
+    }
+    html.push_str("</span>");
+
+    Ok(html)
+}
+
+/// Render a labeler service record.
+fn render_labeler_record(
+    data: &Data<'_>,
+    uri: &AtUri<'_>,
+) -> Result<String, AtProtoPreprocessError> {
+    let labeler = match jacquard::from_data::<weaver_api::app_bsky::labeler::service::Service>(data)
+    {
+        Ok(l) => l,
+        Err(_) => return render_generic_record(data, uri),
+    };
+
+    let mut html = String::new();
+    html.push_str("<span class=\"atproto-embed atproto-record\" contenteditable=\"false\">");
+    html.push_str("<span class=\"embed-type\">Labeler</span>");
+
+    // Labeler policies
+    html.push_str("<span class=\"embed-fields\">");
+    let label_count = labeler.policies.label_values.len();
+    html.push_str("<span class=\"embed-field\">");
+    html.push_str(&label_count.to_string());
+    html.push_str(" label");
+    if label_count != 1 {
+        html.push_str("s");
+    }
+    html.push_str(" defined</span>");
+    html.push_str("</span>");
+
+    html.push_str("</span>");
+
+    Ok(html)
+}
+
+/// Render a weaver notebook entry record.
+///
+/// Accepts either:
+/// - `EntryView` (from appview) - includes author info
+/// - Raw `Entry` record with optional fallback_author
+fn render_weaver_entry_record(
+    data: &Data<'_>,
+    uri: &AtUri<'_>,
+    fallback_author: Option<&weaver_api::sh_weaver::actor::ProfileDataView<'_>>,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) -> Result<String, AtProtoPreprocessError> {
+    use crate::atproto::writer::ClientWriter;
+    use crate::default_md_options;
+    use markdown_weaver::Parser;
+    use weaver_api::sh_weaver::notebook::EntryView;
+
+    // Try to parse as EntryView first (has author info), then raw Entry
+    let (title, content, author_handle): (String, String, Option<String>) = if let Ok(view) =
+        jacquard::from_data::<EntryView>(data)
+    {
+        // EntryView has embedded record data, extract content from it
+        let content = view
+            .record
+            .query("content")
+            .single()
+            .and_then(|d| d.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let title = view
+            .record
+            .query("title")
+            .single()
+            .and_then(|d| d.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let handle = view
+            .authors
+            .first()
+            .and_then(|author| extract_handle_from_profile_data_view(&author.record.inner));
+        (title, content, handle.map(|h| h.to_string()))
+    } else if let Ok(entry) =
+        jacquard::from_data::<weaver_api::sh_weaver::notebook::entry::Entry>(data)
+    {
+        let handle = fallback_author.and_then(|p| extract_handle_from_profile_data_view(&p.inner));
+        (
+            entry.title.as_ref().to_string(),
+            entry.content.as_ref().to_string(),
+            handle.map(|h| h.to_string()),
+        )
+    } else {
+        return render_generic_record(data, uri);
+    };
+
+    // Render markdown content to HTML using resolved_content for embeds
+    let parser = Parser::new_ext(&content, default_md_options()).into_offset_iter();
+    let mut content_html = String::new();
+    if let Some(resolved) = resolved_content {
+        ClientWriter::new(parser, &mut content_html, &content)
+            .with_embed_provider(resolved)
+            .run()
+            .map_err(|e| {
+                AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {:?}", e))
+            })?;
+    } else {
+        ClientWriter::<_, _, ()>::new(parser, &mut content_html, &content)
+            .run()
+            .map_err(|e| {
+                AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {:?}", e))
+            })?;
+    }
+
+    // Generate unique ID for the toggle checkbox
+    let rkey = uri.rkey().map(|r| r.as_ref()).unwrap_or("unknown");
+    let toggle_id = format!("entry-toggle-{}", rkey);
+
+    // Build the embed HTML - matches fetch_and_render_entry exactly
+    let mut html = String::new();
+    html.push_str("<div class=\"atproto-embed atproto-entry\" contenteditable=\"false\">");
+
+    // Hidden checkbox for expand/collapse (must come before content for CSS sibling selector)
+    html.push_str("<input type=\"checkbox\" class=\"embed-entry-toggle\" id=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\">");
+
+    // Header with title and author
+    html.push_str("<div class=\"embed-entry-header\">");
+
+    // Title
+    html.push_str("<span class=\"embed-entry-title\">");
+    html.push_str(&html_escape(&title));
+    html.push_str("</span>");
+
+    // Author info - just show handle (keep it simple for entry embeds)
+    if let Some(ref handle) = author_handle {
+        if !handle.is_empty() {
+            html.push_str("<span class=\"embed-entry-author\">@");
+            html.push_str(&html_escape(handle));
+            html.push_str("</span>");
+        }
+    }
+
+    html.push_str("</div>"); // end header
+
+    // Scrollable content container
+    html.push_str("<div class=\"embed-entry-content\">");
+    html.push_str(&content_html);
+    html.push_str("</div>");
+
+    // Expand/collapse label (clickable, targets the checkbox)
+    html.push_str("<label class=\"embed-entry-expand\" for=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\"></label>");
+
+    html.push_str("</div>");
+
+    Ok(html)
+}
+
+/// Extract handle from ProfileDataViewInner.
+fn extract_handle_from_profile_data_view<'a>(
+    inner: &'a ProfileDataViewInner<'a>,
+) -> Option<&'a str> {
+    match inner {
+        ProfileDataViewInner::ProfileView(p) => Some(p.handle.as_ref()),
+        ProfileDataViewInner::ProfileViewDetailed(p) => Some(p.handle.as_ref()),
+        ProfileDataViewInner::TangledProfileView(p) => Some(p.handle.as_ref()),
+        ProfileDataViewInner::Unknown(_) => None,
+    }
+}
+
+fn extract_did_from_profile_data_view(
+    inner: &ProfileDataViewInner<'_>,
+) -> Option<jacquard::types::string::Did<'static>> {
+    use jacquard::IntoStatic;
+    match inner {
+        ProfileDataViewInner::ProfileView(p) => Some(p.did.clone().into_static()),
+        ProfileDataViewInner::ProfileViewDetailed(p) => Some(p.did.clone().into_static()),
+        ProfileDataViewInner::TangledProfileView(p) => Some(p.did.clone().into_static()),
+        ProfileDataViewInner::Unknown(_) => None,
+    }
+}
+
+/// Render a whitewind blog entry record.
+///
+/// Whitewind entries don't have a view type, so author info comes from fallback_author.
+fn render_whitewind_entry_record(
+    data: &Data<'_>,
+    uri: &AtUri<'_>,
+    fallback_author: Option<&weaver_api::sh_weaver::actor::ProfileDataView<'_>>,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) -> Result<String, AtProtoPreprocessError> {
+    use crate::atproto::writer::ClientWriter;
+    use crate::default_md_options;
+    use markdown_weaver::Parser;
+
+    let entry = match jacquard::from_data::<weaver_api::com_whtwnd::blog::entry::Entry>(data) {
+        Ok(e) => e,
+        Err(_) => return render_generic_record(data, uri),
+    };
+
+    // Render the markdown content to HTML using resolved_content for embeds
+    let content = entry.content.as_ref();
+    let parser = Parser::new_ext(content, default_md_options()).into_offset_iter();
+    let mut content_html = String::new();
+    if let Some(resolved) = resolved_content {
+        ClientWriter::new(parser, &mut content_html, content)
+            .with_embed_provider(resolved)
+            .run()
+            .map_err(|e| {
+                AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {:?}", e))
+            })?;
+    } else {
+        ClientWriter::<_, _, ()>::new(parser, &mut content_html, content)
+            .run()
+            .map_err(|e| {
+                AtProtoPreprocessError::FetchFailed(format!("Markdown render failed: {:?}", e))
+            })?;
+    }
+
+    // Generate unique ID for the toggle checkbox
+    let rkey = uri.rkey().map(|r| r.as_ref()).unwrap_or("unknown");
+    let toggle_id = format!("entry-toggle-{}", rkey);
+
+    // Build the embed HTML - matches fetch_and_render_whitewind_entry exactly
+    let mut html = String::new();
+    html.push_str("<div class=\"atproto-embed atproto-entry\" contenteditable=\"false\">");
+
+    // Hidden checkbox for expand/collapse (must come before content for CSS sibling selector)
+    html.push_str("<input type=\"checkbox\" class=\"embed-entry-toggle\" id=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\">");
+
+    // Header with title and author
+    html.push_str("<div class=\"embed-entry-header\">");
+
+    // Title
+    html.push_str("<span class=\"embed-entry-title\">");
+    html.push_str(&html_escape(
+        entry.title.as_ref().map(|t| t.as_ref()).unwrap_or(""),
+    ));
+    html.push_str("</span>");
+
+    // Author info - just show handle (keep it simple for entry embeds)
+    if let Some(author) = fallback_author {
+        let handle = extract_handle_from_profile_data_view(&author.inner).unwrap_or("");
+        if !handle.is_empty() {
+            html.push_str("<span class=\"embed-entry-author\">@");
+            html.push_str(&html_escape(handle));
+            html.push_str("</span>");
+        }
+    }
+
+    html.push_str("</div>"); // end header
+
+    // Scrollable content container
+    html.push_str("<div class=\"embed-entry-content\">");
+    html.push_str(&content_html);
+    html.push_str("</div>");
+
+    // Expand/collapse label (clickable, targets the checkbox)
+    html.push_str("<label class=\"embed-entry-expand\" for=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\"></label>");
+
+    html.push_str("</div>");
+
+    Ok(html)
+}
+
+/// Render a leaflet document record.
+///
+/// Uses the sync block renderer to render page content directly. Embedded posts
+/// within the document will be looked up from resolved_content by their AT URI.
+fn render_leaflet_record(
+    data: &Data<'_>,
+    uri: &AtUri<'_>,
+    fallback_author: Option<&weaver_api::sh_weaver::actor::ProfileDataView<'_>>,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) -> Result<String, AtProtoPreprocessError> {
+    use crate::leaflet::{LeafletRenderContext, render_linear_document_sync};
+    use weaver_api::pub_leaflet::document::{Document, DocumentPagesItem};
+
+    let doc = match jacquard::from_data::<Document>(data) {
+        Ok(d) => d,
+        Err(_) => return render_generic_record(data, uri),
+    };
+
+    // Get author DID from fallback_author or from document/URI.
+    let author_did = if let Some(author) = fallback_author {
+        extract_did_from_profile_data_view(&author.inner)
+    } else {
+        None
+    }
+    .or_else(|| {
+        // Try to get DID from document author field.
+        match &doc.author {
+            jacquard::types::ident::AtIdentifier::Did(d) => Some(d.clone().into_static()),
+            _ => None,
+        }
+    })
+    .or_else(|| {
+        // Fall back to URI authority if it's a DID.
+        jacquard::types::string::Did::new(uri.authority().as_ref())
+            .ok()
+            .map(|d| d.into_static())
+    });
+
+    let ctx = author_did
+        .map(LeafletRenderContext::new)
+        .unwrap_or_else(|| {
+            LeafletRenderContext::new(jacquard::types::string::Did::raw("did:plc:unknown".into()))
+        });
+
+    // Generate unique toggle ID.
+    let rkey = uri.rkey().map(|r| r.as_ref()).unwrap_or("unknown");
+    let toggle_id = format!("leaflet-toggle-{}", rkey);
+
+    let mut html = String::new();
+    html.push_str("<div class=\"atproto-embed atproto-entry\" contenteditable=\"false\">");
+
+    // Hidden checkbox for expand/collapse.
+    html.push_str("<input type=\"checkbox\" class=\"embed-entry-toggle\" id=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\">");
+
+    // Header with title and author.
+    html.push_str("<div class=\"embed-entry-header\">");
+
+    // Title (no link in sync version since we don't have publication base_path).
+    html.push_str("<span class=\"embed-entry-title\">");
+    html.push_str(&html_escape(doc.title.as_ref()));
+    html.push_str("</span>");
+
+    // Author info.
+    if let Some(author) = fallback_author {
+        let handle = extract_handle_from_profile_data_view(&author.inner).unwrap_or("");
+        if !handle.is_empty() {
+            html.push_str("<span class=\"embed-entry-author\">@");
+            html.push_str(&html_escape(handle));
+            html.push_str("</span>");
+        }
+    }
+
+    html.push_str("</div>"); // end header
+
+    // Scrollable content container.
+    html.push_str("<div class=\"embed-entry-content\">");
+
+    // Render each page using the sync block renderer.
+    for page in &doc.pages {
+        match page {
+            DocumentPagesItem::LinearDocument(linear_doc) => {
+                html.push_str(&render_linear_document_sync(
+                    linear_doc,
+                    &ctx,
+                    resolved_content,
+                ));
+            }
+            DocumentPagesItem::Canvas(_) => {
+                html.push_str(
+                    "<div class=\"embed-video-placeholder\">[Canvas layout not yet supported]</div>",
+                );
+            }
+            DocumentPagesItem::Unknown(_) => {
+                html.push_str("<div class=\"embed-video-placeholder\">[Unknown page type]</div>");
+            }
+        }
+    }
+
+    html.push_str("</div>"); // end content
+
+    // Expand/collapse label.
+    html.push_str("<label class=\"embed-entry-expand\" for=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\"></label>");
+
+    html.push_str("</div>");
+
+    Ok(html)
+}
+
+/// Render a site.standard or blog.pckt document record.
+///
+/// Uses the sync block renderer to render content blocks directly. Embedded posts
+/// within the document will be looked up from resolved_content by their AT URI.
+#[cfg(feature = "pckt")]
+fn render_site_standard_record(
+    data: &Data<'_>,
+    uri: &AtUri<'_>,
+    fallback_author: Option<&weaver_api::sh_weaver::actor::ProfileDataView<'_>>,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) -> Result<String, AtProtoPreprocessError> {
+    use crate::pckt::{PcktRenderContext, render_content_blocks_sync};
+    use weaver_api::site_standard::document::Document as SiteStandardDocument;
+
+    // Extract the document - either directly or from blog.pckt.document wrapper.
+    let doc: SiteStandardDocument<'_> = if data
+        .type_discriminator()
+        .map(|t| t == "blog.pckt.document")
+        .unwrap_or(false)
+    {
+        let pckt_doc = match jacquard::from_data::<weaver_api::blog_pckt::document::Document>(data)
+        {
+            Ok(d) => d,
+            Err(_) => return render_generic_record(data, uri),
+        };
+        pckt_doc.document
+    } else {
+        match jacquard::from_data::<SiteStandardDocument>(data) {
+            Ok(d) => d,
+            Err(_) => return render_generic_record(data, uri),
+        }
+    };
+
+    // Get author DID from fallback_author or from URI authority.
+    let author_did = if let Some(author) = fallback_author {
+        extract_did_from_profile_data_view(&author.inner)
+    } else {
+        None
+    }
+    .or_else(|| {
+        // Fall back to URI authority if it's a DID.
+        jacquard::types::string::Did::new(uri.authority().as_ref())
+            .ok()
+            .map(|d| d.into_static())
+    });
+
+    let ctx = author_did.map(PcktRenderContext::new).unwrap_or_else(|| {
+        PcktRenderContext::new(jacquard::types::string::Did::unchecked(
+            "did:plc:unknown".into(),
+        ))
+    });
+
+    let rkey = uri.rkey().map(|r| r.as_ref()).unwrap_or("unknown");
+    let toggle_id = format!("pckt-toggle-{}", rkey);
+
+    let mut html = String::new();
+    html.push_str("<div class=\"atproto-embed atproto-entry\" contenteditable=\"false\">");
+
+    // Toggle checkbox.
+    html.push_str("<input type=\"checkbox\" class=\"embed-entry-toggle\" id=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\">");
+
+    // Header.
+    html.push_str("<div class=\"embed-entry-header\">");
+    html.push_str("<span class=\"embed-entry-title\">");
+    html.push_str(&html_escape(doc.title.as_ref()));
+    html.push_str("</span>");
+
+    // Author info.
+    if let Some(author) = fallback_author {
+        let handle = extract_handle_from_profile_data_view(&author.inner).unwrap_or("");
+        if !handle.is_empty() {
+            html.push_str("<span class=\"embed-entry-author\">@");
+            html.push_str(&html_escape(handle));
+            html.push_str("</span>");
+        }
+    }
+
+    html.push_str("</div>");
+
+    // Content.
+    html.push_str("<div class=\"embed-entry-content\">");
+    if let Some(content) = &doc.content {
+        // Render actual content blocks using the sync renderer.
+        html.push_str(&render_content_blocks_sync(content, &ctx, resolved_content));
+    } else if let Some(text_content) = &doc.text_content {
+        // Fallback to text_content if no structured blocks.
+        html.push_str("<p>");
+        html.push_str(&html_escape(text_content.as_ref()));
+        html.push_str("</p>");
+    }
+    html.push_str("</div>");
+
+    // Expand label.
+    html.push_str("<label class=\"embed-entry-expand\" for=\"");
+    html.push_str(&toggle_id);
+    html.push_str("\"></label>");
+
+    html.push_str("</div>");
+
+    Ok(html)
+}
+
+/// Render a basic post from record data (no engagement stats or author info).
+///
+/// This is a simpler version than `render_post_view` for cases where you only
+/// have the raw record, not the full PostView from the appview.
+fn render_basic_post(data: &Data<'_>, uri: &AtUri<'_>) -> Result<String, AtProtoPreprocessError> {
+    let mut html = String::new();
+
+    // Try to parse as Post
+    let post = jacquard::from_data::<weaver_api::app_bsky::feed::post::Post>(data)
+        .map_err(|e| AtProtoPreprocessError::FetchFailed(format!("Parse error: {:?}", e)))?;
+
+    // Build link to post on Bluesky
+    let authority = uri.authority();
+    let rkey = uri.rkey().map(|r| r.as_ref()).unwrap_or("");
+    let bsky_link = format!("https://bsky.app/profile/{}/post/{}", authority, rkey);
+
+    html.push_str("<span class=\"atproto-embed atproto-post\" contenteditable=\"false\">");
+
+    // Background link
+    html.push_str("<a class=\"embed-card-link\" href=\"");
+    html.push_str(&html_escape(&bsky_link));
+    html.push_str("\" target=\"_blank\" rel=\"noopener\" aria-label=\"View post on Bluesky\"></a>");
+
+    // Post text
+    html.push_str("<span class=\"embed-content\">");
+    html.push_str(&html_escape(post.text.as_ref()));
+    html.push_str("</span>");
+
+    // Timestamp
+    html.push_str("<span class=\"embed-meta\">");
+    html.push_str("<span class=\"embed-time\">");
+    html.push_str(&html_escape(&post.created_at.to_string()));
+    html.push_str("</span>");
+    html.push_str("</span>");
+
+    html.push_str("</span>");
+
+    Ok(html)
+}
+
+/// Render a profile from ProfileDataViewInner (weaver, bsky, or tangled).
+///
+/// Takes pre-fetched profile data - no network calls.
+pub fn render_profile_data_view(
     inner: &ProfileDataViewInner<'_>,
 ) -> Result<String, AtProtoPreprocessError> {
     let mut html = String::new();
@@ -754,8 +1512,10 @@ fn render_profile_data_view(
     Ok(html)
 }
 
-/// Render a Bluesky post from PostView (rich appview data)
-fn render_post_view<'a>(
+/// Render a Bluesky post from PostView (rich appview data).
+///
+/// Takes pre-fetched PostView from getPosts - no network calls.
+pub fn render_post_view<'a>(
     post: &PostView<'a>,
     uri: &AtUri<'_>,
 ) -> Result<String, AtProtoPreprocessError> {
@@ -825,8 +1585,11 @@ fn render_post_view<'a>(
     Ok(html)
 }
 
-/// Render a generic record by probing Data for meaningful fields
-fn render_generic_record(
+/// Render a generic record by probing Data for meaningful fields.
+///
+/// Takes pre-fetched record data - no network calls.
+/// Probes for common fields like name, title, text, description.
+pub fn render_generic_record(
     data: &Data<'_>,
     uri: &AtUri<'_>,
 ) -> Result<String, AtProtoPreprocessError> {

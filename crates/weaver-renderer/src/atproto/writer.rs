@@ -5,8 +5,8 @@
 
 use jacquard::types::string::AtUri;
 use markdown_weaver::{
-    Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType,
-    ParagraphContext, Tag, WeaverAttributes,
+    Alignment, BlockQuoteKind, CodeBlockKind, CowStr, EmbedType, Event, LinkType, ParagraphContext,
+    Tag, WeaverAttributes,
 };
 use markdown_weaver_escape::{StrWrite, escape_href, escape_html, escape_html_body_text};
 use std::collections::HashMap;
@@ -20,24 +20,24 @@ enum WrapperElement {
     Div,
 }
 
-/// Synchronous callback for injecting embed content
+/// Synchronous callback for injecting embed content.
 ///
 /// Takes the embed tag and returns optional HTML content to inject.
 pub trait EmbedContentProvider {
-    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String>;
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<&str>;
 }
 
 impl EmbedContentProvider for () {
-    fn get_embed_content(&self, _tag: &Tag<'_>) -> Option<String> {
+    fn get_embed_content(&self, _tag: &Tag<'_>) -> Option<&str> {
         None
     }
 }
 
 impl EmbedContentProvider for ResolvedContent {
-    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<String> {
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<&str> {
         let url = match tag {
             Tag::Embed { dest_url, .. } => Some(dest_url.as_ref()),
-            // WikiLink images with at:// URLs are embeds in disguise
+            // WikiLink images with at:// URLs are embeds in disguise.
             Tag::Image {
                 link_type: LinkType::WikiLink { .. },
                 dest_url,
@@ -51,11 +51,18 @@ impl EmbedContentProvider for ResolvedContent {
         if let Some(url) = url {
             if url.starts_with("at://") {
                 if let Ok(at_uri) = AtUri::new(url) {
-                    return self.get_embed_content(&at_uri).map(|s| s.to_string());
+                    // Call the inherent method which returns Option<&str>.
+                    return ResolvedContent::get_embed_content(self, &at_uri);
                 }
             }
         }
         None
+    }
+}
+
+impl EmbedContentProvider for &ResolvedContent {
+    fn get_embed_content(&self, tag: &Tag<'_>) -> Option<&str> {
+        <ResolvedContent as EmbedContentProvider>::get_embed_content(*self, tag)
     }
 }
 
@@ -498,7 +505,9 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 if checked {
                     self.write("<input disabled=\"\" type=\"checkbox\" checked=\"\" aria-label=\"Completed task\"/>\n")?;
                 } else {
-                    self.write("<input disabled=\"\" type=\"checkbox\" aria-label=\"Incomplete task\"/>\n")?;
+                    self.write(
+                        "<input disabled=\"\" type=\"checkbox\" aria-label=\"Incomplete task\"/>\n",
+                    )?;
                 }
             }
             WeaverBlock(text) => {
@@ -772,12 +781,15 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                     && (dest_url.starts_with("at://") || dest_url.starts_with("did:"))
                 {
                     tracing::debug!("[ClientWriter] AT embed image detected: {}", dest_url);
-                    if let Some(embed_provider) = &self.embed_provider {
+                    if let Some(ref embed_provider) = self.embed_provider {
                         if let Some(html) = embed_provider.get_embed_content(&tag) {
                             tracing::debug!("[ClientWriter] Got embed content for {}", dest_url);
-                            // Consume events without writing - we're replacing with embed HTML
+                            // Use direct field access to avoid borrow conflict.
+                            self.writer.write_str(html)?;
+                            self.end_newline = html.ends_with('\n');
+                            // Consume events without writing - we've replaced with embed HTML.
                             self.consume_until_end();
-                            return self.write(&html);
+                            return Ok(());
                         } else {
                             tracing::debug!(
                                 "[ClientWriter] No embed content from provider for {}",
@@ -894,7 +906,11 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
         }
     }
 
-    fn end_tag(&mut self, tag: markdown_weaver::TagEnd, range: Range<usize>) -> Result<(), W::Error> {
+    fn end_tag(
+        &mut self,
+        tag: markdown_weaver::TagEnd,
+        range: Range<usize>,
+    ) -> Result<(), W::Error> {
         use markdown_weaver::TagEnd;
         match tag {
             TagEnd::HtmlBlock => self.write("</span>\n"),
@@ -1064,20 +1080,16 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
         id: CowStr<'_>,
         attrs: Option<markdown_weaver::WeaverAttributes<'_>>,
     ) -> Result<(), W::Error> {
-        // Try to get content from attributes first
-        let content_from_attrs = if let Some(ref attrs) = attrs {
-            attrs
-                .attrs
-                .iter()
-                .find(|(k, _)| k.as_ref() == "content")
-                .map(|(_, v)| v.as_ref().to_string())
-        } else {
-            None
-        };
+        // Try to get content from attributes first.
+        let content_from_attrs: Option<&str> = attrs
+            .as_ref()
+            .and_then(|a| a.attrs.iter().find(|(k, _)| k.as_ref() == "content"))
+            .map(|(_, v)| v.as_ref());
 
-        // If no content in attrs, try provider
-        let content = if let Some(content) = content_from_attrs {
-            Some(content)
+        // Write content if found in attrs, otherwise try provider, otherwise fallback.
+        if let Some(content) = content_from_attrs {
+            self.write(content)?;
+            self.write_newline()?;
         } else if let Some(ref provider) = self.embed_provider {
             let tag = Tag::Embed {
                 embed_type,
@@ -1086,51 +1098,62 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 id: id.clone(),
                 attrs: attrs.clone(),
             };
-            provider.get_embed_content(&tag)
-        } else {
-            None
-        };
-
-        if let Some(html_content) = content {
-            // Write the pre-rendered content directly
-            self.write(&html_content)?;
-            self.write_newline()?;
-        } else {
-            // Fallback: render as iframe
-            self.write("<iframe src=\"")?;
-            escape_href(&mut self.writer, &dest_url)?;
-            self.write("\" title=\"")?;
-            escape_html(&mut self.writer, &title)?;
-            if !id.is_empty() {
-                self.write("\" id=\"")?;
-                escape_html(&mut self.writer, &id)?;
+            if let Some(content) = provider.get_embed_content(&tag) {
+                // Use direct field access to avoid borrow conflict:
+                // `provider` borrows self.embed_provider, `content` borrows from provider,
+                // but self.writer is a different field so we can borrow it independently.
+                self.writer.write_str(content)?;
+                self.end_newline = content.ends_with('\n');
+                self.writer.write_str("\n")?;
+                self.end_newline = true;
+            } else {
+                self.write_embed_fallback(&dest_url, &title, &id, attrs.as_ref())?;
             }
-            self.write("\"")?;
-
-            if let Some(attrs) = attrs {
-                if !attrs.classes.is_empty() {
-                    self.write(" class=\"")?;
-                    for (i, class) in attrs.classes.iter().enumerate() {
-                        if i > 0 {
-                            self.write(" ")?;
-                        }
-                        escape_html(&mut self.writer, class)?;
-                    }
-                    self.write("\"")?;
-                }
-                for (attr, value) in &attrs.attrs {
-                    // Skip the content attr in HTML output
-                    if attr.as_ref() != "content" {
-                        self.write(" ")?;
-                        escape_html(&mut self.writer, attr)?;
-                        self.write("=\"")?;
-                        escape_html(&mut self.writer, value)?;
-                        self.write("\"")?;
-                    }
-                }
-            }
-            self.write("></iframe>")?;
+        } else {
+            self.write_embed_fallback(&dest_url, &title, &id, attrs.as_ref())?;
         }
         Ok(())
+    }
+
+    fn write_embed_fallback(
+        &mut self,
+        dest_url: &str,
+        title: &str,
+        id: &str,
+        attrs: Option<&markdown_weaver::WeaverAttributes<'_>>,
+    ) -> Result<(), W::Error> {
+        self.write("<iframe src=\"")?;
+        escape_href(&mut self.writer, dest_url)?;
+        self.write("\" title=\"")?;
+        escape_html(&mut self.writer, title)?;
+        if !id.is_empty() {
+            self.write("\" id=\"")?;
+            escape_html(&mut self.writer, id)?;
+        }
+        self.write("\"")?;
+
+        if let Some(attrs) = attrs {
+            if !attrs.classes.is_empty() {
+                self.write(" class=\"")?;
+                for (i, class) in attrs.classes.iter().enumerate() {
+                    if i > 0 {
+                        self.write(" ")?;
+                    }
+                    escape_html(&mut self.writer, class)?;
+                }
+                self.write("\"")?;
+            }
+            for (attr, value) in &attrs.attrs {
+                // Skip the content attr in HTML output.
+                if attr.as_ref() != "content" {
+                    self.write(" ")?;
+                    escape_html(&mut self.writer, attr)?;
+                    self.write("=\"")?;
+                    escape_html(&mut self.writer, value)?;
+                    self.write("\"")?;
+                }
+            }
+        }
+        self.write("></iframe>")
     }
 }

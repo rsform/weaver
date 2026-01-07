@@ -14,7 +14,10 @@ mod writer;
 
 pub use client::{ClientContext, DefaultEmbedResolver, EmbedResolver};
 pub use embed_renderer::{
+    // Async fetch-and-render functions (require agent/network)
     fetch_and_render, fetch_and_render_generic, fetch_and_render_post, fetch_and_render_profile,
+    // Pure sync render functions (pre-fetched data, no network)
+    render_generic_record, render_post_view, render_profile_data_view, render_record,
 };
 pub use error::{AtProtoPreprocessError, ClientRenderError};
 pub use markdown_writer::MarkdownWriter;

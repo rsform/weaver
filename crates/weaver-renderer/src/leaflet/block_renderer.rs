@@ -387,3 +387,190 @@ fn extract_domain(url: &str) -> &str {
         .and_then(|s| s.split('/').next())
         .unwrap_or(url)
 }
+
+/// Sync version of render_linear_document that uses pre-resolved embeds.
+pub fn render_linear_document_sync(
+    doc: &LinearDocument<'_>,
+    ctx: &LeafletRenderContext,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) -> String {
+    let mut html = String::new();
+    html.push_str("<div class=\"leaflet-document\">");
+
+    for block in &doc.blocks {
+        html.push_str(&render_block_sync(block, ctx, resolved_content));
+    }
+
+    html.push_str("</div>");
+    html
+}
+
+/// Sync version of render_block that uses pre-resolved embeds for BskyPost blocks.
+pub fn render_block_sync(
+    block: &Block<'_>,
+    ctx: &LeafletRenderContext,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) -> String {
+    let mut html = String::new();
+
+    let alignment_class = block
+        .alignment
+        .as_ref()
+        .map(|a| match a.as_ref() {
+            "pub.leaflet.pages.linearDocument#textAlignCenter" => " align-center",
+            "pub.leaflet.pages.linearDocument#textAlignRight" => " align-right",
+            "pub.leaflet.pages.linearDocument#textAlignJustify" => " align-justify",
+            _ => "",
+        })
+        .unwrap_or("");
+
+    match &block.block {
+        BlockBlock::Text(text) => {
+            render_text_block(&mut html, text, alignment_class);
+        }
+        BlockBlock::Header(header) => {
+            render_header_block(&mut html, header, alignment_class);
+        }
+        BlockBlock::Blockquote(quote) => {
+            render_blockquote_block(&mut html, quote);
+        }
+        BlockBlock::Code(code) => {
+            render_code_block(&mut html, code);
+        }
+        BlockBlock::UnorderedList(list) => {
+            render_unordered_list_sync(&mut html, list, ctx, resolved_content);
+        }
+        BlockBlock::Image(image) => {
+            render_image_block(&mut html, image, ctx);
+        }
+        BlockBlock::Website(website) => {
+            render_website_block(&mut html, website, ctx);
+        }
+        BlockBlock::Iframe(iframe) => {
+            render_iframe_block(&mut html, iframe);
+        }
+        BlockBlock::BskyPost(post) => {
+            render_bsky_post_block_sync(&mut html, post, resolved_content);
+        }
+        BlockBlock::Button(button) => {
+            render_button_block(&mut html, button);
+        }
+        BlockBlock::Poll(poll) => {
+            render_poll_block(&mut html, poll);
+        }
+        BlockBlock::HorizontalRule(_) => {
+            html.push_str("<hr />\n");
+        }
+        BlockBlock::Page(page) => {
+            render_page_block(&mut html, page);
+        }
+        BlockBlock::Math(math) => {
+            render_math_block(&mut html, math);
+        }
+        BlockBlock::Unknown(data) => {
+            let _ = write!(
+                html,
+                "<div class=\"embed-unknown\">[Unknown block: {:?}]</div>\n",
+                data.type_discriminator()
+            );
+        }
+    }
+
+    html
+}
+
+fn render_unordered_list_sync(
+    html: &mut String,
+    list: &UnorderedList<'_>,
+    ctx: &LeafletRenderContext,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) {
+    html.push_str("<ul>\n");
+    for item in &list.children {
+        render_list_item_sync(html, item, ctx, resolved_content);
+    }
+    html.push_str("</ul>\n");
+}
+
+fn render_list_item_sync(
+    html: &mut String,
+    item: &ListItem<'_>,
+    ctx: &LeafletRenderContext,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) {
+    html.push_str("<li>");
+
+    match &item.content {
+        ListItemContent::Text(text) => {
+            html.push_str(&render_faceted_text(
+                &text.plaintext,
+                text.facets.as_deref(),
+            ));
+        }
+        ListItemContent::Header(header) => {
+            let level = header.level.unwrap_or(1).clamp(1, 6);
+            let _ = write!(html, "<h{}>", level);
+            html.push_str(&render_faceted_text(
+                &header.plaintext,
+                header.facets.as_deref(),
+            ));
+            let _ = write!(html, "</h{}>", level);
+        }
+        ListItemContent::Image(image) => {
+            render_image_inline(html, image, ctx);
+        }
+        ListItemContent::Unknown(data) => {
+            let _ = write!(html, "[Unknown: {:?}]", data.type_discriminator());
+        }
+    }
+
+    if let Some(children) = &item.children {
+        html.push_str("\n<ul>\n");
+        for child in children {
+            render_list_item_sync(html, child, ctx, resolved_content);
+        }
+        html.push_str("</ul>\n");
+    }
+
+    html.push_str("</li>\n");
+}
+
+fn render_bsky_post_block_sync(
+    html: &mut String,
+    post: &BskyPost<'_>,
+    resolved_content: Option<&weaver_common::ResolvedContent>,
+) {
+    let uri_str = post.post_ref.uri.as_ref();
+
+    // Look up pre-rendered content.
+    if let Some(resolved) = resolved_content {
+        if let Ok(at_uri) = AtUri::new(uri_str) {
+            if let Some(rendered) = resolved.get_embed_content(&at_uri) {
+                html.push_str(rendered);
+                return;
+            }
+        }
+    }
+
+    // Fallback: use bsky embed iframe.
+    // Format: at://did/app.bsky.feed.post/rkey -> https://bsky.app/profile/did/post/rkey
+    if let Some(rest) = uri_str.strip_prefix("at://") {
+        if let Some((did, path)) = rest.split_once('/') {
+            if let Some(rkey) = path.strip_prefix("app.bsky.feed.post/") {
+                html.push_str("<iframe class=\"bsky-embed-iframe\" src=\"https://embed.bsky.app/embed/");
+                let _ = escape_html(&mut *html, did);
+                html.push_str("/post/");
+                let _ = escape_html(&mut *html, rkey);
+                html.push_str("\" frameborder=\"0\" scrolling=\"no\" loading=\"lazy\" style=\"border: none; width: 100%; height: 240px;\"></iframe>\n");
+                return;
+            }
+        }
+    }
+
+    // Last resort: placeholder.
+    html.push_str("<div class=\"embed-video-placeholder\" data-aturi=\"");
+    let _ = escape_html(&mut *html, uri_str);
+    html.push_str("\">[Bluesky Post: ");
+    let _ = escape_html(&mut *html, uri_str);
+    html.push_str("]</div>\n");
+}
