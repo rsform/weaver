@@ -11399,6 +11399,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
+name = "tsify-next"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d0f2208feeb5f7a6edb15a2389c14cd42480ef6417318316bb866da5806a61d"
+dependencies = [
+ "gloo-utils",
+ "serde",
+ "serde_json",
+ "tsify-next-macros",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "tsify-next-macros"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f81253930d0d388a3ab8fa4ae56da9973ab171ef833d1be2e9080fc3ce502bd6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "ttf-parser"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12350,6 +12375,8 @@ dependencies = [
  "regex",
  "regex-lite",
  "reqwest",
+ "serde",
+ "serde_json",
  "smol_str",
  "syntect",
  "thiserror 2.0.17",
@@ -12362,6 +12389,24 @@ dependencies = [
  "weaver-api",
  "weaver-common",
  "yaml-rust2",
+]
+
+[[package]]
+name = "weaver-renderer-js"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "jacquard",
+ "js-sys",
+ "markdown-weaver",
+ "markdown-weaver-escape",
+ "serde",
+ "serde-wasm-bindgen 0.6.5",
+ "tsify-next",
+ "wasm-bindgen",
+ "weaver-api",
+ "weaver-common",
+ "weaver-renderer",
 ]
 
 [[package]]

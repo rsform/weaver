@@ -1,0 +1,29 @@
+[package]
+name = "weaver-renderer-js"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "WASM bindings for weaver-renderer"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+weaver-renderer = { path = "../weaver-renderer" }
+weaver-common = { path = "../weaver-common" }
+weaver-api = { path = "../weaver-api" }
+jacquard = { workspace = true }
+markdown-weaver = { workspace = true }
+markdown-weaver-escape = { workspace = true }
+
+wasm-bindgen = "0.2"
+serde = { workspace = true }
+serde-wasm-bindgen = "0.6"
+tsify-next = "0.5"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+
+[profile.release]
+lto = true
+opt-level = "z"

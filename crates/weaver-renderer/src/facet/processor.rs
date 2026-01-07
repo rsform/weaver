@@ -68,12 +68,12 @@ pub fn process_faceted_text<'a, O: FacetOutput>(
     let mut events: Vec<FacetEvent<'a>> = Vec::new();
 
     for (idx, facet) in facets.iter().enumerate() {
-        if facet.range.is_empty() {
+        if facet.index.is_empty() {
             continue;
         }
         for feature in &facet.features {
-            events.push(FacetEvent::start(facet.range.start, feature.clone(), idx));
-            events.push(FacetEvent::end(facet.range.end, feature.clone(), idx));
+            events.push(FacetEvent::start(facet.index.start(), feature.clone(), idx));
+            events.push(FacetEvent::end(facet.index.end(), feature.clone(), idx));
         }
     }
 
@@ -190,7 +190,7 @@ mod tests {
     fn test_simple_bold() {
         let text = "hello world";
         let facets = vec![NormalizedFacet {
-            range: ByteRange::new(0, 5),
+            index: ByteRange::new(0, 5),
             features: vec![FacetFeature::Bold],
         }];
 
@@ -208,11 +208,11 @@ mod tests {
         let text = "bold and italic just italic";
         let facets = vec![
             NormalizedFacet {
-                range: ByteRange::new(0, 15),
+                index: ByteRange::new(0, 15),
                 features: vec![FacetFeature::Bold],
             },
             NormalizedFacet {
-                range: ByteRange::new(5, 27),
+                index: ByteRange::new(5, 27),
                 features: vec![FacetFeature::Italic],
             },
         ];
@@ -242,7 +242,7 @@ mod tests {
     fn test_link_facet() {
         let text = "click here for more";
         let facets = vec![NormalizedFacet {
-            range: ByteRange::new(6, 10),
+            index: ByteRange::new(6, 10),
             features: vec![FacetFeature::Link {
                 uri: "https://example.com",
             }],
