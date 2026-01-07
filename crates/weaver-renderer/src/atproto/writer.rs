@@ -968,42 +968,60 @@ impl<'a, I: Iterator<Item = (Event<'a>, Range<usize>)>, W: StrWrite, E: EmbedCon
                 self.close_wrapper()
             }
             TagEnd::CodeBlock => {
-                use std::sync::LazyLock;
-                use syntect::parsing::SyntaxSet;
-                static SYNTAX_SET: LazyLock<SyntaxSet> =
-                    LazyLock::new(|| SyntaxSet::load_defaults_newlines());
+                #[cfg(feature = "syntax-highlighting")]
+                {
+                    use std::sync::LazyLock;
+                    use syntect::parsing::SyntaxSet;
+                    static SYNTAX_SET: LazyLock<SyntaxSet> =
+                        LazyLock::new(|| SyntaxSet::load_defaults_newlines());
 
-                if let Some((lang, buffer)) = self.code_buffer.take() {
-                    if let Some(ref lang_str) = lang {
-                        // Use a temporary String buffer for syntect
-                        let mut temp_output = String::new();
-                        match crate::code_pretty::highlight(
-                            &SYNTAX_SET,
-                            Some(lang_str),
-                            &buffer,
-                            &mut temp_output,
-                        ) {
-                            Ok(_) => {
-                                self.write(&temp_output)?;
+                    if let Some((lang, buffer)) = self.code_buffer.take() {
+                        if let Some(ref lang_str) = lang {
+                            let mut temp_output = String::new();
+                            match crate::code_pretty::highlight(
+                                &SYNTAX_SET,
+                                Some(lang_str),
+                                &buffer,
+                                &mut temp_output,
+                            ) {
+                                Ok(_) => {
+                                    self.write(&temp_output)?;
+                                }
+                                Err(_) => {
+                                    self.write("<pre><code class=\"language-")?;
+                                    escape_html(&mut self.writer, lang_str)?;
+                                    self.write("\">")?;
+                                    escape_html_body_text(&mut self.writer, &buffer)?;
+                                    self.write("</code></pre>\n")?;
+                                }
                             }
-                            Err(_) => {
-                                // Fallback to plain code block
-                                self.write("<pre><code class=\"language-")?;
-                                escape_html(&mut self.writer, lang_str)?;
-                                self.write("\">")?;
-                                escape_html_body_text(&mut self.writer, &buffer)?;
-                                self.write("</code></pre>\n")?;
-                            }
+                        } else {
+                            self.write("<pre><code>")?;
+                            escape_html_body_text(&mut self.writer, &buffer)?;
+                            self.write("</code></pre>\n")?;
                         }
                     } else {
-                        self.write("<pre><code>")?;
-                        escape_html_body_text(&mut self.writer, &buffer)?;
                         self.write("</code></pre>\n")?;
                     }
-                } else {
-                    self.write("</code></pre>\n")?;
+                    Ok(())
                 }
-                Ok(())
+                #[cfg(not(feature = "syntax-highlighting"))]
+                {
+                    if let Some((lang, buffer)) = self.code_buffer.take() {
+                        if let Some(ref lang_str) = lang {
+                            self.write("<pre><code class=\"language-")?;
+                            escape_html(&mut self.writer, lang_str)?;
+                            self.write("\">")?;
+                        } else {
+                            self.write("<pre><code>")?;
+                        }
+                        escape_html_body_text(&mut self.writer, &buffer)?;
+                        self.write("</code></pre>\n")?;
+                    } else {
+                        self.write("</code></pre>\n")?;
+                    }
+                    Ok(())
+                }
             }
             TagEnd::List(true) => {
                 self.write("</ol>\n")?;

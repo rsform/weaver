@@ -11,7 +11,8 @@ use-index = []
 
 [dependencies]
 weaver-common = { path = "../weaver-common", features = ["cache", "perf"] }
-weaver-renderer = { path = "../weaver-renderer" }
+# WASM target - only syntax-highlighting, not syntax-css
+weaver-renderer = { path = "../weaver-renderer", default-features = false, features = ["syntax-highlighting"] }
 jacquard = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }

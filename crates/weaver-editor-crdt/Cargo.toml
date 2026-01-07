@@ -29,8 +29,8 @@ thiserror = "2"
 futures-util = "0.3"
 n0-future = { workspace = true }
 
-# Optional weaver-specific deps
-weaver-renderer = { path = "../weaver-renderer", optional = true }
+# Optional weaver-specific deps - only syntax-highlighting needed
+weaver-renderer = { path = "../weaver-renderer", optional = true, default-features = false, features = ["syntax-highlighting"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
 gloo-worker = { version = "0.5", features = ["futures"] }

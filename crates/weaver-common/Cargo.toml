@@ -6,8 +6,7 @@ license.workspace = true
 publish = false
 
 [features]
-default = ["dev"]
-dev = []
+default = [ "use-index"]
 native = ["jacquard/dns"]
 use-index = []
 iroh = ["dep:iroh", "dep:iroh-gossip", "dep:iroh-tickets"]

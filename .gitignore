@@ -26,3 +26,5 @@ CLAUDE.md.local
 
 # Deciduous database (local)
 .deciduous/
+
+!.cargo/config.toml

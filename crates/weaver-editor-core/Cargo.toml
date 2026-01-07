@@ -13,9 +13,27 @@ web-time = "1.1"
 markdown-weaver = { workspace = true }
 markdown-weaver-escape = { workspace = true }
 weaver-common = { path = "../weaver-common" }
-weaver-renderer = { path = "../weaver-renderer" }
+# Only needs syntax-highlighting, not CSS generation
+weaver-renderer = { path = "../weaver-renderer", default-features = false, features = ["syntax-highlighting"] }
 weaver-api = { path = "../weaver-api" }
 jacquard = { workspace = true }
-syntect = { workspace = true }
+
+# Native: syntect with onig
+[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
+syntect = { workspace = true, default-features = false, features = [
+    "parsing",
+    "html",
+    "default-syntaxes",
+    "regex-onig"
+] }
+
+# WASM: syntect with fancy-regex
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+syntect = { workspace = true, default-features = false, features = [
+    "parsing",
+    "html",
+    "default-syntaxes",
+    "regex-fancy"
+] }
 
 [dev-dependencies]

@@ -26,7 +26,9 @@ use std::task::Poll;
 
 pub mod atproto;
 pub mod base_html;
+#[cfg(feature = "syntax-highlighting")]
 pub mod code_pretty;
+#[cfg(feature = "syntax-css")]
 pub mod css;
 pub mod facet;
 pub mod leaflet;

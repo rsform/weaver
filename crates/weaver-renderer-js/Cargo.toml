@@ -9,11 +9,15 @@ description = "WASM bindings for weaver-renderer"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["syntax-highlighting"]
+syntax-highlighting = ["weaver-renderer/syntax-highlighting"]
+
 [dependencies]
-weaver-renderer = { path = "../weaver-renderer" }
+weaver-renderer = { path = "../weaver-renderer", default-features = false }
 weaver-common = { path = "../weaver-common" }
 weaver-api = { path = "../weaver-api" }
-jacquard = { workspace = true }
+jacquard = { workspace = true, default-features = false }
 markdown-weaver = { workspace = true }
 markdown-weaver-escape = { workspace = true }
 
@@ -24,6 +28,10 @@ tsify-next = "0.5"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
 
-[profile.release]
-lto = true
-opt-level = "z"
+[package.metadata.wasm-pack.profile.dev]
+# Disable wasm-opt (default for dev)
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.release]
+# Enable with size optimization
+wasm-opt = ['-Oz', '--enable-bulk-memory-opt', '--enable-nontrapping-float-to-int']
