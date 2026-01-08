@@ -152,7 +152,7 @@ fn lexicon_doc_sh_weaver_edit_cursor() -> ::jacquard_lexicon::lexicon::LexiconDo
         revision: None,
         description: None,
         defs: {
-            let mut map = ::std::collections::BTreeMap::new();
+            let mut map = ::alloc::collections::BTreeMap::new();
             map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("containerId"),
                 ::jacquard_lexicon::lexicon::LexUserType::Object(::jacquard_lexicon::lexicon::LexObject {
@@ -163,7 +163,7 @@ fn lexicon_doc_sh_weaver_edit_cursor() -> ::jacquard_lexicon::lexicon::LexiconDo
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("value"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Union(::jacquard_lexicon::lexicon::LexRefUnion {
@@ -189,7 +189,7 @@ fn lexicon_doc_sh_weaver_edit_cursor() -> ::jacquard_lexicon::lexicon::LexiconDo
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("value"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Integer(::jacquard_lexicon::lexicon::LexInteger {
@@ -218,7 +218,7 @@ fn lexicon_doc_sh_weaver_edit_cursor() -> ::jacquard_lexicon::lexicon::LexiconDo
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("counter"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Integer(::jacquard_lexicon::lexicon::LexInteger {
@@ -265,7 +265,7 @@ fn lexicon_doc_sh_weaver_edit_cursor() -> ::jacquard_lexicon::lexicon::LexiconDo
                         nullable: None,
                         properties: {
                             #[allow(unused_mut)]
-                            let mut map = ::std::collections::BTreeMap::new();
+                            let mut map = ::alloc::collections::BTreeMap::new();
                             map.insert(
                                 ::jacquard_common::smol_str::SmolStr::new_static(
                                     "container",
@@ -308,7 +308,7 @@ fn lexicon_doc_sh_weaver_edit_cursor() -> ::jacquard_lexicon::lexicon::LexiconDo
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
                                 "container_type",
@@ -365,7 +365,7 @@ fn lexicon_doc_sh_weaver_edit_cursor() -> ::jacquard_lexicon::lexicon::LexiconDo
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
                                 "container_type",
@@ -419,7 +419,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for ContainerId<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -555,7 +555,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for CursorSide<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -722,7 +722,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Id<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -984,7 +984,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Cursor<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -1017,51 +1017,51 @@ pub mod normal_container_id_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
+        type Counter;
         type Peer;
         type ContainerType;
-        type Counter;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
+        type Counter = Unset;
         type Peer = Unset;
         type ContainerType = Unset;
-        type Counter = Unset;
-    }
-    ///State transition - sets the `peer` field to Set
-    pub struct SetPeer<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetPeer<S> {}
-    impl<S: State> State for SetPeer<S> {
-        type Peer = Set<members::peer>;
-        type ContainerType = S::ContainerType;
-        type Counter = S::Counter;
-    }
-    ///State transition - sets the `container_type` field to Set
-    pub struct SetContainerType<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetContainerType<S> {}
-    impl<S: State> State for SetContainerType<S> {
-        type Peer = S::Peer;
-        type ContainerType = Set<members::container_type>;
-        type Counter = S::Counter;
     }
     ///State transition - sets the `counter` field to Set
     pub struct SetCounter<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCounter<S> {}
     impl<S: State> State for SetCounter<S> {
+        type Counter = Set<members::counter>;
         type Peer = S::Peer;
         type ContainerType = S::ContainerType;
-        type Counter = Set<members::counter>;
+    }
+    ///State transition - sets the `peer` field to Set
+    pub struct SetPeer<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetPeer<S> {}
+    impl<S: State> State for SetPeer<S> {
+        type Counter = S::Counter;
+        type Peer = Set<members::peer>;
+        type ContainerType = S::ContainerType;
+    }
+    ///State transition - sets the `container_type` field to Set
+    pub struct SetContainerType<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetContainerType<S> {}
+    impl<S: State> State for SetContainerType<S> {
+        type Counter = S::Counter;
+        type Peer = S::Peer;
+        type ContainerType = Set<members::container_type>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
+        ///Marker type for the `counter` field
+        pub struct counter(());
         ///Marker type for the `peer` field
         pub struct peer(());
         ///Marker type for the `container_type` field
         pub struct container_type(());
-        ///Marker type for the `counter` field
-        pub struct counter(());
     }
 }
 
@@ -1154,9 +1154,9 @@ where
 impl<'a, S> NormalContainerIdBuilder<'a, S>
 where
     S: normal_container_id_state::State,
+    S::Counter: normal_container_id_state::IsSet,
     S::Peer: normal_container_id_state::IsSet,
     S::ContainerType: normal_container_id_state::IsSet,
-    S::Counter: normal_container_id_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> NormalContainerId<'a> {
@@ -1196,7 +1196,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for NormalContainerId<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -1232,7 +1232,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for RootContainerId<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }

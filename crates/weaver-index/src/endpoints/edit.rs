@@ -11,12 +11,12 @@ use jacquard_axum::ExtractXrpc;
 use jacquard_axum::service_auth::ExtractOptionalServiceAuth;
 
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
-use weaver_api::sh_weaver::edit::EditHistoryEntry;
 use weaver_api::sh_weaver::edit::get_contributors::{
     GetContributorsOutput, GetContributorsRequest,
 };
 use weaver_api::sh_weaver::edit::get_edit_history::{GetEditHistoryOutput, GetEditHistoryRequest};
 use weaver_api::sh_weaver::edit::list_drafts::{DraftView, ListDraftsOutput, ListDraftsRequest};
+use weaver_api::sh_weaver::edit::{EditHistoryEntry, EditHistoryEntryType};
 
 use crate::clickhouse::{EditNodeRow, ProfileRow};
 use crate::endpoints::actor::{Viewer, resolve_actor};
@@ -192,7 +192,7 @@ fn node_to_history_entry(
         .cid(cid)
         .author(author)
         .created_at(created_at)
-        .r#type(node.node_type.clone())
+        .r#type(EditHistoryEntryType::from(node.node_type.as_str()).into_static())
         .maybe_has_inline_diff(Some(node.has_inline_diff == 1))
         .maybe_prev_ref(prev_ref)
         .maybe_root_ref(root_ref)
@@ -297,7 +297,8 @@ pub async fn list_drafts(
     ExtractXrpc(args): ExtractXrpc<ListDraftsRequest>,
 ) -> Result<Json<ListDraftsOutput<'static>>, XrpcErrorResponse> {
     // Require authentication
-    let viewer = viewer.ok_or_else(|| XrpcErrorResponse::auth_required("Authentication required"))?;
+    let viewer =
+        viewer.ok_or_else(|| XrpcErrorResponse::auth_required("Authentication required"))?;
     let viewer_did = viewer.did();
 
     let limit = args.limit.unwrap_or(50).min(100).max(1);
@@ -316,7 +317,9 @@ pub async fn list_drafts(
     // Permission check: viewer must be the actor (owner access)
     // TODO: Add collab grant check for draft sharing
     if viewer_did.as_str() != actor_did.as_str() {
-        return Err(XrpcErrorResponse::forbidden("Cannot view another user's drafts"));
+        return Err(XrpcErrorResponse::forbidden(
+            "Cannot view another user's drafts",
+        ));
     }
 
     // Fetch drafts

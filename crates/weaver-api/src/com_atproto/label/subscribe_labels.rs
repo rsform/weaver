@@ -22,7 +22,90 @@ pub struct Info<'a> {
     #[serde(borrow)]
     pub message: std::option::Option<jacquard_common::CowStr<'a>>,
     #[serde(borrow)]
-    pub name: jacquard_common::CowStr<'a>,
+    pub name: InfoName<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InfoName<'a> {
+    OutdatedCursor,
+    Other(jacquard_common::CowStr<'a>),
+}
+
+impl<'a> InfoName<'a> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::OutdatedCursor => "OutdatedCursor",
+            Self::Other(s) => s.as_ref(),
+        }
+    }
+}
+
+impl<'a> From<&'a str> for InfoName<'a> {
+    fn from(s: &'a str) -> Self {
+        match s {
+            "OutdatedCursor" => Self::OutdatedCursor,
+            _ => Self::Other(jacquard_common::CowStr::from(s)),
+        }
+    }
+}
+
+impl<'a> From<String> for InfoName<'a> {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "OutdatedCursor" => Self::OutdatedCursor,
+            _ => Self::Other(jacquard_common::CowStr::from(s)),
+        }
+    }
+}
+
+impl<'a> core::fmt::Display for InfoName<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl<'a> AsRef<str> for InfoName<'a> {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl<'a> serde::Serialize for InfoName<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de, 'a> serde::Deserialize<'de> for InfoName<'a>
+where
+    'de: 'a,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = <&'de str>::deserialize(deserializer)?;
+        Ok(Self::from(s))
+    }
+}
+
+impl<'a> Default for InfoName<'a> {
+    fn default() -> Self {
+        Self::Other(Default::default())
+    }
+}
+
+impl jacquard_common::IntoStatic for InfoName<'_> {
+    type Output = InfoName<'static>;
+    fn into_static(self) -> Self::Output {
+        match self {
+            InfoName::OutdatedCursor => InfoName::OutdatedCursor,
+            InfoName::Other(v) => InfoName::Other(v.into_static()),
+        }
+    }
 }
 
 fn lexicon_doc_com_atproto_label_subscribeLabels() -> ::jacquard_lexicon::lexicon::LexiconDoc<
@@ -34,7 +117,7 @@ fn lexicon_doc_com_atproto_label_subscribeLabels() -> ::jacquard_lexicon::lexico
         revision: None,
         description: None,
         defs: {
-            let mut map = ::std::collections::BTreeMap::new();
+            let mut map = ::alloc::collections::BTreeMap::new();
             map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("info"),
                 ::jacquard_lexicon::lexicon::LexUserType::Object(::jacquard_lexicon::lexicon::LexObject {
@@ -45,7 +128,7 @@ fn lexicon_doc_com_atproto_label_subscribeLabels() -> ::jacquard_lexicon::lexico
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("message"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
@@ -93,7 +176,7 @@ fn lexicon_doc_com_atproto_label_subscribeLabels() -> ::jacquard_lexicon::lexico
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("labels"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Array(::jacquard_lexicon::lexicon::LexArray {
@@ -133,7 +216,7 @@ fn lexicon_doc_com_atproto_label_subscribeLabels() -> ::jacquard_lexicon::lexico
                             required: None,
                             properties: {
                                 #[allow(unused_mut)]
-                                let mut map = ::std::collections::BTreeMap::new();
+                                let mut map = ::alloc::collections::BTreeMap::new();
                                 map.insert(
                                     ::jacquard_common::smol_str::SmolStr::new_static("cursor"),
                                     ::jacquard_lexicon::lexicon::LexXrpcParametersProperty::Integer(::jacquard_lexicon::lexicon::LexInteger {
@@ -171,7 +254,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Info<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -203,37 +286,37 @@ pub mod labels_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Labels;
         type Seq;
+        type Labels;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Labels = Unset;
         type Seq = Unset;
-    }
-    ///State transition - sets the `labels` field to Set
-    pub struct SetLabels<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetLabels<S> {}
-    impl<S: State> State for SetLabels<S> {
-        type Labels = Set<members::labels>;
-        type Seq = S::Seq;
+        type Labels = Unset;
     }
     ///State transition - sets the `seq` field to Set
     pub struct SetSeq<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetSeq<S> {}
     impl<S: State> State for SetSeq<S> {
-        type Labels = S::Labels;
         type Seq = Set<members::seq>;
+        type Labels = S::Labels;
+    }
+    ///State transition - sets the `labels` field to Set
+    pub struct SetLabels<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetLabels<S> {}
+    impl<S: State> State for SetLabels<S> {
+        type Seq = S::Seq;
+        type Labels = Set<members::labels>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `labels` field
-        pub struct labels(());
         ///Marker type for the `seq` field
         pub struct seq(());
+        ///Marker type for the `labels` field
+        pub struct labels(());
     }
 }
 
@@ -306,8 +389,8 @@ where
 impl<'a, S> LabelsBuilder<'a, S>
 where
     S: labels_state::State,
-    S::Labels: labels_state::IsSet,
     S::Seq: labels_state::IsSet,
+    S::Labels: labels_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Labels<'a> {
@@ -345,7 +428,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Labels<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -496,8 +579,8 @@ pub enum SubscribeLabelsError<'a> {
     FutureCursor(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
-impl std::fmt::Display for SubscribeLabelsError<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for SubscribeLabelsError<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::FutureCursor(msg) => {
                 write!(f, "FutureCursor")?;

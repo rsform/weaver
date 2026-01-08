@@ -60,49 +60,49 @@ pub mod document_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Publication;
         type Title;
+        type Publication;
         type PublishedAt;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Publication = Unset;
         type Title = Unset;
+        type Publication = Unset;
         type PublishedAt = Unset;
-    }
-    ///State transition - sets the `publication` field to Set
-    pub struct SetPublication<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetPublication<S> {}
-    impl<S: State> State for SetPublication<S> {
-        type Publication = Set<members::publication>;
-        type Title = S::Title;
-        type PublishedAt = S::PublishedAt;
     }
     ///State transition - sets the `title` field to Set
     pub struct SetTitle<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetTitle<S> {}
     impl<S: State> State for SetTitle<S> {
-        type Publication = S::Publication;
         type Title = Set<members::title>;
+        type Publication = S::Publication;
+        type PublishedAt = S::PublishedAt;
+    }
+    ///State transition - sets the `publication` field to Set
+    pub struct SetPublication<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetPublication<S> {}
+    impl<S: State> State for SetPublication<S> {
+        type Title = S::Title;
+        type Publication = Set<members::publication>;
         type PublishedAt = S::PublishedAt;
     }
     ///State transition - sets the `published_at` field to Set
     pub struct SetPublishedAt<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetPublishedAt<S> {}
     impl<S: State> State for SetPublishedAt<S> {
-        type Publication = S::Publication;
         type Title = S::Title;
+        type Publication = S::Publication;
         type PublishedAt = Set<members::published_at>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `publication` field
-        pub struct publication(());
         ///Marker type for the `title` field
         pub struct title(());
+        ///Marker type for the `publication` field
+        pub struct publication(());
         ///Marker type for the `published_at` field
         pub struct published_at(());
     }
@@ -366,8 +366,8 @@ impl<'a, S: document_state::State> DocumentBuilder<'a, S> {
 impl<'a, S> DocumentBuilder<'a, S>
 where
     S: document_state::State,
-    S::Publication: document_state::IsSet,
     S::Title: document_state::IsSet,
+    S::Publication: document_state::IsSet,
     S::PublishedAt: document_state::IsSet,
 {
     /// Build the final struct
@@ -421,7 +421,7 @@ fn lexicon_doc_site_standard_document() -> ::jacquard_lexicon::lexicon::LexiconD
         revision: None,
         description: None,
         defs: {
-            let mut map = ::std::collections::BTreeMap::new();
+            let mut map = ::alloc::collections::BTreeMap::new();
             map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("main"),
                 ::jacquard_lexicon::lexicon::LexUserType::Object(::jacquard_lexicon::lexicon::LexObject {
@@ -436,7 +436,7 @@ fn lexicon_doc_site_standard_document() -> ::jacquard_lexicon::lexicon::LexiconD
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
                                 "bskyPostRef",
@@ -637,7 +637,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Document<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         if let Some(ref value) = self.description {
             #[allow(unused_comparisons)]
             if <str>::len(value.as_ref()) > 3000usize {

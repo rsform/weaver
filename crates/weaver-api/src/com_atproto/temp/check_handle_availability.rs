@@ -232,8 +232,8 @@ pub enum CheckHandleAvailabilityError<'a> {
     InvalidEmail(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
-impl std::fmt::Display for CheckHandleAvailabilityError<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for CheckHandleAvailabilityError<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::InvalidEmail(msg) => {
                 write!(f, "InvalidEmail")?;
@@ -298,7 +298,7 @@ fn lexicon_doc_com_atproto_temp_checkHandleAvailability() -> ::jacquard_lexicon:
         revision: None,
         description: None,
         defs: {
-            let mut map = ::std::collections::BTreeMap::new();
+            let mut map = ::alloc::collections::BTreeMap::new();
             map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("main"),
                 ::jacquard_lexicon::lexicon::LexUserType::XrpcQuery(::jacquard_lexicon::lexicon::LexXrpcQuery {
@@ -313,7 +313,7 @@ fn lexicon_doc_com_atproto_temp_checkHandleAvailability() -> ::jacquard_lexicon:
                             ),
                             properties: {
                                 #[allow(unused_mut)]
-                                let mut map = ::std::collections::BTreeMap::new();
+                                let mut map = ::alloc::collections::BTreeMap::new();
                                 map.insert(
                                     ::jacquard_common::smol_str::SmolStr::new_static(
                                         "birthDate",
@@ -397,7 +397,7 @@ fn lexicon_doc_com_atproto_temp_checkHandleAvailability() -> ::jacquard_lexicon:
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map
                     },
                 }),
@@ -418,7 +418,7 @@ fn lexicon_doc_com_atproto_temp_checkHandleAvailability() -> ::jacquard_lexicon:
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
                                 "suggestions",
@@ -454,7 +454,7 @@ fn lexicon_doc_com_atproto_temp_checkHandleAvailability() -> ::jacquard_lexicon:
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("handle"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {
@@ -512,7 +512,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for ResultAvailable<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -658,7 +658,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for ResultUnavailable<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -834,7 +834,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Suggestion<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }

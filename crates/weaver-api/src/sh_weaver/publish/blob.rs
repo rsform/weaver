@@ -36,37 +36,37 @@ pub mod blob_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Upload;
         type Path;
+        type Upload;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Upload = Unset;
         type Path = Unset;
-    }
-    ///State transition - sets the `upload` field to Set
-    pub struct SetUpload<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetUpload<S> {}
-    impl<S: State> State for SetUpload<S> {
-        type Upload = Set<members::upload>;
-        type Path = S::Path;
+        type Upload = Unset;
     }
     ///State transition - sets the `path` field to Set
     pub struct SetPath<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetPath<S> {}
     impl<S: State> State for SetPath<S> {
-        type Upload = S::Upload;
         type Path = Set<members::path>;
+        type Upload = S::Upload;
+    }
+    ///State transition - sets the `upload` field to Set
+    pub struct SetUpload<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetUpload<S> {}
+    impl<S: State> State for SetUpload<S> {
+        type Path = S::Path;
+        type Upload = Set<members::upload>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `upload` field
-        pub struct upload(());
         ///Marker type for the `path` field
         pub struct path(());
+        ///Marker type for the `upload` field
+        pub struct upload(());
     }
 }
 
@@ -139,8 +139,8 @@ where
 impl<'a, S> BlobBuilder<'a, S>
 where
     S: blob_state::State,
-    S::Upload: blob_state::IsSet,
     S::Path: blob_state::IsSet,
+    S::Upload: blob_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Blob<'a> {
@@ -239,7 +239,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Blob<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         {
             let value = &self.path;
             #[allow(unused_comparisons)]
@@ -266,7 +266,7 @@ fn lexicon_doc_sh_weaver_publish_blob() -> ::jacquard_lexicon::lexicon::LexiconD
         revision: None,
         description: None,
         defs: {
-            let mut map = ::std::collections::BTreeMap::new();
+            let mut map = ::alloc::collections::BTreeMap::new();
             map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("main"),
                 ::jacquard_lexicon::lexicon::LexUserType::Record(::jacquard_lexicon::lexicon::LexRecord {
@@ -287,7 +287,7 @@ fn lexicon_doc_sh_weaver_publish_blob() -> ::jacquard_lexicon::lexicon::LexiconD
                         nullable: None,
                         properties: {
                             #[allow(unused_mut)]
-                            let mut map = ::std::collections::BTreeMap::new();
+                            let mut map = ::alloc::collections::BTreeMap::new();
                             map.insert(
                                 ::jacquard_common::smol_str::SmolStr::new_static("path"),
                                 ::jacquard_lexicon::lexicon::LexObjectProperty::String(::jacquard_lexicon::lexicon::LexString {

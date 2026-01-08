@@ -1,0 +1,106 @@
+{
+  "lexicon": 1,
+  "id": "com.deckbelcher.deck.list",
+  "defs": {
+    "card": {
+      "type": "object",
+      "description": "A card entry in a decklist.",
+      "required": [
+        "scryfallId",
+        "quantity",
+        "section"
+      ],
+      "properties": {
+        "quantity": {
+          "type": "integer",
+          "description": "Number of copies in the deck.",
+          "minimum": 1
+        },
+        "scryfallId": {
+          "type": "string",
+          "description": "Scryfall UUID for the specific printing."
+        },
+        "section": {
+          "type": "string",
+          "description": "Which section of the deck this card belongs to. Extensible to support format-specific sections.",
+          "knownValues": [
+            "mainboard",
+            "sideboard",
+            "maybeboard",
+            "commander"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "description": "User annotations for this card in this deck (e.g., \"removal\", \"wincon\", \"ramp\").",
+          "items": {
+            "type": "string",
+            "description": "A tag annotation for a card.",
+            "maxLength": 640,
+            "maxGraphemes": 64
+          },
+          "maxLength": 128
+        }
+      }
+    },
+    "main": {
+      "type": "record",
+      "description": "A Magic: The Gathering decklist.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "name",
+          "cards",
+          "createdAt"
+        ],
+        "properties": {
+          "cards": {
+            "type": "array",
+            "description": "Array of cards in the decklist.",
+            "items": {
+              "type": "ref",
+              "ref": "#card"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Timestamp when the decklist was created.",
+            "format": "datetime"
+          },
+          "format": {
+            "type": "string",
+            "description": "Format of the deck (e.g., \"commander\", \"cube\", \"pauper\").",
+            "maxLength": 320,
+            "maxGraphemes": 32
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the decklist.",
+            "maxLength": 1280,
+            "maxGraphemes": 128
+          },
+          "primer": {
+            "type": "string",
+            "description": "Deck primer with strategy, combos, and card choices.",
+            "maxLength": 100000,
+            "maxGraphemes": 10000
+          },
+          "primerFacets": {
+            "type": "array",
+            "description": "Annotations of text in the primer (mentions, URLs, hashtags, card references, etc).",
+            "items": {
+              "type": "ref",
+              "ref": "com.deckbelcher.richtext.facet"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Timestamp when the decklist was last updated.",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

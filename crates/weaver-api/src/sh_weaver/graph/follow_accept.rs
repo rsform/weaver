@@ -34,37 +34,37 @@ pub mod follow_accept_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Follow;
         type CreatedAt;
+        type Follow;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Follow = Unset;
         type CreatedAt = Unset;
-    }
-    ///State transition - sets the `follow` field to Set
-    pub struct SetFollow<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetFollow<S> {}
-    impl<S: State> State for SetFollow<S> {
-        type Follow = Set<members::follow>;
-        type CreatedAt = S::CreatedAt;
+        type Follow = Unset;
     }
     ///State transition - sets the `created_at` field to Set
     pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
     impl<S: State> State for SetCreatedAt<S> {
-        type Follow = S::Follow;
         type CreatedAt = Set<members::created_at>;
+        type Follow = S::Follow;
+    }
+    ///State transition - sets the `follow` field to Set
+    pub struct SetFollow<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetFollow<S> {}
+    impl<S: State> State for SetFollow<S> {
+        type CreatedAt = S::CreatedAt;
+        type Follow = Set<members::follow>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `follow` field
-        pub struct follow(());
         ///Marker type for the `created_at` field
         pub struct created_at(());
+        ///Marker type for the `follow` field
+        pub struct follow(());
     }
 }
 
@@ -137,8 +137,8 @@ where
 impl<'a, S> FollowAcceptBuilder<'a, S>
 where
     S: follow_accept_state::State,
-    S::Follow: follow_accept_state::IsSet,
     S::CreatedAt: follow_accept_state::IsSet,
+    S::Follow: follow_accept_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> FollowAccept<'a> {
@@ -237,7 +237,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for FollowAccept<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -251,7 +251,7 @@ fn lexicon_doc_sh_weaver_graph_followAccept() -> ::jacquard_lexicon::lexicon::Le
         revision: None,
         description: None,
         defs: {
-            let mut map = ::std::collections::BTreeMap::new();
+            let mut map = ::alloc::collections::BTreeMap::new();
             map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("main"),
                 ::jacquard_lexicon::lexicon::LexUserType::Record(::jacquard_lexicon::lexicon::LexRecord {
@@ -272,7 +272,7 @@ fn lexicon_doc_sh_weaver_graph_followAccept() -> ::jacquard_lexicon::lexicon::Le
                         nullable: None,
                         properties: {
                             #[allow(unused_mut)]
-                            let mut map = ::std::collections::BTreeMap::new();
+                            let mut map = ::alloc::collections::BTreeMap::new();
                             map.insert(
                                 ::jacquard_common::smol_str::SmolStr::new_static(
                                     "createdAt",

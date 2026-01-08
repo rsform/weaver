@@ -46,67 +46,67 @@ pub mod add_rule_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
+        type Action;
+        type Url;
         type Pattern;
         type Reason;
-        type Url;
-        type Action;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
+        type Action = Unset;
+        type Url = Unset;
         type Pattern = Unset;
         type Reason = Unset;
-        type Url = Unset;
-        type Action = Unset;
-    }
-    ///State transition - sets the `pattern` field to Set
-    pub struct SetPattern<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetPattern<S> {}
-    impl<S: State> State for SetPattern<S> {
-        type Pattern = Set<members::pattern>;
-        type Reason = S::Reason;
-        type Url = S::Url;
-        type Action = S::Action;
-    }
-    ///State transition - sets the `reason` field to Set
-    pub struct SetReason<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetReason<S> {}
-    impl<S: State> State for SetReason<S> {
-        type Pattern = S::Pattern;
-        type Reason = Set<members::reason>;
-        type Url = S::Url;
-        type Action = S::Action;
-    }
-    ///State transition - sets the `url` field to Set
-    pub struct SetUrl<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetUrl<S> {}
-    impl<S: State> State for SetUrl<S> {
-        type Pattern = S::Pattern;
-        type Reason = S::Reason;
-        type Url = Set<members::url>;
-        type Action = S::Action;
     }
     ///State transition - sets the `action` field to Set
     pub struct SetAction<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAction<S> {}
     impl<S: State> State for SetAction<S> {
+        type Action = Set<members::action>;
+        type Url = S::Url;
         type Pattern = S::Pattern;
         type Reason = S::Reason;
+    }
+    ///State transition - sets the `url` field to Set
+    pub struct SetUrl<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetUrl<S> {}
+    impl<S: State> State for SetUrl<S> {
+        type Action = S::Action;
+        type Url = Set<members::url>;
+        type Pattern = S::Pattern;
+        type Reason = S::Reason;
+    }
+    ///State transition - sets the `pattern` field to Set
+    pub struct SetPattern<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetPattern<S> {}
+    impl<S: State> State for SetPattern<S> {
+        type Action = S::Action;
         type Url = S::Url;
-        type Action = Set<members::action>;
+        type Pattern = Set<members::pattern>;
+        type Reason = S::Reason;
+    }
+    ///State transition - sets the `reason` field to Set
+    pub struct SetReason<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetReason<S> {}
+    impl<S: State> State for SetReason<S> {
+        type Action = S::Action;
+        type Url = S::Url;
+        type Pattern = S::Pattern;
+        type Reason = Set<members::reason>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
+        ///Marker type for the `action` field
+        pub struct action(());
+        ///Marker type for the `url` field
+        pub struct url(());
         ///Marker type for the `pattern` field
         pub struct pattern(());
         ///Marker type for the `reason` field
         pub struct reason(());
-        ///Marker type for the `url` field
-        pub struct url(());
-        ///Marker type for the `action` field
-        pub struct action(());
     }
 }
 
@@ -256,10 +256,10 @@ where
 impl<'a, S> AddRuleBuilder<'a, S>
 where
     S: add_rule_state::State,
+    S::Action: add_rule_state::IsSet,
+    S::Url: add_rule_state::IsSet,
     S::Pattern: add_rule_state::IsSet,
     S::Reason: add_rule_state::IsSet,
-    S::Url: add_rule_state::IsSet,
-    S::Action: add_rule_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> AddRule<'a> {
@@ -333,8 +333,8 @@ pub enum AddRuleError<'a> {
     RuleAlreadyExists(std::option::Option<jacquard_common::CowStr<'a>>),
 }
 
-impl std::fmt::Display for AddRuleError<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for AddRuleError<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::InvalidUrl(msg) => {
                 write!(f, "InvalidUrl")?;

@@ -11,13 +11,15 @@ output {
 // }
 
 source "weaver" type="local" priority=100 {
-    //path "./lexicons"
     path "/home/orual/Projects/weaver.sh/crates/weaver-api/lexicons"
-
 }
 
 
 source "weaver" type="local" priority=200 {
     path "./lexicons"
+}
 
+source "deckbelcher" type="git" priority=100 {
+    repo "https://tangled.org/aviva.gay/deckbelcher"
+    pattern "**/*.json"
 }

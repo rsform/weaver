@@ -20,7 +20,7 @@ pub struct RemoveOptions<'a> {
     #[serde(borrow)]
     pub keys: Vec<jacquard_common::types::string::Nsid<'a>>,
     #[serde(borrow)]
-    pub scope: jacquard_common::CowStr<'a>,
+    pub scope: RemoveOptionsScope<'a>,
 }
 
 pub mod remove_options_state {
@@ -33,37 +33,37 @@ pub mod remove_options_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Keys;
         type Scope;
+        type Keys;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Keys = Unset;
         type Scope = Unset;
-    }
-    ///State transition - sets the `keys` field to Set
-    pub struct SetKeys<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetKeys<S> {}
-    impl<S: State> State for SetKeys<S> {
-        type Keys = Set<members::keys>;
-        type Scope = S::Scope;
+        type Keys = Unset;
     }
     ///State transition - sets the `scope` field to Set
     pub struct SetScope<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetScope<S> {}
     impl<S: State> State for SetScope<S> {
-        type Keys = S::Keys;
         type Scope = Set<members::scope>;
+        type Keys = S::Keys;
+    }
+    ///State transition - sets the `keys` field to Set
+    pub struct SetKeys<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetKeys<S> {}
+    impl<S: State> State for SetKeys<S> {
+        type Scope = S::Scope;
+        type Keys = Set<members::keys>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `keys` field
-        pub struct keys(());
         ///Marker type for the `scope` field
         pub struct scope(());
+        ///Marker type for the `keys` field
+        pub struct keys(());
     }
 }
 
@@ -72,7 +72,7 @@ pub struct RemoveOptionsBuilder<'a, S: remove_options_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
         ::core::option::Option<Vec<jacquard_common::types::string::Nsid<'a>>>,
-        ::core::option::Option<jacquard_common::CowStr<'a>>,
+        ::core::option::Option<RemoveOptionsScope<'a>>,
     ),
     _phantom: ::core::marker::PhantomData<&'a ()>,
 }
@@ -122,7 +122,7 @@ where
     /// Set the `scope` field (required)
     pub fn scope(
         mut self,
-        value: impl Into<jacquard_common::CowStr<'a>>,
+        value: impl Into<RemoveOptionsScope<'a>>,
     ) -> RemoveOptionsBuilder<'a, remove_options_state::SetScope<S>> {
         self.__unsafe_private_named.1 = ::core::option::Option::Some(value.into());
         RemoveOptionsBuilder {
@@ -136,8 +136,8 @@ where
 impl<'a, S> RemoveOptionsBuilder<'a, S>
 where
     S: remove_options_state::State,
-    S::Keys: remove_options_state::IsSet,
     S::Scope: remove_options_state::IsSet,
+    S::Keys: remove_options_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> RemoveOptions<'a> {
@@ -159,6 +159,94 @@ where
             keys: self.__unsafe_private_named.0.unwrap(),
             scope: self.__unsafe_private_named.1.unwrap(),
             extra_data: Some(extra_data),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RemoveOptionsScope<'a> {
+    Instance,
+    Personal,
+    Other(jacquard_common::CowStr<'a>),
+}
+
+impl<'a> RemoveOptionsScope<'a> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Instance => "instance",
+            Self::Personal => "personal",
+            Self::Other(s) => s.as_ref(),
+        }
+    }
+}
+
+impl<'a> From<&'a str> for RemoveOptionsScope<'a> {
+    fn from(s: &'a str) -> Self {
+        match s {
+            "instance" => Self::Instance,
+            "personal" => Self::Personal,
+            _ => Self::Other(jacquard_common::CowStr::from(s)),
+        }
+    }
+}
+
+impl<'a> From<String> for RemoveOptionsScope<'a> {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "instance" => Self::Instance,
+            "personal" => Self::Personal,
+            _ => Self::Other(jacquard_common::CowStr::from(s)),
+        }
+    }
+}
+
+impl<'a> core::fmt::Display for RemoveOptionsScope<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl<'a> AsRef<str> for RemoveOptionsScope<'a> {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl<'a> serde::Serialize for RemoveOptionsScope<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de, 'a> serde::Deserialize<'de> for RemoveOptionsScope<'a>
+where
+    'de: 'a,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = <&'de str>::deserialize(deserializer)?;
+        Ok(Self::from(s))
+    }
+}
+
+impl<'a> Default for RemoveOptionsScope<'a> {
+    fn default() -> Self {
+        Self::Other(Default::default())
+    }
+}
+
+impl jacquard_common::IntoStatic for RemoveOptionsScope<'_> {
+    type Output = RemoveOptionsScope<'static>;
+    fn into_static(self) -> Self::Output {
+        match self {
+            RemoveOptionsScope::Instance => RemoveOptionsScope::Instance,
+            RemoveOptionsScope::Personal => RemoveOptionsScope::Personal,
+            RemoveOptionsScope::Other(v) => RemoveOptionsScope::Other(v.into_static()),
         }
     }
 }

@@ -3,6 +3,7 @@
 // This file was automatically generated from Lexicon schemas.
 // Any manual changes will be overwritten on the next regeneration.
 
+extern crate alloc;
 #[cfg(feature = "app_bsky")]
 pub mod app_bsky;
 
@@ -15,6 +16,9 @@ pub mod chat_bsky;
 
 #[cfg(feature = "com_atproto")]
 pub mod com_atproto;
+
+#[cfg(feature = "com_deckbelcher")]
+pub mod com_deckbelcher;
 
 #[cfg(feature = "com_whtwnd")]
 pub mod com_whtwnd;

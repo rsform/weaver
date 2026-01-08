@@ -165,37 +165,37 @@ pub mod suggested_notebook_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Notebook;
         type Reason;
+        type Notebook;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Notebook = Unset;
         type Reason = Unset;
-    }
-    ///State transition - sets the `notebook` field to Set
-    pub struct SetNotebook<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetNotebook<S> {}
-    impl<S: State> State for SetNotebook<S> {
-        type Notebook = Set<members::notebook>;
-        type Reason = S::Reason;
+        type Notebook = Unset;
     }
     ///State transition - sets the `reason` field to Set
     pub struct SetReason<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetReason<S> {}
     impl<S: State> State for SetReason<S> {
-        type Notebook = S::Notebook;
         type Reason = Set<members::reason>;
+        type Notebook = S::Notebook;
+    }
+    ///State transition - sets the `notebook` field to Set
+    pub struct SetNotebook<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetNotebook<S> {}
+    impl<S: State> State for SetNotebook<S> {
+        type Reason = S::Reason;
+        type Notebook = Set<members::notebook>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `notebook` field
-        pub struct notebook(());
         ///Marker type for the `reason` field
         pub struct reason(());
+        ///Marker type for the `notebook` field
+        pub struct notebook(());
     }
 }
 
@@ -286,8 +286,8 @@ impl<'a, S: suggested_notebook_state::State> SuggestedNotebookBuilder<'a, S> {
 impl<'a, S> SuggestedNotebookBuilder<'a, S>
 where
     S: suggested_notebook_state::State,
-    S::Notebook: suggested_notebook_state::IsSet,
     S::Reason: suggested_notebook_state::IsSet,
+    S::Notebook: suggested_notebook_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> SuggestedNotebook<'a> {
@@ -326,7 +326,7 @@ fn lexicon_doc_sh_weaver_notebook_getSuggestedNotebooks() -> ::jacquard_lexicon:
         revision: None,
         description: None,
         defs: {
-            let mut map = ::std::collections::BTreeMap::new();
+            let mut map = ::alloc::collections::BTreeMap::new();
             map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("main"),
                 ::jacquard_lexicon::lexicon::LexUserType::XrpcQuery(::jacquard_lexicon::lexicon::LexXrpcQuery {
@@ -337,7 +337,7 @@ fn lexicon_doc_sh_weaver_notebook_getSuggestedNotebooks() -> ::jacquard_lexicon:
                             required: None,
                             properties: {
                                 #[allow(unused_mut)]
-                                let mut map = ::std::collections::BTreeMap::new();
+                                let mut map = ::alloc::collections::BTreeMap::new();
                                 map.insert(
                                     ::jacquard_common::smol_str::SmolStr::new_static("limit"),
                                     ::jacquard_lexicon::lexicon::LexXrpcParametersProperty::Integer(::jacquard_lexicon::lexicon::LexInteger {
@@ -370,7 +370,7 @@ fn lexicon_doc_sh_weaver_notebook_getSuggestedNotebooks() -> ::jacquard_lexicon:
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("notebook"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
@@ -418,7 +418,7 @@ fn lexicon_doc_sh_weaver_notebook_getSuggestedNotebooks() -> ::jacquard_lexicon:
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
                                 "relatedAuthor",
@@ -512,7 +512,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for SuggestedNotebook<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -552,7 +552,122 @@ pub struct SuggestionReason<'a> {
     #[serde(borrow)]
     pub related_tags: std::option::Option<Vec<jacquard_common::CowStr<'a>>>,
     #[serde(borrow)]
-    pub r#type: jacquard_common::CowStr<'a>,
+    pub r#type: SuggestionReasonType<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SuggestionReasonType<'a> {
+    SimilarTags,
+    SimilarToLiked,
+    SimilarToRead,
+    FollowedAuthor,
+    PopularInTag,
+    Trending,
+    FromList,
+    Other(jacquard_common::CowStr<'a>),
+}
+
+impl<'a> SuggestionReasonType<'a> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::SimilarTags => "similar-tags",
+            Self::SimilarToLiked => "similar-to-liked",
+            Self::SimilarToRead => "similar-to-read",
+            Self::FollowedAuthor => "followed-author",
+            Self::PopularInTag => "popular-in-tag",
+            Self::Trending => "trending",
+            Self::FromList => "from-list",
+            Self::Other(s) => s.as_ref(),
+        }
+    }
+}
+
+impl<'a> From<&'a str> for SuggestionReasonType<'a> {
+    fn from(s: &'a str) -> Self {
+        match s {
+            "similar-tags" => Self::SimilarTags,
+            "similar-to-liked" => Self::SimilarToLiked,
+            "similar-to-read" => Self::SimilarToRead,
+            "followed-author" => Self::FollowedAuthor,
+            "popular-in-tag" => Self::PopularInTag,
+            "trending" => Self::Trending,
+            "from-list" => Self::FromList,
+            _ => Self::Other(jacquard_common::CowStr::from(s)),
+        }
+    }
+}
+
+impl<'a> From<String> for SuggestionReasonType<'a> {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "similar-tags" => Self::SimilarTags,
+            "similar-to-liked" => Self::SimilarToLiked,
+            "similar-to-read" => Self::SimilarToRead,
+            "followed-author" => Self::FollowedAuthor,
+            "popular-in-tag" => Self::PopularInTag,
+            "trending" => Self::Trending,
+            "from-list" => Self::FromList,
+            _ => Self::Other(jacquard_common::CowStr::from(s)),
+        }
+    }
+}
+
+impl<'a> core::fmt::Display for SuggestionReasonType<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl<'a> AsRef<str> for SuggestionReasonType<'a> {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl<'a> serde::Serialize for SuggestionReasonType<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de, 'a> serde::Deserialize<'de> for SuggestionReasonType<'a>
+where
+    'de: 'a,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = <&'de str>::deserialize(deserializer)?;
+        Ok(Self::from(s))
+    }
+}
+
+impl<'a> Default for SuggestionReasonType<'a> {
+    fn default() -> Self {
+        Self::Other(Default::default())
+    }
+}
+
+impl jacquard_common::IntoStatic for SuggestionReasonType<'_> {
+    type Output = SuggestionReasonType<'static>;
+    fn into_static(self) -> Self::Output {
+        match self {
+            SuggestionReasonType::SimilarTags => SuggestionReasonType::SimilarTags,
+            SuggestionReasonType::SimilarToLiked => SuggestionReasonType::SimilarToLiked,
+            SuggestionReasonType::SimilarToRead => SuggestionReasonType::SimilarToRead,
+            SuggestionReasonType::FollowedAuthor => SuggestionReasonType::FollowedAuthor,
+            SuggestionReasonType::PopularInTag => SuggestionReasonType::PopularInTag,
+            SuggestionReasonType::Trending => SuggestionReasonType::Trending,
+            SuggestionReasonType::FromList => SuggestionReasonType::FromList,
+            SuggestionReasonType::Other(v) => {
+                SuggestionReasonType::Other(v.into_static())
+            }
+        }
+    }
 }
 
 impl<'a> ::jacquard_lexicon::schema::LexiconSchema for SuggestionReason<'a> {
@@ -567,7 +682,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for SuggestionReason<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }

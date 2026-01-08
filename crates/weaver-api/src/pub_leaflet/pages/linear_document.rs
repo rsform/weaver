@@ -19,7 +19,7 @@
 pub struct Block<'a> {
     #[serde(skip_serializing_if = "std::option::Option::is_none")]
     #[serde(borrow)]
-    pub alignment: std::option::Option<jacquard_common::CowStr<'a>>,
+    pub alignment: std::option::Option<BlockAlignment<'a>>,
     #[serde(borrow)]
     pub block: BlockBlock<'a>,
 }
@@ -60,7 +60,7 @@ pub mod block_state {
 pub struct BlockBuilder<'a, S: block_state::State> {
     _phantom_state: ::core::marker::PhantomData<fn() -> S>,
     __unsafe_private_named: (
-        ::core::option::Option<jacquard_common::CowStr<'a>>,
+        ::core::option::Option<BlockAlignment<'a>>,
         ::core::option::Option<BlockBlock<'a>>,
     ),
     _phantom: ::core::marker::PhantomData<&'a ()>,
@@ -86,18 +86,12 @@ impl<'a> BlockBuilder<'a, block_state::Empty> {
 
 impl<'a, S: block_state::State> BlockBuilder<'a, S> {
     /// Set the `alignment` field (optional)
-    pub fn alignment(
-        mut self,
-        value: impl Into<Option<jacquard_common::CowStr<'a>>>,
-    ) -> Self {
+    pub fn alignment(mut self, value: impl Into<Option<BlockAlignment<'a>>>) -> Self {
         self.__unsafe_private_named.0 = value.into();
         self
     }
     /// Set the `alignment` field to an Option value (optional)
-    pub fn maybe_alignment(
-        mut self,
-        value: Option<jacquard_common::CowStr<'a>>,
-    ) -> Self {
+    pub fn maybe_alignment(mut self, value: Option<BlockAlignment<'a>>) -> Self {
         self.__unsafe_private_named.0 = value;
         self
     }
@@ -147,6 +141,104 @@ where
             alignment: self.__unsafe_private_named.0,
             block: self.__unsafe_private_named.1.unwrap(),
             extra_data: Some(extra_data),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BlockAlignment<'a> {
+    TextAlignLeft,
+    TextAlignCenter,
+    TextAlignRight,
+    TextAlignJustify,
+    Other(jacquard_common::CowStr<'a>),
+}
+
+impl<'a> BlockAlignment<'a> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::TextAlignLeft => "#textAlignLeft",
+            Self::TextAlignCenter => "#textAlignCenter",
+            Self::TextAlignRight => "#textAlignRight",
+            Self::TextAlignJustify => "#textAlignJustify",
+            Self::Other(s) => s.as_ref(),
+        }
+    }
+}
+
+impl<'a> From<&'a str> for BlockAlignment<'a> {
+    fn from(s: &'a str) -> Self {
+        match s {
+            "#textAlignLeft" => Self::TextAlignLeft,
+            "#textAlignCenter" => Self::TextAlignCenter,
+            "#textAlignRight" => Self::TextAlignRight,
+            "#textAlignJustify" => Self::TextAlignJustify,
+            _ => Self::Other(jacquard_common::CowStr::from(s)),
+        }
+    }
+}
+
+impl<'a> From<String> for BlockAlignment<'a> {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "#textAlignLeft" => Self::TextAlignLeft,
+            "#textAlignCenter" => Self::TextAlignCenter,
+            "#textAlignRight" => Self::TextAlignRight,
+            "#textAlignJustify" => Self::TextAlignJustify,
+            _ => Self::Other(jacquard_common::CowStr::from(s)),
+        }
+    }
+}
+
+impl<'a> core::fmt::Display for BlockAlignment<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl<'a> AsRef<str> for BlockAlignment<'a> {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl<'a> serde::Serialize for BlockAlignment<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de, 'a> serde::Deserialize<'de> for BlockAlignment<'a>
+where
+    'de: 'a,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = <&'de str>::deserialize(deserializer)?;
+        Ok(Self::from(s))
+    }
+}
+
+impl<'a> Default for BlockAlignment<'a> {
+    fn default() -> Self {
+        Self::Other(Default::default())
+    }
+}
+
+impl jacquard_common::IntoStatic for BlockAlignment<'_> {
+    type Output = BlockAlignment<'static>;
+    fn into_static(self) -> Self::Output {
+        match self {
+            BlockAlignment::TextAlignLeft => BlockAlignment::TextAlignLeft,
+            BlockAlignment::TextAlignCenter => BlockAlignment::TextAlignCenter,
+            BlockAlignment::TextAlignRight => BlockAlignment::TextAlignRight,
+            BlockAlignment::TextAlignJustify => BlockAlignment::TextAlignJustify,
+            BlockAlignment::Other(v) => BlockAlignment::Other(v.into_static()),
         }
     }
 }
@@ -203,7 +295,7 @@ fn lexicon_doc_pub_leaflet_pages_linearDocument() -> ::jacquard_lexicon::lexicon
         revision: None,
         description: None,
         defs: {
-            let mut map = ::std::collections::BTreeMap::new();
+            let mut map = ::alloc::collections::BTreeMap::new();
             map.insert(
                 ::jacquard_common::smol_str::SmolStr::new_static("block"),
                 ::jacquard_lexicon::lexicon::LexUserType::Object(::jacquard_lexicon::lexicon::LexObject {
@@ -214,7 +306,7 @@ fn lexicon_doc_pub_leaflet_pages_linearDocument() -> ::jacquard_lexicon::lexicon
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static(
                                 "alignment",
@@ -269,7 +361,7 @@ fn lexicon_doc_pub_leaflet_pages_linearDocument() -> ::jacquard_lexicon::lexicon
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("blocks"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Array(::jacquard_lexicon::lexicon::LexArray {
@@ -314,7 +406,7 @@ fn lexicon_doc_pub_leaflet_pages_linearDocument() -> ::jacquard_lexicon::lexicon
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("block"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Array(::jacquard_lexicon::lexicon::LexArray {
@@ -359,7 +451,7 @@ fn lexicon_doc_pub_leaflet_pages_linearDocument() -> ::jacquard_lexicon::lexicon
                     nullable: None,
                     properties: {
                         #[allow(unused_mut)]
-                        let mut map = ::std::collections::BTreeMap::new();
+                        let mut map = ::alloc::collections::BTreeMap::new();
                         map.insert(
                             ::jacquard_common::smol_str::SmolStr::new_static("end"),
                             ::jacquard_lexicon::lexicon::LexObjectProperty::Ref(::jacquard_lexicon::lexicon::LexRef {
@@ -419,7 +511,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Block<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -578,7 +670,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for LinearDocument<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -751,7 +843,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Position<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
@@ -926,7 +1018,7 @@ impl<'a> ::jacquard_lexicon::schema::LexiconSchema for Quote<'a> {
     }
     fn validate(
         &self,
-    ) -> ::std::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
+    ) -> ::core::result::Result<(), ::jacquard_lexicon::validation::ConstraintError> {
         Ok(())
     }
 }
