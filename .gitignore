@@ -19,6 +19,7 @@ grant_proposal.md
 **/.obsidian
 **/.trash
 **/bug_notes.md
+**/node_modules
 /opencodetmp
 deploy.sh
 
