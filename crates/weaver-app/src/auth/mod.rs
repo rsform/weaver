@@ -48,6 +48,11 @@ pub async fn restore_session(fetcher: Fetcher, mut auth_state: Signal<AuthState>
     use jacquard::smol_str::SmolStr;
     use jacquard::types::string::Did;
 
+    // Skip restore if already authenticated (e.g., just completed callback flow)
+    if auth_state.read().is_authenticated() {
+        return RestoreResult::Restored;
+    }
+
     // Look for session keys in localStorage (format: oauth_session_{did}_{session_id})
     let entries = match LocalStorage::get_all::<BTreeMap<SmolStr, serde_json::Value>>() {
         Ok(e) => e,
