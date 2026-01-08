@@ -99,6 +99,14 @@ pub fn sync_cursor_from_dom_impl(
     let anchor_offset = selection.anchor_offset() as usize;
     let focus_offset = selection.focus_offset() as usize;
 
+    tracing::debug!(
+        anchor_node_name = %anchor_node.node_name(),
+        anchor_offset,
+        focus_node_name = %focus_node.node_name(),
+        focus_offset,
+        "sync_cursor_from_dom_impl: browser selection state"
+    );
+
     let anchor_char = dom_position_to_text_offset(
         &dom_document,
         &editor_element,
@@ -154,9 +162,14 @@ pub fn dom_position_to_text_offset(
         let node_id_attr = current_node
             .dyn_ref::<web_sys::Element>()
             .and_then(|e| e.get_attribute("id"));
-        tracing::trace!(
+        let text_content_preview = current_node
+            .text_content()
+            .map(|s| s.chars().take(20).collect::<String>())
+            .unwrap_or_default();
+        tracing::debug!(
             node_name = %node_name,
             node_id_attr = ?node_id_attr,
+            text_preview = %text_content_preview.escape_debug(),
             "dom_position_to_text_offset: walk-up iteration"
         );
 
@@ -195,10 +208,20 @@ pub fn dom_position_to_text_offset(
 
                 // Selection is directly on the editor container (e.g., Cmd+A).
                 let child_count = editor_element.child_element_count() as usize;
+                tracing::debug!(
+                    offset_in_text_node,
+                    child_count,
+                    "dom_position_to_text_offset: selection directly on editor container"
+                );
                 if offset_in_text_node == 0 {
+                    tracing::debug!(
+                        "dom_position_to_text_offset: returning 0 (editor container offset 0)"
+                    );
                     return Some(0);
                 } else if offset_in_text_node >= child_count {
-                    return paragraphs.last().map(|p| p.char_range.end);
+                    let end = paragraphs.last().map(|p| p.char_range.end);
+                    tracing::debug!(end = ?end, "dom_position_to_text_offset: returning end of last paragraph");
+                    return end;
                 }
                 break None;
             }
@@ -210,7 +233,7 @@ pub fn dom_position_to_text_offset(
             if let Some(id) = id {
                 // Match both old-style "n0" and paragraph-prefixed "p-2-n0" node IDs.
                 let is_node_id = id.starts_with('n') || id.contains("-n");
-                tracing::trace!(
+                tracing::debug!(
                     id = %id,
                     is_node_id,
                     starts_with_n = id.starts_with('n'),
@@ -227,7 +250,15 @@ pub fn dom_position_to_text_offset(
         current_node = current_node.parent_node()?;
     };
 
-    let node_id = node_id?;
+    let node_id = match node_id {
+        Some(id) => id,
+        None => {
+            tracing::debug!("dom_position_to_text_offset: no node_id found in walk-up");
+            return None;
+        }
+    };
+
+    tracing::debug!(node_id = %node_id, "dom_position_to_text_offset: found node_id");
 
     let container = dom_document.get_element_by_id(&node_id).or_else(|| {
         let selector = format!("[data-node-id='{}']", node_id);
@@ -312,6 +343,9 @@ pub fn dom_position_to_text_offset(
     );
 
     // Look up the offset in paragraph offset maps.
+    // Track the best match for the node_id in case offset is past the end.
+    let mut best_match_for_node: Option<(usize, &OffsetMapping)> = None;
+
     for para in paragraphs {
         for mapping in &para.offset_map {
             if mapping.node_id == node_id {
@@ -322,14 +356,21 @@ pub fn dom_position_to_text_offset(
                     mapping_node_id = %mapping.node_id,
                     mapping_start,
                     mapping_end,
+                    utf16_offset = utf16_offset_in_container,
                     char_range_start = mapping.char_range.start,
                     char_range_end = mapping.char_range.end,
                     "dom_position_to_text_offset: found matching node_id"
                 );
 
-                if utf16_offset_in_container >= mapping_start
-                    && utf16_offset_in_container <= mapping_end
-                {
+                // Track the mapping with the highest end position for this node.
+                if best_match_for_node.is_none() || mapping_end > best_match_for_node.unwrap().0 {
+                    best_match_for_node = Some((mapping_end, mapping));
+                }
+
+                let in_range = utf16_offset_in_container >= mapping_start
+                    && utf16_offset_in_container <= mapping_end;
+
+                if in_range {
                     let offset_in_mapping = utf16_offset_in_container - mapping_start;
                     let char_offset = mapping.char_range.start + offset_in_mapping;
 
@@ -346,6 +387,10 @@ pub fn dom_position_to_text_offset(
 
                     // Check if position is valid (not on invisible content).
                     if is_valid_cursor_position(&para.offset_map, char_offset) {
+                        tracing::debug!(
+                            char_offset,
+                            "dom_position_to_text_offset: returning valid position from mapping"
+                        );
                         return Some(char_offset);
                     }
 
@@ -353,21 +398,82 @@ pub fn dom_position_to_text_offset(
                     if let Some(snapped) =
                         find_nearest_valid_position(&para.offset_map, char_offset, direction_hint)
                     {
+                        tracing::debug!(
+                            original = char_offset,
+                            snapped = snapped.char_offset(),
+                            "dom_position_to_text_offset: snapped from invisible to valid"
+                        );
                         return Some(snapped.char_offset());
                     }
 
                     // Fallback to original if no snap target.
+                    tracing::debug!(
+                        char_offset,
+                        "dom_position_to_text_offset: returning original (no snap target)"
+                    );
                     return Some(char_offset);
                 }
             }
         }
     }
 
-    // No mapping found - try to find any valid position in paragraphs.
+    // If we found the node_id but offset was past the end, snap to the last tracked position.
+    if let Some((max_end, mapping)) = best_match_for_node {
+        if utf16_offset_in_container > max_end {
+            // Cursor is past the end of tracked content - snap to end of last mapping.
+            let char_offset = mapping.char_range.end;
+            tracing::debug!(
+                node_id = %node_id,
+                utf16_offset = utf16_offset_in_container,
+                max_tracked_end = max_end,
+                snapped_to = char_offset,
+                "dom_position_to_text_offset: offset past tracked content, snapping to end"
+            );
+            return Some(char_offset);
+        }
+    }
+
+    // No mapping found - try to find a valid position in the paragraph matching the node_id.
+    // Extract paragraph index from node_id format "p-{idx}-n{node}" to avoid jumping to wrong paragraph.
+    let para_idx_from_node = node_id
+        .strip_prefix("p-")
+        .and_then(|rest| rest.split('-').next())
+        .and_then(|idx_str| idx_str.parse::<usize>().ok());
+
+    tracing::debug!(
+        node_id = %node_id,
+        utf16_offset = utf16_offset_in_container,
+        para_idx_from_node = ?para_idx_from_node,
+        num_paragraphs = paragraphs.len(),
+        "dom_position_to_text_offset: NO MAPPING FOUND - falling back"
+    );
+
+    // First try the paragraph that matches the node_id prefix.
+    if let Some(idx) = para_idx_from_node {
+        if let Some(para) = paragraphs.get(idx) {
+            if let Some(snapped) =
+                find_nearest_valid_position(&para.offset_map, para.char_range.start, direction_hint)
+            {
+                tracing::debug!(
+                    para_id = %para.id,
+                    snapped_offset = snapped.char_offset(),
+                    "dom_position_to_text_offset: fallback to matching paragraph"
+                );
+                return Some(snapped.char_offset());
+            }
+        }
+    }
+
+    // Last resort: try any paragraph (starting from first).
     for para in paragraphs {
         if let Some(snapped) =
             find_nearest_valid_position(&para.offset_map, para.char_range.start, direction_hint)
         {
+            tracing::debug!(
+                para_id = %para.id,
+                snapped_offset = snapped.char_offset(),
+                "dom_position_to_text_offset: fallback to first available paragraph"
+            );
             return Some(snapped.char_offset());
         }
     }

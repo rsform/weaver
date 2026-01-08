@@ -221,3 +221,11 @@ fn test_hard_break() {
     let output = render_markdown("line one  \nline two");
     insta::assert_yaml_snapshot!(output);
 }
+
+#[test]
+fn test_blank_lines_in_paragraph() {
+    // Text with ZWSP, then blank lines, then more text
+    // This tests the exact case causing cursor jump issues
+    let output = render_markdown("test\n\u{200B}d\n\n\ntsdsd");
+    insta::assert_yaml_snapshot!(output);
+}

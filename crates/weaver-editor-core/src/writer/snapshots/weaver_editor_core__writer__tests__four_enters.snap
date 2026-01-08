@@ -3,7 +3,7 @@ source: crates/weaver-editor-core/src/writer/tests.rs
 expression: output
 ---
 html_segments:
-  - "<span id=\"p-0-n0\">\n\n\n</span>"
+  - "<span id=\"p-0-n0\">​\n​\n​</span>"
   - "<span id=\"p-0-n1\">\n​</span>"
 paragraph_ranges:
   - byte_start: 0
@@ -15,11 +15,21 @@ paragraph_ranges:
     char_start: 3
     char_end: 4
 offset_maps:
-  - - byte_range: 0..3
-      char_range: 0..3
+  - - byte_range: 0..1
+      char_range: 0..1
       node_id: p-0-n0
       char_offset_in_node: 0
-      utf16_len: 3
+      utf16_len: 1
+    - byte_range: 1..2
+      char_range: 1..2
+      node_id: p-0-n0
+      char_offset_in_node: 1
+      utf16_len: 2
+    - byte_range: 2..3
+      char_range: 2..3
+      node_id: p-0-n0
+      char_offset_in_node: 3
+      utf16_len: 2
   - - byte_range: 3..4
       char_range: 3..4
       node_id: p-0-n1

@@ -4,7 +4,7 @@ expression: output
 ---
 html_segments:
   - "<p id=\"p-0-n0\" dir=\"ltr\">test\n</p>"
-  - "<span id=\"p-1-n0\">\n\n</span>"
+  - "<span id=\"p-1-n0\">​\n​</span>"
   - "<span id=\"p-1-n1\">\n​</span>"
 paragraph_ranges:
   - byte_start: 0
@@ -35,10 +35,15 @@ offset_maps:
       node_id: p-0-n0
       char_offset_in_node: 4
       utf16_len: 1
-  - - byte_range: 5..7
-      char_range: 5..7
+  - - byte_range: 5..6
+      char_range: 5..6
       node_id: p-1-n0
       char_offset_in_node: 0
+      utf16_len: 1
+    - byte_range: 6..7
+      char_range: 6..7
+      node_id: p-1-n0
+      char_offset_in_node: 1
       utf16_len: 2
   - - byte_range: 7..8
       char_range: 7..8

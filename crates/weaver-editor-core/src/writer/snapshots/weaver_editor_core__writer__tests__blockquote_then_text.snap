@@ -4,7 +4,7 @@ expression: output
 ---
 html_segments:
   - "<blockquote><p id=\"p-0-n0\" dir=\"ltr\"><span class=\"md-syntax-block\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\">&gt; </span>quote\n</p>"
-  - "</blockquote><span id=\"p-1-n0\">\n</span><p id=\"p-1-n1\" dir=\"ltr\">text after</p>"
+  - "</blockquote><span id=\"p-1-n0\">​</span><p id=\"p-1-n1\" dir=\"ltr\">text after</p>"
 paragraph_ranges:
   - byte_start: 0
     byte_end: 8

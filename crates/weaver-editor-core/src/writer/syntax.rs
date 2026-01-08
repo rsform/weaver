@@ -6,6 +6,7 @@ use std::ops::Range;
 use markdown_weaver::Event;
 use markdown_weaver_escape::{StrWrite, escape_html};
 
+use crate::offset_map::OffsetMapping;
 use crate::render::{EmbedContentProvider, ImageResolver, WikilinkValidator};
 use crate::syntax::{SyntaxSpanInfo, SyntaxType, classify_syntax};
 
@@ -41,7 +42,7 @@ where
                 let is_whitespace_only = syntax.trim().is_empty();
 
                 if is_whitespace_only {
-                    // Emit as plain text with tracking span (not hideable)
+                    // Check if we need to create a wrapper for standalone gap content.
                     let created_node = if self.current_node.id.is_none() {
                         let node_id = self.gen_node_id();
                         write!(&mut self.writer, "<span id=\"{}\">", node_id)?;
@@ -51,10 +52,65 @@ where
                         false
                     };
 
-                    escape_html(&mut self.writer, syntax)?;
+                    // Only convert newlines to <br /> when this is standalone gap content
+                    // (created_node = true). Inside paragraphs, keep newlines as-is.
+                    if created_node {
+                        // Gap content: the first newline is just the paragraph break (already
+                        // visual from div structure), so emit only ZWSP. Additional newlines
+                        // are actual blank lines, so emit <br /> + ZWSP for those.
+                        let mut byte_offset = range.start;
+                        let mut char_offset = char_start;
+                        let mut newline_count = 0usize;
+                        for ch in syntax.chars() {
+                            let char_byte_len = ch.len_utf8();
+                            if ch == '\n' {
+                                newline_count += 1;
+                                let utf16_len = if newline_count == 1 {
+                                    // First newline: just ZWSP (paragraph break is already visual).
+                                    self.write("\u{200B}")?;
+                                    1
+                                } else {
+                                    // Additional newlines: literal \n + ZWSP.
+                                    // CSS white-space-collapse: break-spaces handles the visual break.
+                                    self.write("\n\u{200B}")?;
+                                    2
+                                };
+                                if let Some(ref node_id) = self.current_node.id {
+                                    let mapping = OffsetMapping {
+                                        byte_range: byte_offset..byte_offset + char_byte_len,
+                                        char_range: char_offset..char_offset + 1,
+                                        node_id: node_id.clone(),
+                                        char_offset_in_node: self.current_node.char_offset,
+                                        child_index: None,
+                                        utf16_len,
+                                    };
+                                    self.current_para.offset_maps.push(mapping);
+                                    self.current_node.char_offset += utf16_len;
+                                }
+                            } else {
+                                escape_html(&mut self.writer, &ch.to_string())?;
+                                if let Some(ref node_id) = self.current_node.id {
+                                    let mapping = OffsetMapping {
+                                        byte_range: byte_offset..byte_offset + char_byte_len,
+                                        char_range: char_offset..char_offset + 1,
+                                        node_id: node_id.clone(),
+                                        char_offset_in_node: self.current_node.char_offset,
+                                        child_index: None,
+                                        utf16_len: 1,
+                                    };
+                                    self.current_para.offset_maps.push(mapping);
+                                    self.current_node.char_offset += 1;
+                                }
+                            }
+                            byte_offset += char_byte_len;
+                            char_offset += 1;
+                        }
+                    } else {
+                        // Inside a paragraph: emit whitespace as plain text.
+                        escape_html(&mut self.writer, syntax)?;
+                        self.record_mapping(range.clone(), char_start..char_end);
+                    }
 
-                    // Record offset mapping BEFORE end_node (which clears current_node.id)
-                    self.record_mapping(range.clone(), char_start..char_end);
                     self.last_char_offset = char_end;
                     self.last_byte_offset = range.end;
 
