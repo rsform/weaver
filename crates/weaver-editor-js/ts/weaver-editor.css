@@ -1,0 +1,272 @@
+/**
+ * Weaver Editor - Base Styles
+ *
+ * Core styles for the contenteditable editor.
+ * Host app should provide CSS variables for theming.
+ *
+ * Required CSS variables (Rose Pine defaults shown):
+ *   --color-base: #faf4ed
+ *   --color-surface: #fffaf3
+ *   --color-overlay: #f2e9e1
+ *   --color-text: #1f1d2e
+ *   --color-muted: #635e74
+ *   --color-subtle: #4a4560
+ *   --color-border: #908caa
+ *   --color-primary: #907aa9
+ *   --color-error: #b4637a
+ *   --font-body: serif stack
+ *   --font-heading: sans stack
+ *   --font-mono: monospace stack
+ *   --spacing-line-height: 1.6
+ */
+
+/* Editor container */
+.weaver-editor-content {
+    outline: none;
+    min-height: 1em;
+    line-height: var(--spacing-line-height, 1.6);
+    background: var(--color-base, #faf4ed);
+    color: var(--color-text, #1f1d2e);
+    font-family: var(--font-body, Georgia, serif);
+    /* break-spaces ensures trailing whitespace takes up space and allows cursor placement */
+    white-space-collapse: break-spaces;
+    /* Wrap long words/URLs only when they would overflow */
+    overflow-wrap: break-word;
+}
+
+.weaver-editor-content:focus {
+    outline: none;
+}
+
+/* Override default margins - break-spaces renders newlines visually */
+.weaver-editor-content p {
+    margin-bottom: 0 !important;
+}
+
+.weaver-editor-content h1,
+.weaver-editor-content h2,
+.weaver-editor-content h3,
+.weaver-editor-content h4,
+.weaver-editor-content h5,
+.weaver-editor-content h6 {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    font-family: var(--font-heading, system-ui, sans-serif);
+}
+
+.weaver-editor-content pre {
+    margin-bottom: 0 !important;
+}
+
+.weaver-editor-content blockquote {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+.weaver-editor-content ul,
+.weaver-editor-content ol {
+    margin-bottom: 0 !important;
+}
+
+/* ==========================================================================
+   Markdown Syntax Visibility
+   ========================================================================== */
+
+/* Inline syntax characters (**, *, ~~, `, etc) */
+.md-syntax-inline {
+    color: var(--color-muted, #635e74);
+    opacity: 0.6;
+}
+
+/* Block-level syntax characters (#, >, -, etc) */
+.md-syntax-block {
+    color: var(--color-muted, #635e74);
+    opacity: 0.7;
+    font-weight: normal;
+}
+
+/* Hidden syntax spans - collapsed when cursor is not near */
+.md-syntax-inline.hidden,
+.md-syntax-block.hidden,
+.image-alt.hidden,
+.math-source.hidden {
+    display: none;
+}
+
+/* Hide HTML list markers when markdown syntax is visible (not hidden) */
+/* This prevents double bullets/numbers when showing "- " or "1. " */
+li:has(.md-syntax-block:not(.hidden)) {
+    list-style-type: none;
+}
+
+/* ==========================================================================
+   Math
+   ========================================================================== */
+
+/* Math source is hidden by default, shown when syntax is visible */
+.math-source {
+    display: none;
+    color: var(--color-text, #1f1d2e);
+    font-family: var(--font-mono, Consolas, monospace);
+    white-space: pre-wrap;
+    background: color-mix(in srgb, var(--color-primary, #907aa9) 10%, transparent);
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+/* When syntax is visible (cursor nearby), show source too */
+.math-source:not(.hidden) {
+    display: inline;
+}
+
+/* Rendered math is always visible */
+.math-rendered {
+    display: inline;
+}
+
+.math-display.math-rendered {
+    display: block;
+    text-align: center;
+    margin: 0.5rem 0;
+}
+
+/* Clickable math - click to edit */
+.math-clickable {
+    cursor: pointer;
+}
+
+/* Math error styling */
+.math-error {
+    border: 1px dashed var(--color-error, #b4637a);
+    border-radius: 4px;
+    padding: 2px 6px;
+    background: color-mix(in srgb, var(--color-error, #b4637a) 10%, transparent);
+}
+
+.math-error code {
+    font-family: var(--font-mono, Consolas, monospace);
+    font-size: 0.9em;
+}
+
+/* ==========================================================================
+   Code
+   ========================================================================== */
+
+.weaver-editor-content code {
+    font-family: var(--font-mono, Consolas, monospace);
+    background: var(--color-overlay, #f2e9e1);
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+}
+
+.weaver-editor-content pre {
+    font-family: var(--font-mono, Consolas, monospace);
+    background: var(--color-overlay, #f2e9e1);
+    padding: 0.5em;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.weaver-editor-content pre code {
+    background: none;
+    padding: 0;
+}
+
+/* ==========================================================================
+   Links
+   ========================================================================== */
+
+.weaver-editor-content a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--color-muted, #635e74);
+}
+
+/* ==========================================================================
+   Blockquotes
+   ========================================================================== */
+
+.weaver-editor-content blockquote {
+    margin: 0;
+    padding-left: 1em;
+    border-left: 3px solid var(--color-border, #908caa);
+}
+
+/* ==========================================================================
+   Helpers
+   ========================================================================== */
+
+/* Cursor positioning helper after <br> */
+.br-cursor {
+    display: inline-block;
+    font-size: 0;
+    width: 0;
+    height: 1em;
+    line-height: 1em;
+    vertical-align: baseline;
+}
+
+/* ==========================================================================
+   Embeds
+   ========================================================================== */
+
+.weaver-editor-content .embed-placeholder {
+    background: var(--color-overlay, #f2e9e1);
+    border-radius: 4px;
+    padding: 0.5em;
+    display: block;
+}
+
+/* Pending image (before upload) */
+.weaver-editor-content .pending-image {
+    opacity: 0.7;
+    position: relative;
+}
+
+.weaver-editor-content .pending-image::after {
+    content: "Uploading...";
+    position: absolute;
+    bottom: 0.5em;
+    right: 0.5em;
+    background: var(--color-overlay, #f2e9e1);
+    color: var(--color-text, #1f1d2e);
+    padding: 0.2em 0.5em;
+    border-radius: 3px;
+    font-size: 0.8em;
+    border: 1px solid var(--color-border, #908caa);
+}
+
+/* ==========================================================================
+   Footnotes (Editor Mode)
+   ========================================================================== */
+
+/* Inline footnote reference [^name] */
+.footnote-ref {
+    font-family: var(--font-mono, Consolas, monospace);
+    font-size: 0.9rem;
+    color: var(--color-subtle, #4a4560);
+    background: color-mix(in srgb, var(--color-surface, #fffaf3) 10%, transparent);
+    padding: 0 2px;
+}
+
+/* Footnote definition wrapper */
+.footnote-def-editor {
+    margin-bottom: 1rem;
+    margin-top: -1rem;
+    margin-inline-start: 2rem;
+    padding: 0 0.5rem;
+    border-inline-start: 2px solid var(--color-border, #908caa);
+}
+
+/* The [^name]: prefix in definitions */
+.footnote-def-syntax {
+    font-family: var(--font-mono, Consolas, monospace);
+    font-size: 0.9rem;
+    color: var(--color-subtle, #4a4560);
+}
+
+/* Inner paragraphs in footnote defs */
+.footnote-def-editor p {
+    margin: 0;
+    display: inline;
+}

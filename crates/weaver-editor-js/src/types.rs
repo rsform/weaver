@@ -223,3 +223,40 @@ impl JsResolvedContent {
 pub fn create_resolved_content() -> JsResolvedContent {
     JsResolvedContent::new()
 }
+
+/// Rendered paragraph data exposed to JavaScript.
+#[derive(Debug, Clone, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct JsParagraphRender {
+    /// Stable ID for DOM element identity (e.g., "p-0", "p-1").
+    pub id: String,
+    /// Rendered HTML content (without wrapper div).
+    pub html: String,
+    /// Start character offset in the document.
+    pub char_start: usize,
+    /// End character offset in the document.
+    pub char_end: usize,
+}
+
+impl From<&weaver_editor_core::ParagraphRender> for JsParagraphRender {
+    fn from(p: &weaver_editor_core::ParagraphRender) -> Self {
+        Self {
+            id: p.id.to_string(),
+            html: p.html.clone(),
+            char_start: p.char_range.start,
+            char_end: p.char_range.end,
+        }
+    }
+}
+
+/// Result of a render operation.
+#[derive(Debug, Clone, Serialize, Deserialize, Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct JsRenderResult {
+    /// Rendered paragraphs.
+    pub paragraphs: Vec<JsParagraphRender>,
+    /// Collected AT URIs that need embed resolution.
+    pub pending_embeds: Vec<String>,
+}

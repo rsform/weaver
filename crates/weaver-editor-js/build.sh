@@ -71,41 +71,43 @@ generate_package_json() {
     "url": "https://tangled.org/nonbinary.computer/weaver"
   },
   "keywords": ["atproto", "markdown", "editor", "wasm", "weaver"],
-  "main": "nodejs/weaver_editor.js",
-  "module": "bundler/weaver_editor.js",
-  "browser": "web/weaver_editor.js",
-  "types": "bundler/weaver_editor.d.ts",
+  "main": "index.js",
+  "module": "index.js",
+  "types": "index.d.ts",
   "exports": {
     ".": {
-      "deno": "./deno/weaver_editor.js",
-      "node": {
-        "import": "./nodejs/weaver_editor.js",
-        "require": "./nodejs/weaver_editor.js"
-      },
-      "browser": {
-        "import": "./web/weaver_editor.js"
-      },
-      "default": "./bundler/weaver_editor.js"
+      "import": "./index.js",
+      "types": "./index.d.ts"
     },
-    "./bundler": {
+    "./types": {
+      "import": "./types.js",
+      "types": "./types.d.ts"
+    },
+    "./wasm/bundler": {
       "import": "./bundler/weaver_editor.js",
       "types": "./bundler/weaver_editor.d.ts"
     },
-    "./web": {
+    "./wasm/web": {
       "import": "./web/weaver_editor.js",
       "types": "./web/weaver_editor.d.ts"
     },
-    "./nodejs": {
+    "./wasm/nodejs": {
       "import": "./nodejs/weaver_editor.js",
       "require": "./nodejs/weaver_editor.js",
       "types": "./nodejs/weaver_editor.d.ts"
     },
-    "./deno": {
+    "./wasm/deno": {
       "import": "./deno/weaver_editor.js",
       "types": "./deno/weaver_editor.d.ts"
-    }
+    },
+    "./weaver-editor.css": "./weaver-editor.css"
   },
   "files": [
+    "index.js",
+    "index.d.ts",
+    "types.js",
+    "types.d.ts",
+    "weaver-editor.css",
     "bundler/",
     "web/",
     "nodejs/",
@@ -123,7 +125,7 @@ generate_readme() {
     cat > "${out_dir}/README.md" << 'EOF'
 # @weaver.sh/editor
 
-WASM-based markdown editor for the weaver.sh ecosystem.
+WASM-based markdown editor for weaver.sh.
 
 ## Installation
 
@@ -191,6 +193,36 @@ See the TypeScript definitions for full API documentation.
 EOF
 }
 
+build_typescript() {
+    echo "Building TypeScript wrapper..."
+
+    # Install deps if needed
+    if [[ ! -d "ts/node_modules" ]]; then
+        (cd ts && npm install)
+    fi
+
+    # Link WASM output so TypeScript can find it during compilation
+    # Use core/bundler as the source (all variants have same API)
+    rm -rf ts/bundler
+    ln -s ../pkg/core/bundler ts/bundler
+
+    # Compile TypeScript
+    (cd ts && npm run build)
+
+    # Copy to pkg variants
+    for variant in "${!VARIANTS[@]}"; do
+        local out_dir="pkg/${variant}"
+
+        # Copy compiled JS/TS
+        cp -r ts/dist/* "${out_dir}/"
+
+        # Copy CSS
+        cp ts/weaver-editor.css "${out_dir}/"
+    done
+
+    echo "  → TypeScript wrapper built"
+}
+
 do_build() {
     # Clean previous builds
     rm -rf pkg
@@ -213,6 +245,9 @@ do_build() {
         find "pkg/${variant}" -name "package.json" -path "*/nodejs/*" -delete
         find "pkg/${variant}" -name "package.json" -path "*/deno/*" -delete
     done
+
+    # Build TypeScript wrapper
+    build_typescript
 
     echo ""
     echo "Build complete!"

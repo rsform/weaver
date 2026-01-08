@@ -9,6 +9,7 @@
 
 mod actions;
 mod editor;
+mod events;
 mod types;
 
 #[cfg(feature = "collab")]

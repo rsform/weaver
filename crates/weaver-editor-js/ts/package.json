@@ -1,0 +1,40 @@
+{
+  "name": "@weaver.sh/editor-core",
+  "version": "0.1.0",
+  "description": "Embeddable markdown editor for Weaver.sh",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "pkg"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:wasm": "cd .. && ./build.sh",
+    "build:all": "npm run build:wasm && npm run build",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://tangled.org/nonbinary.computer/weaver"
+  },
+  "license": "MIT",
+  "keywords": [
+    "markdown",
+    "editor",
+    "atproto",
+    "weaver"
+  ]
+}
