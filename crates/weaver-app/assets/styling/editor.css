@@ -161,6 +161,8 @@
     color: var(--color-text);
     /* break-spaces ensures trailing whitespace takes up space and allows cursor placement */
     white-space-collapse: break-spaces;
+    /* Wrap long words/URLs only when they would overflow */
+    overflow-wrap: break-word;
 }
 
 .editor-content:focus {
