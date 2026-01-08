@@ -270,3 +270,51 @@ li:has(.md-syntax-block:not(.hidden)) {
     margin: 0;
     display: inline;
 }
+
+/* ==========================================================================
+   Remote Cursors (Collaborative Editing)
+   ========================================================================== */
+
+.remote-cursors-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.remote-cursor {
+    position: absolute;
+    pointer-events: none;
+}
+
+.remote-cursor-caret {
+    width: 2px;
+    height: var(--cursor-height, 1.2em);
+    background-color: var(--cursor-color, #907aa9);
+    border-radius: 1px;
+}
+
+.remote-cursor-label {
+    position: absolute;
+    top: -1.4em;
+    left: 0;
+    background-color: var(--cursor-color, #907aa9);
+    color: white;
+    font-size: 0.7rem;
+    font-family: var(--font-heading, system-ui, sans-serif);
+    padding: 1px 4px;
+    border-radius: 3px 3px 3px 0;
+    white-space: nowrap;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.remote-selection {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 2px;
+}

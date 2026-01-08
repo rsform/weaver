@@ -193,9 +193,9 @@
       "node_type": "goal",
       "title": "Extract editor for external embedding",
       "description": null,
-      "status": "pending",
+      "status": "completed",
       "created_at": "2026-01-06T09:31:48.503441901-05:00",
-      "updated_at": "2026-01-06T09:31:48.503441901-05:00",
+      "updated_at": "2026-01-07T23:38:42.714996004-05:00",
       "metadata_json": "{\"confidence\":90,\"prompt\":\"Extract the weaver markdown editor into a standalone, embeddable package. Target consumers: external apps (MTG deckbuilder, etc.) via JS/WASM, weaver-app itself (dogfooding, potential framework migration), future native apps via Rust crate. Host app controls auth, blob uploads, collab transport, publishing. Clean crate boundary: core (pure Rust, no web_sys/dioxus/loro), crdt (optional Loro), browser (web_sys DOM layer), js (thin wrapper).\"}"
     },
     {
@@ -2342,6 +2342,94 @@
       "created_at": "2026-01-07T21:16:07.366725128-05:00",
       "updated_at": "2026-01-07T21:16:07.366725128-05:00",
       "metadata_json": "{\"confidence\":20}"
+    },
+    {
+      "id": 215,
+      "change_id": "272d70eb-369a-472a-ab0c-428307af6fdb",
+      "node_type": "goal",
+      "title": "weaver-editor-js: JS wrapper crate for embeddable markdown editor",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:33:34.663844477-05:00",
+      "updated_at": "2026-01-07T21:33:34.663844477-05:00",
+      "metadata_json": "{\"confidence\":80,\"prompt\":\"User: wrap weaver-editor-core and weaver-editor-browser to produce viable js markdown editor that someone can embed in their app. option to produce actual weaver entry records. doesn't have to have draft sync/crdt features initially, but good to add later.\"}"
+    },
+    {
+      "id": 216,
+      "change_id": "ff9e4eb6-8e48-4100-9347-d56f43fc2f2c",
+      "node_type": "action",
+      "title": "Scaffold weaver-editor-js crate with WASM bindings and build infrastructure",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:38:46.201816829-05:00",
+      "updated_at": "2026-01-07T21:38:46.201816829-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 217,
+      "change_id": "9fe541b0-6ef1-45ed-b7ec-899cfff592fa",
+      "node_type": "action",
+      "title": "Implementing weaver-editor-js collab bindings",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T23:00:57.453624229-05:00",
+      "updated_at": "2026-01-07T23:00:57.453624229-05:00",
+      "metadata_json": "{\"confidence\":85,\"prompt\":\"User requested: add collab feature to weaver-editor-js package\"}"
+    },
+    {
+      "id": 218,
+      "change_id": "3a37d12b-515d-489b-bada-5b68031d06ab",
+      "node_type": "outcome",
+      "title": "Collab feature implemented: JsCollabEditor with LoroTextBuffer, TypeScript wrapper, build.sh updated",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T23:13:44.341644498-05:00",
+      "updated_at": "2026-01-07T23:13:44.341644498-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 219,
+      "change_id": "0d728b4f-f6d0-4d9b-bef7-f25efde4ba3c",
+      "node_type": "outcome",
+      "title": "weaver-editor-js complete - WASM + TypeScript bindings with collab support",
+      "description": null,
+      "status": "completed",
+      "created_at": "2026-01-07T23:38:17.410248547-05:00",
+      "updated_at": "2026-01-07T23:38:47.052805556-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 220,
+      "change_id": "c644aef5-81e5-425e-8c68-ded06421a00c",
+      "node_type": "action",
+      "title": "Implemented WorkerBridge for EditorReactor P2P communication",
+      "description": null,
+      "status": "completed",
+      "created_at": "2026-01-07T23:38:17.429184305-05:00",
+      "updated_at": "2026-01-07T23:38:47.069726089-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 221,
+      "change_id": "7d545b61-3931-424a-843d-de9a94a02c76",
+      "node_type": "action",
+      "title": "Implemented remote cursor overlay with presence rendering",
+      "description": null,
+      "status": "completed",
+      "created_at": "2026-01-07T23:38:17.572928071-05:00",
+      "updated_at": "2026-01-07T23:38:47.085561079-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 222,
+      "change_id": "4f9d8d6e-7314-4469-9335-ce45cabaef3a",
+      "node_type": "observation",
+      "title": "Next step: atcute integration for ergonomic API (callbacks → automatic session/peer discovery)",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T23:38:17.591489488-05:00",
+      "updated_at": "2026-01-07T23:38:17.591489488-05:00",
+      "metadata_json": "{\"confidence\":80}"
     }
   ],
   "edges": [
@@ -4643,6 +4731,83 @@
       "weight": 1.0,
       "rationale": "Fixed overflow",
       "created_at": "2026-01-07T21:16:32.861314215-05:00"
+    },
+    {
+      "id": 211,
+      "from_node_id": 18,
+      "to_node_id": 215,
+      "from_change_id": "fa554b5d-8af7-42e4-b03f-e5bec837e31a",
+      "to_change_id": "272d70eb-369a-472a-ab0c-428307af6fdb",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "JS wrapper is how we extract editor for external embedding",
+      "created_at": "2026-01-07T21:33:39.411164620-05:00"
+    },
+    {
+      "id": 212,
+      "from_node_id": 18,
+      "to_node_id": 217,
+      "from_change_id": "fa554b5d-8af7-42e4-b03f-e5bec837e31a",
+      "to_change_id": "9fe541b0-6ef1-45ed-b7ec-899cfff592fa",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Collab feature for JS editor package",
+      "created_at": "2026-01-07T23:01:02.947287990-05:00"
+    },
+    {
+      "id": 213,
+      "from_node_id": 217,
+      "to_node_id": 218,
+      "from_change_id": "9fe541b0-6ef1-45ed-b7ec-899cfff592fa",
+      "to_change_id": "3a37d12b-515d-489b-bada-5b68031d06ab",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implementation completed successfully",
+      "created_at": "2026-01-07T23:13:47.972988882-05:00"
+    },
+    {
+      "id": 214,
+      "from_node_id": 18,
+      "to_node_id": 219,
+      "from_change_id": "fa554b5d-8af7-42e4-b03f-e5bec837e31a",
+      "to_change_id": "0d728b4f-f6d0-4d9b-bef7-f25efde4ba3c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Goal achieved - editor now embeddable via npm package",
+      "created_at": "2026-01-07T23:38:25.139758976-05:00"
+    },
+    {
+      "id": 215,
+      "from_node_id": 55,
+      "to_node_id": 220,
+      "from_change_id": "77a50102-1dc0-4009-9715-5c8644745be1",
+      "to_change_id": "c644aef5-81e5-425e-8c68-ded06421a00c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Worker design realized in TypeScript WorkerBridge",
+      "created_at": "2026-01-07T23:38:25.157249447-05:00"
+    },
+    {
+      "id": 216,
+      "from_node_id": 77,
+      "to_node_id": 221,
+      "from_change_id": "ef6e7454-2d97-4fe9-97a8-76c2486cf076",
+      "to_change_id": "7d545b61-3931-424a-843d-de9a94a02c76",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "P2P collab now includes cursor/presence rendering",
+      "created_at": "2026-01-07T23:38:25.191178058-05:00"
+    },
+    {
+      "id": 217,
+      "from_node_id": 219,
+      "to_node_id": 222,
+      "from_change_id": "0d728b4f-f6d0-4d9b-bef7-f25efde4ba3c",
+      "to_change_id": "4f9d8d6e-7314-4469-9335-ce45cabaef3a",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Identifies next enhancement for editor-js",
+      "created_at": "2026-01-07T23:38:25.207053545-05:00"
     }
   ]
 }

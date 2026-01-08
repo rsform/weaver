@@ -85,6 +85,24 @@ export interface EntryJson {
     contentWarnings?: string[];
     rating?: string;
 }
+/** Selection range in the editor. */
+export interface Selection {
+    anchor: number;
+    head: number;
+}
+/** Cursor rectangle for positioning. */
+export interface CursorRect {
+    x: number;
+    y: number;
+    height: number;
+}
+/** Selection rectangle for highlighting. */
+export interface SelectionRect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
 /** Rendered paragraph data. */
 export interface ParagraphRender {
     id: string;
@@ -175,6 +193,69 @@ export interface EditorConfig {
 export interface ResolvedContent {
     /** Map of AT URI -> rendered HTML. */
     embeds: Map<string, string>;
+}
+/** Session info for collab (from worker). */
+export interface SessionInfo {
+    nodeId: string;
+    relayUrl: string | null;
+}
+/** Peer info for collab. */
+export interface PeerInfo {
+    nodeId: string;
+    did?: string;
+    displayName?: string;
+}
+/** Collaborator presence info. */
+export interface CollaboratorInfo {
+    nodeId: string;
+    did: string;
+    displayName: string;
+    color: number;
+    cursorPosition?: number;
+    selection?: [number, number];
+}
+/** Presence state snapshot. */
+export interface PresenceSnapshot {
+    collaborators: CollaboratorInfo[];
+    peerCount: number;
+}
+/** User info for collab presence. */
+export interface UserInfo {
+    did: string;
+    displayName: string;
+}
+/** Configuration for creating a collab editor. */
+export interface CollabEditorConfig extends EditorConfig {
+    /** Resource URI (AT URI of entry/draft being edited). */
+    resourceUri: string;
+    /** Initial Loro snapshot bytes (optional). */
+    initialLoroSnapshot?: Uint8Array;
+    /** Called when a session record needs to be created on PDS. */
+    onSessionNeeded?: (session: SessionInfo) => Promise<string>;
+    /** Called to refresh session record periodically. */
+    onSessionRefresh?: (sessionUri: string) => Promise<void>;
+    /** Called when session ends (delete record). */
+    onSessionEnd?: (sessionUri: string) => Promise<void>;
+    /** Called to discover peers from PDS/index. */
+    onPeersNeeded?: (resourceUri: string) => Promise<PeerInfo[]>;
+    /** Called when presence state changes. */
+    onPresenceChanged?: (presence: PresenceSnapshot) => void;
+    /** Called to get current user info for presence announcements. */
+    onUserInfoNeeded?: () => Promise<UserInfo>;
+}
+/** Collab editor interface (extends Editor). */
+export interface CollabEditor extends Editor {
+    exportSnapshot(): Uint8Array;
+    exportUpdatesSince(version: Uint8Array): Uint8Array | null;
+    importUpdates(data: Uint8Array): void;
+    getVersion(): Uint8Array;
+    getCollabTopic(): Uint8Array | null;
+    getResourceUri(): string;
+    startCollab(bootstrapPeers?: string[]): Promise<void>;
+    stopCollab(): Promise<void>;
+    addPeers(nodeIds: string[]): void;
+    getCursorRectRelative(position: number): CursorRect | null;
+    getSelectionRectsRelative(start: number, end: number): SelectionRect[];
 }
 /** Editor interface. */
 export interface Editor {

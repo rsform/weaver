@@ -520,3 +520,6 @@ class EditorImpl implements Editor {
     }
   }
 }
+
+// Re-export collab module
+export { createCollabEditor, initCollabWasm } from "./collab";

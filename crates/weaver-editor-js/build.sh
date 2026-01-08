@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PKG_NAME="@weaver.sh/editor"
-PKG_VERSION="0.1.0"
+PKG_VERSION="0.1.1"
 
 # Targets to build
 TARGETS=(bundler web nodejs deno)
@@ -60,6 +60,18 @@ generate_package_json() {
         description="Weaver markdown editor (local editing, lightweight)"
     fi
 
+    # Worker export only for collab variant
+    local worker_export=""
+    local worker_files=""
+    if [[ "$variant" == "collab" ]]; then
+        worker_export=',
+    "./worker": {
+      "import": "./worker/editor_worker.js"
+    }'
+        worker_files=',
+    "worker/"'
+    fi
+
     cat > "${out_dir}/package.json" << EOF
 {
   "name": "${PKG_NAME}${pkg_suffix}",
@@ -100,7 +112,7 @@ generate_package_json() {
       "import": "./deno/weaver_editor.js",
       "types": "./deno/weaver_editor.d.ts"
     },
-    "./weaver-editor.css": "./weaver-editor.css"
+    "./weaver-editor.css": "./weaver-editor.css"${worker_export}
   },
   "files": [
     "index.js",
@@ -112,7 +124,7 @@ generate_package_json() {
     "web/",
     "nodejs/",
     "deno/",
-    "README.md"
+    "README.md"${worker_files}
   ]
 }
 EOF
@@ -193,6 +205,41 @@ See the TypeScript definitions for full API documentation.
 EOF
 }
 
+build_worker() {
+    echo "Building editor worker WASM..."
+
+    # Build the worker binary from weaver-editor-crdt
+    # Must be in workspace root for cargo to find the crate
+    local workspace_root="$(cd ../.. && pwd)"
+
+    export RUSTFLAGS='--cfg getrandom_backend="wasm_js"'
+
+    (cd "$workspace_root" && cargo build \
+        -p weaver-editor-crdt \
+        --bin editor_worker \
+        --target wasm32-unknown-unknown \
+        --release \
+        --features collab)
+
+    # Create worker output directory
+    local worker_out="pkg/collab/worker"
+    mkdir -p "$worker_out"
+
+    # Run wasm-bindgen with no-modules target for web worker compatibility
+    wasm-bindgen \
+        "$workspace_root/target/wasm32-unknown-unknown/release/editor_worker.wasm" \
+        --out-dir "$worker_out" \
+        --target no-modules \
+        --no-typescript
+
+    # Report size
+    local wasm_file="${worker_out}/editor_worker_bg.wasm"
+    if [[ -f "$wasm_file" ]]; then
+        local size=$(ls -lh "$wasm_file" | awk '{print $5}')
+        echo "  → Worker WASM: ${size}"
+    fi
+}
+
 build_typescript() {
     echo "Building TypeScript wrapper..."
 
@@ -202,9 +249,10 @@ build_typescript() {
     fi
 
     # Link WASM output so TypeScript can find it during compilation
-    # Use core/bundler as the source (all variants have same API)
+    # Use collab/bundler as source - it has all exports (JsCollabEditor + JsEditor)
+    # Core variant users who import collab will get runtime error, which is expected
     rm -rf ts/bundler
-    ln -s ../pkg/core/bundler ts/bundler
+    ln -s ../pkg/collab/bundler ts/bundler
 
     # Compile TypeScript
     (cd ts && npm run build)
@@ -246,13 +294,20 @@ do_build() {
         find "pkg/${variant}" -name "package.json" -path "*/deno/*" -delete
     done
 
+    # Build worker WASM for collab variant
+    build_worker
+
     # Build TypeScript wrapper
     build_typescript
 
     echo ""
     echo "Build complete!"
     echo ""
+    echo "Editor WASM:"
     ls -lh pkg/core/web/*.wasm pkg/collab/web/*.wasm 2>/dev/null || true
+    echo ""
+    echo "Worker WASM (collab only):"
+    ls -lh pkg/collab/worker/*.wasm 2>/dev/null || true
     echo ""
     echo "Packages:"
     echo "  pkg/core/   - @weaver.sh/editor-core (local editing)"

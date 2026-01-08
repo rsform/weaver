@@ -88,4 +88,5 @@ export declare function initWasm(): Promise<WasmModule>;
  * Create a new editor instance.
  */
 export declare function createEditor(config: EditorConfig): Promise<Editor>;
+export { createCollabEditor, initCollabWasm } from "./collab";
 //# sourceMappingURL=index.d.ts.map
