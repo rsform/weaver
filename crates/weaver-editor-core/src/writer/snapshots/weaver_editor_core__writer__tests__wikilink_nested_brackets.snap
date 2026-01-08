@@ -1,0 +1,33 @@
+---
+source: crates/weaver-editor-core/src/writer/tests.rs
+expression: output
+---
+html_segments:
+  - "<p id=\"p-0-n0\"><span class=\"md-syntax-inline\" data-syn-id=\"s0\" data-char-start=\"0\" data-char-end=\"2\">[[</span><a class=\"link\" href=\"%5D%5B\">][</a><span class=\"md-syntax-inline\" data-syn-id=\"s1\" data-char-start=\"4\" data-char-end=\"6\" spellcheck=\"false\">]]</span></p>"
+paragraph_ranges:
+  - byte_start: 0
+    byte_end: 6
+    char_start: 0
+    char_end: 6
+offset_maps:
+  - - byte_range: 0..0
+      char_range: 0..0
+      node_id: p-0-n0
+      char_offset_in_node: 0
+      utf16_len: 0
+    - byte_range: 0..2
+      char_range: 0..2
+      node_id: p-0-n0
+      char_offset_in_node: 0
+      utf16_len: 2
+    - byte_range: 2..4
+      char_range: 2..4
+      node_id: p-0-n0
+      char_offset_in_node: 2
+      utf16_len: 2
+    - byte_range: 4..6
+      char_range: 4..6
+      node_id: p-0-n0
+      char_offset_in_node: 4
+      utf16_len: 2
+  - []

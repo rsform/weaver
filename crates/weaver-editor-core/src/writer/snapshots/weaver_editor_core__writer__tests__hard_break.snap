@@ -1,0 +1,37 @@
+---
+source: crates/weaver-editor-core/src/writer/tests.rs
+expression: output
+---
+html_segments:
+  - "<p id=\"p-0-n0\" dir=\"ltr\">line one<span class=\"md-placeholder\" data-syn-id=\"s0\" data-char-start=\"8\" data-char-end=\"10\">  </span><br />​line two</p>"
+paragraph_ranges:
+  - byte_start: 0
+    byte_end: 19
+    char_start: 0
+    char_end: 19
+offset_maps:
+  - - byte_range: 0..0
+      char_range: 0..0
+      node_id: p-0-n0
+      char_offset_in_node: 0
+      utf16_len: 0
+    - byte_range: 0..8
+      char_range: 0..8
+      node_id: p-0-n0
+      char_offset_in_node: 0
+      utf16_len: 8
+    - byte_range: 8..10
+      char_range: 8..10
+      node_id: p-0-n0
+      char_offset_in_node: 8
+      utf16_len: 2
+    - byte_range: 10..11
+      char_range: 10..11
+      node_id: p-0-n0
+      char_offset_in_node: 10
+      utf16_len: 1
+    - byte_range: 11..19
+      char_range: 11..19
+      node_id: p-0-n0
+      char_offset_in_node: 11
+      utf16_len: 8

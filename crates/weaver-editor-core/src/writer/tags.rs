@@ -232,25 +232,12 @@ where
                 }
                 self.begin_node(node_id.clone());
 
-                // Map the start position of the paragraph (before any content)
-                // This allows cursor to be placed at the very beginning
-                let para_start_char = self.last_char_offset;
-                let mapping = OffsetMapping {
-                    byte_range: range.start..range.start,
-                    char_range: para_start_char..para_start_char,
-                    node_id,
-                    char_offset_in_node: 0,
-                    child_index: Some(0), // position before first child
-                    utf16_len: 0,
-                };
-                self.current_para.offset_maps.push(mapping);
-
-                // Emit > syntax if we're inside a blockquote
+                // Emit > syntax if we're inside a blockquote (BEFORE start mapping)
                 if let Some(bq_range) = self.pending_blockquote_range.take() {
                     if bq_range.start < bq_range.end {
                         let raw_text = &self.source[bq_range.clone()];
                         if let Some(gt_pos) = raw_text.find('>') {
-                            // Extract > [!NOTE] or just >
+                            // Extract "> " or "> [!NOTE]" etc
                             let after_gt = &raw_text[gt_pos + 1..];
                             let syntax_end = if after_gt.trim_start().starts_with("[!") {
                                 // Find the closing ]
@@ -260,8 +247,12 @@ where
                                     gt_pos + 1
                                 }
                             } else {
-                                // Just > and maybe a space
-                                (gt_pos + 1).min(raw_text.len())
+                                // Include > and the space after it (for consistent hiding)
+                                if after_gt.starts_with(' ') {
+                                    gt_pos + 2 // "> "
+                                } else {
+                                    gt_pos + 1 // just ">"
+                                }
                             };
 
                             let syntax = &raw_text[gt_pos..syntax_end];
@@ -270,6 +261,21 @@ where
                         }
                     }
                 }
+
+                // Map the start position of the paragraph (after blockquote marker if any)
+                // This allows cursor to be placed at the start of actual content
+                let para_start_byte = self.last_byte_offset;
+                let para_start_char = self.last_char_offset;
+                let mapping = OffsetMapping {
+                    byte_range: para_start_byte..para_start_byte,
+                    char_range: para_start_char..para_start_char,
+                    node_id,
+                    char_offset_in_node: self.current_node.char_offset,
+                    child_index: Some(self.current_node.child_count),
+                    utf16_len: 0,
+                };
+                self.current_para.offset_maps.push(mapping);
+
                 Ok(())
             }
             Tag::Heading {
@@ -1466,6 +1472,10 @@ where
                         syntax_type: SyntaxType::Inline,
                         formatted_range: None, // Will be set by finalize
                     });
+
+                    // Record offset mapping for the ]]
+                    let byte_start = range.end - 2; // ]] is 2 bytes
+                    self.record_mapping(byte_start..range.end, char_start..char_end);
 
                     self.last_char_offset = char_end;
                     self.last_byte_offset = range.end;

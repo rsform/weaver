@@ -38,9 +38,9 @@ where
             // For End events, emit any trailing content within the event's range
             // BEFORE calling end_tag (which calls end_node and clears current_node_id)
             //
-            // EXCEPTION: For inline formatting tags (Strong, Emphasis, Strikethrough),
+            // EXCEPTION: For inline formatting tags (Strong, Emphasis, Strikethrough, Link),
             // the closing syntax must be emitted AFTER the closing HTML tag, not before.
-            // Otherwise the closing `**` span ends up INSIDE the <strong> element.
+            // Otherwise the closing `**` or `]]` span ends up INSIDE the element.
             // These tags handle their own closing syntax in end_tag().
             // Image and Embed handle ALL their syntax in the Start event, so exclude them too.
             let is_self_handled_end = matches!(
@@ -49,6 +49,7 @@ where
                     TagEnd::Strong
                         | TagEnd::Emphasis
                         | TagEnd::Strikethrough
+                        | TagEnd::Link
                         | TagEnd::Image
                         | TagEnd::Embed
                 )
@@ -60,6 +61,8 @@ where
             } else if !matches!(&event, Event::End(_)) {
                 // For paragraph-level start events, capture pre-gap position so the
                 // paragraph's char_range includes leading whitespace/gap content.
+                // Note: BlockQuote is NOT included - it defers `>` syntax to emit inside
+                // the next paragraph via pending_blockquote_range.
                 let is_para_start = matches!(
                     &event,
                     Event::Start(
@@ -67,7 +70,7 @@ where
                             | Tag::Heading { .. }
                             | Tag::CodeBlock(_)
                             | Tag::List(_)
-                            | Tag::BlockQuote(_)
+                            | Tag::FootnoteDefinition(_)
                             | Tag::HtmlBlock
                     )
                 );
@@ -78,23 +81,47 @@ where
 
                 // For other events, emit any gap before range.start
                 // (emit_syntax handles char offset tracking)
-                self.emit_gap_before(range.start)?;
+                //
+                // EXCEPTION: For Paragraph starts when we have pending_blockquote_range,
+                // skip gap emission here - the Paragraph handler will emit the `>` marker
+                // inside the <p> tag so it gets proper visibility toggling.
+                let skip_gap_for_blockquote = matches!(&event, Event::Start(Tag::Paragraph(_)))
+                    && self.pending_blockquote_range.is_some();
+                if !skip_gap_for_blockquote {
+                    self.emit_gap_before(range.start)?;
+                }
             }
             // For inline format End events, gap is emitted inside end_tag() AFTER the closing HTML
 
             // Store last_byte before processing
             let last_byte_before = self.last_byte_offset;
 
+            // Check if this is a container start - container ranges span their entire content,
+            // so we should NOT jump last_byte_offset to range.end for these.
+            let is_container_start = matches!(
+                &event,
+                Event::Start(
+                    Tag::BlockQuote(_)
+                        | Tag::List(_)
+                        | Tag::Item
+                        | Tag::Table(_)
+                        | Tag::TableHead
+                        | Tag::TableRow
+                        | Tag::TableCell
+                        | Tag::FootnoteDefinition(_)
+                )
+            );
+
             // Process the event (passing range for tag syntax)
             self.process_event(event, range.clone())?;
 
-            // Update tracking - but don't override if start_tag manually updated it
-            // (for inline formatting tags that emit opening syntax)
-            if self.last_byte_offset == last_byte_before {
-                // Event didn't update offset, so we update it
+            // Update tracking - but don't override if:
+            // 1. start_tag manually updated it (for inline formatting tags that emit opening syntax)
+            // 2. This is a container start (range.end is end of whole container, not current position)
+            if self.last_byte_offset == last_byte_before && !is_container_start {
                 self.last_byte_offset = range.end;
             }
-            // else: Event updated offset (e.g. start_tag emitted opening syntax), keep that value
+            // else: Event updated offset, or it's a container - keep current value
         }
 
         // Check if document ends with a paragraph break (double newline) BEFORE emitting trailing.
@@ -164,6 +191,29 @@ where
             || !self.current_para.syntax_spans.is_empty()
             || !self.ref_collector.refs.is_empty()
         {
+            // If we have offset_maps but no paragraph range was recorded (e.g., pure newlines
+            // with no actual paragraph from the parser), synthesize a range from the maps.
+            if !self.current_para.offset_maps.is_empty() {
+                let maps = &self.current_para.offset_maps;
+                let byte_start = maps.iter().map(|m| m.byte_range.start).min().unwrap_or(0);
+                let byte_end = maps.iter().map(|m| m.byte_range.end).max().unwrap_or(0);
+                let char_start = maps.iter().map(|m| m.char_range.start).min().unwrap_or(0);
+                let char_end = maps.iter().map(|m| m.char_range.end).max().unwrap_or(0);
+
+                // Only add if we have actual content and no range was already recorded
+                if byte_end > byte_start
+                    && self
+                        .paragraphs
+                        .ranges
+                        .last()
+                        .is_none_or(|(br, _)| br.end <= byte_start)
+                {
+                    self.paragraphs
+                        .ranges
+                        .push((byte_start..byte_end, char_start..char_end));
+                }
+            }
+
             self.offset_maps_by_para
                 .push(std::mem::take(&mut self.current_para.offset_maps));
             self.syntax_spans_by_para

@@ -8,6 +8,8 @@ mod events;
 mod state;
 mod syntax;
 mod tags;
+#[cfg(test)]
+mod tests;
 
 pub use embed::EditorImageResolver;
 pub use state::*;

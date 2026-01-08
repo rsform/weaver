@@ -37,3 +37,5 @@ syntect = { workspace = true, default-features = false, features = [
 ] }
 
 [dev-dependencies]
+insta = { version = "1.40", features = ["yaml"] }
+serde = { workspace = true, features = ["derive"] }

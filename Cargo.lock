@@ -12260,6 +12260,7 @@ dependencies = [
  "dioxus-web 0.7.2",
  "gloo-events",
  "gloo-utils",
+ "insta",
  "js-sys",
  "smol_str",
  "tracing",
@@ -12274,10 +12275,12 @@ dependencies = [
 name = "weaver-editor-core"
 version = "0.1.0"
 dependencies = [
+ "insta",
  "jacquard",
  "markdown-weaver",
  "markdown-weaver-escape",
  "ropey",
+ "serde",
  "smol_str",
  "syntect",
  "thiserror 2.0.17",

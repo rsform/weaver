@@ -2089,6 +2089,149 @@
       "created_at": "2026-01-07T12:04:06.226305951-05:00",
       "updated_at": "2026-01-07T12:04:06.226305951-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 192,
+      "change_id": "656d5c9e-947a-44ce-ae7c-22a804bb7a4c",
+      "node_type": "observation",
+      "title": "Wikilink cursor jump: typing [[word]] then ]] then arrow right moves cursor to higher line",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:16.736874380-05:00",
+      "updated_at": "2026-01-07T18:18:16.736874380-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 193,
+      "change_id": "30fe17ef-81e2-44c9-a9fc-94cd6cbc6d88",
+      "node_type": "observation",
+      "title": "Bonus ]] appears when clicking inside wikilinks",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:16.903055659-05:00",
+      "updated_at": "2026-01-07T18:18:16.903055659-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 194,
+      "change_id": "b5a4ab60-5990-44a0-bc58-5b8deaa828a3",
+      "node_type": "observation",
+      "title": "Select all (Ctrl+A) then delete doesn't work - Ctrl+A doesn't select anything",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:17.052526312-05:00",
+      "updated_at": "2026-01-07T18:18:17.052526312-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 195,
+      "change_id": "cd8b0c43-931d-42aa-94ee-94abc5242fec",
+      "node_type": "observation",
+      "title": "Selecting and deleting a link deletes everything BUT the link",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:17.204173140-05:00",
+      "updated_at": "2026-01-07T18:18:17.204173140-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 196,
+      "change_id": "f93d206d-c992-42dd-9fda-fb33d3119671",
+      "node_type": "observation",
+      "title": "Enter 4+ times: 4th enter moves cursor backwards 2 lines (related to trailing para fix?)",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:17.358870318-05:00",
+      "updated_at": "2026-01-07T18:18:17.358870318-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 197,
+      "change_id": "553c2a51-548c-486e-bbfc-5eec7659bca5",
+      "node_type": "observation",
+      "title": "Arrow keys in many blank lines jumps cursor all the way up",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:17.525602548-05:00",
+      "updated_at": "2026-01-07T18:18:17.525602548-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 198,
+      "change_id": "aed63653-1a44-4cf6-91d7-55ad805e333e",
+      "node_type": "observation",
+      "title": "Long lines without breaks overflow right side - no horizontal scroll",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:26.175916664-05:00",
+      "updated_at": "2026-01-07T18:18:26.175916664-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 199,
+      "change_id": "383df748-e034-41c1-a740-6f581b9d6221",
+      "node_type": "observation",
+      "title": "Double return on last line: returns once, second time makes text invisible",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:26.336486862-05:00",
+      "updated_at": "2026-01-07T18:18:26.336486862-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 200,
+      "change_id": "ee54235d-7bf4-452e-90d2-b44a2357fac5",
+      "node_type": "observation",
+      "title": "Cannot type on right side of blockquote (>) - cursor always ends up on left",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:26.519741428-05:00",
+      "updated_at": "2026-01-07T18:18:26.519741428-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 201,
+      "change_id": "1ed799fc-2aaa-4262-b5bb-18c562f18c64",
+      "node_type": "observation",
+      "title": "Nested link structures like [[][]] cause rendering/cursor trouble - partial links inside full links",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:26.679585456-05:00",
+      "updated_at": "2026-01-07T18:18:26.679585456-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 202,
+      "change_id": "3a60de43-fe8c-4678-b36a-9bff9f0d21fd",
+      "node_type": "observation",
+      "title": "Login hang on certain pages: editor and homepage confirmed bad, possibly others",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T18:18:26.849709681-05:00",
+      "updated_at": "2026-01-07T18:18:26.849709681-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 203,
+      "change_id": "7f5f61d9-67a2-4743-bf6e-64df19ee991c",
+      "node_type": "outcome",
+      "title": "Fixed wikilink ]] placement - TagEnd::Link added to is_self_handled_end, closing ]] now emitted outside </a> tag",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T19:19:10.569293034-05:00",
+      "updated_at": "2026-01-07T19:19:10.569293034-05:00",
+      "metadata_json": "{\"confidence\":85}"
+    },
+    {
+      "id": 204,
+      "change_id": "5bddd314-fd5a-487b-b9fb-25a7150a71ed",
+      "node_type": "outcome",
+      "title": "Fixed blockquote cursor positioning - skip gap emission for blockquote paragraphs, emit > marker inside <p> tag with proper byte/char alignment",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T19:19:22.093439371-05:00",
+      "updated_at": "2026-01-07T19:19:22.093439371-05:00",
+      "metadata_json": "{\"confidence\":85}"
     }
   ],
   "edges": [
@@ -4203,6 +4346,50 @@
       "weight": 1.0,
       "rationale": "Action resulted in fix",
       "created_at": "2026-01-07T12:04:10.057504275-05:00"
+    },
+    {
+      "id": 194,
+      "from_node_id": 192,
+      "to_node_id": 203,
+      "from_change_id": "656d5c9e-947a-44ce-ae7c-22a804bb7a4c",
+      "to_change_id": "7f5f61d9-67a2-4743-bf6e-64df19ee991c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fix addresses cursor jump issue",
+      "created_at": "2026-01-07T19:19:10.585571504-05:00"
+    },
+    {
+      "id": 195,
+      "from_node_id": 193,
+      "to_node_id": 203,
+      "from_change_id": "30fe17ef-81e2-44c9-a9fc-94cd6cbc6d88",
+      "to_change_id": "7f5f61d9-67a2-4743-bf6e-64df19ee991c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fix addresses bonus ]] issue",
+      "created_at": "2026-01-07T19:19:15.906159790-05:00"
+    },
+    {
+      "id": 196,
+      "from_node_id": 201,
+      "to_node_id": 203,
+      "from_change_id": "1ed799fc-2aaa-4262-b5bb-18c562f18c64",
+      "to_change_id": "7f5f61d9-67a2-4743-bf6e-64df19ee991c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fix addresses nested link structure issues",
+      "created_at": "2026-01-07T19:19:15.923157054-05:00"
+    },
+    {
+      "id": 197,
+      "from_node_id": 200,
+      "to_node_id": 204,
+      "from_change_id": "ee54235d-7bf4-452e-90d2-b44a2357fac5",
+      "to_change_id": "5bddd314-fd5a-487b-b9fb-25a7150a71ed",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fix addresses cannot type right of > issue",
+      "created_at": "2026-01-07T19:19:22.168136068-05:00"
     }
   ]
 }

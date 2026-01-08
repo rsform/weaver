@@ -83,3 +83,4 @@ optional = true
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+insta = { version = "1.40", features = ["yaml"] }

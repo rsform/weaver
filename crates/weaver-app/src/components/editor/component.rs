@@ -808,21 +808,18 @@ fn MarkdownEditorInner(
                                 };
 
                                 // Navigation keys (with or without Shift for selection)
+                                // We sync cursor from DOM for these because we let the browser handle them
                                 let navigation = matches!(
                                     evt.key(),
                                     Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown |
                                     Key::Home | Key::End | Key::PageUp | Key::PageDown
                                 );
 
-                                // Cmd/Ctrl+A for select all
-                                let select_all = (evt.modifiers().meta() || evt.modifiers().ctrl())
-                                    && matches!(evt.key(), Key::Character(ref c) if c == "a");
+                                // Ctrl+A/Cmd+A is handled by browser natively, onselectionchange syncs it.
 
-                                if navigation || select_all {
+                                if navigation {
                                     tracing::debug!(
                                         key = ?evt.key(),
-                                        navigation,
-                                        select_all,
                                         "onkeyup navigation - syncing cursor from DOM"
                                     );
                                     let paras = cached_paragraphs();

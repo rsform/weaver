@@ -716,10 +716,11 @@ impl KeybindingConfig {
         }
 
         // === Selection ===
-        bindings.insert(
-            KeyCombo::primary(Key::character("a"), is_mac),
-            EditorAction::SelectAll,
-        );
+        // Let browser handle Ctrl+A/Cmd+A natively - onselectionchange syncs to our state
+        // bindings.insert(
+        //     KeyCombo::primary(Key::character("a"), is_mac),
+        //     EditorAction::SelectAll,
+        // );
 
         // === Line deletion ===
         if is_mac {
@@ -764,7 +765,7 @@ impl KeybindingConfig {
                 range: Range::caret(0),
             },
         );
-        bindings.insert(KeyCombo::new(Key::Select), EditorAction::SelectAll);
+        // bindings.insert(KeyCombo::new(Key::Select), EditorAction::SelectAll);
 
         Self { bindings }
     }
@@ -772,8 +773,29 @@ impl KeybindingConfig {
     /// Look up an action for the given key combo.
     ///
     /// The range in the returned action is updated to the provided range.
+    /// Character keys are normalized to lowercase for matching (browsers report
+    /// uppercase when modifiers like Ctrl are held).
     pub fn lookup(&self, combo: &KeyCombo, range: Range) -> Option<EditorAction> {
-        self.bindings.get(combo).cloned().map(|a| a.with_range(range))
+        // Try exact match first
+        if let Some(action) = self.bindings.get(combo) {
+            return Some(action.clone().with_range(range));
+        }
+
+        // For character keys, try lowercase version (browsers report "A" when Ctrl+A)
+        if let Key::Character(ref s) = combo.key {
+            let lower = s.to_lowercase();
+            if lower != s.as_str() {
+                let normalized = KeyCombo {
+                    key: Key::Character(lower.into()),
+                    modifiers: combo.modifiers,
+                };
+                if let Some(action) = self.bindings.get(&normalized) {
+                    return Some(action.clone().with_range(range));
+                }
+            }
+        }
+
+        None
     }
 
     /// Add or replace a keybinding.

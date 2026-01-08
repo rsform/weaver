@@ -76,7 +76,12 @@ pub trait TextBuffer {
         let search_start = offset.saturating_sub(BLOCK_SYNTAX_ZONE + 1);
         match self.slice(search_start..offset) {
             Some(s) => match s.rfind('\n') {
-                Some(pos) => (offset - search_start - pos - 1) <= BLOCK_SYNTAX_ZONE,
+                Some(pos) => {
+                    // Distance from character after newline to current offset
+                    let newline_abs_pos = search_start + pos;
+                    let dist = offset.saturating_sub(newline_abs_pos + 1);
+                    dist <= BLOCK_SYNTAX_ZONE
+                }
                 None => false, // No newline in range, offset > BLOCK_SYNTAX_ZONE.
             },
             None => false,
