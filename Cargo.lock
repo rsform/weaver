@@ -12319,6 +12319,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "weaver-editor-js"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen 0.6.5",
+ "serde_bytes",
+ "tsify-next",
+ "wasm-bindgen",
+ "weaver-api",
+ "weaver-common",
+ "weaver-editor-browser",
+ "weaver-editor-core",
+ "weaver-editor-crdt",
+ "weaver-embed-worker",
+ "web-sys",
+]
+
+[[package]]
 name = "weaver-embed-worker"
 version = "0.1.0"
 dependencies = [
