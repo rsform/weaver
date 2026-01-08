@@ -2254,6 +2254,94 @@
       "created_at": "2026-01-07T19:55:00.600569229-05:00",
       "updated_at": "2026-01-07T19:55:00.600569229-05:00",
       "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 207,
+      "change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "node_type": "goal",
+      "title": "Fix editor cursor/navigation bugs reported by users",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:15:29.543538706-05:00",
+      "updated_at": "2026-01-07T21:15:29.543538706-05:00",
+      "metadata_json": "{\"confidence\":90,\"prompt\":\"User reported multiple cursor bugs: jumping to position 0, blank line navigation, arrow key issues\"}"
+    },
+    {
+      "id": 208,
+      "change_id": "7b7accb1-8c16-4015-9182-103d2969cbf0",
+      "node_type": "outcome",
+      "title": "Blank line navigation fix - acceptable",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:15:35.376075796-05:00",
+      "updated_at": "2026-01-07T21:15:35.376075796-05:00",
+      "metadata_json": "{\"confidence\":75,\"prompt\":\"Changed gap emission: first newline=ZWSP only, additional newlines=literal newline+ZWSP. Browser can now navigate to blank lines, some minor cursor jank remains but usable.\"}"
+    },
+    {
+      "id": 209,
+      "change_id": "b2c90081-c941-4f18-88a3-28a7e11a79e6",
+      "node_type": "observation",
+      "title": "Login hang after OAuth callback - fixed",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:15:45.287601993-05:00",
+      "updated_at": "2026-01-07T21:15:45.287601993-05:00",
+      "metadata_json": "{\"confidence\":95,\"prompt\":\"Added early exit in restore_session when already authenticated\"}"
+    },
+    {
+      "id": 210,
+      "change_id": "b013b975-f1a7-459c-b369-7a9edc1d6f4b",
+      "node_type": "observation",
+      "title": "Ctrl+A select all - fixed by letting browser handle natively",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:15:49.045740296-05:00",
+      "updated_at": "2026-01-07T21:15:49.045740296-05:00",
+      "metadata_json": "{\"confidence\":95}"
+    },
+    {
+      "id": 211,
+      "change_id": "d9d668e9-960f-423d-ae32-8c4c0ecae1e6",
+      "node_type": "observation",
+      "title": "Long line overflow - fixed with overflow-wrap CSS",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:15:53.560541581-05:00",
+      "updated_at": "2026-01-07T21:15:53.560541581-05:00",
+      "metadata_json": "{\"confidence\":90}"
+    },
+    {
+      "id": 212,
+      "change_id": "ab71b5ea-a010-42bb-a113-ae6a2ec2fe4e",
+      "node_type": "observation",
+      "title": "Enter 4+ times cursor jump - potentially fixed by gap emission changes",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:15:58.586155730-05:00",
+      "updated_at": "2026-01-07T21:15:58.586155730-05:00",
+      "metadata_json": "{\"confidence\":40}"
+    },
+    {
+      "id": 213,
+      "change_id": "a041c1fb-3253-409a-aae7-a558187d99e4",
+      "node_type": "observation",
+      "title": "Double return behavior - potentially fixed by gap emission changes",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:16:03.703238206-05:00",
+      "updated_at": "2026-01-07T21:16:03.703238206-05:00",
+      "metadata_json": "{\"confidence\":35}"
+    },
+    {
+      "id": 214,
+      "change_id": "252761df-21fe-408b-902d-fbd00252efbc",
+      "node_type": "observation",
+      "title": "Selecting/deleting links - still open, needs verification",
+      "description": null,
+      "status": "pending",
+      "created_at": "2026-01-07T21:16:07.366725128-05:00",
+      "updated_at": "2026-01-07T21:16:07.366725128-05:00",
+      "metadata_json": "{\"confidence\":20}"
     }
   ],
   "edges": [
@@ -4434,6 +4522,127 @@
       "weight": 1.0,
       "rationale": "CSS fix for word wrapping",
       "created_at": "2026-01-07T19:55:00.626395757-05:00"
+    },
+    {
+      "id": 200,
+      "from_node_id": 207,
+      "to_node_id": 208,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "7b7accb1-8c16-4015-9182-103d2969cbf0",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Implemented gap emission fix for blank line navigation",
+      "created_at": "2026-01-07T21:15:39.826116361-05:00"
+    },
+    {
+      "id": 201,
+      "from_node_id": 207,
+      "to_node_id": 209,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "b2c90081-c941-4f18-88a3-28a7e11a79e6",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fixed during bug investigation",
+      "created_at": "2026-01-07T21:16:13.866616170-05:00"
+    },
+    {
+      "id": 202,
+      "from_node_id": 207,
+      "to_node_id": 210,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "b013b975-f1a7-459c-b369-7a9edc1d6f4b",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fixed during bug investigation",
+      "created_at": "2026-01-07T21:16:14.010017763-05:00"
+    },
+    {
+      "id": 203,
+      "from_node_id": 207,
+      "to_node_id": 211,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "d9d668e9-960f-423d-ae32-8c4c0ecae1e6",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fixed during bug investigation",
+      "created_at": "2026-01-07T21:16:14.108510907-05:00"
+    },
+    {
+      "id": 204,
+      "from_node_id": 207,
+      "to_node_id": 212,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "ab71b5ea-a010-42bb-a113-ae6a2ec2fe4e",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "May be fixed by gap emission changes",
+      "created_at": "2026-01-07T21:16:14.231726582-05:00"
+    },
+    {
+      "id": 205,
+      "from_node_id": 207,
+      "to_node_id": 213,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "a041c1fb-3253-409a-aae7-a558187d99e4",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "May be fixed by gap emission changes",
+      "created_at": "2026-01-07T21:16:14.330604847-05:00"
+    },
+    {
+      "id": 206,
+      "from_node_id": 207,
+      "to_node_id": 214,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "252761df-21fe-408b-902d-fbd00252efbc",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Still needs investigation",
+      "created_at": "2026-01-07T21:16:14.411257422-05:00"
+    },
+    {
+      "id": 207,
+      "from_node_id": 207,
+      "to_node_id": 203,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "7f5f61d9-67a2-4743-bf6e-64df19ee991c",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Previously fixed wikilink issue",
+      "created_at": "2026-01-07T21:16:32.811831732-05:00"
+    },
+    {
+      "id": 208,
+      "from_node_id": 207,
+      "to_node_id": 204,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "5bddd314-fd5a-487b-b9fb-25a7150a71ed",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Previously fixed blockquote issue",
+      "created_at": "2026-01-07T21:16:32.828122843-05:00"
+    },
+    {
+      "id": 209,
+      "from_node_id": 207,
+      "to_node_id": 205,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "2e1776c7-94aa-47f4-b1b3-63898529335e",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fixed login hang",
+      "created_at": "2026-01-07T21:16:32.844654254-05:00"
+    },
+    {
+      "id": 210,
+      "from_node_id": 207,
+      "to_node_id": 206,
+      "from_change_id": "6e278837-7bb3-40dd-aad7-467036dff90b",
+      "to_change_id": "2ff2950e-e749-4d6e-b524-27217a323be0",
+      "edge_type": "leads_to",
+      "weight": 1.0,
+      "rationale": "Fixed overflow",
+      "created_at": "2026-01-07T21:16:32.861314215-05:00"
     }
   ]
 }
