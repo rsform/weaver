@@ -1,7 +1,6 @@
 .button {
     padding: 8px 18px;
-    border: none;
-    border-radius: 0.5rem;
+    border: 1px solid var(--color-border);
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: 600;
@@ -34,10 +33,12 @@
 
 .button[data-style="ghost"] {
     background-color: transparent;
+    border: none;
     color: var(--color-text);
 }
 
 .button[data-style="ghost"]:hover {
+    border: none;
     background-color: var(--color-highlight);
     color: var(--color-emphasis);
 }
