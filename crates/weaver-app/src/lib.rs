@@ -53,6 +53,11 @@ use crate::{
     subdomain_app::{extract_subdomain, lookup_subdomain_context},
 };
 
+/// Reserved subdomains that should not be used for notebooks.
+const RESERVED_SUBDOMAINS: &[&str] = &[
+    "www", "api", "admin", "app", "auth", "cdn", "alpha", "beta", "staging", "index",
+];
+
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 pub enum Route {
@@ -179,6 +184,13 @@ pub fn App() -> Element {
                     );
                     return None;
                 };
+
+                // Check if subdomain is reserved
+                if RESERVED_SUBDOMAINS.contains(&subdomain.as_str()) {
+                    tracing::info!(subdomain, "Reserved subdomain, skipping notebook lookup");
+                    return None;
+                }
+
                 // Look up notebook by global path
                 let result = lookup_subdomain_context(&fetcher, &subdomain).await;
                 if result.is_none() {
