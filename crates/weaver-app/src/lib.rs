@@ -72,7 +72,7 @@ pub enum Route {
           #[layout(RecordIndex)]
             #[route("/:..uri")]
             RecordPage { uri: Vec<String> },
-                     #[end_layout]
+          #[end_layout]
         #[end_nest]
         #[route("/callback?:state&:iss&:code")]
         Callback { state: SmolStr, iss: SmolStr, code: SmolStr },
@@ -124,8 +124,7 @@ pub enum Route {
                 #[route("/e/:rkey")]
                 NotebookEntryByRkey { ident: AtIdentifier<'static>, book_title: SmolStr, rkey: SmolStr },
                 #[route("/e/:rkey/edit")]
-                NotebookEntryEdit { ident: AtIdentifier<'static>, book_title: SmolStr, rkey: SmolStr }
-
+                NotebookEntryEdit { ident: AtIdentifier<'static>, book_title: SmolStr, rkey: SmolStr },
 }
 
 pub static CONFIG: LazyLock<Config> = LazyLock::new(|| Config {
@@ -170,15 +169,16 @@ pub fn App() -> Element {
                     tracing::warn!("Host header not valid UTF-8");
                     return None;
                 };
-                tracing::info!(host, "Subdomain detection: got host");
 
                 let host_str = host.split(':').next().unwrap_or(host);
                 let Some(subdomain) = extract_subdomain(host_str, WEAVER_APP_DOMAIN) else {
-                    tracing::info!(host_str, domain = WEAVER_APP_DOMAIN, "Not a subdomain request");
+                    tracing::info!(
+                        host_str,
+                        domain = WEAVER_APP_DOMAIN,
+                        "Not a subdomain request"
+                    );
                     return None;
                 };
-                tracing::info!(subdomain, "Subdomain detection: extracted subdomain");
-
                 // Look up notebook by global path
                 let result = lookup_subdomain_context(&fetcher, &subdomain).await;
                 if result.is_none() {
@@ -192,11 +192,13 @@ pub fn App() -> Element {
     #[cfg(feature = "fullstack-server")]
     let ctx = match &*ctx_resource.read() {
         Some(ctx) => ctx.clone(),
-        None => return rsx! { div { "Loading..." } },
+        None => {
+            return rsx! { div { "Loading..." } };
+        }
     };
 
     #[cfg(not(feature = "fullstack-server"))]
-    let ctx = None::<SubdomainContext>;
+    let ctx = { None::<SubdomainContext> };
 
     let auth_state = use_signal(|| AuthState::default());
     #[allow(unused)]
@@ -235,15 +237,16 @@ pub fn App() -> Element {
         });
     }
 
-    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     use_context_provider(|| restore_result);
 
     if sub == LinkMode::Subdomain {
+        tracing::info!("App: rendering SubdomainApp");
         use_context_provider(|| ctx.unwrap());
         rsx! {
              SubdomainApp {}
         }
     } else {
+        tracing::info!("App: rendering MainDomainApp");
         rsx! {
             MainDomainApp {}
         }

@@ -3,18 +3,13 @@
 //! Separate router for subdomain hosting with simpler route structure.
 
 use dioxus::prelude::*;
-use jacquard::oauth::client::OAuthClient;
-use jacquard::oauth::session::ClientData;
 use jacquard::smol_str::{SmolStr, ToSmolStr};
 use jacquard::types::string::AtIdentifier;
 
-use crate::auth;
-use crate::auth::{AuthState, AuthStore};
 use crate::components::identity::RepositoryIndex;
 use crate::components::{EntryPage, NotebookCss};
-use crate::host_mode::{LinkMode, SubdomainContext};
+use crate::host_mode::SubdomainContext;
 use crate::views::{NotebookEntryByRkey, NotebookEntryEdit, NotebookIndex, SubdomainNavbar};
-use crate::{CONFIG, fetch};
 
 /// Subdomain route enum - simpler paths without /:ident/:notebook prefix.
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -54,26 +49,36 @@ pub async fn lookup_subdomain_context(
     let request = ResolveGlobalNotebook::new().path(path).build();
 
     match fetcher.send(request).await {
-        Ok(response) => {
-            let output = response.into_output().ok()?;
-            let notebook = output.notebook;
+        Ok(response) => match response.into_output() {
+            Ok(output) => {
+                let notebook = output.notebook;
 
-            let owner = notebook.uri.authority().clone().into_static();
-            let rkey = notebook.uri.rkey()?.0.to_smolstr();
-            let notebook_path = notebook
-                .path
-                .map(|p| SmolStr::new(p.as_ref()))
-                .unwrap_or_else(|| SmolStr::new(path));
+                let owner = notebook.uri.authority().clone().into_static();
+                let Some(rkey) = notebook.uri.rkey() else {
+                    tracing::warn!(path, uri = %notebook.uri, "Notebook URI missing rkey");
+                    return None;
+                };
+                let rkey = rkey.0.to_smolstr();
+                let notebook_path = notebook
+                    .path
+                    .map(|p| SmolStr::new(p.as_ref()))
+                    .unwrap_or_else(|| SmolStr::new(path));
 
-            Some(SubdomainContext {
-                owner,
-                notebook_path,
-                notebook_rkey: rkey,
-                notebook_title: notebook.title.clone().unwrap_or_default().to_smolstr(),
-            })
-        }
+                tracing::info!(path, %owner, %rkey, "Notebook lookup succeeded");
+                Some(SubdomainContext {
+                    owner,
+                    notebook_path,
+                    notebook_rkey: rkey,
+                    notebook_title: notebook.title.clone().unwrap_or_default().to_smolstr(),
+                })
+            }
+            Err(e) => {
+                tracing::warn!(path, error = %e, "Failed to parse notebook response");
+                None
+            }
+        },
         Err(e) => {
-            tracing::debug!(path = path, error = %e, "Global notebook lookup failed");
+            tracing::warn!(path, error = %e, "Global notebook lookup request failed");
             None
         }
     }

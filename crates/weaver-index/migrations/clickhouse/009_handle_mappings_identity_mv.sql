@@ -8,6 +8,6 @@ SELECT
     'active' as account_status,
     'identity' as source,
     event_time,
-    now64(3) as indexed_at
+    indexed_at
 FROM raw_identity_events
 WHERE handle != ''

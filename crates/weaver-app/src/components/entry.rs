@@ -1,10 +1,9 @@
 #![allow(non_snake_case)]
 
-use crate::components::{AppLink, AppLinkTarget};
-use crate::Route;
 #[cfg(feature = "server")]
 use crate::blobcache::BlobCache;
 use crate::components::AuthorList;
+use crate::components::{AppLink, AppLinkTarget};
 use crate::{components::EntryActions, data::use_handle};
 use dioxus::prelude::*;
 use jacquard::types::aturi::AtUri;
@@ -32,8 +31,9 @@ pub fn EntryPage(
 ) -> Element {
     // Use feature-gated hook for SSR support
     let (entry_res, entry) = crate::data::use_entry_data(ident, book_title, title);
-    let route = use_route::<Route>();
-    let mut last_route = use_signal(|| route.clone());
+
+    // Track props for change detection (works with both Route and SubdomainRoute)
+    let mut last_title = use_signal(|| title().clone());
 
     #[cfg(all(
         target_family = "wasm",
@@ -47,11 +47,11 @@ pub fn EntryPage(
     let mut entry_res = entry_res?;
 
     #[cfg(feature = "fullstack-server")]
-    use_effect(use_reactive!(|route| {
-        if route != last_route() {
-            tracing::debug!("[EntryPage] route changed, restarting resource");
+    use_effect(use_reactive!(|title| {
+        if title != last_title() {
+            tracing::debug!("[EntryPage] title changed, restarting resource");
             entry_res.restart();
-            last_route.set(route.clone());
+            last_title.set(title());
         }
     }));
 

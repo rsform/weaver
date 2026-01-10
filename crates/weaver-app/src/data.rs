@@ -1585,7 +1585,17 @@ pub fn use_leaflet_document_data(
     ident: ReadSignal<AtIdentifier<'static>>,
     rkey: ReadSignal<SmolStr>,
 ) -> (
-    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<String>, Option<String>)>>, RenderError>,
+    Result<
+        Resource<
+            Option<(
+                serde_json::Value,
+                serde_json::Value,
+                Option<String>,
+                Option<String>,
+            )>,
+        >,
+        RenderError,
+    >,
     Memo<Option<crate::fetch::LeafletDocumentData>>,
 ) {
     use weaver_api::pub_leaflet::document::Document;
@@ -1661,13 +1671,17 @@ pub fn use_leaflet_document_data(
                 for page in &record.value.pages {
                     match page {
                         DocumentPagesItem::LinearDocument(linear_doc) => {
-                            html.push_str(&render_linear_document(linear_doc, &ctx, &fetcher).await);
+                            html.push_str(
+                                &render_linear_document(linear_doc, &ctx, &fetcher).await,
+                            );
                         }
                         DocumentPagesItem::Canvas(_) => {
                             html.push_str("<div class=\"embed-video-placeholder\">[Canvas layout not yet supported]</div>");
                         }
                         DocumentPagesItem::Unknown(_) => {
-                            html.push_str("<div class=\"embed-video-placeholder\">[Unknown page type]</div>");
+                            html.push_str(
+                                "<div class=\"embed-video-placeholder\">[Unknown page type]</div>",
+                            );
                         }
                     }
                 }
@@ -1773,13 +1787,17 @@ pub fn use_leaflet_document_data(
                 for page in &record.value.pages {
                     match page {
                         DocumentPagesItem::LinearDocument(linear_doc) => {
-                            html.push_str(&render_linear_document(linear_doc, &ctx, &fetcher).await);
+                            html.push_str(
+                                &render_linear_document(linear_doc, &ctx, &fetcher).await,
+                            );
                         }
                         DocumentPagesItem::Canvas(_) => {
                             html.push_str("<div class=\"embed-video-placeholder\">[Canvas layout not yet supported]</div>");
                         }
                         DocumentPagesItem::Unknown(_) => {
-                            html.push_str("<div class=\"embed-video-placeholder\">[Unknown page type]</div>");
+                            html.push_str(
+                                "<div class=\"embed-video-placeholder\">[Unknown page type]</div>",
+                            );
                         }
                     }
                 }
@@ -1810,7 +1828,17 @@ pub fn use_pckt_document_data(
     ident: ReadSignal<AtIdentifier<'static>>,
     rkey: ReadSignal<SmolStr>,
 ) -> (
-    Result<Resource<Option<(serde_json::Value, serde_json::Value, Option<String>, Option<String>)>>, RenderError>,
+    Result<
+        Resource<
+            Option<(
+                serde_json::Value,
+                serde_json::Value,
+                Option<String>,
+                Option<String>,
+            )>,
+        >,
+        RenderError,
+    >,
     Memo<Option<crate::fetch::PcktDocumentData>>,
 ) {
     let fetcher = use_context::<crate::fetch::Fetcher>();

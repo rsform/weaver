@@ -1,7 +1,7 @@
 //! Actions sidebar/menubar for profile page.
 
-use crate::Route;
 use crate::auth::AuthState;
+use crate::components::app_link::{AppLink, AppLinkTarget};
 use crate::components::button::{Button, ButtonVariant};
 use dioxus::prelude::*;
 use jacquard::types::ident::AtIdentifier;
@@ -32,9 +32,9 @@ pub fn ProfileActions(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
         aside { class: "profile-actions",
             div { class: "profile-actions-container",
                 div { class: "profile-actions-list",
-                    Link {
-                        to: Route::NewDraft { ident: ident(), notebook: None },
-                        class: "profile-action-link",
+                    AppLink {
+                        to: AppLinkTarget::NewDraft { ident: ident(), notebook: None },
+                        class: "profile-action-link".to_string(),
                         Button {
                             variant: ButtonVariant::Outline,
                             "New Entry"
@@ -48,18 +48,18 @@ pub fn ProfileActions(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
                         "New Notebook"
                     }
 
-                    Link {
-                        to: Route::DraftsList { ident: ident() },
-                        class: "profile-action-link",
+                    AppLink {
+                        to: AppLinkTarget::Drafts { ident: ident() },
+                        class: "profile-action-link".to_string(),
                         Button {
                             variant: ButtonVariant::Ghost,
                             "Drafts"
                         }
                     }
 
-                    Link {
-                        to: Route::InvitesPage { ident: ident() },
-                        class: "profile-action-link",
+                    AppLink {
+                        to: AppLinkTarget::Invites { ident: ident() },
+                        class: "profile-action-link".to_string(),
                         Button {
                             variant: ButtonVariant::Ghost,
                             "Invites"
@@ -90,24 +90,24 @@ pub fn ProfileActionsMenubar(ident: ReadSignal<AtIdentifier<'static>>) -> Elemen
 
     rsx! {
         div { class: "profile-actions-menubar",
-            Link {
-                to: Route::NewDraft { ident: ident(), notebook: None },
+            AppLink {
+                to: AppLinkTarget::NewDraft { ident: ident(), notebook: None },
                 Button {
                     variant: ButtonVariant::Primary,
                     "New Entry"
                 }
             }
 
-            Link {
-                to: Route::DraftsList { ident: ident() },
+            AppLink {
+                to: AppLinkTarget::Drafts { ident: ident() },
                 Button {
                     variant: ButtonVariant::Ghost,
                     "Drafts"
                 }
             }
 
-            Link {
-                to: Route::InvitesPage { ident: ident() },
+            AppLink {
+                to: AppLinkTarget::Invites { ident: ident() },
                 Button {
                     variant: ButtonVariant::Ghost,
                     "Invites"

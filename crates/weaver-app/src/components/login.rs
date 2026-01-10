@@ -4,18 +4,16 @@ use jacquard::oauth::client::OAuthClient;
 use jacquard::oauth::session::ClientData;
 use jacquard::{oauth::types::AuthorizeOptions, smol_str::SmolStr};
 
-use crate::{CONFIG, Route};
-use crate::{
-    components::{
-        button::{Button, ButtonVariant},
-        dialog::{DialogContent, DialogRoot, DialogTitle},
-        input::Input,
-    },
-    fetch::Fetcher,
+use crate::components::{
+    button::{Button, ButtonVariant},
+    dialog::{DialogContent, DialogRoot, DialogTitle},
+    input::Input,
 };
+use crate::fetch::Fetcher;
+use crate::CONFIG;
 
 fn handle_submit(
-    full_route: Route,
+    cached_route: String,
     fetcher: Fetcher,
     mut error: Signal<Option<String>>,
     mut is_loading: Signal<bool>,
@@ -34,7 +32,7 @@ fn handle_submit(
     #[cfg(target_arch = "wasm32")]
     {
         use gloo_storage::Storage;
-        gloo_storage::LocalStorage::set("cached_route", format!("{}", full_route)).ok();
+        gloo_storage::LocalStorage::set("cached_route", cached_route).ok();
         spawn(async move {
             match start_oauth_flow(handle, fetcher).await {
                 Ok(_) => {
@@ -51,19 +49,18 @@ fn handle_submit(
 }
 
 #[component]
-pub fn LoginModal(open: Signal<bool>) -> Element {
+pub fn LoginModal(open: Signal<bool>, cached_route: String) -> Element {
     let mut handle_input = use_signal(|| String::new());
     let error = use_signal(|| Option::<String>::None);
     let is_loading = use_signal(|| false);
-    let full_route = use_route::<Route>();
     let fetcher = use_context::<Fetcher>();
-    let submit_route = full_route.clone();
+    let cached_route_clone = cached_route.clone();
     let submit_fetcher = fetcher.clone();
     let submit_closure1 = move || {
-        let submit_route = submit_route.clone();
+        let cached_route = cached_route_clone.clone();
         let submit_fetcher = submit_fetcher.clone();
         handle_submit(
-            submit_route,
+            cached_route,
             submit_fetcher,
             error,
             is_loading,
@@ -73,10 +70,10 @@ pub fn LoginModal(open: Signal<bool>) -> Element {
     };
 
     let submit_closure2 = move || {
-        let submit_route = full_route.clone();
+        let cached_route = cached_route.clone();
         let submit_fetcher = fetcher.clone();
         handle_submit(
-            submit_route,
+            cached_route,
             submit_fetcher,
             error,
             is_loading,

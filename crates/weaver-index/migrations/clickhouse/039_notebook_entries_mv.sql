@@ -14,7 +14,7 @@ SELECT
     -- Position from array index
     assumeNotNull(entry_position) as position,
 
-    now64(3) as indexed_at
+    indexed_at
 FROM notebooks
 ARRAY JOIN
     record.entryList[].uri as entry_uri,

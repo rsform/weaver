@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use crate::Route;
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::collab::api::{ReceivedInvite, accept_invite, fetch_received_invites};
 use crate::components::{
     BskyIcon, TangledIcon,
     avatar::{Avatar, AvatarImage},
 };
+use crate::env::WEAVER_APP_HOST;
 use crate::fetch::Fetcher;
 use dioxus::prelude::*;
 use weaver_api::com_atproto::repo::strong_ref::StrongRef;
@@ -406,16 +406,9 @@ fn ProfileInviteCard(invite: ReceivedInvite) -> Element {
                         use gloo_timers::future::TimeoutFuture;
                         TimeoutFuture::new(500).await;
                     }
-                    // Navigate to the entry - parse AT-URI into path segments
-                    // at://did/collection/rkey -> ["did", "collection", "rkey"]
-                    let uri_str = resource_uri_nav.to_string();
-                    let uri_parts: Vec<String> = uri_str
-                        .strip_prefix("at://")
-                        .unwrap_or(&uri_str)
-                        .split('/')
-                        .map(|s| s.to_string())
-                        .collect();
-                    nav.push(Route::RecordPage { uri: uri_parts });
+                    // Navigate to record page on main domain
+                    let url = format!("{}/record/{}", WEAVER_APP_HOST, resource_uri_nav);
+                    nav.push(url);
                 }
                 Err(e) => {
                     error.set(Some(format!("Failed: {}", e)));

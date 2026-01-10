@@ -4,7 +4,7 @@ use crate::components::button::{Button, ButtonVariant};
 use crate::components::login::LoginModal;
 use crate::data::{use_get_handle, use_load_handle};
 use crate::fetch::Fetcher;
-use crate::views::Footer;
+use crate::views::{Footer, should_show_full_footer};
 use dioxus::prelude::*;
 use dioxus_primitives::toast::{ToastOptions, use_toast};
 use jacquard::types::ident::AtIdentifier;
@@ -62,6 +62,7 @@ pub fn Navbar() -> Element {
     #[cfg(feature = "fullstack-server")]
     route_handle_res?;
 
+    #[allow(unused)]
     let fetcher = use_context::<Fetcher>();
     let mut show_login_modal = use_signal(|| false);
 
@@ -292,7 +293,8 @@ pub fn Navbar() -> Element {
 
                     }
                     LoginModal {
-                        open: show_login_modal
+                        open: show_login_modal,
+                        cached_route: format!("{}", route),
                     }
                 }
             }
@@ -301,7 +303,7 @@ pub fn Navbar() -> Element {
                 Outlet::<Route> {}
             }
 
-            Footer {}
+            Footer { show_full: should_show_full_footer(&route) }
         }
     }
 }

@@ -4,10 +4,13 @@ use dioxus::prelude::*;
 use jacquard::types::string::{AtIdentifier, Did};
 
 use crate::SubdomainRoute;
+#[allow(unused_imports)]
 use crate::auth::{AuthState, RestoreResult};
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::login::LoginModal;
 use crate::data::{use_get_handle, use_handle};
+#[allow(unused_imports)]
+use crate::env::WEAVER_APP_HOST;
 use crate::fetch::Fetcher;
 use crate::host_mode::SubdomainContext;
 use crate::views::Footer;
@@ -26,6 +29,8 @@ pub fn SubdomainNavbar() -> Element {
     let ctx = use_context::<SubdomainContext>();
     let route = use_route::<SubdomainRoute>();
     let auth_state = use_context::<Signal<AuthState>>();
+
+    #[allow(unused)]
     let fetcher = use_context::<Fetcher>();
     let mut show_login_modal = use_signal(|| false);
 
@@ -61,55 +66,40 @@ pub fn SubdomainNavbar() -> Element {
             div {
                 id: "navbar",
                 nav { class: "breadcrumbs",
-                // Notebook title links to index
-                Link {
-                    to: SubdomainRoute::SubdomainLanding {},
-                    class: "breadcrumb",
-                    "{ctx.notebook_title}"
-                }
+                    // Notebook title links to index
+                    Link {
+                        to: SubdomainRoute::SubdomainLanding {},
+                        class: "breadcrumb",
+                        "{ctx.notebook_title}"
+                    }
 
-                // Show current location breadcrumb based on route
-                match &route {
-                    SubdomainRoute::SubdomainLanding {} | SubdomainRoute::SubdomainIndexPage {} => {
-                        rsx! {}
-                    }
-                    SubdomainRoute::SubdomainEntry { title } => {
-                        rsx! {
-                            span { class: "breadcrumb-separator", " > " }
-                            span { class: "breadcrumb breadcrumb-current", "{title}" }
+                    // Show current location breadcrumb based on route
+                    match &route {
+                        SubdomainRoute::SubdomainLanding {} | SubdomainRoute::SubdomainIndexPage {} | SubdomainRoute::SubdomainEntryByRkey { .. } | SubdomainRoute::SubdomainEntry { .. } => {
+                            rsx! {}
                         }
-                    }
-                    SubdomainRoute::SubdomainEntryByRkey { rkey } => {
-                        rsx! {
-                            span { class: "breadcrumb-separator", " > " }
-                            span { class: "breadcrumb breadcrumb-current", "{rkey}" }
-                        }
-                    }
-                    SubdomainRoute::SubdomainEntryEdit { rkey } => {
-                        rsx! {
-                            span { class: "breadcrumb-separator", " > " }
-                            Link {
-                                to: SubdomainRoute::SubdomainEntryByRkey { rkey: rkey.clone() },
-                                class: "breadcrumb",
-                                "{rkey}"
+                        SubdomainRoute::SubdomainEntryEdit { rkey } => {
+                            rsx! {
+                                span { class: "breadcrumb-separator", " > " }
+                                Link {
+                                    to: SubdomainRoute::SubdomainEntryByRkey { rkey: rkey.clone() },
+                                    class: "breadcrumb",
+                                    "{rkey}"
+                                }
                             }
-                            span { class: "breadcrumb-separator", " > " }
-                            span { class: "breadcrumb breadcrumb-current", "Edit" }
                         }
-                    }
-                    SubdomainRoute::SubdomainProfile { ident } => {
-                        rsx! {
-                            span { class: "breadcrumb-separator", " > " }
-                            span { class: "breadcrumb breadcrumb-current", "@{ident}" }
+                        SubdomainRoute::SubdomainProfile { ident } => {
+                            rsx! {
+                                span { class: "breadcrumb-separator", " > " }
+                                span { class: "breadcrumb breadcrumb-current", "@{ident}" }
+                            }
                         }
                     }
                 }
-            }
-
-            // Author profile link
-            nav { class: "nav-tools",
-                AuthorProfileLink { ident: ctx.owner.clone() }
-            }
+                // Author profile link
+                nav { class: "nav-tools",
+                    AuthorProfileLink { ident: ctx.owner.clone() }
+                }
 
                 // Auth button
                 if auth_state.read().is_authenticated() {
@@ -126,16 +116,20 @@ pub fn SubdomainNavbar() -> Element {
                         }
                     }
                     LoginModal {
-                        open: show_login_modal
+                        open: show_login_modal,
+                        cached_route: format!("{}", route),
                     }
                 }
             }
+
+
+
 
             main { class: "app-main",
                 Outlet::<SubdomainRoute> {}
             }
 
-            Footer {}
+            Footer { show_full: false }
         }
     }
 }
@@ -189,7 +183,7 @@ fn AuthorProfileLink(ident: ReadSignal<AtIdentifier<'static>>) -> Element {
     let (handle_res, handle) = use_handle(ident);
 
     #[cfg(feature = "fullstack-server")]
-    let mut handle_res = handle_res?;
+    handle_res?;
 
     rsx! {
         Link {

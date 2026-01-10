@@ -12,7 +12,7 @@ const GITHUB_SPONSORS_URL: &str = "https://github.com/sponsors/orual";
 
 /// Determines if the current route should show the full footer or just the minimal version.
 /// Full footer shows on shell pages (Home, Editor) and on owner's content pages.
-fn should_show_full_footer(route: &Route) -> bool {
+pub fn should_show_full_footer(route: &Route) -> bool {
     match route {
         // Shell pages: always show full footer
         Route::Home {}
@@ -67,10 +67,7 @@ fn is_owner_ident(ident: &AtIdentifier<'static>) -> bool {
 }
 
 #[component]
-pub fn Footer() -> Element {
-    let route = use_route::<Route>();
-    let show_full = should_show_full_footer(&route);
-
+pub fn Footer(#[props(default = true)] show_full: bool) -> Element {
     rsx! {
         document::Link { rel: "stylesheet", href: FOOTER_CSS }
 
@@ -174,6 +171,15 @@ pub fn Footer() -> Element {
                         rel: "noopener",
                         "Report Bug"
                     }
+
+                    span { class: "footer-separator", "|" }
+
+                    Link {
+                        to: crate::env::WEAVER_APP_HOST,
+                        class: "footer-link",
+                        "weaver.sh"
+                    }
+
                 }
             }
         }

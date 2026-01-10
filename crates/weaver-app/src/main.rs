@@ -1,22 +1,15 @@
 //! Weaver App main binary.
 
+#[allow(unused)]
 use dioxus::prelude::*;
-
-#[cfg(feature = "server")]
-use std::sync::Arc;
-
-#[cfg(feature = "server")]
-use tower::Service;
-
-#[cfg(feature = "server")]
-use weaver_app::{App, CONFIG, SubdomainApp, SubdomainContext, fetch};
-
-#[cfg(not(feature = "server"))]
-use weaver_app::{App, SubdomainApp};
-
 #[cfg(target_arch = "wasm32")]
 use lol_alloc::{FreeListAllocator, LockedAllocator};
-
+#[cfg(feature = "server")]
+use std::sync::Arc;
+#[cfg(feature = "server")]
+use tower::Service;
+#[allow(unused)]
+use weaver_app::{App, CONFIG, SubdomainApp, SubdomainContext, fetch};
 #[cfg(target_arch = "wasm32")]
 #[global_allocator]
 static ALLOCATOR: LockedAllocator<FreeListAllocator> =

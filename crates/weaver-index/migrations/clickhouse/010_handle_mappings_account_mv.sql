@@ -8,7 +8,7 @@ SELECT
     a.status as account_status,
     'account' as source,
     a.event_time,
-    now64(3) as indexed_at
+    a.indexed_at
 FROM raw_account_events a
 INNER JOIN handle_mappings h ON h.did = a.did AND h.freed = 0
 WHERE a.active = 0 AND a.status != ''

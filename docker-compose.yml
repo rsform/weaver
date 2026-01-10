@@ -54,7 +54,7 @@ services:
       #TAP_FULL_NETWORK: true
       #TAP_SIGNAL_COLLECTION: place.stream.chat.profile
       TAP_SIGNAL_COLLECTION: sh.weaver.actor.profile
-      TAP_COLLECTION_FILTERS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*,net.anisota.*,place.stream.*"
+      TAP_COLLECTION_FILTERS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*,net.anisota.*,place.stream.*,site.standard.*"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:2480/health"]
       interval: 20s
@@ -81,7 +81,7 @@ services:
       TAP_URL: ws://tap:2480/channel
       TAP_SEND_ACKS: "true"
       FIREHOSE_RELAY_URL: wss://bsky.network
-      INDEXER_COLLECTIONS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*,net.anisota.*,place.stream.*"
+      INDEXER_COLLECTIONS: "sh.weaver.*,app.bsky.actor.profile,sh.tangled.*,pub.leaflet.*,net.anisota.*,place.stream.*,site.standard.*"
     depends_on:
       tap:
         condition: service_healthy

@@ -39,7 +39,7 @@ mod invites;
 pub use invites::InvitesPage;
 
 mod footer;
-pub use footer::Footer;
+pub use footer::{Footer, should_show_full_footer};
 
 mod static_page;
 pub use static_page::{AboutPage, PrivacyPage, TermsPage};

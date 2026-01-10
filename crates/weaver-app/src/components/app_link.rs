@@ -75,6 +75,7 @@ pub struct AppLinkProps {
 #[component]
 pub fn AppLink(props: AppLinkProps) -> Element {
     let link_mode = use_context::<LinkMode>();
+    tracing::info!(?link_mode, "AppLink: reading LinkMode context");
     let class = props.class.clone().unwrap_or_default();
 
     match link_mode {
