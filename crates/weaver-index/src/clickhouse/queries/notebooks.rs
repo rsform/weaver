@@ -774,4 +774,47 @@ impl Client {
             Ok(current.map(|c| (c, prev, next)))
         }
     }
+
+    /// Resolve a notebook by global path (for publishGlobal notebooks).
+    ///
+    /// Returns the winning notebook when multiple claim the same path.
+    /// Winner is determined by: created_at ASC, then TID rkey ASC.
+    pub async fn resolve_notebook_by_global_path(
+        &self,
+        path: &str,
+    ) -> Result<Option<NotebookRow>, IndexError> {
+        let query = r#"
+            SELECT
+                did,
+                rkey,
+                cid,
+                uri,
+                title,
+                path,
+                tags,
+                author_dids,
+                created_at,
+                indexed_at,
+                record
+            FROM notebooks FINAL
+            WHERE path = ?
+              AND deleted_at = toDateTime64(0, 3)
+              AND publish_global = 1
+            ORDER BY created_at ASC, rkey ASC
+            LIMIT 1
+        "#;
+
+        let row = self
+            .inner()
+            .query(query)
+            .bind(path)
+            .fetch_optional::<NotebookRow>()
+            .await
+            .map_err(|e| ClickHouseError::Query {
+                message: "failed to resolve notebook by global path".into(),
+                source: e,
+            })?;
+
+        Ok(row)
+    }
 }

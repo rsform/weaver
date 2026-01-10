@@ -2,6 +2,12 @@
 //! They can be used to defined common UI elements like buttons, forms, and modals. In this template, we define a Hero
 //! component and an Echo component for fullstack apps to be used in our app.
 
+pub mod app_link;
+pub use app_link::{
+    AppLink, AppLinkTarget, use_app_navigate, use_main_navigator_provider,
+    use_subdomain_navigator_provider,
+};
+
 pub mod css;
 pub use css::NotebookCss;
 

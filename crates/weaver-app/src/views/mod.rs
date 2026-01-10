@@ -49,3 +49,6 @@ pub use external::{
     LeafletEntry, LeafletEntryNsid, PcktEntry, PcktEntryBlogNsid, PcktEntryNsid, WhiteWindEntry,
     WhiteWindEntryNsid,
 };
+
+mod subdomain_navbar;
+pub use subdomain_navbar::{SubdomainErrorLayout, SubdomainNavbar};

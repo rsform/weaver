@@ -82,6 +82,8 @@ pub fn get_errors_at_exact_path(
                         StructuralError::UnresolvedRef { path, .. } => Some(path),
                         StructuralError::RefCycle { path, .. } => Some(path),
                         StructuralError::MaxDepthExceeded { path, .. } => Some(path),
+
+                        _ => None,
                     },
                     ValidationError::Constraint(c) => match c {
                         ConstraintError::MaxLength { path, .. } => Some(path),
@@ -90,7 +92,11 @@ pub fn get_errors_at_exact_path(
                         ConstraintError::MinGraphemes { path, .. } => Some(path),
                         ConstraintError::Maximum { path, .. } => Some(path),
                         ConstraintError::Minimum { path, .. } => Some(path),
+
+                        _ => None,
                     },
+
+                    _ => None,
                 };
 
                 if let Some(path) = validation_path {

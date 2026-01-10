@@ -1,6 +1,6 @@
 //! AuthorList component for displaying multiple authors with progressive disclosure.
 
-use crate::Route;
+use crate::components::{AppLink, AppLinkTarget};
 use dioxus::prelude::*;
 use jacquard::IntoStatic;
 use jacquard::types::ident::AtIdentifier;
@@ -210,11 +210,11 @@ fn AuthorBlock(info: AuthorInfo, avatar_size: u32) -> Element {
     let handle_display = info.handle.as_ref();
 
     rsx! {
-        Link {
-            to: Route::RepositoryIndex {
+        AppLink {
+            to: AppLinkTarget::Profile {
                 ident: AtIdentifier::Handle(info.handle.clone())
             },
-            class: "embed-author author-block",
+            class: Some("embed-author author-block".to_string()),
             if let Some(ref avatar) = info.avatar_url {
                 img {
                     class: "embed-avatar",
@@ -241,11 +241,11 @@ fn AuthorInline(info: AuthorInfo) -> Element {
         .unwrap_or_else(|| info.handle.as_ref());
 
     rsx! {
-        Link {
-            to: Route::RepositoryIndex {
+        AppLink {
+            to: AppLinkTarget::Profile {
                 ident: AtIdentifier::Handle(info.handle.clone())
             },
-            class: "author-inline",
+            class: Some("author-inline".to_string()),
             "{display}"
         }
     }

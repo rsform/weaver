@@ -22,12 +22,19 @@ pub mod config;
 pub mod data;
 pub mod env;
 pub mod fetch;
+pub mod host_mode;
 #[cfg(feature = "server")]
 pub mod og;
 pub mod perf;
 pub mod record_utils;
 pub mod service_worker;
+
+pub mod subdomain_app;
 pub mod views;
+
+pub use host_mode::{LinkMode, SubdomainContext};
+pub use subdomain_app::SubdomainApp;
+pub use subdomain_app::SubdomainRoute;
 
 use auth::{AuthState, AuthStore};
 use components::{EntryPage, Repository, RepositoryIndex};
@@ -39,6 +46,11 @@ use views::{
     NotebookIndex, NotebookPage, PcktEntry, PcktEntryBlogNsid, PcktEntryNsid, PrivacyPage,
     RecordIndex, RecordPage, StandaloneEntry, StandaloneEntryEdit, StandaloneEntryNsid, TermsPage,
     WhiteWindEntry, WhiteWindEntryNsid,
+};
+
+use crate::{
+    env::WEAVER_APP_DOMAIN,
+    subdomain_app::{extract_subdomain, lookup_subdomain_context},
 };
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -133,9 +145,72 @@ pub fn App() -> Element {
             ClientData::new_public(CONFIG.oauth.clone()),
         ))
     });
+
+    #[cfg(feature = "fullstack-server")]
+    let ctx_resource = use_server_future({
+        let fetcher = fetcher.clone();
+        move || {
+            let fetcher = fetcher.clone();
+            async move {
+                use dioxus::fullstack::FullstackContext;
+                use http::header::HOST;
+
+                // Get host header from request
+                let Some(ctx) = FullstackContext::current() else {
+                    tracing::warn!("No FullstackContext available");
+                    return None;
+                };
+                let parts = ctx.parts_mut();
+
+                let Some(host_header) = parts.headers.get(HOST) else {
+                    tracing::warn!("No Host header in request");
+                    return None;
+                };
+                let Ok(host) = host_header.to_str() else {
+                    tracing::warn!("Host header not valid UTF-8");
+                    return None;
+                };
+                tracing::info!(host, "Subdomain detection: got host");
+
+                let host_str = host.split(':').next().unwrap_or(host);
+                let Some(subdomain) = extract_subdomain(host_str, WEAVER_APP_DOMAIN) else {
+                    tracing::info!(host_str, domain = WEAVER_APP_DOMAIN, "Not a subdomain request");
+                    return None;
+                };
+                tracing::info!(subdomain, "Subdomain detection: extracted subdomain");
+
+                // Look up notebook by global path
+                let result = lookup_subdomain_context(&fetcher, &subdomain).await;
+                if result.is_none() {
+                    tracing::warn!(subdomain, "Notebook lookup failed for subdomain");
+                }
+                result
+            }
+        }
+    })?;
+
+    #[cfg(feature = "fullstack-server")]
+    let ctx = match &*ctx_resource.read() {
+        Some(ctx) => ctx.clone(),
+        None => return rsx! { div { "Loading..." } },
+    };
+
+    #[cfg(not(feature = "fullstack-server"))]
+    let ctx = None::<SubdomainContext>;
+
     let auth_state = use_signal(|| AuthState::default());
     #[allow(unused)]
     let auth_state = use_context_provider(|| auth_state);
+
+    // Provide link mode for router-agnostic link generation (subdomain mode)
+    let sub = use_context_provider(|| {
+        if ctx.is_some() {
+            LinkMode::Subdomain
+        } else {
+            LinkMode::MainDomain
+        }
+    });
+
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     let restore_result = {
         let fetcher = fetcher.clone();
@@ -152,6 +227,8 @@ pub fn App() -> Element {
         use_effect(move || {
             let fetcher = fetcher.clone();
             spawn(async move {
+                use crate::service_worker;
+
                 tracing::info!("Registering service worker");
                 let _ = service_worker::register_service_worker().await;
             });
@@ -161,6 +238,20 @@ pub fn App() -> Element {
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
     use_context_provider(|| restore_result);
 
+    if sub == LinkMode::Subdomain {
+        use_context_provider(|| ctx.unwrap());
+        rsx! {
+             SubdomainApp {}
+        }
+    } else {
+        rsx! {
+            MainDomainApp {}
+        }
+    }
+}
+
+#[component]
+pub fn MainDomainApp() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         // Preconnect for external fonts (before loading them)

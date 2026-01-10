@@ -94,11 +94,11 @@
 .notebook-layout {
     display: grid;
     grid-template-columns:
-        minmax(280px, 1fr)
-        minmax(0, 90rem)
-        minmax(280px, 1fr);
-    gap: 2rem;
-    max-width: calc(90rem + 560px + 4rem);
+        minmax(240px, 1fr)
+        minmax(0, 95ch)
+        minmax(240px, 1fr);
+    gap: 1rem;
+    max-width: calc(95ch + 480px + 4rem);
     margin: 0 auto;
     padding: 2.5rem 1.25rem 2.5rem 0;
 }
@@ -119,7 +119,7 @@
 
 @media (max-width: 1400px) {
     .notebook-layout {
-        grid-template-columns: minmax(1rem, 1fr) minmax(0, 90rem) minmax(1rem, 1fr) !important;
+        grid-template-columns: minmax(1rem, 1fr) minmax(0, 95ch) minmax(1rem, 1fr) !important;
         gap: 0 !important;
         max-width: 100vw !important;
         box-sizing: border-box !important;

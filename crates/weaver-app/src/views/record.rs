@@ -24,7 +24,7 @@ pub fn RecordIndex() -> Element {
         let input_uri = uri_input.read().clone();
         if !input_uri.is_empty() {
             if let Ok(parsed) = AtUri::new(&input_uri) {
-                let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, parsed);
+                let link = format!("{}/record/{}", crate::env::WEAVER_APP_HOST, parsed);
                 navigator.push(link);
             }
         }

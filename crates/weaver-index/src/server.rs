@@ -39,7 +39,8 @@ use weaver_api::sh_weaver::notebook::{
     get_book_entry::GetBookEntryRequest, get_entry::GetEntryRequest,
     get_entry_feed::GetEntryFeedRequest, get_entry_notebooks::GetEntryNotebooksRequest,
     get_notebook::GetNotebookRequest, get_notebook_feed::GetNotebookFeedRequest,
-    resolve_entry::ResolveEntryRequest, resolve_notebook::ResolveNotebookRequest,
+    resolve_entry::ResolveEntryRequest,
+    resolve_global_notebook::ResolveGlobalNotebookRequest, resolve_notebook::ResolveNotebookRequest,
 };
 
 use crate::clickhouse::Client;
@@ -135,6 +136,9 @@ pub fn router(state: AppState, did_doc: DidDocument<'static>) -> Router {
         .merge(GetBookEntryRequest::into_router(notebook::get_book_entry))
         .merge(GetEntryNotebooksRequest::into_router(
             notebook::get_entry_notebooks,
+        ))
+        .merge(ResolveGlobalNotebookRequest::into_router(
+            notebook::resolve_global_notebook,
         ))
         // sh.weaver.collab.* endpoints
         .merge(GetResourceParticipantsRequest::into_router(

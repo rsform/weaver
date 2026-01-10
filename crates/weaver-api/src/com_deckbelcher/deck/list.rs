@@ -42,51 +42,51 @@ pub mod card_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Section;
         type ScryfallId;
         type Quantity;
+        type Section;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Section = Unset;
         type ScryfallId = Unset;
         type Quantity = Unset;
-    }
-    ///State transition - sets the `section` field to Set
-    pub struct SetSection<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetSection<S> {}
-    impl<S: State> State for SetSection<S> {
-        type Section = Set<members::section>;
-        type ScryfallId = S::ScryfallId;
-        type Quantity = S::Quantity;
+        type Section = Unset;
     }
     ///State transition - sets the `scryfall_id` field to Set
     pub struct SetScryfallId<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetScryfallId<S> {}
     impl<S: State> State for SetScryfallId<S> {
-        type Section = S::Section;
         type ScryfallId = Set<members::scryfall_id>;
         type Quantity = S::Quantity;
+        type Section = S::Section;
     }
     ///State transition - sets the `quantity` field to Set
     pub struct SetQuantity<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetQuantity<S> {}
     impl<S: State> State for SetQuantity<S> {
-        type Section = S::Section;
         type ScryfallId = S::ScryfallId;
         type Quantity = Set<members::quantity>;
+        type Section = S::Section;
+    }
+    ///State transition - sets the `section` field to Set
+    pub struct SetSection<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetSection<S> {}
+    impl<S: State> State for SetSection<S> {
+        type ScryfallId = S::ScryfallId;
+        type Quantity = S::Quantity;
+        type Section = Set<members::section>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `section` field
-        pub struct section(());
         ///Marker type for the `scryfall_id` field
         pub struct scryfall_id(());
         ///Marker type for the `quantity` field
         pub struct quantity(());
+        ///Marker type for the `section` field
+        pub struct section(());
     }
 }
 
@@ -199,9 +199,9 @@ impl<'a, S: card_state::State> CardBuilder<'a, S> {
 impl<'a, S> CardBuilder<'a, S>
 where
     S: card_state::State,
-    S::Section: card_state::IsSet,
     S::ScryfallId: card_state::IsSet,
     S::Quantity: card_state::IsSet,
+    S::Section: card_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Card<'a> {
@@ -704,51 +704,51 @@ pub mod list_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Cards;
-        type Name;
         type CreatedAt;
+        type Name;
+        type Cards;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Cards = Unset;
-        type Name = Unset;
         type CreatedAt = Unset;
-    }
-    ///State transition - sets the `cards` field to Set
-    pub struct SetCards<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetCards<S> {}
-    impl<S: State> State for SetCards<S> {
-        type Cards = Set<members::cards>;
-        type Name = S::Name;
-        type CreatedAt = S::CreatedAt;
-    }
-    ///State transition - sets the `name` field to Set
-    pub struct SetName<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetName<S> {}
-    impl<S: State> State for SetName<S> {
-        type Cards = S::Cards;
-        type Name = Set<members::name>;
-        type CreatedAt = S::CreatedAt;
+        type Name = Unset;
+        type Cards = Unset;
     }
     ///State transition - sets the `created_at` field to Set
     pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
     impl<S: State> State for SetCreatedAt<S> {
-        type Cards = S::Cards;
-        type Name = S::Name;
         type CreatedAt = Set<members::created_at>;
+        type Name = S::Name;
+        type Cards = S::Cards;
+    }
+    ///State transition - sets the `name` field to Set
+    pub struct SetName<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetName<S> {}
+    impl<S: State> State for SetName<S> {
+        type CreatedAt = S::CreatedAt;
+        type Name = Set<members::name>;
+        type Cards = S::Cards;
+    }
+    ///State transition - sets the `cards` field to Set
+    pub struct SetCards<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetCards<S> {}
+    impl<S: State> State for SetCards<S> {
+        type CreatedAt = S::CreatedAt;
+        type Name = S::Name;
+        type Cards = Set<members::cards>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `cards` field
-        pub struct cards(());
-        ///Marker type for the `name` field
-        pub struct name(());
         ///Marker type for the `created_at` field
         pub struct created_at(());
+        ///Marker type for the `name` field
+        pub struct name(());
+        ///Marker type for the `cards` field
+        pub struct cards(());
     }
 }
 
@@ -915,9 +915,9 @@ impl<'a, S: list_state::State> ListBuilder<'a, S> {
 impl<'a, S> ListBuilder<'a, S>
 where
     S: list_state::State,
-    S::Cards: list_state::IsSet,
-    S::Name: list_state::IsSet,
     S::CreatedAt: list_state::IsSet,
+    S::Name: list_state::IsSet,
+    S::Cards: list_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> List<'a> {

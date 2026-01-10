@@ -60,51 +60,51 @@ pub mod document_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Title;
-        type Publication;
         type PublishedAt;
+        type Publication;
+        type Title;
     }
     /// Empty state - all required fields are unset
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Title = Unset;
-        type Publication = Unset;
         type PublishedAt = Unset;
-    }
-    ///State transition - sets the `title` field to Set
-    pub struct SetTitle<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetTitle<S> {}
-    impl<S: State> State for SetTitle<S> {
-        type Title = Set<members::title>;
-        type Publication = S::Publication;
-        type PublishedAt = S::PublishedAt;
-    }
-    ///State transition - sets the `publication` field to Set
-    pub struct SetPublication<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetPublication<S> {}
-    impl<S: State> State for SetPublication<S> {
-        type Title = S::Title;
-        type Publication = Set<members::publication>;
-        type PublishedAt = S::PublishedAt;
+        type Publication = Unset;
+        type Title = Unset;
     }
     ///State transition - sets the `published_at` field to Set
     pub struct SetPublishedAt<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetPublishedAt<S> {}
     impl<S: State> State for SetPublishedAt<S> {
-        type Title = S::Title;
-        type Publication = S::Publication;
         type PublishedAt = Set<members::published_at>;
+        type Publication = S::Publication;
+        type Title = S::Title;
+    }
+    ///State transition - sets the `publication` field to Set
+    pub struct SetPublication<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetPublication<S> {}
+    impl<S: State> State for SetPublication<S> {
+        type PublishedAt = S::PublishedAt;
+        type Publication = Set<members::publication>;
+        type Title = S::Title;
+    }
+    ///State transition - sets the `title` field to Set
+    pub struct SetTitle<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetTitle<S> {}
+    impl<S: State> State for SetTitle<S> {
+        type PublishedAt = S::PublishedAt;
+        type Publication = S::Publication;
+        type Title = Set<members::title>;
     }
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `title` field
-        pub struct title(());
-        ///Marker type for the `publication` field
-        pub struct publication(());
         ///Marker type for the `published_at` field
         pub struct published_at(());
+        ///Marker type for the `publication` field
+        pub struct publication(());
+        ///Marker type for the `title` field
+        pub struct title(());
     }
 }
 
@@ -366,9 +366,9 @@ impl<'a, S: document_state::State> DocumentBuilder<'a, S> {
 impl<'a, S> DocumentBuilder<'a, S>
 where
     S: document_state::State,
-    S::Title: document_state::IsSet,
-    S::Publication: document_state::IsSet,
     S::PublishedAt: document_state::IsSet,
+    S::Publication: document_state::IsSet,
+    S::Title: document_state::IsSet,
 {
     /// Build the final struct
     pub fn build(self) -> Document<'a> {

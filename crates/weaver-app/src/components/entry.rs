@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use crate::components::{AppLink, AppLinkTarget};
 use crate::Route;
 #[cfg(feature = "server")]
 use crate::blobcache::BlobCache;
@@ -305,7 +306,6 @@ pub fn EntryCard(
     author_count: usize,
     ident: AtIdentifier<'static>,
 ) -> Element {
-    use crate::Route;
     use crate::auth::AuthState;
     use jacquard::from_data;
     use weaver_api::sh_weaver::notebook::entry::Entry;
@@ -384,13 +384,13 @@ pub fn EntryCard(
         div { class: "entry-card",
             div { class: "entry-card-meta",
                 div { class: "entry-card-header",
-                    Link {
-                        to: Route::EntryPage {
+                    AppLink {
+                        to: AppLinkTarget::Entry {
                             ident: ident.clone(),
                             book_title: book_title.clone(),
-                            title: entry_path.clone().into()
+                            entry_path: entry_path.clone().into(),
                         },
-                        class: "entry-card-title-link",
+                        class: Some("entry-card-title-link".to_string()),
                         h3 { class: "entry-card-title", "{title}" }
                     }
                     div { class: "entry-card-date",
@@ -453,7 +453,6 @@ pub fn FeedEntryCard(
     profile_ident: Option<AtIdentifier<'static>>,
     #[props(default)] on_pinned_changed: Option<EventHandler<bool>>,
 ) -> Element {
-    use crate::Route;
     use crate::auth::AuthState;
 
     let title = entry_view
@@ -517,12 +516,12 @@ pub fn FeedEntryCard(
         div { class: "entry-card feed-entry-card",
             // Header: title (and date if no author)
             div { class: "entry-card-header",
-                Link {
-                    to: Route::StandaloneEntry {
+                AppLink {
+                    to: AppLinkTarget::StandaloneEntry {
                         ident: ident.clone(),
-                        rkey: rkey.clone().into()
+                        rkey: rkey.clone(),
                     },
-                    class: "entry-card-title-link",
+                    class: Some("entry-card-title-link".to_string()),
                     h3 { class: "entry-card-title", "{title}" }
                 }
                 // Date inline with title when no author shown
@@ -588,7 +587,9 @@ pub fn EntryMetadata(
     #[props(default)] word_count: Option<usize>,
     #[props(default)] reading_time_mins: Option<usize>,
 ) -> Element {
-    let navigator = use_navigator();
+    use crate::components::use_app_navigate;
+
+    let navigate = use_app_navigate();
 
     let title = entry_view
         .title
@@ -603,7 +604,7 @@ pub fn EntryMetadata(
     let nav_ident = ident.clone();
     let on_removed = move |_| {
         if let Some(ref title) = nav_book_title {
-            navigator.push(Route::NotebookIndex {
+            navigate(AppLinkTarget::Notebook {
                 ident: nav_ident.clone(),
                 book_title: title.clone(),
             });
@@ -697,13 +698,13 @@ pub fn NavButton(
     };
 
     rsx! {
-        Link {
-            to: Route::EntryPage {
+        AppLink {
+            to: AppLinkTarget::Entry {
                 ident: ident.clone(),
                 book_title: book_title.clone(),
-                title: entry_path.into()
+                entry_path: entry_path.into(),
             },
-            class: "nav-button nav-button-{direction}",
+            class: Some(format!("nav-button nav-button-{}", direction)),
             if title_first {
                 span { class: "nav-title", "{entry_title}" }
                 span { class: "nav-arrow", "{arrow}" }

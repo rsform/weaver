@@ -1327,7 +1327,7 @@ pub fn EditableRecordContent(
                                         Ok(response) => {
                                             if let Ok(output) = response.into_output() {
                                                 tracing::info!("Record created: {}", output.uri);
-                                                let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, output.uri);
+                                                let link = format!("{}/record/{}", crate::env::WEAVER_APP_HOST, output.uri);
                                                 nav.push(link);
                                             }
                                         }
@@ -1378,7 +1378,7 @@ pub fn EditableRecordContent(
                                                 }
 
                                                 tracing::info!("Record replaced: {}", create_output.uri);
-                                                let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, create_output.uri);
+                                                let link = format!("{}/record/{}", crate::env::WEAVER_APP_HOST, create_output.uri);
                                                 nav.push(link);
                                             }
                                         }

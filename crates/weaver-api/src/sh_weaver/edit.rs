@@ -1053,8 +1053,8 @@ pub mod edit_history_entry_state {
     }
     /// State trait tracking which required fields have been set
     pub trait State: sealed::Sealed {
-        type Uri;
         type Cid;
+        type Uri;
         type Author;
         type CreatedAt;
         type Type;
@@ -1063,28 +1063,28 @@ pub mod edit_history_entry_state {
     pub struct Empty(());
     impl sealed::Sealed for Empty {}
     impl State for Empty {
-        type Uri = Unset;
         type Cid = Unset;
+        type Uri = Unset;
         type Author = Unset;
         type CreatedAt = Unset;
         type Type = Unset;
-    }
-    ///State transition - sets the `uri` field to Set
-    pub struct SetUri<S: State = Empty>(PhantomData<fn() -> S>);
-    impl<S: State> sealed::Sealed for SetUri<S> {}
-    impl<S: State> State for SetUri<S> {
-        type Uri = Set<members::uri>;
-        type Cid = S::Cid;
-        type Author = S::Author;
-        type CreatedAt = S::CreatedAt;
-        type Type = S::Type;
     }
     ///State transition - sets the `cid` field to Set
     pub struct SetCid<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCid<S> {}
     impl<S: State> State for SetCid<S> {
-        type Uri = S::Uri;
         type Cid = Set<members::cid>;
+        type Uri = S::Uri;
+        type Author = S::Author;
+        type CreatedAt = S::CreatedAt;
+        type Type = S::Type;
+    }
+    ///State transition - sets the `uri` field to Set
+    pub struct SetUri<S: State = Empty>(PhantomData<fn() -> S>);
+    impl<S: State> sealed::Sealed for SetUri<S> {}
+    impl<S: State> State for SetUri<S> {
+        type Cid = S::Cid;
+        type Uri = Set<members::uri>;
         type Author = S::Author;
         type CreatedAt = S::CreatedAt;
         type Type = S::Type;
@@ -1093,8 +1093,8 @@ pub mod edit_history_entry_state {
     pub struct SetAuthor<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetAuthor<S> {}
     impl<S: State> State for SetAuthor<S> {
-        type Uri = S::Uri;
         type Cid = S::Cid;
+        type Uri = S::Uri;
         type Author = Set<members::author>;
         type CreatedAt = S::CreatedAt;
         type Type = S::Type;
@@ -1103,8 +1103,8 @@ pub mod edit_history_entry_state {
     pub struct SetCreatedAt<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetCreatedAt<S> {}
     impl<S: State> State for SetCreatedAt<S> {
-        type Uri = S::Uri;
         type Cid = S::Cid;
+        type Uri = S::Uri;
         type Author = S::Author;
         type CreatedAt = Set<members::created_at>;
         type Type = S::Type;
@@ -1113,8 +1113,8 @@ pub mod edit_history_entry_state {
     pub struct SetType<S: State = Empty>(PhantomData<fn() -> S>);
     impl<S: State> sealed::Sealed for SetType<S> {}
     impl<S: State> State for SetType<S> {
-        type Uri = S::Uri;
         type Cid = S::Cid;
+        type Uri = S::Uri;
         type Author = S::Author;
         type CreatedAt = S::CreatedAt;
         type Type = Set<members::r#type>;
@@ -1122,10 +1122,10 @@ pub mod edit_history_entry_state {
     /// Marker types for field names
     #[allow(non_camel_case_types)]
     pub mod members {
-        ///Marker type for the `uri` field
-        pub struct uri(());
         ///Marker type for the `cid` field
         pub struct cid(());
+        ///Marker type for the `uri` field
+        pub struct uri(());
         ///Marker type for the `author` field
         pub struct author(());
         ///Marker type for the `created_at` field
@@ -1348,8 +1348,8 @@ where
 impl<'a, S> EditHistoryEntryBuilder<'a, S>
 where
     S: edit_history_entry_state::State,
-    S::Uri: edit_history_entry_state::IsSet,
     S::Cid: edit_history_entry_state::IsSet,
+    S::Uri: edit_history_entry_state::IsSet,
     S::Author: edit_history_entry_state::IsSet,
     S::CreatedAt: edit_history_entry_state::IsSet,
     S::Type: edit_history_entry_state::IsSet,

@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use crate::Route;
+use crate::components::{AppLink, AppLinkTarget};
 use crate::components::AuthorList;
 use crate::components::button::{Button, ButtonVariant};
 use dioxus::prelude::*;
@@ -93,12 +93,12 @@ pub fn NotebookCover(
             if is_owner {
                 if let Some(ref owner_ident) = ident {
                     div { class: "notebook-cover-actions",
-                        Link {
-                            to: Route::NewDraft {
+                        AppLink {
+                            to: AppLinkTarget::NewDraft {
                                 ident: owner_ident.clone(),
                                 notebook: Some(SmolStr::from(title.as_str()))
                             },
-                            class: "notebook-cover-action-link",
+                            class: Some("notebook-cover-action-link".to_string()),
                             Button {
                                 variant: ButtonVariant::Outline,
                                 "+ Add Entry"

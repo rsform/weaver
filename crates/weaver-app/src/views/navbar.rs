@@ -22,6 +22,9 @@ const NOTEBOOK_CARD_CSS: Asset = asset!("/assets/styling/notebook-card.css");
 /// routes will be rendered under the outlet inside this component
 #[component]
 pub fn Navbar() -> Element {
+    // Provide navigator for programmatic navigation in shared components
+    crate::components::use_main_navigator_provider();
+
     let route = use_route::<Route>();
     tracing::trace!("Route: {:?}", route);
 

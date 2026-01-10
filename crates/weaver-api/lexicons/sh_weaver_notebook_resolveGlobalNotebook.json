@@ -1,0 +1,42 @@
+{
+  "lexicon": 1,
+  "id": "sh.weaver.notebook.resolveGlobalNotebook",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Resolve a notebook by its global path. Only returns notebooks with publishGlobal enabled. Used for subdomain routing.",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The global path to resolve (e.g., 'cooking' for cooking.weaver.sh)"
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "notebook"
+          ],
+          "properties": {
+            "notebook": {
+              "type": "ref",
+              "ref": "sh.weaver.notebook.defs#notebookView"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "NotFound"
+        }
+      ]
+    }
+  }
+}

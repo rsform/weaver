@@ -1,6 +1,6 @@
 //! Action buttons for entries (edit, delete, remove from notebook, pin/unpin).
 
-use crate::Route;
+use crate::components::{AppLink, AppLinkTarget, use_app_navigate};
 use crate::auth::AuthState;
 use crate::components::button::{Button, ButtonVariant};
 use crate::components::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
@@ -52,7 +52,6 @@ pub struct EntryActionsProps {
 pub fn EntryActions(props: EntryActionsProps) -> Element {
     let auth_state = use_context::<Signal<AuthState>>();
     let fetcher = use_context::<Fetcher>();
-    let navigator = use_navigator();
 
     let mut show_delete_confirm = use_signal(|| false);
     let mut show_remove_confirm = use_signal(|| false);
@@ -90,27 +89,30 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
         None => return rsx! {}, // Can't edit without rkey
     };
 
-    // Build edit route based on whether entry is in a notebook
+    // Build edit link target based on whether entry is in a notebook
     let ident = props.entry_uri.authority().clone();
-    let edit_route = if props.in_notebook {
+    let edit_target = if props.in_notebook {
         if let Some(ref notebook) = props.notebook_title {
-            Route::NotebookEntryEdit {
-                ident: ident.into_static(),
+            AppLinkTarget::EntryEdit {
+                ident: ident.clone().into_static(),
                 book_title: notebook.clone(),
                 rkey: rkey.clone().into(),
             }
         } else {
-            Route::StandaloneEntryEdit {
-                ident: ident.into_static(),
+            AppLinkTarget::StandaloneEntryEdit {
+                ident: ident.clone().into_static(),
                 rkey: rkey.clone().into(),
             }
         }
     } else {
-        Route::StandaloneEntryEdit {
-            ident: ident.into_static(),
+        AppLinkTarget::StandaloneEntryEdit {
+            ident: ident.clone().into_static(),
             rkey: rkey.clone().into(),
         }
     };
+
+    // Get navigation function for post-delete redirect
+    let navigate = use_app_navigate();
 
     let entry_uri_for_delete = props.entry_uri.clone();
     let entry_title = props.entry_title.clone();
@@ -119,7 +121,7 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
     let handle_delete = move |_| {
         let fetcher = delete_fetcher.clone();
         let uri = entry_uri_for_delete.clone();
-        let navigator = navigator.clone();
+        let navigate = navigate.clone();
 
         spawn(async move {
             use jacquard::prelude::*;
@@ -142,7 +144,7 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
                 };
 
                 let request = DeleteRecord::new()
-                    .repo(AtIdentifier::Did(did))
+                    .repo(AtIdentifier::Did(did.clone()))
                     .collection(collection.clone())
                     .rkey(rkey.clone())
                     .build();
@@ -150,8 +152,10 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
                 match client.send(request).await {
                     Ok(_) => {
                         show_delete_confirm.set(false);
-                        // Navigate back to home after delete
-                        navigator.push(Route::Home {});
+                        // Navigate to profile after delete
+                        navigate(AppLinkTarget::Profile {
+                            ident: AtIdentifier::Did(did),
+                        });
                     }
                     Err(e) => {
                         error.set(Some(format!("Delete failed: {:?}", e)));
@@ -435,9 +439,9 @@ pub fn EntryActions(props: EntryActionsProps) -> Element {
 
         div { class: "entry-actions",
             // Edit button (always visible for owner)
-            Link {
-                to: edit_route,
-                class: "entry-action-link",
+            AppLink {
+                to: edit_target,
+                class: Some("entry-action-link".to_string()),
                 Button {
                     variant: ButtonVariant::Ghost,
                     "Edit"

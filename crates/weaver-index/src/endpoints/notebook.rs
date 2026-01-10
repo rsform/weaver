@@ -21,6 +21,7 @@ use weaver_api::sh_weaver::notebook::{
     get_notebook::{GetNotebookOutput, GetNotebookRequest},
     get_notebook_feed::{GetNotebookFeedOutput, GetNotebookFeedRequest},
     resolve_entry::{ResolveEntryOutput, ResolveEntryRequest},
+    resolve_global_notebook::{ResolveGlobalNotebookOutput, ResolveGlobalNotebookRequest},
     resolve_notebook::{ResolveNotebookOutput, ResolveNotebookRequest},
 };
 
@@ -1145,6 +1146,89 @@ pub async fn get_entry_notebooks(
     Ok(Json(
         GetEntryNotebooksOutput {
             notebooks,
+            extra_data: None,
+        }
+        .into_static(),
+    ))
+}
+
+/// Handle sh.weaver.notebook.resolveGlobalNotebook
+///
+/// Resolves a notebook by global path for subdomain routing.
+pub async fn resolve_global_notebook(
+    State(state): State<AppState>,
+    ExtractXrpc(args): ExtractXrpc<ResolveGlobalNotebookRequest>,
+) -> Result<Json<ResolveGlobalNotebookOutput<'static>>, XrpcErrorResponse> {
+    let path = args.path.as_ref();
+
+    let notebook_row = state
+        .clickhouse
+        .resolve_notebook_by_global_path(path)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to resolve global notebook: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?
+        .ok_or_else(|| XrpcErrorResponse::not_found("Notebook not found"))?;
+
+    // Fetch contributors for author hydration
+    let notebook_contributors = state
+        .clickhouse
+        .get_notebook_contributors(&notebook_row.did, &notebook_row.rkey)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get notebook contributors: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    // Collect author DIDs
+    let mut all_author_dids: HashSet<&str> =
+        notebook_contributors.iter().map(|s| s.as_str()).collect();
+    for did in &notebook_row.author_dids {
+        all_author_dids.insert(did.as_str());
+    }
+
+    // Batch fetch profiles
+    let author_dids_vec: Vec<&str> = all_author_dids.into_iter().collect();
+    let profiles = state
+        .clickhouse
+        .get_profiles_batch(&author_dids_vec)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to batch fetch profiles: {}", e);
+            XrpcErrorResponse::internal_error("Database query failed")
+        })?;
+
+    let profile_map: HashMap<&str, &ProfileRow> =
+        profiles.iter().map(|p| (p.did.as_str(), p)).collect();
+
+    // Build NotebookView
+    let notebook_uri = AtUri::new(&notebook_row.uri).map_err(|e| {
+        tracing::error!("Invalid notebook URI in db: {}", e);
+        XrpcErrorResponse::internal_error("Invalid URI stored")
+    })?;
+
+    let notebook_cid = Cid::new(notebook_row.cid.as_bytes()).map_err(|e| {
+        tracing::error!("Invalid notebook CID in db: {}", e);
+        XrpcErrorResponse::internal_error("Invalid CID stored")
+    })?;
+
+    let authors = hydrate_authors(&notebook_contributors, &profile_map)?;
+    let record = parse_record_json(&notebook_row.record)?;
+
+    let notebook = NotebookView::new()
+        .uri(notebook_uri.into_static())
+        .cid(notebook_cid.into_static())
+        .authors(authors)
+        .record(record)
+        .indexed_at(notebook_row.indexed_at.fixed_offset())
+        .maybe_title(non_empty_cowstr(&notebook_row.title))
+        .maybe_path(non_empty_cowstr(&notebook_row.path))
+        .build();
+
+    Ok(Json(
+        ResolveGlobalNotebookOutput {
+            notebook,
             extra_data: None,
         }
         .into_static(),

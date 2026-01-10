@@ -398,7 +398,7 @@ pub fn DataView(
 #[component]
 pub fn HighlightedUri(uri: AtUri<'static>) -> Element {
     let s = uri.as_str();
-    let link = format!("{}/record/{}", crate::env::WEAVER_APP_DOMAIN, s);
+    let link = format!("{}/record/{}", crate::env::WEAVER_APP_HOST, s);
 
     if let Some(rest) = s.strip_prefix("at://") {
         let parts: Vec<&str> = rest.splitn(3, '/').collect();
